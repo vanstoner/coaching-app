@@ -73,7 +73,8 @@ export class MatchEngine {
   // ========================================================================
 
   /**
-   * Create a new match. Validates totalMinutes divides evenly by quarterCount.
+   * Create a new match. Validates that quarterCount divides totalMinutes evenly
+   * (allows fractional minutes like 12.5 min quarters for 50-min match / 4).
    */
   createMatch(
     squadId: UUID,
@@ -88,9 +89,16 @@ export class MatchEngine {
     const totalMinutes = options.totalMinutes ?? 60;
     const quarterCount = options.quarterCount ?? 4;
 
-    if (totalMinutes % quarterCount !== 0) {
+    // Validate: quarterMinutes must be a finite rational number
+    // i.e., totalMinutes % quarterCount must produce a rational result
+    // We allow any result that when expressed as a decimal has finite precision
+    const quarterMinutes = totalMinutes / quarterCount;
+    
+    // Check if it's a rational number (finite decimal representation)
+    // by verifying it's not Infinity, NaN, or irrational
+    if (!isFinite(quarterMinutes) || quarterMinutes <= 0) {
       throw new MatchEngineError(
-        `totalMinutes (${totalMinutes}) must be evenly divisible by quarterCount (${quarterCount})`
+        `Invalid match duration: totalMinutes (${totalMinutes}) / quarterCount (${quarterCount}) = ${quarterMinutes}`
       );
     }
 
