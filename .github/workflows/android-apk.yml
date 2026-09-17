@@ -52,45 +52,76 @@ jobs:
 
       # Every assertion below gates the job: the build is only a deliverable if
       # the APK is structurally valid, debug-signed, and has backup disabled.
+      #
+      # Tool output goes to files rather than through pipes: `grep ... | head -1`
+      # under `pipefail` can exit 141 on SIGPIPE and kill the step with no
+      # diagnostic at all, which is exactly what happened on run 35263505469.
+      # Failures accumulate so one missing assertion does not hide the rest.
       - name: Assert the APK is valid, signed and backup-disabled
         run: |
-          set -euo pipefail
-          test -f "$APK"
+          set -uo pipefail
+          fail=0
+          note() { echo "ASSERTION FAILED: $*"; fail=1; }
+
+          test -f "$APK" || { echo "no APK at $APK"; exit 1; }
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
           echo "build-tools: $BT"
           echo "apk size: $(stat -c%s "$APK") bytes"
 
           echo "::group::AC-A3 — structurally valid"
-          unzip -l "$APK" | grep -qE ' AndroidManifest\.xml$'
-          unzip -l "$APK" | grep -qE ' classes[0-9]*\.dex$'
-          echo "AndroidManifest.xml and classes*.dex present"
+          unzip -l "$APK" > /tmp/apk-entries.txt
+          if grep -qE ' AndroidManifest\.xml$' /tmp/apk-entries.txt; then
+            echo "AndroidManifest.xml present"
+          else
+            note "AndroidManifest.xml missing from the APK"
+          fi
+          if grep -qE ' classes[0-9]*\.dex$' /tmp/apk-entries.txt; then
+            echo "classes*.dex present: $(grep -cE ' classes[0-9]*\.dex$' /tmp/apk-entries.txt)"
+          else
+            note "no classes*.dex in the APK"
+          fi
           echo "::endgroup::"
 
           echo "::group::AC-A5 — identity from aapt2 dump badging"
-          BADGING="$("$BT/aapt2" dump badging "$APK")"
-          APP_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$BADGING")"
-          VERSION_NAME="$(grep -o "versionName='[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
-          MIN_SDK="$(grep -o "sdkVersion:'[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
-          TARGET_SDK="$(grep -o "targetSdkVersion:'[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
+          if ! "$BT/aapt2" dump badging "$APK" > /tmp/badging.txt 2>&1; then
+            note "aapt2 dump badging exited non-zero"
+          fi
+          echo "--- first lines of aapt2 dump badging ---"
+          sed -n '1,6p' /tmp/badging.txt
+          echo "-----------------------------------------"
+          APP_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          VERSION_NAME="$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          MIN_SDK="$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          TARGET_SDK="$(sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
           echo "applicationId=$APP_ID"
           echo "versionName=$VERSION_NAME"
           echo "minSdkVersion=$MIN_SDK"
           echo "targetSdkVersion=$TARGET_SDK"
-          test -n "$APP_ID" && test -n "$VERSION_NAME" && test -n "$MIN_SDK" && test -n "$TARGET_SDK"
+          for pair in "applicationId=$APP_ID" "versionName=$VERSION_NAME" \
+                      "minSdkVersion=$MIN_SDK" "targetSdkVersion=$TARGET_SDK"; do
+            case "$pair" in *=) note "could not read ${pair%=} from the APK";; esac
+          done
           echo "::endgroup::"
 
           echo "::group::AC-A4 — debug-signed, therefore sideloadable"
-          "$BT/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
-          grep -q 'CN=Android Debug' /tmp/apksigner.txt
-          echo "signed with the Android debug keystore"
+          if ! "$BT/apksigner" verify --print-certs "$APK" > /tmp/apksigner.txt 2>&1; then
+            note "apksigner verify failed — the APK is not properly signed"
+          fi
+          cat /tmp/apksigner.txt
+          grep -q 'CN=Android Debug' /tmp/apksigner.txt \
+            || note "signer is not the Android debug keystore"
           echo "::endgroup::"
 
           echo "::group::AC-F2 — android:allowBackup=false in the built APK (ADR-011)"
-          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt
+          if ! "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt 2>&1; then
+            note "aapt2 dump xmltree failed — cannot read the built manifest"
+          fi
           grep -E 'allowBackup' /tmp/manifest.txt || echo '<allowBackup attribute absent>'
-          grep -qE 'allowBackup\(0x[0-9a-f]+\)=\(type 0x12\)0x0' /tmp/manifest.txt
-          echo "allowBackup is false in the artifact that reaches the phone"
+          grep -qE 'allowBackup\(0x[0-9a-f]+\)=\(type 0x12\)0x0' /tmp/manifest.txt \
+            || note "allowBackup is not false in the APK that would reach the phone"
           echo "::endgroup::"
+
+          exit $fail
 
       # AC-A1: exactly one .apk in the artifact.
       - name: Upload the APK
