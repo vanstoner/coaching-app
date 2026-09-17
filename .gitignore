@@ -17,6 +17,16 @@ coverage/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Generated native projects — `expo prebuild` regenerates these, and CI builds
+# them from scratch. Never commit them: a committed AndroidManifest.xml would be
+# a second source of truth for ADR-011's allowBackup=false (PO ruling, #11).
+/android/
+/ios/
+.kotlin/
+expo-env.d.ts
+*.keystore
+*.jks
+
 # Real squad data must never be committed (see CLAUDE.md → Data protection).
 # This is a guard, not the rule.
 *.squad.json

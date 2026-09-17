@@ -49,13 +49,35 @@ stages separate source from that, and each needs the one before it:
 Deliberately almost featureless. Its job is to prove every stage from source to
 the coach's hand, not to be useful.
 
-- Expo + TypeScript scaffold (TECH-01, #11)
-- **One screen**: squad name, a running match clock, start / end quarter
-- That clock wired to the **real engine**, so the engine is proven on a device
-- GitHub Actions → debug APK published as a workflow artifact
-- Android auto-backup disabled (ADR-011 clause 2, which names TECH-01 as its home)
+**Split into 0a and 0b on 2026-09-17** so that it can run as a parallel lane
+alongside the ADR-007 engine reshape (#35) instead of queuing behind it. The
+split line is the only thing that makes two lanes safe: 0a touches no file the
+reshape touches.
 
-**Output: an APK that installs.**
+#### Slice 0a — scaffold and pipeline (no engine)
+
+- Expo + TypeScript scaffold (TECH-01, #11)
+- **One screen**, static: squad name placeholder and a placeholder clock face
+  that does not advance
+- **Imports nothing from `src/engine/` or `src/types/`, and changes nothing
+  under `src/`** — this is the anti-collision guarantee, not a style choice
+- GitHub Actions → debug APK published as a workflow artifact
+- Android auto-backup disabled (ADR-011 clause 2, which names TECH-01 as its
+  home), asserted in CI against the built APK
+
+**Output: an APK that installs on real hardware.**
+
+#### Slice 0b — the clock wired to the real engine
+
+Starts after #35 merges, because it is the part that needs the reshaped engine.
+
+- The clock on screen driven by the **real engine**, so the engine is proven on
+  a device rather than only in vitest
+- Start / end quarter controls
+- State management chosen against the shape #35 produces, not guessed at
+- Persistence of the event log, ESLint/Prettier, and a component test runner
+
+**Output: the engine proven on the coach's phone.**
 
 ### Slice 1 — The useful bit
 
@@ -80,7 +102,7 @@ Why the spine was built.
 
 **Output: the season story.**
 
-## Sequencing ruling (2026-09-17)
+## Sequencing ruling (2026-09-17, superseded later the same day)
 
 **The ADR-007 engine reshape (#35) goes first, before Slice 0.**
 
@@ -96,12 +118,30 @@ and CI touch no engine code and therefore cost the reshape nothing — was
 - **Accepted benefit:** no UI is ever written against an engine shape ADR-007 has
   already ruled against, so the reshape never has to be done twice.
 
+## Two-lane ruling (2026-09-17) — supersedes the sequencing ruling above
+
+The reasoning above holds for the part of Slice 0 that touches the engine, and
+only that part. Once Slice 0 is split, the scaffold half has no engine surface
+at all, so it does not have to wait.
+
+**#35 and Slice 0a run as parallel lanes.** Slice 0b waits for #35.
+
+The strict-order ruling above is **kept, not deleted**, because its stated
+benefit still governs 0b: no UI is written against an engine shape ADR-007 has
+ruled against. What changed is the scope it applies to.
+
 Order of work from here:
 
 1. **CI test gate** (this document's own change) — see below
-2. **#35** — engine reshape to the append-only event log
-3. **Slice 0** — scaffold, APK pipeline, clock on screen
+2. In parallel: **#35** (engine reshape to the append-only event log) and
+   **Slice 0a** (scaffold, APK pipeline, static screen)
+3. **Slice 0b** — clock wired to the real engine, after #35 merges
 4. **Slice 1**, then **Slice 2**
+
+The lanes are only safe while the boundary holds: Slice 0a changes nothing under
+`src/` and imports nothing from it, and it does not touch
+`.github/workflows/ci.yml`. The acceptance criteria on #11 make that boundary a
+gating criterion rather than an intention.
 
 ## Build path ruling (2026-09-17)
 
@@ -152,3 +192,4 @@ run rather than trusted.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-17 | Created. Six stages, three slices, sequencing ruling (#35 before Slice 0), build path ruling (Actions + Gradle), CI test gate landed ahead of the reshape. | PO rulings, 2026-09-17 session |
+| 2026-09-17 | Slice 0 split into 0a (scaffold and APK pipeline, no engine surface) and 0b (clock wired to the real engine). Sequencing ruling superseded by the two-lane ruling: #35 and Slice 0a run in parallel, 0b waits for #35. | PO rulings on [#11](https://github.com/vanstoner/coaching-app/issues/11), 2026-09-17 (BA escalations X1–X4) |

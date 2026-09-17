@@ -1,0 +1,101 @@
+name: Android APK
+
+# Separate from ci.yml on purpose. ci.yml is the test gate (vitest, tsc,
+# validate-docs) and is shared with the engine lane; this workflow only builds
+# the app and must never duplicate those steps (AC-E1/E2/E3, issue #11).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # AC-A7: a rebuild needs no new commit.
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    env:
+      APK: android/app/build/outputs/apk/debug/app-debug.apk
+    steps:
+      - uses: actions/checkout@v4
+
+      # AC-E5: Node and JDK are pinned explicitly, Node to the same major as ci.yml.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # android/ is never committed (PO ruling, #11): CI generates it, so
+      # app.json stays the single source of truth for the manifest.
+      - name: Generate the native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: android
+
+      # Every assertion below gates the job: the build is only a deliverable if
+      # the APK is structurally valid, debug-signed, and has backup disabled.
+      - name: Assert the APK is valid, signed and backup-disabled
+        run: |
+          set -euo pipefail
+          test -f "$APK"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          echo "build-tools: $BT"
+          echo "apk size: $(stat -c%s "$APK") bytes"
+
+          echo "::group::AC-A3 — structurally valid"
+          unzip -l "$APK" | grep -qE ' AndroidManifest\.xml$'
+          unzip -l "$APK" | grep -qE ' classes[0-9]*\.dex$'
+          echo "AndroidManifest.xml and classes*.dex present"
+          echo "::endgroup::"
+
+          echo "::group::AC-A5 — identity from aapt2 dump badging"
+          BADGING="$("$BT/aapt2" dump badging "$APK")"
+          APP_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$BADGING")"
+          VERSION_NAME="$(grep -o "versionName='[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
+          MIN_SDK="$(grep -o "sdkVersion:'[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
+          TARGET_SDK="$(grep -o "targetSdkVersion:'[^']*'" <<<"$BADGING" | head -n 1 | cut -d"'" -f2)"
+          echo "applicationId=$APP_ID"
+          echo "versionName=$VERSION_NAME"
+          echo "minSdkVersion=$MIN_SDK"
+          echo "targetSdkVersion=$TARGET_SDK"
+          test -n "$APP_ID" && test -n "$VERSION_NAME" && test -n "$MIN_SDK" && test -n "$TARGET_SDK"
+          echo "::endgroup::"
+
+          echo "::group::AC-A4 — debug-signed, therefore sideloadable"
+          "$BT/apksigner" verify --print-certs "$APK" | tee /tmp/apksigner.txt
+          grep -q 'CN=Android Debug' /tmp/apksigner.txt
+          echo "signed with the Android debug keystore"
+          echo "::endgroup::"
+
+          echo "::group::AC-F2 — android:allowBackup=false in the built APK (ADR-011)"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt
+          grep -E 'allowBackup' /tmp/manifest.txt || echo '<allowBackup attribute absent>'
+          grep -qE 'allowBackup\(0x[0-9a-f]+\)=\(type 0x12\)0x0' /tmp/manifest.txt
+          echo "allowBackup is false in the artifact that reaches the phone"
+          echo "::endgroup::"
+
+      # AC-A1: exactly one .apk in the artifact.
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: coaching-app-debug-apk
+          path: ${{ env.APK }}
+          if-no-files-found: error

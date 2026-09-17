@@ -2,10 +2,10 @@
   "name": "coaching-app",
   "version": "0.0.1",
   "description": "Junior football coaching app with match management and fairness tracking",
-  "main": "dist/index.js",
-  "type": "module",
+  "main": "index.ts",
   "scripts": {
-    "build": "tsc",
+    "start": "expo start",
+    "apk": "expo prebuild --platform android --clean && ./android/gradlew -p android assembleDebug",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
@@ -21,9 +21,15 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "~19.2.2",
     "@vitest/ui": "^2.1.0",
     "typescript": "^5.6.2",
     "vitest": "^2.1.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "expo": "~57.0.23",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  }
 }
