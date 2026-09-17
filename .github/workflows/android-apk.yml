@@ -46,6 +46,38 @@ jobs:
       - name: Generate the native Android project
         run: npx expo prebuild --platform android --no-install
 
+      # Run 35265658389 failed mid-configuration with
+      # "Failed to install the following SDK components: ndk;27.1.12297006",
+      # after two runs on the same config had installed it silently. Doing it
+      # here makes the download an explicit, retried, diagnosable step instead
+      # of a transient failure inside Gradle's configuration phase.
+      - name: Ensure the NDK the Gradle build asks for is installed
+        run: |
+          set -uo pipefail
+          # expo-root-project's default for SDK 57. If Gradle ever asks for a
+          # different one it names the version in its error, and this moves.
+          NDK_VERSION=27.1.12297006
+          echo "NDKs already on the runner:"
+          ls "$ANDROID_HOME/ndk" 2>/dev/null || echo "(none)"
+          if [ -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then
+            echo "ndk;$NDK_VERSION already installed — nothing to download"
+            exit 0
+          fi
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | sed -n '$p')"
+          echo "sdkmanager: $SDKMANAGER"
+          for attempt in 1 2 3; do
+            echo "installing ndk;$NDK_VERSION (attempt $attempt of 3)"
+            if yes | "$SDKMANAGER" "ndk;$NDK_VERSION" > /tmp/sdkmanager.log 2>&1; then
+              echo "installed ndk;$NDK_VERSION"
+              exit 0
+            fi
+            echo "--- last 20 lines of sdkmanager output ---"
+            tail -n 20 /tmp/sdkmanager.log
+            sleep 15
+          done
+          echo "could not install ndk;$NDK_VERSION after 3 attempts"
+          exit 1
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
         working-directory: android
