@@ -1,6 +1,6 @@
 # Spec 02 — Match Engine & Clock
 
-Status: Draft for Product Owner review — **revised 2026-09-17 following PO rulings on issue #18 (quarter end), PR #20 (open questions 2–9) and issue #21 (open questions 10–12)**
+Status: Draft for Product Owner review — **revised 2026-09-17 following PO rulings on issue #18 (quarter end), PR #20 (open questions 2–9), issue #21 (open questions 10–12), issue #24 (quarter sequencing) and issue #26 (open question 14)**
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
@@ -56,8 +56,11 @@ elapsedMs(quarter) =
   quarter.accumulatedMs
   + (quarter.status === 'running' ? now() - quarter.runningSinceWallClock : 0)
 
-matchElapsedMs = sum(elapsedMs(q) for q in quarters where q.index <= current)
+matchElapsedMs = sum(elapsedMs(q) for q in quarters where q.status !== 'pending')
 ```
+
+`matchElapsedMs` is defined in full, with a worked example, in
+[Current quarter and match elapsed](#current-quarter-and-match-elapsed).
 
 ### Persistence and crash recovery
 
@@ -96,8 +99,15 @@ the running quarter.
   - **At or beyond** the threshold: the
     [quarter-end prompt](#the-quarter-end-prompt) — exactly **one** prompt,
     never two.
-- Return from background when **no quarter is running** (e.g. between
-  quarters) is not covered by the ruling — see open question 14.
+- **Return from background** when **no quarter is running** (e.g. between
+  quarters): **no prompt**. The next quarter's team sheet is shown — the team
+  sheet of the [current quarter](#current-quarter-and-match-elapsed), which
+  with no quarter running is the lowest-index `pending` quarter. Per the PO
+  ruling on open question 14, item 1 (issue #26, 2026-09-17): *"**No
+  prompt.** Returning from the background with no quarter running shows the
+  next-quarter team sheet."* Reasoning given: *"There is no running quarter to
+  end."* The case where no `pending` quarter remains (after the final quarter,
+  or an abandoned match) is open question 16.
 
 **Worked example** — `plannedQuarterMs` = 600 000, `marginMs` = 60 000
 (threshold 660 000):
@@ -115,13 +125,94 @@ the running quarter.
 pending → running → ended
 ```
 
-**Starting a quarter** requires a complete team sheet: exactly `onFieldCount`
+### Quarters are strictly sequential
+
+Per the acceptance criteria of **issue #24 (DEF-002)**, agreed by the PO when
+confirming the defect on 2026-09-17: *"quarters run strictly in order: quarter
+N can start only when quarter N−1 has ended (Q1 has no predecessor), and at
+most one quarter runs at a time."*
+
+- Only a `pending` quarter can start (the lifecycle above only runs forward).
+- **Quarter N can start only when quarter N−1 is `ended`.** Q1 has no
+  predecessor, so this condition does not restrict it.
+- **At most one quarter is running at a time.** This follows from the rule
+  above: N−1 must have ended before N starts. A manually paused quarter has not
+  ended, so it still blocks the next quarter.
+- A start that breaks either rule is **rejected with a clear message**, and the
+  match state is **unchanged**: no quarter changes status, no anchor is set, and
+  no Appearance or BenchStint is opened or closed.
+- Consequence: at any moment the started quarters (status `running` or
+  `ended`) are exactly Q1…Qk for some k, and at most the last of them, Qk, is
+  `running`.
+
+**Why** (issue #24): the engine derived match elapsed from an undefined
+"current quarter". Starting Q3 while Q2 was still `pending` recorded ten played
+minutes as zero (F1), and nothing stopped Q2 starting while Q1 was still
+running (F2). Both break invariant 1, because intervals are opened and closed
+at the wrong match-elapsed times.
+
+### Current quarter and match elapsed
+
+**Current quarter:**
+
+1. The `running` quarter, if there is one (by the rule above, at most one);
+2. otherwise the lowest-index `pending` quarter, which is the only quarter that
+   may start next;
+3. otherwise (every quarter `ended`) there is **no** current quarter.
+
+This is the engine's definition, derived from the sequencing rule. It does not
+decide how the UI labels the gap between quarters, and match elapsed does not
+depend on it. For abandoned matches see open question 15.
+
+**Match elapsed** is the sum of the elapsed time of every quarter that has
+started:
+
+```
+matchElapsedMs = sum(elapsedMs(q) for q in quarters where q.status !== 'pending')
+```
+
+- An `ended` quarter contributes its elapsed at its **effective end** (see
+  [Ending a quarter](#ending-a-quarter)), not the wall-clock time the coach
+  tapped.
+- A `running` quarter contributes its live elapsed (wall-clock anchor,
+  [ADR-002](../decisions/002-wall-clock-time-derivation.md)).
+- A `pending` quarter contributes nothing. Time between quarters is not match
+  elapsed.
+
+This one definition holds in every state:
+
+| State | Match elapsed |
+|---|---|
+| A quarter is running | Sum of the ended quarters + the running quarter's live elapsed |
+| Between quarters (none running, some ended, some pending) | Sum of the ended quarters; constant however long the gap lasts |
+| After the final quarter (all ended) | Sum of all quarters; constant from then on |
+
+**Worked example** — 4 quarters, `plannedQuarterMs` = 600 000:
+
+| Moment | Quarter statuses | Match elapsed |
+|---|---|---|
+| Before kickoff | Q1–Q4 pending | 0 |
+| Q1 running at 04:00 | Q1 running (240 000) | 240 000 |
+| Q1 ended at 10:00 | Q1 ended (600 000) | 600 000 |
+| Q2 starts | Q1 ended, Q2 running (0) | 600 000 — Q2's Appearances and BenchStints open at 600 000 |
+| Q2 running at 03:00 | Q1 ended (600 000), Q2 running (180 000) | 780 000 |
+| Q2 ended at 13:00 ("Ended just now"); 5 min gap before Q3 | Q1 600 000, Q2 780 000 ended; Q3, Q4 pending | 1 380 000 throughout the gap |
+| Q3 starts | Q3 running (0) | 1 380 000 — Q3's intervals open at 1 380 000 |
+| Q3 ended at 10:00, Q4 ended at 09:20 (all ended) | 600 000, 780 000, 600 000, 560 000 | 2 540 000, unchanged on any later read |
+| Attempt to start Q3 when Q1 is ended at 600 000 and Q2 is pending (F1) | Rejected; Q1 ended, Q2–Q4 pending | 600 000 (unchanged) |
+| Attempt to start Q2 while Q1 is running (F2) | Rejected; Q1 running, Q2–Q4 pending | Q1's live elapsed (unchanged) |
+
+### Starting a quarter
+
+**Starting a quarter** is subject to the
+[sequencing rule](#quarters-are-strictly-sequential) and requires a complete team sheet: exactly `onFieldCount`
 players assigned to distinct positions. The engine refuses to start otherwise,
 with a clear message naming the unfilled positions.
 
 **On quarter start:**
 1. Set `startedAt`, `runningSinceWallClock`, status → `running`.
-2. Open an Appearance for each on-field player at `startElapsedMs = matchElapsedMs`.
+2. Open an Appearance for each on-field player at `startElapsedMs = matchElapsedMs`
+   (at this instant, the sum of the ended quarters' elapsed).
 3. Open a BenchStint for each available, unselected player.
 
 **On quarter end (always a coach action):**
@@ -189,7 +280,9 @@ Spec 01 defines vacancy records, the vacancy term is zero. See
 The forgotten-quarter part of this ruling was refined by the PR #20 ruling on
 open question 4, and the overrun prompt and forgotten-quarter question were
 made **one prompt** by the PR #23 ruling on open question 13: see
-[The quarter-end prompt](#the-quarter-end-prompt).
+[The quarter-end prompt](#the-quarter-end-prompt). The bench / team-sheet
+review offer was made that same prompt, and backdated choices exempted from the
+early-end confirmation, by the issue #26 ruling on open question 14.
 
 ### Why
 
@@ -278,11 +371,13 @@ same time as planned length (11d).
   sub)").
 - Otherwise it is shown.
 
-**In the [bench / team-sheet review offer](#bench--team-sheet-review-offer)**
-the choices remain the three from the issue #18 ruling: **Ended at planned
-time** (floored at the last recorded event), **Ended just now**, **Still
-playing**. Whether this offer should match the quarter-end prompt is open
-question 14.
+**The [bench / team-sheet review offer](#bench--team-sheet-review-offer)** is
+the same single quarter-end prompt, with the same choices, hiding rules and
+last-event floor. Per the PO ruling on open question 14, item 2 (issue #26,
+2026-09-17): *"**Use the same single quarter-end prompt** past planned length,
+with the same choices, including "Time of last recorded event" and its hiding
+rules and last-event floor."* Reasoning given: *"One set of choices
+everywhere."* This supersedes the three-choice offer in the issue #18 ruling.
 
 For every ending choice, the engine retains **both** the effective end and
 `recordedAt`. Neither overwrites the other, so the gap between when the quarter
@@ -312,8 +407,8 @@ Per the PO ruling on open question 7 (PR #20 comment):
 - If the last recorded event is at or before `plannedQuarterMs`, the choice is
   shown and behaves as "Ended at planned time".
 - The same floor applies to every ending choice in the
-  [quarter-end prompt](#the-quarter-end-prompt) and the bench / team-sheet
-  review offer.
+  [quarter-end prompt](#the-quarter-end-prompt), however it was triggered
+  (including the bench / team-sheet review offer, issue #26).
 - "Ended just now" / "Now" is always at or after the last event, so it is never
   adjusted.
 
@@ -345,11 +440,15 @@ happens:
    `plannedQuarterMs + marginMs`.
 3. **Return from background** with quarter elapsed at or beyond
    `plannedQuarterMs + marginMs`.
+4. **Bench or team-sheet review opened** with quarter elapsed at or beyond
+   `plannedQuarterMs` (issue #26, item 2; see
+   [Bench / team-sheet review offer](#bench--team-sheet-review-offer)).
 
 Whichever trigger fires, it is the **same prompt with the same choices**.
 **At most one is shown at a time:** a trigger that fires while the prompt is
 already showing does not show a second one. Below the threshold, triggers 2
-and 3 do not show this prompt (see
+and 3 do not show this prompt, and before `plannedQuarterMs` trigger 4 does
+not (see
 [Opening the app into a match in progress](#opening-the-app-into-a-match-in-progress)).
 
 **Choices:** see [End-time choices](#end-time-choices) — Ended at planned time /
@@ -398,14 +497,29 @@ Time of last recorded event (unless hidden) / Ended just now / Still playing
 | 13:30 (810 000) | sub at 07:00 | Ended at planned time (600 000) / Time of last recorded event (420 000) / Ended just now (810 000) / Still playing (resume) |
 | 13:30 (810 000) | sub at 10:00 | Ended at planned time (600 000) / Ended just now (810 000) / Still playing (resume) — last event hidden as identical |
 | 13:30 (810 000) | sub at 10:30 | "Ended at 10:30 (last sub)" (630 000) / Ended just now (810 000) / Still playing (resume) — last event hidden as identical |
+| 10:20 (620 000), bench review opened (trigger 4) | sub at 07:00 | Ended at planned time (600 000) / Time of last recorded event (420 000) / Ended just now (620 000) / Still playing (resume) |
+| 10:20 (620 000), bench review opened (trigger 4) | none | Ended at planned time (600 000) / Ended just now (620 000) / Still playing (resume) |
 
 ### Early-end confirmation
 
-- When the coach ends a quarter with quarter elapsed **less than**
-  `plannedQuarterMs − marginMs`, a **one-tap confirmation** is required before
-  the quarter ends. Declining leaves the quarter `running`, clock untouched.
+- When the coach ends a quarter **live** (at the current quarter elapsed) with
+  quarter elapsed **less than** `plannedQuarterMs − marginMs`, a **one-tap
+  confirmation** is required before the quarter ends. Declining leaves the
+  quarter `running`, clock untouched.
 - Ending at or after `plannedQuarterMs − marginMs` needs no confirmation.
 - A confirmed early end records actual elapsed, not the planned figure.
+- **A backdated choice never needs the confirmation**, even when its effective
+  end is below `plannedQuarterMs − marginMs`. A backdated choice is one of the
+  quarter-end prompt's choices whose effective end is not taken from the
+  moment of the tap: "Time of last recorded event", or "Ended at planned time"
+  (including its "Ended at <last event time> (last sub)" form). In practice
+  only "Time of last recorded event" can fall below that point, since "Ended
+  at planned time" is never earlier than `plannedQuarterMs`. The
+  [deviation warning](#deviation-warning) still applies to it. Per the PO
+  ruling on open question 14, item 3 (issue #26, 2026-09-17): *"**No early-end
+  confirmation** for a backdated choice. The deviation warning still records
+  it."* Reasoning given: *"The coach chose that time deliberately; the
+  confirmation exists to catch accidental taps when ending live."*
 
 ### Deviation warning
 
@@ -435,8 +549,10 @@ Time of last recorded event (unless hidden) / Ended just now / Still playing
 
 - If the coach opens the bench or team-sheet review while the quarter is
   running and quarter elapsed is **at or beyond** `plannedQuarterMs`, the app
-  **offers** to end the quarter with the three review-offer choices in
-  [End-time choices](#end-time-choices) (including the last-event floor).
+  **offers** to end the quarter by showing the single
+  [quarter-end prompt](#the-quarter-end-prompt) (trigger 4), with its choices,
+  hiding rules and [last-event floor](#earliest-allowed-end-last-event-floor)
+  (issue #26, item 2).
 - The offer can always be declined ("Still playing"). The quarter is **never**
   ended automatically.
 - Before `plannedQuarterMs`, **no offer is made**.
@@ -475,6 +591,8 @@ repeating notifications once per margin. No ADR is written in this change.
 | Prompt at 11:00; coach taps **Still playing (resume)** at 11:40; prompt repeats at 12:00 (not 12:40); coach taps **Ended just now** at 12:05 | 725 000 | No | Yes (11:00, 12:00) | Yes (125 s) | 5 075 000 |
 | Prompt at 11:00, 12:00 and 13:00 all unanswered (phone locked); coach taps **Ended just now** at 13:10 | 790 000 | No | Yes (11:00, 12:00, 13:00) | Yes (190 s) | 5 530 000 |
 | Sub recorded at 10:30; prompt at 11:00 shows **"Ended at 10:30 (last sub)"**; coach taps it at 11:20 | 630 000 | No | Yes | No (30 s) | 4 410 000 |
+| Sub recorded at 07:00; prompt at 11:00; coach taps **Time of last recorded event** at 11:10 | 420 000 | No (backdated choice, issue #26) | Yes | Yes (180 s) | 2 940 000 |
+| Sub recorded at 07:00; bench review opened at 10:20 shows the quarter-end prompt; coach taps **Time of last recorded event** | 420 000 | No (backdated choice, issue #26) | Yes (trigger 4) | Yes (180 s) | 2 940 000 |
 
 **With a vacancy** (applies once Spec 01 defines vacancy records; until then the
 vacancy term is zero): a player is injured at 06:00 with no replacement, and the
@@ -609,15 +727,18 @@ actually defensible.
 |---|---|
 | Player injured mid-quarter, no replacement | Position becomes vacant; team plays short. Vacancy is recorded, not backfilled silently. |
 | Fewer available players than `onFieldCount` | Match can still start with a recorded short-handed flag. |
-| Match abandoned mid-quarter | Close all intervals at current elapsed; status → `abandoned`. Minutes still count toward the season ledger. |
-| Quarter ended early (ref's whistle) | Coach ends the quarter (as always). Ending with quarter elapsed below `plannedQuarterMs − marginMs` requires a one-tap confirmation; declining leaves the quarter running. Actual elapsed is recorded, not the planned figure. A deviation beyond the margin raises the non-blocking warning. |
+| Match abandoned mid-quarter | Close all intervals at current elapsed (match elapsed at that instant, per [Current quarter and match elapsed](#current-quarter-and-match-elapsed)); status → `abandoned`. Minutes still count toward the season ledger. The status of the abandoned quarter and whether later quarters can start are open question 15. |
+| Quarter ended early (ref's whistle) | Coach ends the quarter (as always). Ending live with quarter elapsed below `plannedQuarterMs − marginMs` requires a one-tap confirmation; declining leaves the quarter running. A backdated choice ("Time of last recorded event", "Ended at planned time") never requires it, even below that point (issue #26). Actual elapsed is recorded, not the planned figure. A deviation beyond the margin raises the non-blocking warning. |
 | Quarter overruns (coach has not ended it by planned length + margin) | The single [quarter-end prompt](#the-quarter-end-prompt) is due at `plannedQuarterMs + marginMs` (local notification with vibration if the phone is locked or the app backgrounded). The clock keeps running and is **not** paused. Choices: Ended at planned time / Time of last recorded event (unless hidden) / Ended just now / Still playing (resume). It repeats at `plannedQuarterMs + k × marginMs`, timed from the previous due time not from the tap (a "Still playing (resume)" tap at 11:40 → next prompt 12:00), whether or not the coach answers, vibrating each time (issue #21). Effective end and `recordedAt` are both retained. Never ended automatically. |
 | Quarter forgotten (app freshly launched, or returning from background, on a running quarter at or beyond planned + margin) | The same single [quarter-end prompt](#the-quarter-end-prompt), with the same choices, hiding rules and last-event floor as when triggered by the due time. Exactly one prompt is shown, never two (PR #23). Nothing is ended until the coach answers; an ending answer and its `recordedAt` are retained. Never ended silently. |
 | App returns from background on a running quarter below planned + margin | No prompt; the running clock is shown (PR #23). |
+| App returns from background with no quarter running (between quarters) | No prompt; the next quarter's team sheet is shown (issue #26). With no `pending` quarter left, see open question 16. |
 | App freshly launched on a match in progress below planned + margin, or with no quarter running | "Match in progress — resume?" prompt (PR #23). |
 | Chosen end would be before the last recorded event | Not allowed. The earliest end offered is the last recorded event; "Ended at planned time" is relabelled "Ended at <last event time> (last sub)" when an event came after planned length. |
 | Margin set outside 30 s – 5 min (inclusive), or the match's margin changed once the match has started (mid-quarter or between quarters) | Rejected. 30 000 and 300 000 ms are accepted. The match uses the squad margin copied at match start for the whole match (issue #21). |
-| Bench / team-sheet review opened during a running quarter | At or beyond planned length: app **offers** to end the quarter with the three end-time choices; declining keeps it running. Before planned length: no offer. |
+| Bench / team-sheet review opened during a running quarter | At or beyond planned length: the single [quarter-end prompt](#the-quarter-end-prompt) is shown, with the same choices, hiding rules and last-event floor (issue #26); "Still playing (resume)" keeps it running. Before planned length: no offer. |
+| Starting a quarter out of order (quarter N−1 not `ended`, e.g. Q3 while Q2 is `pending`) | Rejected with a clear message; match state unchanged (no status, anchor or interval changes). Issue #24 (F1). |
+| Starting a quarter while another quarter is running (e.g. Q2 while Q1 is `running`, including manually paused) | Rejected with a clear message; match state unchanged. Issue #24 (F2). |
 | Same player assigned to two positions | Rejected by the engine with a validation error. |
 | Clock adjusted after the fact | Treated as a correction: requires a note, flagged in the ledger. |
 
@@ -629,27 +750,37 @@ actually defensible.
 | 2026-09-17 | Open questions 2–9 moved into the body as rules: overrun time counts (Q2); prompt repeats once per margin with vibration (Q3); forgotten-quarter question merged into the single "Match in progress" prompt with three choices (Q4); margin is a squad setting copied onto the match at start, fixed mid-quarter, 30 s–5 min (Q5); backdated end is not a correction (Q6); end floored at last recorded event with adjusted label (Q7); mid-quarter availability deferred to REQ-04 (Q8); vacancy term zero until Spec 01 is amended with #19 (Q9). New open questions 10–12 raised. | PO rulings comment on PR #20 |
 | 2026-09-17 | Open questions 10–12 moved into the body as rules: overrun prompt due at planned + k × margin, repeats timed from the previous due time and repeat when unanswered (Q10); Match in progress prompt shows on fresh launch and return from background, gains "Still playing (resume)" past planned + margin, hides "Time of last recorded event" when there is none or it duplicates planned length (Q11); match margin fixed for the whole match, range 30 000–300 000 ms inclusive (Q12). Definition of "last recorded event" confirmed; copied-margin field assigned to the Spec 01 amendment with #19. Worked examples and edge cases updated. New open question 13 raised. | PO rulings comment on issue #21 |
 | 2026-09-17 | Open question 13 moved into the body as rules: a fresh launch always shows a prompt; return from background below planned + margin shows no prompt, at or beyond it shows exactly one. The overrun prompt and the Match in progress "when did it end?" question merged into one quarter-end prompt, described once, with three triggers (due time, fresh launch, return from background past the threshold) and one choice set (Ended at planned time / Time of last recorded event / Ended just now / Still playing (resume)); Q10 repeat timing and Q11 hiding and floor rules carried over. Cross-references, worked examples and edge cases updated. New open question 14 raised. | PO ruling comment on PR #23 |
+| 2026-09-17 | Quarters are strictly sequential: quarter N starts only when N−1 is ended, at most one quarter runs at a time; out-of-order or concurrent starts rejected with state unchanged. Defined "current quarter" and replaced the ambiguous `q.index <= current` match-elapsed formula with the sum over started quarters, with a worked example for running, between-quarters and after-final states. Quarter start step 2 and abandoned-match row cross-referenced; two edge-case rows added. New open question 15 raised. | Acceptance criteria of issue #24 (DEF-002), agreed by the PO when confirming the defect (2026-09-17) |
+| 2026-09-17 | Open question 14 moved into the body as rules: return from background with no quarter running shows no prompt, only the next quarter's team sheet (item 1); the bench / team-sheet review offer is the single quarter-end prompt past planned length, with its choices, hiding rules and last-event floor (item 2, new trigger 4); a backdated choice needs no early-end confirmation but the deviation warning still applies (item 3). Worked examples, edge cases and cross-references updated. New open question 16 raised. | PO ruling comment on issue #26 |
 
 ## Open questions for Product Owner
 
 1. Should the app support extra time / a fifth period, or is 4 quarters fixed?
 
 Questions 2–9 were ruled on 2026-09-17 (PO rulings comment on PR #20),
-questions 10–12 on 2026-09-17 (PO rulings comment on issue #21) and question 13
-on 2026-09-17 (PO ruling comment on PR #23); all are now rules in the body
-above. Raised by applying the PR #23 ruling (not decided here):
+questions 10–12 on 2026-09-17 (PO rulings comment on issue #21), question 13
+on 2026-09-17 (PO ruling comment on PR #23) and question 14 on 2026-09-17 (PO
+ruling comment on issue #26); all are now rules in the body above.
 
-14. **Loose ends of the single quarter-end prompt (Q13).**
-    - **Return from background with no quarter running** (e.g. between
-      quarters, while the next team sheet is being prepared). The ruling covers
-      a running quarter below or past planned + margin. Is there a prompt
-      ("Match in progress — resume?") or none?
-    - **Bench / team-sheet review offer.** It still uses the three issue #18
-      choices (Ended at planned time / Ended just now / Still playing). Past
-      planned length should it offer the quarter-end prompt's choices instead
-      (adding "Time of last recorded event", same hiding rules)?
-    - **Early-end confirmation for a backdated choice.** If "Time of last
-      recorded event" gives an effective end below `plannedQuarterMs −
-      marginMs` (e.g. last sub at 07:00 with a 10 min quarter and 1 min
-      margin → 420 000), is the one-tap early-end confirmation required? The
-      confirmation rule is written for ending at the current elapsed.
+Raised by applying the issue #24 sequencing rule (not decided here):
+
+15. **Abandoned matches and quarter status.** The edge case says an abandoned
+    match closes all intervals at current elapsed and sets the match to
+    `abandoned`, but the Quarter status enum (Spec 01) is only `pending` /
+    `running` / `ended`.
+    - **The running quarter at abandonment.** Does it become `ended`, with
+      its elapsed fixed at the moment of abandonment? If it stayed `running`,
+      its elapsed, and so match elapsed, would keep growing after the match
+      was abandoned.
+    - **Later quarters.** Once a match is `abandoned`, can any `pending`
+      quarter still start? The sequencing rule alone would allow the next
+      quarter once the abandoned one is `ended`. Until this is ruled, "current
+      quarter" is not defined for an abandoned match.
+
+Raised by applying the issue #26 ruling (not decided here):
+
+16. **Return from background with no quarter running and no quarter left to
+    start.** Item 1 of the issue #26 ruling shows the next quarter's team
+    sheet, but after the final quarter has ended (or once a match is
+    abandoned) there is no next quarter. What is shown: no prompt and the
+    match summary, or something else?
