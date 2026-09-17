@@ -775,6 +775,193 @@ describe('REQ-01: Match clock with quarter management', () => {
   });
 
   // ========================================================================
+  // DEF-003 (#32): every startQuarter rejection leaves the match state
+  // unchanged (Spec 02: "rejected with a clear message, and the match state is
+  // unchanged"). Validation — including resolving every position — completes
+  // before any write.
+  //
+  // Setup for all: 4 quarters, plannedQuarterMs = 600 000, 11 available,
+  // 7 on field. "State unchanged" = deep-equals a snapshot taken just before
+  // the call.
+  // ========================================================================
+
+  describe('DEF-003: a rejected startQuarter leaves the match state unchanged', () => {
+    const MIN = 60 * 1000;
+    const T0 = new Date('2026-09-17T14:00:00Z').getTime();
+
+    /** 40-min match, 4 quarters → plannedQuarterMs = 600 000. 11 available, 7 on field. */
+    function setup() {
+      let nowMs = T0;
+      const engine = new MatchEngine({ nowFn: () => new Date(nowMs) });
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 40, quarterCount: 4 });
+      for (const player of players) {
+        state.playerAvailability.set(player, 'available');
+      }
+      const sheet = createTestTeamSheet(format, players);
+      const clock = {
+        advance(ms: number) {
+          nowMs += ms;
+        },
+      };
+      /** Start quarter i (1-based), let it run for elapsedMs, end it. */
+      const play = (index: number, elapsedMs: number) => {
+        const q = state.quarters[index - 1];
+        engine.startQuarter(state, q, sheet, format);
+        clock.advance(elapsedMs);
+        engine.endQuarter(state, q);
+        clock.advance(2 * MIN); // break between quarters: not match time
+      };
+      return { engine, state, sheet, clock, play };
+    }
+
+    /** A complete-sized sheet whose last position id is not in the format. */
+    function sheetWithForeignPosition(): Map<UUID, UUID> {
+      const sheet = new Map<UUID, UUID>();
+      for (let i = 0; i < format.onFieldCount - 1; i++) {
+        sheet.set(format.positions[i].id, players[i]);
+      }
+      sheet.set(uuid(), players[format.onFieldCount - 1]);
+      return sheet;
+    }
+
+    it('unknown position id when starting Q1: rejected, state unchanged, match still planned', () => {
+      const { engine, state } = setup();
+      const q1 = state.quarters[0];
+      const badSheet = sheetWithForeignPosition();
+
+      const before = structuredClone(state);
+      let error: unknown;
+      try {
+        engine.startQuarter(state, q1, badSheet, format);
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(MatchEngineError);
+      expect((error as Error).message).toMatch(/not found in format/);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('pending');
+      expect(q1.startedAt).toBeNull();
+      expect(q1.runningSinceWallClock).toBeNull();
+      expect(state.appearances).toHaveLength(0);
+      expect(state.benchStints).toHaveLength(0);
+      expect(state.match.status).toBe('planned');
+    });
+
+    it('unknown position id when starting Q2 (QA N1): rejected, state unchanged, Q3 not blocked by a half-started Q2', () => {
+      const { engine, state, play } = setup();
+      play(1, 600_000);
+      const [, q2, q3] = state.quarters;
+      const badSheet = sheetWithForeignPosition();
+
+      const before = structuredClone(state);
+      expect(() => engine.startQuarter(state, q2, badSheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q2.status).toBe('pending');
+      expect(state.appearances.filter((a) => a.quarterId === q2.id)).toHaveLength(0);
+      expect(state.benchStints.filter((b) => b.quarterId === q2.id)).toHaveLength(0);
+      expect(engine.getMatchElapsedMs(state)).toBe(600_000);
+      // Q3 is rejected because Q2 is pending, not because Q2 is running.
+      expect(() => engine.startQuarter(state, q3, badSheet, format)).toThrow(/quarter 2 has not ended/);
+    });
+
+    it('team sheet of the wrong size: rejected, state unchanged', () => {
+      const { engine, state, play } = setup();
+      play(1, 600_000);
+      const q2 = state.quarters[1];
+      const shortSheet = new Map(format.positions.slice(0, 6).map((p, i) => [p.id, players[i]]));
+
+      const before = structuredClone(state);
+      expect(() => engine.startQuarter(state, q2, shortSheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q2.status).toBe('pending');
+    });
+
+    it('same player at two positions: rejected, state unchanged', () => {
+      const { engine, state, play } = setup();
+      play(1, 600_000);
+      const q2 = state.quarters[1];
+      const dupSheet = new Map(
+        format.positions.map((p, i) => [p.id, i === 1 ? players[0] : players[i]])
+      );
+
+      const before = structuredClone(state);
+      expect(() => engine.startQuarter(state, q2, dupSheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q2.status).toBe('pending');
+    });
+
+    it('out-of-order start (Q3 while Q2 pending) with an unknown position id: rejected, state unchanged', () => {
+      const { engine, state, play } = setup();
+      play(1, 600_000);
+      const q3 = state.quarters[2];
+
+      const before = structuredClone(state);
+      expect(() => engine.startQuarter(state, q3, sheetWithForeignPosition(), format)).toThrow(
+        MatchEngineError
+      );
+
+      expect(state).toStrictEqual(before);
+      expect(q3.status).toBe('pending');
+    });
+
+    it('non-pending quarter (Q1 again while it is running): rejected, state unchanged', () => {
+      const { engine, state, sheet, clock } = setup();
+      const q1 = state.quarters[0];
+      engine.startQuarter(state, q1, sheet, format);
+      clock.advance(4 * MIN);
+
+      const before = structuredClone(state);
+      expect(() => engine.startQuarter(state, q1, sheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('running');
+      expect(state.appearances.filter((a) => a.quarterId === q1.id)).toHaveLength(7);
+      expect(state.benchStints.filter((b) => b.quarterId === q1.id)).toHaveLength(4);
+    });
+
+    it('after rejected starts, a valid start of the same quarter succeeds and every invariant holds at quarter end', () => {
+      const { engine, state, sheet, clock, play } = setup();
+      play(1, 600_000);
+      const [q1, q2] = state.quarters;
+
+      const shortSheet = new Map(format.positions.slice(0, 6).map((p, i) => [p.id, players[i]]));
+      const dupSheet = new Map(
+        format.positions.map((p, i) => [p.id, i === 1 ? players[0] : players[i]])
+      );
+      for (const bad of [sheetWithForeignPosition(), shortSheet, dupSheet]) {
+        expect(() => engine.startQuarter(state, q2, bad, format)).toThrow(MatchEngineError);
+      }
+
+      expect(() => engine.startQuarter(state, q2, sheet, format)).not.toThrow();
+      expect(q2.status).toBe('running');
+      const apps = state.appearances.filter((a) => a.quarterId === q2.id);
+      const stints = state.benchStints.filter((b) => b.quarterId === q2.id);
+      expect(apps).toHaveLength(7);
+      expect(stints).toHaveLength(4);
+      for (const interval of [...apps, ...stints]) {
+        expect(interval.startElapsedMs).toBe(600_000);
+      }
+      engine.validatePlayerTrackingInvariant(state);
+
+      clock.advance(600_000);
+      engine.endQuarter(state, q2);
+
+      expect(engine.getMatchElapsedMs(state)).toBe(1_200_000);
+      engine.validateQuarterAppearanceInvariant(state, q1, format);
+      engine.validateQuarterAppearanceInvariant(state, q2, format);
+      for (const interval of [...apps, ...stints]) {
+        expect(interval.endElapsedMs).toBe(1_200_000);
+      }
+      expect(state.appearances.filter((a) => a.endElapsedMs === null)).toHaveLength(0);
+      expect(state.benchStints.filter((b) => b.endElapsedMs === null)).toHaveLength(0);
+    });
+  });
+
+  // ========================================================================
   // Invariant: Player tracking
   // ========================================================================
 
