@@ -91,7 +91,11 @@ jobs:
           echo "-----------------------------------------"
           APP_ID="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
           VERSION_NAME="$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
-          MIN_SDK="$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          # build-tools 37 prints `minSdkVersion:'24'`; older ones print `sdkVersion:'24'`.
+          MIN_SDK="$(sed -n "s/^minSdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          if [ -z "$MIN_SDK" ]; then
+            MIN_SDK="$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+          fi
           TARGET_SDK="$(sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
           echo "applicationId=$APP_ID"
           echo "versionName=$VERSION_NAME"
@@ -116,9 +120,17 @@ jobs:
           if ! "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt 2>&1; then
             note "aapt2 dump xmltree failed — cannot read the built manifest"
           fi
-          grep -E 'allowBackup' /tmp/manifest.txt || echo '<allowBackup attribute absent>'
-          grep -qE 'allowBackup\(0x[0-9a-f]+\)=\(type 0x12\)0x0' /tmp/manifest.txt \
-            || note "allowBackup is not false in the APK that would reach the phone"
+          # build-tools 37 renders the boolean as `=false`; older ones as
+          # `=(type 0x12)0x0`. Both mean false; anything else fails, including
+          # the attribute being absent, which on Android means backup is ON.
+          BACKUP_LINE="$(grep -E 'allowBackup' /tmp/manifest.txt | sed -n 1p)"
+          echo "${BACKUP_LINE:-<allowBackup attribute absent>}"
+          case "$BACKUP_LINE" in
+            *'=false'|*'=(type 0x12)0x0')
+              echo "allowBackup is false in the artifact that reaches the phone" ;;
+            *)
+              note "allowBackup is not false in the APK that would reach the phone" ;;
+          esac
           echo "::endgroup::"
 
           exit $fail
