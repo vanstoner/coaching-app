@@ -148,16 +148,20 @@ export class MatchEngine {
   }
 
   /**
-   * Compute total match elapsed time (sum of all closed quarters + current).
+   * Compute total match elapsed time (Spec 02, "Current quarter and match
+   * elapsed"): the sum of the elapsed time of every quarter that has started.
+   *
+   * matchElapsedMs = sum(elapsedMs(q) for q in quarters where q.status !== 'pending')
+   *
+   * Ended quarters contribute their frozen elapsed, a running quarter its live
+   * elapsed, pending quarters nothing. Does not depend on a "current quarter".
    */
   getMatchElapsedMs(state: MatchState): number {
-    const currentQuarterIndex = state.match.status === 'planned'
-      ? 0
-      : state.quarters.find((q) => q.status !== 'ended')?.index ?? state.quarters.length;
-
     let total = 0;
-    for (let i = 0; i < currentQuarterIndex; i++) {
-      total += this.getQuarterElapsedMs(state.quarters[i]);
+    for (const quarter of state.quarters) {
+      if (quarter.status !== 'pending') {
+        total += this.getQuarterElapsedMs(quarter);
+      }
     }
     return total;
   }
@@ -168,7 +172,12 @@ export class MatchEngine {
 
   /**
    * Start a quarter.
-   * Requires: exactly onFieldCount players assigned to distinct positions.
+   * Requires (Spec 02, "Quarters are strictly sequential"):
+   * - the quarter is pending;
+   * - no other quarter is running (a manually paused quarter is still running);
+   * - quarter N-1 has ended (Q1 has no predecessor);
+   * - exactly onFieldCount players assigned to distinct positions.
+   * A sequencing rejection throws before any state is touched.
    */
   startQuarter(
     state: MatchState,
@@ -179,6 +188,22 @@ export class MatchEngine {
     if (quarter.status !== 'pending') {
       throw new MatchEngineError(
         `Cannot start quarter ${quarter.index}; status is ${quarter.status} (expected pending)`
+      );
+    }
+
+    const running = state.quarters.find((q) => q.status === 'running' && q.id !== quarter.id);
+    if (running) {
+      throw new MatchEngineError(
+        `Cannot start quarter ${quarter.index}; quarter ${running.index} is still running ` +
+          `(end it first — a paused quarter has not ended)`
+      );
+    }
+
+    const predecessor = state.quarters.find((q) => q.index === quarter.index - 1);
+    if (predecessor && predecessor.status !== 'ended') {
+      throw new MatchEngineError(
+        `Cannot start quarter ${quarter.index}; quarter ${predecessor.index} has not ended ` +
+          `(status is ${predecessor.status}). Quarters must be played in order`
       );
     }
 
@@ -248,8 +273,9 @@ export class MatchEngine {
   }
 
   /**
-   * End a quarter (hard stop).
-   * Closes all open Appearances and BenchStints.
+   * End a quarter. Always a coach action; the clock never stops on its own
+   * (Spec 02, "Ending a quarter").
+   * Closes all open Appearances and BenchStints at match-elapsed at the end.
    */
   endQuarter(state: MatchState, quarter: Quarter): void {
     if (quarter.status !== 'running') {
