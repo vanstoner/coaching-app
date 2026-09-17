@@ -598,6 +598,188 @@ describe('REQ-01: Match clock with quarter management', () => {
   });
 
   // ========================================================================
+  // DEF-002 (#24): quarters are strictly sequential; match elapsed is the sum
+  // of every started quarter's elapsed (Spec 02, "Quarters are strictly
+  // sequential" and "Current quarter and match elapsed").
+  //
+  // Setup for all: 4 quarters, plannedQuarterMs = 600 000, 7 on field,
+  // complete team sheets. "State unchanged" = deep-equals a snapshot taken
+  // just before the call.
+  // ========================================================================
+
+  describe('DEF-002: quarters are strictly sequential; match elapsed', () => {
+    const MIN = 60 * 1000;
+    const DAY = 24 * 60 * MIN;
+    const T0 = new Date('2026-09-17T14:00:00Z').getTime();
+
+    /** 40-min match, 4 quarters → plannedQuarterMs = 600 000. 11 available, 7 on field. */
+    function setup() {
+      let nowMs = T0;
+      const engine = new MatchEngine({ nowFn: () => new Date(nowMs) });
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 40, quarterCount: 4 });
+      for (const player of players) {
+        state.playerAvailability.set(player, 'available');
+      }
+      const sheet = createTestTeamSheet(format, players);
+      const clock = {
+        advance(ms: number) {
+          nowMs += ms;
+        },
+      };
+      /** Start quarter i (1-based), let it run for elapsedMs, end it. */
+      const play = (index: number, elapsedMs: number) => {
+        const q = state.quarters[index - 1];
+        engine.startQuarter(state, q, sheet, format);
+        clock.advance(elapsedMs);
+        engine.endQuarter(state, q);
+        clock.advance(2 * MIN); // break between quarters: not match time
+      };
+      return { engine, state, sheet, clock, play };
+    }
+
+    function snapshot(state: ReturnType<MatchEngine['createMatch']>) {
+      return structuredClone(state);
+    }
+
+    it('F1: starting Q3 while Q2 is pending (Q1 ended at 600 000) is rejected, state unchanged', () => {
+      const { engine, state, sheet, play } = setup();
+      play(1, 600_000);
+      const [q1, q2, q3, q4] = state.quarters;
+
+      const before = snapshot(state);
+      expect(() => engine.startQuarter(state, q3, sheet, format)).toThrow(MatchEngineError);
+      expect(() => engine.startQuarter(state, q3, sheet, format)).toThrow(/quarter 2/i);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('ended');
+      expect([q2.status, q3.status, q4.status]).toEqual(['pending', 'pending', 'pending']);
+      expect(state.appearances.filter((a) => a.quarterId === q3.id)).toHaveLength(0);
+      expect(state.benchStints.filter((b) => b.quarterId === q3.id)).toHaveLength(0);
+      expect(engine.getMatchElapsedMs(state)).toBe(600_000);
+    });
+
+    it('F2: starting Q2 while Q1 is running is rejected, state unchanged', () => {
+      const { engine, state, sheet, clock } = setup();
+      const [q1, q2] = state.quarters;
+      engine.startQuarter(state, q1, sheet, format);
+      clock.advance(4 * MIN);
+
+      const before = snapshot(state);
+      expect(() => engine.startQuarter(state, q2, sheet, format)).toThrow(MatchEngineError);
+      expect(() => engine.startQuarter(state, q2, sheet, format)).toThrow(/quarter 1/i);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('running');
+      expect(q2.status).toBe('pending');
+    });
+
+    it('starting Q4 while Q2 is ended and Q3 pending is rejected, state unchanged', () => {
+      const { engine, state, sheet, play } = setup();
+      play(1, 600_000);
+      play(2, 780_000);
+      const [, , q3, q4] = state.quarters;
+
+      const before = snapshot(state);
+      expect(() => engine.startQuarter(state, q4, sheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q3.status).toBe('pending');
+      expect(q4.status).toBe('pending');
+    });
+
+    it('starting Q2 while Q1 is manually paused (not ended) is rejected, state unchanged', () => {
+      const { engine, state, sheet, clock } = setup();
+      const [q1, q2] = state.quarters;
+      engine.startQuarter(state, q1, sheet, format);
+      clock.advance(3 * MIN);
+
+      // The engine has no pause API yet. A paused quarter is represented per the
+      // Spec 02 clock formula: still `running`, anchor cleared, elapsed banked.
+      q1.accumulatedMs = engine.getQuarterElapsedMs(q1);
+      q1.runningSinceWallClock = null;
+      clock.advance(5 * MIN);
+
+      const before = snapshot(state);
+      expect(() => engine.startQuarter(state, q2, sheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('running');
+      expect(q2.status).toBe('pending');
+    });
+
+    it('starting a quarter that is not pending (Q1 again after it ended) is rejected, state unchanged', () => {
+      const { engine, state, sheet, play } = setup();
+      play(1, 600_000);
+      const q1 = state.quarters[0];
+
+      const before = snapshot(state);
+      expect(() => engine.startQuarter(state, q1, sheet, format)).toThrow(MatchEngineError);
+
+      expect(state).toStrictEqual(before);
+      expect(q1.status).toBe('ended');
+    });
+
+    it('in-order starts are accepted: Q1 fresh, then Q2, Q3, Q4 each once its predecessor ended', () => {
+      const { engine, state, sheet, clock } = setup();
+      for (const q of state.quarters) {
+        expect(() => engine.startQuarter(state, q, sheet, format)).not.toThrow();
+        expect(q.status).toBe('running');
+        clock.advance(10 * MIN);
+        engine.endQuarter(state, q);
+        clock.advance(2 * MIN);
+      }
+      expect(state.quarters.map((q) => q.status)).toEqual(['ended', 'ended', 'ended', 'ended']);
+    });
+
+    it('running: Q1 ended at 600 000, Q2 running at 180 000 → matchElapsedMs 780 000', () => {
+      const { engine, state, sheet, clock, play } = setup();
+      play(1, 600_000);
+      engine.startQuarter(state, state.quarters[1], sheet, format);
+      clock.advance(180_000);
+      expect(engine.getMatchElapsedMs(state)).toBe(780_000);
+    });
+
+    it('between quarters: Q1 600 000, Q2 780 000 ended → 1 380 000 now and 5 min later; Q3 opens at 1 380 000', () => {
+      const { engine, state, sheet, clock, play } = setup();
+      play(1, 600_000);
+      play(2, 780_000);
+
+      expect(engine.getMatchElapsedMs(state)).toBe(1_380_000);
+      clock.advance(5 * MIN);
+      expect(engine.getMatchElapsedMs(state)).toBe(1_380_000);
+
+      const q3 = state.quarters[2];
+      engine.startQuarter(state, q3, sheet, format);
+      const apps = state.appearances.filter((a) => a.quarterId === q3.id);
+      const stints = state.benchStints.filter((b) => b.quarterId === q3.id);
+      expect(apps).toHaveLength(7);
+      expect(stints).toHaveLength(4);
+      for (const interval of [...apps, ...stints]) {
+        expect(interval.startElapsedMs).toBe(1_380_000);
+      }
+    });
+
+    it('after final quarter: 600 000, 780 000, 600 000, 560 000 → 2 540 000 at +0 ms and +1 day', () => {
+      const { engine, state, clock, play } = setup();
+      play(1, 600_000);
+      play(2, 780_000);
+      play(3, 600_000);
+      play(4, 560_000);
+
+      expect(engine.getMatchElapsedMs(state)).toBe(2_540_000);
+      expect(engine.getMatchElapsedMs(state)).toBe(2_540_000); // +0 ms
+      clock.advance(DAY);
+      expect(engine.getMatchElapsedMs(state)).toBe(2_540_000);
+    });
+
+    it('before kickoff: all quarters pending → matchElapsedMs 0', () => {
+      const { engine, state } = setup();
+      expect(state.quarters.every((q) => q.status === 'pending')).toBe(true);
+      expect(engine.getMatchElapsedMs(state)).toBe(0);
+    });
+  });
+
+  // ========================================================================
   // Invariant: Player tracking
   // ========================================================================
 
