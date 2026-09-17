@@ -5,7 +5,7 @@
  * 1. Clock is derived from wall-clock, never tick counting
  * 2. Crashes and backgrounding cause zero time loss
  * 3. Quarters start and end correctly
- * 4. Invariants hold: appearances sum to quarterMinutes × onFieldCount
+ * 4. Invariants hold: appearances sum to actualQuarterElapsedMs × onFieldCount
  * 5. All players tracked in exactly one place (Appearance or BenchStint)
  */
 
@@ -334,7 +334,7 @@ describe('REQ-01: Match clock with quarter management', () => {
       expect(elapsed).toBeGreaterThan(0);
     });
 
-    it('clock stops automatically at quarter end', () => {
+    it('clock stops when the coach ends the quarter', () => {
       let mockTime = new Date('2026-09-17T14:00:00Z');
       const engine = new MatchEngine({ nowFn: () => mockTime });
 
@@ -394,7 +394,7 @@ describe('REQ-01: Match clock with quarter management', () => {
   // ========================================================================
 
   describe('Invariant: Quarter appearance durations sum correctly', () => {
-    it('sum(Appearance durations) === quarterMinutes × onFieldCount', () => {
+    it('sum(Appearance durations) === actualQuarterElapsedMs × onFieldCount', () => {
       let mockTime = new Date('2026-09-17T14:00:00Z');
       const engine = new MatchEngine({ nowFn: () => mockTime });
 
@@ -414,11 +414,9 @@ describe('REQ-01: Match clock with quarter management', () => {
 
       engine.endQuarter(state, quarter);
 
-      // Quarter minutes: 60 / 4 = 15 minutes
-      // On-field count: 7
-      // Expected total appearance time: 15 * 60 * 1000 * 7 = 6,300,000 ms
-      // Actual: all 7 players played ~10 minutes (we ended early)
-      // Actual total: 10 * 60 * 1000 * 7 = 4,200,000 ms
+      // Planned quarter is 15 minutes; the coach ended it at 10 minutes.
+      // The check is against the actual elapsed (Spec 02, Invariants), never
+      // the planned length: 10 * 60 * 1000 * 7 = 4,200,000 ms.
 
       let totalAppearanceMs = 0;
       for (const appearance of state.appearances) {
@@ -427,10 +425,7 @@ describe('REQ-01: Match clock with quarter management', () => {
         }
       }
 
-      const quarterMinutes = state.match.totalMinutes / state.match.quarterCount;
-      const expectedMs = quarterMinutes * 60 * 1000 * format.onFieldCount;
-
-      // We ended early, so actual < expected, but the ratio should hold
+      expect(totalAppearanceMs).toBe(engine.getQuarterElapsedMs(quarter) * format.onFieldCount);
       expect(totalAppearanceMs).toBe(10 * 60 * 1000 * 7);
 
       // The invariant should pass when we validate
