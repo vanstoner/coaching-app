@@ -67,7 +67,13 @@ jobs:
           echo "sdkmanager: $SDKMANAGER"
           for attempt in 1 2 3; do
             echo "installing ndk;$NDK_VERSION (attempt $attempt of 3)"
-            if yes | "$SDKMANAGER" "ndk;$NDK_VERSION" > /tmp/sdkmanager.log 2>&1; then
+            # No `yes |` pipe: under pipefail, `yes` dying of SIGPIPE when
+            # sdkmanager exits reports a successful install as a failure, which
+            # is what happened on run 35266513072 — the NDK unzipped to 100%
+            # and the step still failed. Success is judged by the installed
+            # directory, not by an exit code.
+            "$SDKMANAGER" "ndk;$NDK_VERSION" < /dev/null > /tmp/sdkmanager.log 2>&1 || true
+            if [ -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then
               echo "installed ndk;$NDK_VERSION"
               exit 0
             fi
