@@ -1,0 +1,127 @@
+[
+  {
+    "title": "REQ-01: Match clock with quarter management",
+    "labels": [
+      "requirement",
+      "mvp",
+      "engine"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nKeep time for the playing of the game.\n\n## Source\n\nProduct Owner brief, requirement 1. Clock behaviour confirmed by PO: runs continuously within a quarter, hard stop at quarter end.\n\n## Acceptance criteria\n\n- [ ] Match configurable to 40, 50 or 60 total minutes\n- [ ] Quarter count configurable (default 4), quarters must be equal length\n- [ ] Invalid combinations (not evenly divisible) rejected with a clear message\n- [ ] Clock runs continuously within a quarter; no routine pause\n- [ ] Clock stops automatically at quarter end\n- [ ] Manual pause available as an exception control, visually de-emphasised\n- [ ] Elapsed time computed from wall-clock anchors, never from tick counting\n- [ ] Time survives app backgrounding, screen lock and process death with zero loss\n- [ ] Relaunch into an in-progress match offers a resume prompt showing computed elapsed time\n- [ ] Quarter can be ended early by the coach; actual elapsed recorded, not nominal\n\n## Notes\n\nThe wall-clock derivation is the critical detail — a timer-callback counter silently loses time when Android throttles background JS, which would corrupt the fairness ledger.\n\nSee `docs/specs/02-match-engine.md`."
+  },
+  {
+    "title": "REQ-02: Assign players to positions and track position time",
+    "labels": [
+      "requirement",
+      "mvp",
+      "engine"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nAssign players to positions and track their time in those positions.\n\n## Source\n\nProduct Owner brief, requirement 2.\n\n## Acceptance criteria\n\n- [ ] Customisable format; 7-a-side is the default\n- [ ] Position set editable (labels, count, sort order)\n- [ ] Exactly one position may be of kind `goalkeeper`\n- [ ] Players assignable to positions via a pitch view\n- [ ] Same player cannot occupy two positions; rejected with validation error\n- [ ] Time accrued per position as well as per player, for reporting\n- [ ] Per-position time is descriptive only — never used for fairness or anomaly detection\n- [ ] Position change closes the current Appearance and opens a new one\n- [ ] Position kind snapshotted on the Appearance so later format edits cannot rewrite history\n- [ ] Vacant position (injury with no replacement) recorded explicitly, not silently backfilled\n\nSee `docs/specs/01-domain-model.md`."
+  },
+  {
+    "title": "REQ-03: Track total minutes played per player",
+    "labels": [
+      "requirement",
+      "mvp",
+      "engine"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nTrack overall minutes played of every player playing.\n\n## Source\n\nProduct Owner brief, requirement 3.\n\nPO decisions: fairness is measured on total playing time, not per position. Goalkeeper time is tracked separately and excluded from the fairness measure.\n\n## Acceptance criteria\n\n- [ ] Live minutes visible per player during a match\n- [ ] Total outfield minutes (all positions combined) displayed — this is the fairness figure\n- [ ] Goalkeeper minutes displayed as a separate figure, excluded from fairness\n- [ ] Per-position breakdown available for reporting, not used as a measure\n- [ ] Bench time recorded explicitly via BenchStint, not inferred by subtraction\n- [ ] Invariant enforced: every available player is in exactly one of an open Appearance or open BenchStint at any elapsed time\n- [ ] Quarter totals reconcile: sum of Appearance durations equals quarterMinutes x onFieldCount\n- [ ] All totals derived by folding intervals; never stored as an authored running total\n\n## Notes\n\nDeriving rather than storing totals is what guarantees the displayed number and the audit trail can never disagree — essential for the dispute arbitration requirement.\n\nSee `docs/specs/01-domain-model.md`."
+  },
+  {
+    "title": "REQ-04: Substitution admin with sub-due alerting",
+    "labels": [
+      "requirement",
+      "mvp",
+      "engine",
+      "ux"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nProvide a substitution admin that swaps a player for a subs bench player, allows swapping a player's position on field, and tracks planned sub/player time on the pitch, alerting when a sub is due.\n\n## Source\n\nProduct Owner brief, requirement 4. Alerting design shaped by PO's note that the clock cannot be reliably stopped at stoppages.\n\n## Acceptance criteria\n\n- [ ] Swap an on-field player for a bench player in a single interaction\n- [ ] Swap two on-field players' positions\n- [ ] Substitution is instantaneous: outgoing interval closes and incoming opens at the same elapsed instant\n- [ ] Plan sub timings in advance per quarter\n- [ ] Alarm raised when a planned sub falls due\n- [ ] Alarm is a standing flag that persists until actioned or quarter end, not a dismissable instant notification\n- [ ] Alarm wording frames action at the next break in play\n- [ ] Late-actioned subs record true time; planned-vs-actual variance retained and surfaced\n- [ ] Unactioned alarm escalates visual prominence after a configurable threshold (default 3 min)\n- [ ] Subs unactioned at quarter end carry into the next quarter's planned team sheet\n- [ ] Optional haptic and sound alongside visual alert\n\n## Notes\n\nBackground notifications are out of MVP scope — the app is expected to be open and foregrounded during a match.\n\nSee `docs/specs/02-match-engine.md`."
+  },
+  {
+    "title": "REQ-05: Quarter close with next team sheet and last-minute adjustment",
+    "labels": [
+      "requirement",
+      "mvp",
+      "ux"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nClosing of a quarter should stop the clock and bring up the next planned team sheet, but allow for last-minute adjustments.\n\n## Source\n\nProduct Owner brief, requirement 5.\n\n## Acceptance criteria\n\n- [ ] Quarter end stops the clock automatically\n- [ ] All open Appearances and BenchStints close at the quarter boundary\n- [ ] Next quarter's planned team sheet presented immediately\n- [ ] Team sheet fully editable before the coach confirms\n- [ ] Carried-over unactioned subs pre-applied to the suggested sheet\n- [ ] Projected end-of-match fairness balances shown before confirming\n- [ ] Quarter cannot start until exactly onFieldCount distinct positions are filled\n- [ ] Unfilled positions named explicitly in the blocking message\n- [ ] Coach override of a suggested sheet recorded with optional reason\n\nSee `docs/specs/02-match-engine.md`."
+  },
+  {
+    "title": "REQ-06: Match event capture (goal, save, tackle, foul)",
+    "labels": [
+      "requirement",
+      "future",
+      "engine"
+    ],
+    "milestone": "Post-MVP",
+    "body": "## Requirement\n\nCapture key events from coaches in a match: goal, save, tackle, foul, with timestamps.\n\n## Source\n\nProduct Owner brief, requirement 6 — explicitly a later iteration, but to be borne in mind during MVP design.\n\n## Acceptance criteria\n\n- [ ] MatchEvent entity with type, elapsedMs, playerId, positionId\n- [ ] Event types: goal, save, tackle, foul (extensible)\n- [ ] One-tap capture during live play without disrupting the clock\n- [ ] Events attributable to the position the player held at that instant\n- [ ] Events reviewable and correctable post-match\n\n## MVP design constraint\n\nThe MVP clock is modelled as accumulated `elapsedMs` specifically so this is a pure addition requiring no migration of existing entities. Do not regress that property.\n\nSee `docs/specs/01-domain-model.md`."
+  },
+  {
+    "title": "REQ-07: Season fairness ledger with equal time allocation",
+    "labels": [
+      "requirement",
+      "mvp",
+      "engine",
+      "fairness"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nEach player gets an equal allocation of **total playing time** over a multi-match period or season, allowing anomalies to be fixed over time.\n\n## Source\n\nProduct Owner, in response to clarifying questions.\n\nPO correction (2026-09-17): *\"Fairness wasn't supposed to be per position, just total playing time. We are likely to lock players into certain positions or a couple of positions so their distribution will be higher into those affinities.\"*\n\nPO decision: goalkeeper time is excluded from the fairness measure entirely.\n\n## Acceptance criteria\n\n- [ ] Season entity grouping matches for a squad\n- [ ] Per-player season totals derived by folding all Appearances, never authored\n- [ ] Fairness balance computed as actual minus expected **total outfield** time\n- [ ] Outfield minutes summed across all positions; position plays no part in the calculation\n- [ ] **No fairness arithmetic and no anomaly flags on per-position distribution**\n- [ ] Goalkeeper minutes excluded from the fairness measure\n- [ ] A player keeping for part of a match accrues expected time scaled to their outfield-eligible portion\n- [ ] Expected time accrues only for matches where the player was available\n- [ ] Balances carry across matches within a season, reset between seasons\n- [ ] Mid-season joiners start at zero and accrue expected time from their first available match\n- [ ] Team-sheet builder sorts available squad most-owed first\n- [ ] Suggested sub schedule drives balances toward zero by adjusting **duration**, never by moving a player out of their preferred position\n- [ ] Projected balances shown before the coach confirms a plan\n\n## Notes\n\nPosition affinity is deliberate coach policy. Measuring fairness per position would generate false anomalies against the coach's own selection decisions — this is the defining constraint of the feature.\n\nSee `docs/specs/03-fairness-ledger.md`."
+  },
+  {
+    "title": "REQ-08: Dispute arbitration record and audit trail",
+    "labels": [
+      "requirement",
+      "mvp",
+      "fairness",
+      "data"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nData recorded and observed for fairness and dispute arbitration.\n\n## Source\n\nProduct Owner, in response to clarifying question on fair play time.\n\n## Acceptance criteria\n\n- [ ] Per-player record showing season totals (outfield = the fairness figure, GK separate), running balance match by match, and every individual Appearance with match, quarter, position, start, end and duration\n- [ ] Appearances correctable after the fact\n- [ ] Correction requires a mandatory note\n- [ ] Original values retained in a correction log; corrections never destructive\n- [ ] Ledger displays corrected figures but flags that corrections exist\n- [ ] Coach overrides of suggested plans recorded with reasons\n- [ ] Anomaly flags: persistent deficit, persistent surplus, correction cluster, short-handed match\n- [ ] **No** position-distribution or never-keeper flags — these would fight deliberate position affinities\n- [ ] Flags advisory only; nothing auto-corrected\n\n## Open question for PO\n\nIs CSV / printable export needed for MVP, or is on-screen review sufficient initially?\n\nSee `docs/specs/03-fairness-ledger.md`."
+  },
+  {
+    "title": "REQ-09: Squad and player management (GDPR-minimal)",
+    "labels": [
+      "requirement",
+      "mvp",
+      "data",
+      "gdpr"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nBuild a team of players, first names only for GDPR reasons. Squads of around 11 players with 7-a-side as the current setup.\n\n## Source\n\nProduct Owner brief.\n\n## Acceptance criteria\n\n- [ ] Create and edit squads\n- [ ] Add players with first name only\n- [ ] No fields for surname, DOB, contact details or photographs anywhere in the model or UI\n- [ ] Optional 2-character display suffix to disambiguate shared first names\n- [ ] Optional squad number\n- [ ] Players deactivatable without deletion, retaining ledger history\n- [ ] Per-match availability: available, absent, injured, unavailable\n- [ ] Squad size not hard-capped; 11 is typical, not enforced\n- [ ] Position affinities recordable per player (primary / secondary)\n- [ ] Players with no affinity treated as eligible for any outfield position\n- [ ] Affinities constrain suggestions only; manual assignment always permitted\n\n## Notes\n\nThe 2-character cap on the disambiguation suffix is deliberate — it prevents the field becoming a surname field by convention.\n\nSee `docs/specs/01-domain-model.md`."
+  },
+  {
+    "title": "REQ-10: Customisable match format and positions",
+    "labels": [
+      "requirement",
+      "mvp",
+      "data"
+    ],
+    "milestone": "MVP",
+    "body": "## Requirement\n\nPlayer positions relate to a customisable setup, currently 7-a-side.\n\n## Source\n\nProduct Owner brief.\n\n## Acceptance criteria\n\n- [ ] Format entity with name, on-field count and ordered position list\n- [ ] 7-a-side seeded as the default format\n- [ ] Position labels, kinds and ordering editable\n- [ ] Position list length must equal on-field count\n- [ ] At most one goalkeeper position per format\n- [ ] Format snapshotted onto a match at creation so later edits do not rewrite history\n- [ ] Pitch view lays out positions by sort order\n\nSee `docs/specs/01-domain-model.md`."
+  },
+  {
+    "title": "TECH-01: Expo + TypeScript project scaffold",
+    "labels": [
+      "tech",
+      "mvp",
+      "infra"
+    ],
+    "milestone": "MVP",
+    "body": "## Task\n\nScaffold the React Native + Expo application.\n\n## Acceptance criteria\n\n- [ ] Expo project with TypeScript in strict mode\n- [ ] Navigation configured\n- [ ] State management chosen and wired\n- [ ] Local persistence layer with a migration path\n- [ ] ESLint and Prettier configured\n- [ ] Test runner configured with a passing example test\n- [ ] `.gitignore` blocking common data-file patterns, so squad data cannot be committed accidentally\n- [ ] Runs on an Android device via Expo Go\n- [ ] README with setup and run instructions\n\n## Notes\n\niOS support is a stated future aspiration — avoid Android-only APIs in shared code without an abstraction."
+  },
+  {
+    "title": "TECH-02: Match engine core with full test suite",
+    "labels": [
+      "tech",
+      "mvp",
+      "engine",
+      "testing"
+    ],
+    "milestone": "MVP",
+    "body": "## Task\n\nImplement the match engine as pure TypeScript, independent of React, with comprehensive tests.\n\n## Acceptance criteria\n\n- [ ] Clock, quarters, Appearances, BenchStints and minutes accumulation implemented as pure functions over state\n- [ ] No React or platform dependencies in the engine module\n- [ ] Wall-clock derivation; no tick counting\n- [ ] Invariant tests: player continuity, quarter total reconciliation, no double-counting across substitutions\n- [ ] Worked fairness example from the spec encoded as an executable test\n- [ ] Test asserting fairness is position-independent: two players with identical total minutes in entirely different positions have identical balances\n- [ ] Test asserting GK minutes do not alter a player's fairness balance\n- [ ] Edge case tests: injury with no replacement, short-handed match, abandoned match, early quarter end, duplicate position assignment, correction applied after the fact\n- [ ] Property-based tests over random substitution sequences asserting invariants hold\n\n## Notes\n\nKeeping the engine pure is what makes the iOS port and the later events feature cheap, and makes the fairness maths verifiable without a device."
+  }
+]

@@ -1,0 +1,101 @@
+# Squad Roles
+
+Four roles, each a separate agent with its own charter, context and boundaries.
+Separation is deliberate: it creates the independent verification that makes
+output trustworthy.
+
+## Why separate agents rather than one capable one
+
+A single agent asked to spec, build and test will produce code that passes its
+own tests — because it wrote both from one interpretation. If that
+interpretation is wrong, nothing catches it. Separation means the QA agent reads
+the *acceptance criteria*, not the Engineer's reasoning, and can therefore
+disagree.
+
+This is the same principle as separating the person who deploys from the person
+who approves. It is not about capability; it is about independence.
+
+## The squad
+
+| Role | Owns | Hands off to | Never does |
+|---|---|---|---|
+| [Business Analyst](./business-analyst.md) | Specs, issues, acceptance criteria | Architect, Engineer | Write implementation code |
+| [Architect](./architect.md) | Technical design, ADRs, domain integrity | Engineer | Write feature code |
+| [Engineer](./engineer.md) | Implementation | QA | Write its own acceptance criteria |
+| [QA](./qa.md) | Verification, tests, edge cases | Product Owner | Fix the code it finds faults in |
+
+**Product Owner (you)** sits above all four: sets intent, approves specs,
+arbitrates trade-offs, merges.
+
+## The critical boundaries
+
+Three separations carry most of the value. If you keep only three rules, keep
+these:
+
+**1. The Engineer does not write its own acceptance criteria.**
+Otherwise it defines success as whatever it built.
+
+**2. QA does not fix what it finds.**
+A QA agent that fixes bugs starts optimising for fixable bugs and stops looking
+for design-level problems. It reports; the Engineer fixes.
+
+**3. The BA does not implement.**
+A BA that writes code starts writing specs that describe code it has already
+imagined, rather than the behaviour you actually asked for.
+
+## Handoff protocol
+
+Each handoff carries a defined payload. A handoff missing its payload is
+rejected rather than guessed at.
+
+```
+Product Owner  ──intent──▶  BA
+BA  ──draft spec──▶  Product Owner        [HARD GATE: approval]
+BA  ──approved spec──▶  Architect
+Architect  ──design + ADRs──▶  Product Owner   [HARD GATE if architectural]
+Architect  ──approved design──▶  BA
+BA  ──issues + acceptance criteria──▶  Engineer
+Engineer  ──implementation──▶  QA
+QA  ──verdict──▶  Product Owner           [HARD GATE: merge]
+QA  ──defects──▶  Engineer                [loop until clean]
+```
+
+### Handoff payloads
+
+| Handoff | Must include |
+|---|---|
+| BA → Architect | Approved spec, open questions, constraints |
+| Architect → BA | Design decisions, ADR references, technical constraints |
+| BA → Engineer | Issue, acceptance criteria, spec reference, out-of-scope note |
+| Engineer → QA | What changed, how to run it, deviations from spec and why |
+| QA → Engineer | Failing criterion, reproduction, expected vs actual |
+| QA → PO | Criteria met/unmet, risks accepted, recommendation |
+
+## Escalation
+
+Any role escalates to the Product Owner rather than guessing when it hits:
+
+- Ambiguity in the spec that changes behaviour
+- A trade-off between two stated requirements
+- Anything touching real player data or GDPR
+- Scope that appears to have grown
+- A spec that appears wrong once implementation has begun
+
+**Escalation is success, not failure.** An agent that escalates has caught
+something at the cheapest possible moment. This is stated in every role charter
+because the default agent behaviour is to guess confidently instead.
+
+## Running the squad
+
+These roles map to subagents. Two modes:
+
+**Sequential (default).** One role at a time, output reviewed between steps.
+Slower, maximum visibility — start here while you're learning the model.
+
+**Orchestrated.** A workflow runs several agents with defined handoffs, and you
+review at the gates. Faster, less visible. Move here once you trust the
+handoffs. Requires explicit opt-in — it can spawn many agents and consume
+significant budget, so it never happens implicitly.
+
+Given the educational goal, sequential is the right default. You see each
+handoff, which is where the model is actually learned.
