@@ -26,6 +26,8 @@ import {
 // Configuration
 // ============================================================================
 
+const MS_PER_MINUTE = 60_000;
+
 export interface MatchEngineConfig {
   nowFn?: () => Date; // Injected for testing
 }
@@ -73,8 +75,15 @@ export class MatchEngine {
   // ========================================================================
 
   /**
-   * Create a new match. Validates that quarterCount divides totalMinutes evenly
-   * (allows fractional minutes like 12.5 min quarters for 50-min match / 4).
+   * Create a new match (Spec 02, "Match configuration", issue #16).
+   *
+   * A configuration is valid when totalMinutes > 0, quarterCount > 0 and
+   * totalMinutes × 60 000 is divisible by quarterCount with no remainder, so
+   * every quarter's planned length is a whole number of milliseconds.
+   * Fractional-minute quarters are allowed (50/4 → 750 000 ms); 50/7 is not.
+   * Lengths are never rounded: quarters must sum exactly to the match length
+   * (invariant 1, ADR-003). An invalid configuration throws before any state
+   * is built, so no match is created.
    */
   createMatch(
     squadId: UUID,
@@ -89,16 +98,24 @@ export class MatchEngine {
     const totalMinutes = options.totalMinutes ?? 60;
     const quarterCount = options.quarterCount ?? 4;
 
-    // Validate: quarterMinutes must be a finite rational number
-    // i.e., totalMinutes % quarterCount must produce a rational result
-    // We allow any result that when expressed as a decimal has finite precision
-    const quarterMinutes = totalMinutes / quarterCount;
-    
-    // Check if it's a rational number (finite decimal representation)
-    // by verifying it's not Infinity, NaN, or irrational
-    if (!isFinite(quarterMinutes) || quarterMinutes <= 0) {
+    if (!(totalMinutes > 0)) {
       throw new MatchEngineError(
-        `Invalid match duration: totalMinutes (${totalMinutes}) / quarterCount (${quarterCount}) = ${quarterMinutes}`
+        `Invalid match configuration: totalMinutes (${totalMinutes}) must be positive ` +
+          `(quarterCount ${quarterCount})`
+      );
+    }
+    if (!(quarterCount > 0)) {
+      throw new MatchEngineError(
+        `Invalid match configuration: quarterCount (${quarterCount}) must be positive ` +
+          `(totalMinutes ${totalMinutes})`
+      );
+    }
+    const totalMs = totalMinutes * MS_PER_MINUTE;
+    if (totalMs % quarterCount !== 0) {
+      throw new MatchEngineError(
+        `Invalid match configuration: totalMinutes (${totalMinutes}) over quarterCount ` +
+          `(${quarterCount}) does not give a whole number of milliseconds per quarter ` +
+          `(${totalMs} ms ÷ ${quarterCount})`
       );
     }
 
@@ -133,6 +150,15 @@ export class MatchEngine {
       benchStints: [],
       playerAvailability: new Map(),
     };
+  }
+
+  /**
+   * Planned length of every quarter in ms (Spec 02 term `plannedQuarterMs`):
+   * totalMinutes × 60 000 / quarterCount. Derived, never stored. createMatch
+   * guarantees this is a whole number of ms.
+   */
+  getPlannedQuarterMs(match: Match): number {
+    return (match.totalMinutes * MS_PER_MINUTE) / match.quarterCount;
   }
 
   // ========================================================================
