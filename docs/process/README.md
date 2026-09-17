@@ -5,6 +5,10 @@ How work moves from intent to merged code, and where you sit in it.
 The machinery behind the gates — where work runs, branches and PRs, the
 decision queue, defects — is in [operating-model.md](./operating-model.md).
 
+**What order the work happens in** — the six stages between source and an app on
+a phone, the three delivery slices, and the rulings that set their sequence — is
+in [delivery-slices.md](./delivery-slices.md).
+
 ---
 
 ## The cycle
