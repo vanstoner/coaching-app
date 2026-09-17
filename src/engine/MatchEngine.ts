@@ -176,8 +176,10 @@ export class MatchEngine {
    * - the quarter is pending;
    * - no other quarter is running (a manually paused quarter is still running);
    * - quarter N-1 has ended (Q1 has no predecessor);
-   * - exactly onFieldCount players assigned to distinct positions.
-   * A sequencing rejection throws before any state is touched.
+   * - exactly onFieldCount players assigned to distinct positions, every
+   *   position in the format.
+   * Every rejection throws before any state is touched: all validation runs
+   * first, then the writes are applied together (DEF-003, #32).
    */
   startQuarter(
     state: MatchState,
@@ -218,47 +220,47 @@ export class MatchEngine {
     }
 
     // Assign distinct players to positions
-    const playerIds = new Set(teamSheet.values());
-    if (playerIds.size !== teamSheet.size) {
+    const selectedPlayerIds = new Set(teamSheet.values());
+    if (selectedPlayerIds.size !== teamSheet.size) {
       throw new MatchEngineError('Same player assigned to multiple positions');
     }
 
-    const matchElapsedMs = this.getMatchElapsedMs(state);
-    const now = this.now();
-
-    // Update quarter
-    quarter.status = 'running';
-    quarter.startedAt = now.toISOString();
-    quarter.runningSinceWallClock = now.toISOString();
-    quarter.accumulatedMs = 0;
-
-    // Open Appearance for each on-field player
+    // Resolve every position before anything is written (DEF-003, #32).
+    const assignments: { positionId: UUID; playerId: UUID; positionKind: PositionKind }[] = [];
     for (const [positionId, playerId] of teamSheet) {
       const position = format.positions.find((p) => p.id === positionId);
       if (!position) {
         throw new MatchEngineError(`Position ${positionId} not found in format`);
       }
-
-      state.appearances.push({
-        id: uuid(),
-        matchId: state.match.id,
-        quarterId: quarter.id,
-        playerId,
-        positionId,
-        positionKind: position.kind,
-        startElapsedMs: matchElapsedMs,
-        endElapsedMs: null,
-        endReason: null,
-        corrected: false,
-        correctionNote: null,
-      });
+      assignments.push({ positionId, playerId, positionKind: position.kind });
     }
 
-    // Open BenchStint for each available, unselected player
-    const selectedPlayerIds = new Set(teamSheet.values());
+    // Validation complete. Nothing above writes to state. New checks belong
+    // above this line; state is written only in the final block below.
+
+    const matchElapsedMs = this.getMatchElapsedMs(state);
+    const now = this.now();
+
+    // Build the new intervals, then apply every write together.
+    const appearances: Appearance[] = assignments.map(({ positionId, playerId, positionKind }) => ({
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      playerId,
+      positionId,
+      positionKind,
+      startElapsedMs: matchElapsedMs,
+      endElapsedMs: null,
+      endReason: null,
+      corrected: false,
+      correctionNote: null,
+    }));
+
+    // A BenchStint for each available, unselected player
+    const benchStints: BenchStint[] = [];
     for (const [playerId, status] of state.playerAvailability) {
       if (status === 'available' && !selectedPlayerIds.has(playerId)) {
-        state.benchStints.push({
+        benchStints.push({
           id: uuid(),
           matchId: state.match.id,
           quarterId: quarter.id,
@@ -269,6 +271,12 @@ export class MatchEngine {
       }
     }
 
+    quarter.status = 'running';
+    quarter.startedAt = now.toISOString();
+    quarter.runningSinceWallClock = now.toISOString();
+    quarter.accumulatedMs = 0;
+    state.appearances.push(...appearances);
+    state.benchStints.push(...benchStints);
     state.match.status = 'in_progress';
   }
 
