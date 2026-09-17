@@ -28,9 +28,22 @@ replaces the earlier rule that `totalMinutes` must divide evenly by
 
 A configuration is **valid** when all of these hold:
 
-1. `totalMinutes` is positive (greater than zero);
-2. `quarterCount` is positive (greater than zero);
-3. `totalMinutes × 60 000` is divisible by `quarterCount` with no remainder.
+1. `totalMinutes` is a **whole number** of minutes;
+2. `totalMinutes` is between **20 and 120** inclusive;
+3. `quarterCount` is **exactly 2 (halves) or 4 (quarters)**;
+4. `totalMinutes × 60 000` is divisible by `quarterCount` with no remainder.
+
+> **Rules 1–3 tightened 2026-09-17 (#19).** They previously read only
+> *"`totalMinutes` is positive"* and *"`quarterCount` is positive"*, which
+> accepted nonsense: 40 minutes over 2.5 quarters built two quarters totalling
+> 1 920 000 ms, and 50 over 0.5 built a match with **zero** quarters. QA raised
+> this on PR #17 and it went to `main` with #15 as a known open item. The bounds
+> come from [Spec 01 § Match length](./01-domain-model.md#match-length), which
+> also explains why this is a sanity check rather than an FA rulebook.
+>
+> Rule 3 also records that matches are played in **quarters or halves** (PO,
+> 2026-09-17). The field is still named `quarterCount`; a rename to
+> `periodCount` is proposed with the ADR-007 reshape.
 
 Then `plannedQuarterMs = totalMinutes × 60 000 / quarterCount`, a whole number
 of milliseconds.
@@ -340,8 +353,9 @@ with a clear message naming the unfilled positions.
    [Ending a quarter](#ending-a-quarter)); status → `ended`. The clock is not
    frozen by any timer or threshold — only by this action.
 2. Close every open Appearance at the effective end, with `endReason: quarter_end`.
-3. Close every open vacancy at the effective end (once vacancy records exist —
-   see [Invariants](#invariants-asserted-in-tests)).
+3. Close every open vacancy at the effective end
+   ([Spec 01 § Vacancy](./01-domain-model.md#vacancy)). Nothing creates one
+   before REQ-04, so today this step is a no-op.
 4. Close every open BenchStint at the effective end.
 5. Cancel any pending quarter-end notification for this quarter.
 6. Recompute totals and present the **next quarter's planned team sheet**
@@ -354,8 +368,10 @@ its planned length:
 `sum(Appearance durations) + sum(vacancy durations) === actualQuarterElapsedMs × onFieldCount`
 
 where `actualQuarterElapsedMs` is the quarter's elapsed time at its effective
-end. The check is strict and always enforced; the test suite asserts it. Until
-Spec 01 defines vacancy records, the vacancy term is zero. See
+end. The check is strict and always enforced; the test suite asserts it.
+Vacancy records are defined in
+[Spec 01 § Vacancy](./01-domain-model.md#vacancy) (added with #19); the term is
+zero only while a quarter has no vacancies. See
 [Invariants](#invariants-asserted-in-tests) for the full statement.
 
 ## Ending a quarter
@@ -459,10 +475,12 @@ Refined by the PO rulings on issue #21 (2026-09-17, open question 12):
   ruling 12a). It cannot be changed while a quarter is running **nor between
   quarters** of the same match; an attempt is rejected and the match keeps its
   copied value.
-- The field that holds the copied margin on the match record belongs to
-  **Spec 01**, and is added in the Spec 01 amendment that goes with the ADR
-  review (tracked with #19), as confirmed by the PO on issue #21. Spec 01 is not
-  edited in this change.
+- The field that holds the copied margin on the match record is
+  **`Match.marginMs`**, defined in [Spec 01 § Match](./01-domain-model.md#match).
+  The squad setting it is copied from is **`Squad.marginMs`**
+  ([Spec 01 § Squad](./01-domain-model.md#squad)). Both were added by the Spec 01
+  amendment that went with the ADR review (#19, 2026-09-17), resolving the note
+  that previously stood here.
 - One margin value drives the quarter-end prompt (and its repeats), the early-end
   confirmation and the deviation warning. There are not separate margins for
   each.
@@ -719,9 +737,10 @@ repeating notifications once per margin. No ADR is written in this change.
 | Sub recorded at 07:00; prompt at 11:00; coach taps **Time of last recorded event** at 11:10 | 420 000 | No (backdated choice, issue #26) | Yes | Yes (180 s) | 2 940 000 |
 | Sub recorded at 07:00; bench review opened at 10:20 shows the quarter-end prompt; coach taps **Time of last recorded event** | 420 000 | No (backdated choice, issue #26) | Yes (trigger 4) | Yes (180 s) | 2 940 000 |
 
-**With a vacancy** (applies once Spec 01 defines vacancy records; until then the
-vacancy term is zero): a player is injured at 06:00 with no replacement, and the
-coach ends the quarter at 10:00 (600 000).
+**With a vacancy** (vacancy records are defined in
+[Spec 01 § Vacancy](./01-domain-model.md#vacancy); nothing creates one until
+REQ-04): a player is injured at 06:00 with no replacement, and the coach ends
+the quarter at 10:00 (600 000).
 
 - Appearances: 6 × 600 000 + 360 000 = 3 960 000.
 - Vacancy: 600 000 − 360 000 = 240 000.
@@ -801,14 +820,20 @@ the whole quarter. A player stopping being available mid-quarter is **deferred
 to REQ-04** (substitutions and injuries) per the PO ruling on open question 8
 (PR #20 comment); it is not specified here.
 
-**Vacancy term until Spec 01 is amended.** Per the PO ruling on open question 9
-(PR #20 comment): *"**#13 proceeds now** with the actual-time check and no
-vacancy term (zero until vacancies exist). **Spec 01 is amended as part of the
-ADR review (#19)**, because ADR-007 would reshape those records anyway."* Until
-Spec 01 defines vacancy records (tracked with #19), `sum(vacancy durations)` is
-**zero** and identity 1 is asserted as
-`sum(Appearance durations) === actualQuarterElapsedMs × onFieldCount`. Spec 01
-is not edited in this change.
+**Vacancy term — now defined.** Per the PO ruling on open question 9 (PR #20
+comment): *"**#13 proceeds now** with the actual-time check and no vacancy term
+(zero until vacancies exist). **Spec 01 is amended as part of the ADR review
+(#19)**, because ADR-007 would reshape those records anyway."*
+
+That amendment has landed. [Spec 01 § Vacancy](./01-domain-model.md#vacancy)
+defines vacancy records, so `sum(vacancy durations)` is a **real term** and
+identity 1 is asserted in full:
+`sum(Appearance durations) + sum(vacancy durations) === actualQuarterElapsedMs × onFieldCount`.
+
+The engine shipped in #15 has no vacancies yet — nothing can create one until
+REQ-04 (substitutions and injuries) — so the term evaluates to zero in every
+current test. The difference is that it is now zero *because there are no
+vacancies*, not because the concept is undefined.
 
 Subtracting 1 from 2 gives a consistency cross-check:
 `sum(BenchStint durations) === actualQuarterElapsedMs × (availablePlayerCount − onFieldCount) + sum(vacancy durations)`.
@@ -867,6 +892,7 @@ actually defensible.
 | Starting a quarter out of order (quarter N−1 not `ended`, e.g. Q3 while Q2 is `pending`) | Rejected with a clear message; match state unchanged (no status, anchor or interval changes). Issue #24 (F1). |
 | Starting a quarter while another quarter is running (e.g. Q2 while Q1 is `running`, including manually paused) | Rejected with a clear message; match state unchanged. Issue #24 (F2). |
 | Match configured with `totalMinutes × 60 000` not divisible by `quarterCount` (e.g. 50/7), or either value zero or negative | Rejected with a clear message naming the values; no match created. Fractional whole-ms quarter lengths (e.g. 50/4 → 750 000) are accepted. Issue #16. See [Match configuration](#match-configuration). |
+| Match configured with a non-whole `totalMinutes` (e.g. 40.5), `totalMinutes` outside 20–120, or `quarterCount` not 2 or 4 (e.g. 2.5, 0.5, 3) | Rejected with a clear message naming the values; no match created. Closes the gap QA raised on PR #17. Issue #19. |
 | Same player assigned to two positions | Rejected by the engine with a validation error. |
 | Clock adjusted after the fact | Treated as a correction: requires a note, flagged in the ledger. |
 
@@ -880,6 +906,7 @@ actually defensible.
 | 2026-09-17 | Open question 13 moved into the body as rules: a fresh launch always shows a prompt; return from background below planned + margin shows no prompt, at or beyond it shows exactly one. The overrun prompt and the Match in progress "when did it end?" question merged into one quarter-end prompt, described once, with three triggers (due time, fresh launch, return from background past the threshold) and one choice set (Ended at planned time / Time of last recorded event / Ended just now / Still playing (resume)); Q10 repeat timing and Q11 hiding and floor rules carried over. Cross-references, worked examples and edge cases updated. New open question 14 raised. | PO ruling comment on PR #23 |
 | 2026-09-17 | Quarters are strictly sequential: quarter N starts only when N−1 is ended, at most one quarter runs at a time; out-of-order or concurrent starts rejected with state unchanged. Defined "current quarter" and replaced the ambiguous `q.index <= current` match-elapsed formula with the sum over started quarters, with a worked example for running, between-quarters and after-final states. Quarter start step 2 and abandoned-match row cross-referenced; two edge-case rows added. New open question 15 raised. | Acceptance criteria of issue #24 (DEF-002), agreed by the PO when confirming the defect (2026-09-17) |
 | 2026-09-17 | Open question 14 moved into the body as rules: return from background with no quarter running shows no prompt, only the next quarter's team sheet (item 1); the bench / team-sheet review offer is the single quarter-end prompt past planned length, with its choices, hiding rules and last-event floor (item 2, new trigger 4); a backdated choice needs no early-end confirmation but the deviation warning still applies (item 3). Worked examples, edge cases and cross-references updated. New open question 16 raised. | PO ruling comment on issue #26 |
+| 2026-09-17 | Validity rule tightened: `totalMinutes` whole and within 20–120, `quarterCount` exactly 2 or 4 — closing the arbitrary-input gap QA raised on PR #17 and recording that matches are played in quarters or halves. Vacancy records now defined in Spec 01, so the vacancy term is real; the margin field pointers resolve to `Squad.marginMs` / `Match.marginMs`. | PO rulings, #19 |
 | 2026-09-17 | Added Match configuration: fractional quarter lengths allowed (e.g. 50/4 → 750 000 ms); a configuration is valid when `totalMinutes` and `quarterCount` are positive and `totalMinutes × 60 000` is divisible by `quarterCount`, otherwise rejected with a clear message and no match created; rounding rejected because of invariant 1. Worked examples (40/4, 50/4, 60/4, 40/3, 50/3 valid; 50/7, zero and negative rejected); `plannedQuarterMs` term and an edge-case row updated. | PO ruling on issue #16 (fractional quarters allowed); whole-millisecond validity rule proposed in the latest issue #16 comment, confirmed at this PR's approval gate |
 | 2026-09-17 | Open questions 15 and 16 moved into the body as rules: abandoning a match with a quarter running ends that quarter through the single quarter-end prompt (new trigger 5, same choices, hiding rules and last-event floor), the match becomes `abandoned` and no further quarters can start (Q15); returning from background with no quarter able to start (after the final quarter or abandonment) shows the match summary with no prompt (Q16). New section Abandoning a match with worked example; current-quarter definition, match-elapsed table, triggers, edge cases and cross-references updated. New open questions 17 and 18 raised. | PO ruling on issue #29 |
 

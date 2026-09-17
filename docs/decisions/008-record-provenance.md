@@ -1,8 +1,8 @@
 # ADR-008: Every event records who, where and when it was recorded
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-17
-**Decision maker:** Architect, awaiting Product Owner approval
+**Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 
 ## Context
 
@@ -26,12 +26,26 @@ Every event (ADR-007) carries an envelope:
 | `eventId` | UUID, generated on the device (already the convention) |
 | `actorId` | The coach who recorded it. A local coach profile on single-device installs |
 | `deviceId` | Stable per-install UUID |
-| `recordedAt` | Wall-clock time the event was written |
+| `recordedAt` | Wall-clock time the event was written. Audit only — never feeds minutes |
+| `clockAnchorAt` | Wall-clock reading of the clock-owning device, present **only** on clock-anchoring events (`QuarterStarted`, `ClockPaused`, `ClockResumed`, `QuarterEnded`). Null everywhere else |
 | `schemaVersion` | Event schema version, for replay across app versions |
 
-`recordedAt` is distinct from match-time fields inside the event (e.g. the
-elapsed time a substitution took effect). A correction recorded on Tuesday for a
-Saturday match has both.
+### `recordedAt` vs `clockAnchorAt` (resolves the ADR-007/008/009 overlap)
+
+These were conflated in the first draft, which left it unclear which timestamp
+elapsed time is derived from. They are separate fields with separate jobs:
+
+- **`clockAnchorAt`** is the anchor ADR-002 derives elapsed time from. It is an
+  absolute wall-clock reading, and anchors are **the only absolute values that
+  feed minutes**. Under ADR-009 every anchor in one match comes from the same
+  device, so anchors are only ever subtracted from other anchors on the same
+  clock.
+- **`recordedAt`** is when the row was written. It never feeds a minute. A
+  correction recorded on Tuesday for a Saturday match has a Tuesday
+  `recordedAt` and no `clockAnchorAt` at all.
+
+Everything downstream of an anchor — appearance durations, quarter elapsed,
+total minutes — is **elapsed milliseconds**, not wall-clock. See ADR-009 §3.
 
 **Coach identity is not child data** but is still personal data. `actorId`
 refers to a coach profile holding a display name only. No coach email, phone or
@@ -48,6 +62,8 @@ IDs remain client-generated UUIDs. No autoincrement or sequence keys anywhere.
 
 **Harder:**
 - A lightweight coach profile is needed at first run (a name). Small UX cost.
+- Two timestamp fields instead of one. The alternative was ambiguity about which
+  one minutes come from, which is worse.
 
 **Accepted:**
 - On a single-device install `deviceId` and `actorId` are constant. That is the

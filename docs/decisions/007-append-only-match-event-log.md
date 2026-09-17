@@ -1,12 +1,30 @@
 # ADR-007: Engine records an append-only event log; intervals are a checked projection
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-17
-**Decision maker:** Architect, awaiting Product Owner approval
+**Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 
-**Relationship:** Refines [ADR-003](./003-intervals-as-source-of-truth.md). If
-accepted, ADR-003 is superseded by a restated version that keeps its guarantees
-and names events as the persisted record.
+**Relationship:** **Supersedes [ADR-003](./003-intervals-as-source-of-truth.md)**
+as of the Product Owner's approval on 2026-09-17 (#19). Every guarantee ADR-003
+established is kept — Appearances remain the audit unit, minutes are still
+derived by folding, no running total is ever authoritative. What changes is that
+the persisted record is the event log and Appearances become a projection of it.
+Per the immutability rule in the [ADR index](./README.md), ADR-003's status line
+is updated and its body is left untouched; what did and did not change is
+recorded here instead:
+
+| ADR-003 guarantee | Under ADR-007 |
+|---|---|
+| Appearances are the atomic audit unit | **Kept.** Still the unit a dispute is settled on |
+| All minutes derived by folding; no authoritative running total | **Kept.** Strengthened — the fold now starts from events |
+| Bench time explicit as BenchStints, never inferred by subtraction | **Kept** |
+| Corrections explicit, noted, non-destructive | **Kept.** Structural rather than conventional |
+| Closed intervals carry checkable invariants | **Kept.** This is why "raw event log with no projection" is still rejected |
+| Appearances are the **persisted** record, mutated in place on close | **Changed.** The event log is persisted; Appearances are a pure projection |
+
+Only the last row changes. "Append-only" becomes true at field level rather than
+only at row level, which is what ADR-003 claimed but could not deliver while an
+open Appearance had its end time written into it on close.
 
 ## Context
 
@@ -66,6 +84,12 @@ checkable invariants. That reasoning still holds and is kept.
 
 **Accepted:**
 - Two representations (events and projections) to understand instead of one.
+- **REQ-01 is reshaped before REQ-02 starts** (PO ruling, 2026-09-17, #19). The
+  engine merged in #15 is green and passing 66 tests; that work is not wasted —
+  its invariants, validation rules and test cases carry over — but the command
+  surface becomes `(state, command, clock) → events[]` and the projections are
+  refolded. This is accepted as cheapest now, before storage and UI depend on
+  the current shape.
 
 ## Alternatives considered
 

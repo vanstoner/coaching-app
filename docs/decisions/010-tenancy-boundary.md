@@ -1,8 +1,8 @@
 # ADR-010: Squad is the data-ownership boundary
 
-**Status:** Proposed — **needs Product Owner input** (see open question)
+**Status:** Accepted
 **Date:** 2026-09-17
-**Decision maker:** Architect, awaiting Product Owner approval
+**Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 
 ## Context
 
@@ -27,11 +27,15 @@ off `squadId`. `Format` and `Position` are not squad-scoped.
    1) stays out of scope; if needed it is modelled as a separate player record
    per squad, never a shared one.
 
-### Open question for the Product Owner
+### Product Owner ruling, 2026-09-17 (#19)
 
-Is the likely sharing scenario **coaches of one squad** (head + assistant) or
-**a club seeing all its squads**? This ADR assumes the former. If it is the
-latter, decision 3 still holds but a club-level read model needs designing.
+The open question — sharing between **coaches of one squad** or **a club seeing
+all its squads** — is ruled: **coaches of one squad**. The scenario this design
+serves is a head coach and an assistant sharing one squad's data. No club-level
+read model is designed, and none is implied by anything in this ADR.
+
+Decision 3 is therefore unchanged and load-bearing: if clubs ever arrive they
+group squads, they do not own their data.
 
 ## Consequences
 
