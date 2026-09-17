@@ -67,9 +67,12 @@ QA  ──defects──▶  Engineer                [loop until clean]
 | BA → Architect | Approved spec, open questions, constraints |
 | Architect → BA | Design decisions, ADR references, technical constraints |
 | BA → Engineer | Issue, acceptance criteria, spec reference, out-of-scope note |
-| Engineer → QA | What changed, how to run it, deviations from spec and why |
-| QA → Engineer | Failing criterion, reproduction, expected vs actual |
-| QA → PO | Criteria met/unmet, risks accepted, recommendation |
+| Engineer → QA | PR link, what changed, how to run it, **pasted test output against the PR head**, deviations from spec and why |
+| QA → Engineer | Failing criterion, reproduction, expected vs actual (as a PR comment or `DEF-NNN` issue) |
+| QA → PO | Criteria met/unmet, **pasted output of QA's own run**, risks accepted, recommendation |
+
+A handoff that asserts a result without the output is rejected. See
+[operating-model.md](../process/operating-model.md).
 
 ## Escalation
 

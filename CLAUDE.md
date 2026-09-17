@@ -39,6 +39,26 @@ If an implementation would break one of these, stop and escalate.
 - **Update the spec when behaviour changes.** A decision that lives only in a
   chat log is lost at the end of the session.
 
+## How we operate
+
+Full model: `docs/process/operating-model.md` (decided in OMP-002). The rules
+that matter every session:
+
+- **Repo work happens only in Claude Code, in this repo.** Never hand Rob
+  manual steps — no "copy this file", no "run these git commands".
+- **Claude does all git.** Branch per unit of work, commit, push, open a PR.
+  Nothing goes to `main` directly. Claude merges only when Rob approves.
+- **PRs carry evidence.** Paste `npx vitest run` and
+  `python3 docs/process/validate-docs.py` output against the PR head. Partial
+  work is a draft PR titled `WIP:` listing what's missing.
+- **Decisions queue as GitHub issues labelled `decision-needed`**; rulings are
+  recorded in the spec/ADR/OMP they affect. `/queue` presents the batch.
+- **Report only what you verified in this session.** Counts, statuses, file
+  paths and "scheduled"/"running" claims must come from a tool result.
+- **All roles run on Opus.** Use the role agents in `.claude/agents/`.
+- **End of session:** every decision reached a document or issue; every change
+  is on a pushed branch; nothing is left for Rob to do by hand.
+
 ## Squad roles
 
 Four separate agents, charters in `docs/roles/`. Key separations:

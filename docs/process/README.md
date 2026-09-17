@@ -2,6 +2,9 @@
 
 How work moves from intent to merged code, and where you sit in it.
 
+The machinery behind the gates — where work runs, branches and PRs, the
+decision queue, defects — is in [operating-model.md](./operating-model.md).
+
 ---
 
 ## The cycle
@@ -115,12 +118,12 @@ read the spec faithfully reintroduces the bug.
 An issue is done when **all** hold:
 
 - [ ] Every acceptance criterion objectively met
-- [ ] Tests written and passing
-- [ ] QA verified independently
+- [ ] Tests written and passing, with run output pasted in the PR
+- [ ] QA verified independently, with its own run output
 - [ ] No unresolved escalations
 - [ ] Spec updated if behaviour changed during implementation
 - [ ] ADR written if a technical decision was made
-- [ ] Product Owner has reviewed and merged
+- [ ] Product Owner has approved the PR and Claude has merged it
 
 ---
 

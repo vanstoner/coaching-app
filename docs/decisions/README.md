@@ -35,6 +35,12 @@ state management does.
 | [003](./003-intervals-as-source-of-truth.md) | Appearances as the source of truth for minutes | Accepted | 2026-09-17 |
 | [004](./004-fairness-is-position-independent.md) | Fairness measured on total time, not per position | Accepted | 2026-09-17 |
 | [005](./005-deterministic-docs-build.md) | Documentation site built deterministically | Accepted | 2026-09-17 |
+| [006](./006-sync-ready-not-hosted.md) | Build the spine sync-ready; do not build hosting yet | Proposed | 2026-09-17 |
+| [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Proposed | 2026-09-17 |
+| [008](./008-record-provenance.md) | Every event records who, where and when | Proposed | 2026-09-17 |
+| [009](./009-single-clock-owner-per-match.md) | One device owns a match's clock | Proposed | 2026-09-17 |
+| [010](./010-tenancy-boundary.md) | Squad is the data-ownership boundary | Proposed | 2026-09-17 |
+| [011](./011-player-data-stays-on-device.md) | Player data stays on device until a hosting ADR is approved | Proposed | 2026-09-17 |
 
 ## Template
 
