@@ -1,0 +1,28 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+.expo/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Real squad data must never be committed (see CLAUDE.md → Data protection).
+# This is a guard, not the rule.
+*.squad.json
+*squad-data*
+*.sqlite
+*.sqlite3
+*.db
+exports/
+backups/
