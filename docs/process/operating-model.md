@@ -36,6 +36,63 @@ issue ──▶ branch ──▶ commits ──▶ PR (with evidence) ──▶ 
 | PR body links its issue | `Fixes #NN` so closure is automatic and traceable |
 | Merge on PO approval | PO says "approve #NN" (chat or PR review); Claude merges (squash) and deletes the branch |
 
+## 2a. How the Product Owner interacts
+
+Decided 2026-09-17. The binding constraint on this project is **the PO's
+response time, not agent throughput** — so the interface optimises for the
+fewest seconds between "a decision is needed" and "a decision is made", while
+keeping the detail one click away.
+
+Three activities, three surfaces. Using one surface for all three is the mistake
+this section exists to prevent.
+
+| Activity | Surface | Why |
+|---|---|---|
+| **Deciding direction** | Options presented in chat, PO picks | Arrives *before* the work, when changing course is free |
+| **Approving finished work** | PO says `approve <n>` in chat; Claude merges | The PO never touches the GitHub merge button |
+| **Interrogating detail** | PR body, issue, repo docs — always linked | An archive and a reference, never the entry point |
+
+### Every decision put to the PO uses the same shape
+
+1. **What** is being decided, in one line
+2. **The options**, each with its consequence
+3. **A recommendation**, with reasoning — never a neutral menu
+4. **Cost to reverse** — cheap decisions should feel cheap
+5. **What it unblocks**
+6. **A link** to the full detail
+
+A decision presented without a recommendation is an unfinished handoff. The PO
+is not there to do the analysis; he is there to rule on it.
+
+### GitHub issues are the queue, not the interface
+
+Issues are where a decision **waits** so it survives between sessions and
+resurfaces in `/queue`. They are not where a decision is **made** — navigating
+to GitHub, reading prose and typing a reply is high friction per decision.
+`/queue` pulls issues *into* the conversation; keep that direction of travel.
+
+A decision that lives only in a spec's open-questions list will go quiet. If it
+needs the PO, it gets an issue labelled `decision-needed`.
+
+### The known weakness
+
+This works while a session is running. It has **no path for a decision that
+arrives between sessions** — overnight CI, or async work needing a ruling. For a
+spare-time project where sessions are the interaction model this is acceptable,
+and it is recorded here rather than hidden.
+
+### The gate is a convention, not an enforcement
+
+GitHub attributes every commit, PR and comment here to the PO's own account, so
+nothing at the platform level distinguishes agent work from human work or
+enforces the approval gate. The `Co-Authored-By` trailer is the only marker, and
+it is added by hand.
+
+Formalising this — CODEOWNERS, branch protection and per-role identities — is
+tracked in **#38**, deliberately deferred. Until it lands, the approval gate
+holds because Claude honours it, which is worth stating plainly rather than
+implying the platform is enforcing something it is not.
+
 ## 3. Where decisions live
 
 One source of truth: **GitHub for the queue, repo docs for the substance.**

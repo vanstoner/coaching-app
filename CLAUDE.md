@@ -64,6 +64,17 @@ that matter every session:
   work is a draft PR titled `WIP:` listing what's missing.
 - **Decisions queue as GitHub issues labelled `decision-needed`**; rulings are
   recorded in the spec/ADR/OMP they affect. `/queue` presents the batch.
+- **How Rob interacts** (decided 2026-09-17, full detail in
+  `docs/process/operating-model.md` §2a). His response time is the bottleneck,
+  not agent throughput:
+  - **Decide** — put options to him in chat, *before* the work. Every decision
+    carries: what, the options, **a recommendation with reasoning**, cost to
+    reverse, what it unblocks, and a link. A neutral menu with no
+    recommendation is an unfinished handoff.
+  - **Approve** — he says `approve <n>`; Claude merges. He never touches the
+    GitHub merge button.
+  - **Interrogate** — PR bodies, issues and repo docs, always linked, never the
+    entry point. Issues are the queue, not the interface.
 - **Report only what you verified in this session.** Counts, statuses, file
   paths and "scheduled"/"running" claims must come from a tool result.
 - **All roles run on Opus.** Use the role agents in `.claude/agents/`.
