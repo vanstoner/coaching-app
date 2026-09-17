@@ -136,14 +136,87 @@ describe('REQ-01: Match clock with quarter management', () => {
       expect(state.match.totalMinutes).toBe(60);
     });
 
-    it('rejects combinations that do not divide evenly', () => {
+  });
+
+  // ========================================================================
+  // Spec 02 "Match configuration" (issue #16): whole-millisecond validity rule
+  // Valid when totalMinutes > 0, quarterCount > 0, and
+  // totalMinutes × 60 000 is divisible by quarterCount.
+  // ========================================================================
+
+  describe('Match configuration: whole-millisecond validity rule (Spec 02, #16)', () => {
+    const accepted: Array<[number, number, number]> = [
+      // [totalMinutes, quarterCount, plannedQuarterMs]
+      [40, 4, 600_000],
+      [50, 4, 750_000],
+      [60, 4, 900_000],
+      [40, 3, 800_000],
+      [50, 3, 1_000_000],
+    ];
+
+    it.each(accepted)(
+      'accepts %i/%i with plannedQuarterMs = %i',
+      (totalMinutes, quarterCount, expectedPlannedQuarterMs) => {
+        const state = engine.createMatch(squadId, format.id, { totalMinutes, quarterCount });
+        expect(state.match.totalMinutes).toBe(totalMinutes);
+        expect(state.match.quarterCount).toBe(quarterCount);
+        expect(state.quarters).toHaveLength(quarterCount);
+        expect(engine.getPlannedQuarterMs(state.match)).toBe(expectedPlannedQuarterMs);
+      }
+    );
+
+    it.each(accepted)(
+      '%i/%i: plannedQuarterMs × quarterCount === totalMinutes × 60 000 exactly',
+      (totalMinutes, quarterCount) => {
+        const state = engine.createMatch(squadId, format.id, { totalMinutes, quarterCount });
+        const planned = engine.getPlannedQuarterMs(state.match);
+        expect(Number.isInteger(planned)).toBe(true);
+        expect(planned * quarterCount).toBe(totalMinutes * 60_000);
+      }
+    );
+
+    const rejected: Array<[number, number, string]> = [
+      [50, 7, '3 000 000 ÷ 7 is not a whole number of ms'],
+      [0, 4, 'totalMinutes not positive'],
+      [-40, 4, 'totalMinutes not positive'],
+      [40, 0, 'quarterCount not positive'],
+      [40, -4, 'quarterCount not positive'],
+    ];
+
+    it.each(rejected)('rejects %i/%i (%s)', (totalMinutes, quarterCount) => {
       expect(() => {
-        engine.createMatch(squadId, format.id, {
-          totalMinutes: 50,
-          quarterCount: 4,
-        });
+        engine.createMatch(squadId, format.id, { totalMinutes, quarterCount });
       }).toThrow(MatchEngineError);
     });
+
+    it.each(rejected)(
+      'rejecting %i/%i creates no match (throws before returning any state)',
+      (totalMinutes, quarterCount) => {
+        let result: unknown = undefined;
+        expect(() => {
+          result = engine.createMatch(squadId, format.id, { totalMinutes, quarterCount });
+        }).toThrow(MatchEngineError);
+        expect(result).toBeUndefined();
+      }
+    );
+
+    it.each(rejected)(
+      'rejection message for %i/%i names both values',
+      (totalMinutes, quarterCount) => {
+        let message = '';
+        try {
+          engine.createMatch(squadId, format.id, { totalMinutes, quarterCount });
+        } catch (e) {
+          message = (e as Error).message;
+        }
+        // Each value must appear as a whole number next to its field name, so
+        // "0" is not satisfied merely by the "0" inside "40".
+        const names = (field: string, value: number) =>
+          new RegExp(`${field}[^0-9-]*${String(value)}(?![0-9])`);
+        expect(message).toMatch(names('totalMinutes', totalMinutes));
+        expect(message).toMatch(names('quarterCount', quarterCount));
+      }
+    );
   });
 
   // ========================================================================
