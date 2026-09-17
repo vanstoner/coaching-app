@@ -266,10 +266,15 @@ export class MatchEngine {
     quarter.status = 'ended';
     quarter.endedAt = this.now().toISOString();
 
+    // Match-elapsed at the whistle. Computed once, after the quarter is frozen:
+    // getMatchElapsedMs now includes this quarter's elapsed, so nothing is added
+    // to it (adding elapsedMs here double-counted the quarter — DEF-001, #13).
+    const endElapsedMs = this.getMatchElapsedMs(state);
+
     // Close all open Appearances
     for (const appearance of state.appearances) {
       if (appearance.quarterId === quarter.id && appearance.endElapsedMs === null) {
-        appearance.endElapsedMs = this.getMatchElapsedMs(state) + elapsedMs;
+        appearance.endElapsedMs = endElapsedMs;
         appearance.endReason = 'quarter_end';
       }
     }
@@ -277,7 +282,7 @@ export class MatchEngine {
     // Close all open BenchStints
     for (const stint of state.benchStints) {
       if (stint.quarterId === quarter.id && stint.endElapsedMs === null) {
-        stint.endElapsedMs = this.getMatchElapsedMs(state) + elapsedMs;
+        stint.endElapsedMs = endElapsedMs;
       }
     }
   }
@@ -287,8 +292,11 @@ export class MatchEngine {
   // ========================================================================
 
   /**
-   * For a closed quarter:
-   * sum(Appearance durations) === quarterMinutes × onFieldCount
+   * For a closed quarter (Spec 02, Invariants, identity 1):
+   * sum(Appearance durations) === actualQuarterElapsedMs × onFieldCount
+   *
+   * actualQuarterElapsedMs is the quarter's elapsed time at its end, never the
+   * planned length. The vacancy term is zero until Spec 01 defines vacancies.
    */
   validateQuarterAppearanceInvariant(
     state: MatchState,
@@ -299,8 +307,8 @@ export class MatchEngine {
       return; // Only validate closed quarters
     }
 
-    const quarterMinutes = state.match.totalMinutes / state.match.quarterCount;
-    const expectedMs = quarterMinutes * 60 * 1000 * format.onFieldCount;
+    const actualQuarterElapsedMs = this.getQuarterElapsedMs(quarter);
+    const expectedMs = actualQuarterElapsedMs * format.onFieldCount;
 
     let actualMs = 0;
     for (const appearance of state.appearances) {

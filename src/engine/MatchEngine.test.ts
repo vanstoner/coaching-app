@@ -439,6 +439,165 @@ describe('REQ-01: Match clock with quarter management', () => {
   });
 
   // ========================================================================
+  // DEF-001 (#13): endQuarter must close intervals at match-elapsed at the
+  // whistle, exactly once. Spec 02 invariants use actualQuarterElapsedMs.
+  // ========================================================================
+
+  describe('DEF-001: quarter end closes intervals at match-elapsed exactly once', () => {
+    const MIN = 60 * 1000;
+
+    function sumQuarterAppearanceMs(
+      state: ReturnType<MatchEngine['createMatch']>,
+      quarterId: UUID
+    ): number {
+      return state.appearances
+        .filter((a) => a.quarterId === quarterId)
+        .reduce((sum, a) => sum + ((a.endElapsedMs as number) - a.startElapsedMs), 0);
+    }
+
+    function sumQuarterBenchStintMs(
+      state: ReturnType<MatchEngine['createMatch']>,
+      quarterId: UUID
+    ): number {
+      return state.benchStints
+        .filter((b) => b.quarterId === quarterId)
+        .reduce((sum, b) => sum + ((b.endElapsedMs as number) - b.startElapsedMs), 0);
+    }
+
+    it('Q1: start at T, end at T+10min, 7 on field → Appearance total 4,200,000 ms', () => {
+      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const engine = new MatchEngine({ nowFn: () => mockTime });
+
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 60, quarterCount: 4 });
+      for (const player of players) {
+        state.playerAvailability.set(player, 'available');
+      }
+      const q1 = state.quarters[0];
+
+      engine.startQuarter(state, q1, createTestTeamSheet(format, players), format);
+      mockTime = new Date('2026-09-17T14:10:00Z');
+      engine.endQuarter(state, q1);
+
+      const q1Appearances = state.appearances.filter((a) => a.quarterId === q1.id);
+      const q1Stints = state.benchStints.filter((b) => b.quarterId === q1.id);
+      expect(q1Appearances).toHaveLength(7);
+      expect(q1Stints).toHaveLength(4);
+
+      // Match-elapsed at the whistle is 10 min, counted once.
+      for (const a of q1Appearances) {
+        expect(a.startElapsedMs).toBe(0);
+        expect(a.endElapsedMs).toBe(10 * MIN);
+        expect(a.endReason).toBe('quarter_end');
+      }
+      for (const b of q1Stints) {
+        expect(b.startElapsedMs).toBe(0);
+        expect(b.endElapsedMs).toBe(10 * MIN);
+      }
+
+      expect(sumQuarterAppearanceMs(state, q1.id)).toBe(4_200_000);
+      // Identity 2: Appearances + BenchStints === actual elapsed × available players
+      expect(sumQuarterAppearanceMs(state, q1.id) + sumQuarterBenchStintMs(state, q1.id)).toBe(
+        10 * MIN * 11
+      );
+    });
+
+    it('later quarters: Appearance/BenchStint start and end equal match-elapsed at the whistle', () => {
+      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const engine = new MatchEngine({ nowFn: () => mockTime });
+
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 60, quarterCount: 4 });
+      for (const player of players) {
+        state.playerAvailability.set(player, 'available');
+      }
+      const [q1, q2, q3] = state.quarters;
+      const sheet = createTestTeamSheet(format, players);
+
+      // Q1: 10 min
+      engine.startQuarter(state, q1, sheet, format);
+      mockTime = new Date('2026-09-17T14:10:00Z');
+      engine.endQuarter(state, q1);
+
+      // Break (wall-clock time between quarters is not match time)
+      // Q2: 13 min
+      mockTime = new Date('2026-09-17T14:12:00Z');
+      engine.startQuarter(state, q2, sheet, format);
+      mockTime = new Date('2026-09-17T14:25:00Z');
+      engine.endQuarter(state, q2);
+
+      // Q3: 16 min (overran the 15-min plan)
+      mockTime = new Date('2026-09-17T14:30:00Z');
+      engine.startQuarter(state, q3, sheet, format);
+      mockTime = new Date('2026-09-17T14:46:00Z');
+      engine.endQuarter(state, q3);
+
+      const expected = [
+        { quarter: q2, start: 10 * MIN, end: 23 * MIN, elapsed: 13 * MIN },
+        { quarter: q3, start: 23 * MIN, end: 39 * MIN, elapsed: 16 * MIN },
+      ];
+
+      for (const { quarter, start, end, elapsed } of expected) {
+        const apps = state.appearances.filter((a) => a.quarterId === quarter.id);
+        const stints = state.benchStints.filter((b) => b.quarterId === quarter.id);
+        expect(apps).toHaveLength(7);
+        expect(stints).toHaveLength(4);
+        for (const a of apps) {
+          expect(a.startElapsedMs).toBe(start);
+          expect(a.endElapsedMs).toBe(end);
+        }
+        for (const b of stints) {
+          expect(b.startElapsedMs).toBe(start);
+          expect(b.endElapsedMs).toBe(end);
+        }
+        expect(sumQuarterAppearanceMs(state, quarter.id)).toBe(elapsed * 7);
+        expect(
+          sumQuarterAppearanceMs(state, quarter.id) + sumQuarterBenchStintMs(state, quarter.id)
+        ).toBe(elapsed * 11);
+        engine.validateQuarterAppearanceInvariant(state, quarter, format);
+      }
+
+      expect(engine.getMatchElapsedMs(state)).toBe(39 * MIN);
+    });
+
+    it('early-ended quarter passes the invariant against actual elapsed, not planned', () => {
+      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const engine = new MatchEngine({ nowFn: () => mockTime });
+
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 60, quarterCount: 4 });
+      for (const player of players) {
+        state.playerAvailability.set(player, 'available');
+      }
+      const q1 = state.quarters[0];
+
+      engine.startQuarter(state, q1, createTestTeamSheet(format, players), format);
+      // Planned 15 min; coach ends at 08:30
+      mockTime = new Date('2026-09-17T14:08:30Z');
+      engine.endQuarter(state, q1);
+
+      expect(sumQuarterAppearanceMs(state, q1.id)).toBe(3_570_000);
+      expect(() => engine.validateQuarterAppearanceInvariant(state, q1, format)).not.toThrow();
+    });
+
+    it('invariant still rejects an Appearance total that does not match actual elapsed', () => {
+      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const engine = new MatchEngine({ nowFn: () => mockTime });
+
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 60, quarterCount: 4 });
+      const q1 = state.quarters[0];
+
+      engine.startQuarter(state, q1, createTestTeamSheet(format, players), format);
+      mockTime = new Date('2026-09-17T14:10:00Z');
+      engine.endQuarter(state, q1);
+
+      const tampered = state.appearances.find((a) => a.quarterId === q1.id)!;
+      tampered.endElapsedMs = (tampered.endElapsedMs as number) - 1000;
+
+      expect(() => engine.validateQuarterAppearanceInvariant(state, q1, format)).toThrow(
+        MatchEngineError
+      );
+    });
+  });
+
+  // ========================================================================
   // Invariant: Player tracking
   // ========================================================================
 
