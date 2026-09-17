@@ -1,8 +1,16 @@
 # Squad Roles
 
-Four roles, each a separate agent with its own charter, context and boundaries.
+Five roles, each a separate agent with its own charter, context and boundaries.
 Separation is deliberate: it creates the independent verification that makes
 output trustworthy.
+
+**See [squad.md](./squad.md) for the diagrams** — who hands off to whom, where
+the approval gates sit, and the boundaries that must never be crossed.
+
+The agents have first names — Bea, Ada, Ellis, Quinn, Pip — so handoffs read as
+a chain of custody rather than as process documentation, and so
+`git log --grep="Squad-Role: Quinn"` is a useful query. First names only, the
+same rule the app applies to the children whose minutes it tracks.
 
 ## Why separate agents rather than one capable one
 
@@ -17,12 +25,13 @@ who approves. It is not about capability; it is about independence.
 
 ## The squad
 
-| Role | Owns | Hands off to | Never does |
-|---|---|---|---|
-| [Business Analyst](./business-analyst.md) | Specs, issues, acceptance criteria | Architect, Engineer | Write implementation code |
-| [Architect](./architect.md) | Technical design, ADRs, domain integrity | Engineer | Write feature code |
-| [Engineer](./engineer.md) | Implementation | QA | Write its own acceptance criteria |
-| [QA](./qa.md) | Verification, tests, edge cases | Product Owner | Fix the code it finds faults in |
+| Name | Role | Owns | Hands off to | Never does |
+|---|---|---|---|---|
+| **Bea** | [Business Analyst](./business-analyst.md) | Specs, issues, acceptance criteria | Architect, Engineer, Platform | Write implementation code |
+| **Ada** | [Architect](./architect.md) | Technical design, ADRs, domain integrity | Engineer, Platform | Write feature code |
+| **Ellis** | [Engineer](./engineer.md) | Feature implementation | QA | Write its own acceptance criteria |
+| **Quinn** | [QA](./qa.md) | Verification, tests, edge cases | Product Owner | Fix the code it finds faults in |
+| **Pip** | [Platform Engineer](./platform-engineer.md) | CI/CD, builds, artifacts, releases | QA | Write product features |
 
 **Product Owner (you)** sits above all four: sets intent, approves specs,
 arbitrates trade-offs, merges.
