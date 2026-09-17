@@ -81,7 +81,26 @@ rather than deciding silently in either direction.
 |---|---|
 | Deciding without recording | The reasoning is lost; the decision gets relitigated |
 | Editing a decided ADR | Destroys the historical record the ADR exists to preserve |
-| Gold-plating for hypothetical scale | This is a coaching app for one squad, not a platform |
+| Gold-plating for hypothetical scale | This is a coaching app for one squad *at a time per device*, not a platform — see the note below |
 | Premature abstraction | Costs clarity now for flexibility that may never be needed |
 | Silent architectural drift | Small unrecorded deviations compound into an unexplainable system |
 | Approving your own significant decisions | Removes the gate that makes it a decision rather than a preference |
+
+### Amendment: "one squad, not a platform" (ADR-006, approved 2026-09-17, #19)
+
+[ADR-006](../decisions/006-sync-ready-not-hosted.md) §4 amends the line above.
+Read it as **"one squad at a time per device, designed not to preclude
+sharing"**.
+
+The anti-pattern it guards against is unchanged: do not build hosting, accounts,
+servers or sync machinery for an uncommitted future. What it does *not* forbid
+is the handful of spine choices in ADR-007 to ADR-011, which were adopted
+because they are roughly free now and expensive later.
+
+The test to apply, from ADR-006: **does it cost meaningful complexity today?**
+If yes, defer it. If it is roughly free now and costly later, do it now.
+
+A second constraint, from the Product Owner's ADR-009 ruling: proportionality.
+This is a substitution reminder and a fairness tracker, not an audit-grade
+timing system. Structural guarantees are worth paying for; precision past
+seconds-level is not.

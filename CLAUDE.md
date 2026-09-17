@@ -10,8 +10,11 @@ from the session that created these specs.
 
 Each is an ADR in `docs/decisions/`. They are load-bearing, not preferences.
 
-1. **Minutes are derived by folding intervals, never stored as running totals.**
-   The displayed figure and the audit trail must be incapable of disagreeing.
+1. **Minutes are derived by folding, never stored as running totals.** The
+   displayed figure and the audit trail must be incapable of disagreeing.
+   Minutes fold from intervals; intervals fold from an append-only event log
+   (ADR-007, accepted 2026-09-17, which supersedes ADR-003). No derived value
+   is ever persisted as authoritative — including quarter elapsed time.
 2. **Elapsed time comes from wall-clock anchors, never tick counting.** Android
    throttles background JS timers; ticks are silently lost. Never increment an
    authoritative value in a timer callback.
@@ -20,7 +23,15 @@ Each is an ADR in `docs/decisions/`. They are load-bearing, not preferences.
    the coach's own decisions as anomalies.
 4. **First names only. No PII.** Children's data. No surnames, DOB, contacts or
    photos — in the model or the UI.
-5. **Corrections are explicit, noted, and never destructive.**
+5. **Corrections are explicit, noted, and never destructive.** A correction is
+   a new event referencing what it corrects, carrying a mandatory note. The
+   original is never overwritten.
+
+**Proportionality (PO, 2026-09-17).** These five are structural guarantees and
+they stay. They are not a precision target: this app reminds the coach to make a
+substitution and tracks fair playing time — it is not audit-grade timing.
+Seconds-level accuracy is sufficient, and surviving a forgotten clock matters
+more than refining it. Don't spend complexity buying precision past that bar.
 
 If an implementation would break one of these, stop and escalate.
 

@@ -1,8 +1,8 @@
 # ADR-011: Player data stays on device until a hosting ADR is approved
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-17
-**Decision maker:** Architect, awaiting Product Owner approval
+**Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 
 ## Context
 

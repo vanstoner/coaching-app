@@ -1,7 +1,8 @@
 # ADR-003: Appearances are the source of truth for minutes
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-007](./007-append-only-match-event-log.md)
 **Date:** 2026-09-17
+**Superseded:** 2026-09-17 (#19)
 **Decision maker:** Architect, approved by Product Owner
 
 ## Context
