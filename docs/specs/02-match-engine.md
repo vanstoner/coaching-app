@@ -1,6 +1,6 @@
 # Spec 02 — Match Engine & Clock
 
-Status: Draft for Product Owner review — **revised 2026-09-17 following PO rulings on issue #18 (quarter end) and PR #20 (open questions 2–9)**
+Status: Draft for Product Owner review — **revised 2026-09-17 following PO rulings on issue #18 (quarter end), PR #20 (open questions 2–9) and issue #21 (open questions 10–12)**
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
@@ -66,31 +66,48 @@ substitution, position change) — not on every tick. Because elapsed time is
 derived from wall-clock anchors, a crash mid-quarter loses **zero** time: on
 relaunch the engine reads `runningSinceWallClock` and recomputes.
 
-#### The "Match in progress" prompt
+#### Opening the app into a match in progress
 
-This is the **single** prompt shown when the app opens into an `in_progress`
-match. Per the PO ruling on open question 4 (PR #20 comment, 2026-09-17), the
-forgotten-quarter question is **merged into it** — there is no separate
-forgotten-quarter prompt:
+What the coach sees when the app is opened into an `in_progress` match depends
+on **how** it was opened. Per the PO ruling on open question 13 (PR #23
+comment, 2026-09-17), which refines ruling 11a on issue #21:
 
-> *"**Merged with the existing "Match in progress — resume?" prompt** into one
-> prompt. It appears when the app opens on a running quarter past planned +
-> margin. Choices: planned length / time of last recorded event / now."*
+> *"**Fresh launch** with a match in progress (any elapsed time)"* — *"Show the
+> Match in progress prompt, as for crash recovery."*
+>
+> *"**Return from background, before planned length + margin**"* — *"**No
+> prompt.** Show the running clock only."*
+>
+> *"**Return from background, at or past planned length + margin**"* — *"Show
+> **one** prompt, never two."*
 
-- It always shows the computed elapsed time, so the coach can sanity-check it.
-- **No quarter running, or the running quarter's elapsed is below
-  `plannedQuarterMs + marginMs`:** the prompt asks "Match in progress — resume?"
-  (behaviour unchanged).
-- **The running quarter's elapsed is at or beyond `plannedQuarterMs + marginMs`:**
-  the same prompt asks when the quarter ended, with exactly three choices:
-  1. **Planned length** (the default, per the issue #18 ruling)
-  2. **Time of last recorded event**
-  3. **Now**
+Below, "the threshold" means quarter elapsed `plannedQuarterMs + marginMs` for
+the running quarter.
 
-  Each choice is subject to the last-event floor
-  ([Earliest allowed end](#earliest-allowed-end-last-event-floor)). The
-  quarter is **never** ended silently: nothing changes until the coach answers,
-  and the answer is recorded with both its effective end and `recordedAt`.
+- **Fresh launch** (including relaunch after the process was killed), at any
+  elapsed time — a prompt is always shown, with the computed elapsed time so
+  the coach can sanity-check it:
+  - No quarter running, or the running quarter is **below** the threshold: the
+    **"Match in progress — resume?"** prompt. It offers no end-time choices.
+  - The running quarter is **at or beyond** the threshold: the
+    [quarter-end prompt](#the-quarter-end-prompt).
+- **Return from background** with a running quarter:
+  - **Below** the threshold: **no prompt**. The running clock is shown.
+  - **At or beyond** the threshold: the
+    [quarter-end prompt](#the-quarter-end-prompt) — exactly **one** prompt,
+    never two.
+- Return from background when **no quarter is running** (e.g. between
+  quarters) is not covered by the ruling — see open question 14.
+
+**Worked example** — `plannedQuarterMs` = 600 000, `marginMs` = 60 000
+(threshold 660 000):
+
+| Running quarter elapsed when opened | Fresh launch | Return from background |
+|---|---|---|
+| 05:00 (300 000) | "Match in progress — resume?" | No prompt; running clock shown |
+| 10:30 (630 000) | "Match in progress — resume?" | No prompt; running clock shown |
+| 11:00 (660 000) | Quarter-end prompt (one) | Quarter-end prompt (one) |
+| 11:40 (700 000) | Quarter-end prompt (one) | Quarter-end prompt (one) |
 
 ## Quarter lifecycle
 
@@ -170,8 +187,9 @@ Spec 01 defines vacancy records, the vacancy term is zero. See
 > silently."*
 
 The forgotten-quarter part of this ruling was refined by the PR #20 ruling on
-open question 4: it is now part of the single
-[Match in progress prompt](#the-match-in-progress-prompt).
+open question 4, and the overrun prompt and forgotten-quarter question were
+made **one prompt** by the PR #23 ruling on open question 13: see
+[The quarter-end prompt](#the-quarter-end-prompt).
 
 ### Why
 
@@ -182,7 +200,7 @@ open question 4: it is now part of the single
   actual-time check still catches interval double-counting (DEF-001, issue #13).
 - **Its blind spot is a clock that ran too long** — a coach who forgot to end
   the quarter produces a record that is internally consistent but wrong. The
-  deviation warning and the overrun prompt cover that.
+  deviation warning and the quarter-end prompt cover that.
 - **The clock is never paused by the app.** If play is still going, a pause
   would silently lose real played time.
 - **Time past planned length counts.** Per the PO ruling on open question 2
@@ -198,7 +216,7 @@ open question 4: it is now part of the single
 | `marginMs` | The quarter-end margin applying to this match — see [Margin](#margin) |
 | Effective end | The quarter-elapsed time at which the quarter is recorded as having ended |
 | `recordedAt` | The wall-clock time at which the coach made the end-of-quarter choice |
-| Last recorded event | The latest event recorded in the quarter that opened or closed an interval (e.g. a substitution or position change) |
+| Last recorded event | The latest event recorded in the quarter that opened or closed a player's time on the pitch or bench — a substitution or position change. Quarter start is not a recorded event for this purpose. **Confirmed by the PO on issue #21** (2026-09-17): *"the latest event that opened or closed a player's time on the pitch or bench (sub, position change)."* |
 | `actualQuarterElapsedMs` | The quarter's elapsed time at its effective end |
 
 ### Margin
@@ -208,30 +226,63 @@ Per the PO ruling on open question 5 (PR #20 comment):
 > *"**A squad setting, copied onto each match at start** so the record shows
 > which margin applied. It cannot change mid-quarter. Range 30 s to 5 min."*
 
+Refined by the PO rulings on issue #21 (2026-09-17, open question 12):
+
+> *"**No.** It is fixed for the whole match once it starts."* — can the margin
+> be edited between quarters (12a)
+>
+> *"**Yes.**"* — is the 30 s–5 min range inclusive (12b)
+
 - The margin is a **squad setting**. Default 60 000 ms (1 minute, issue #18).
-- Allowed range: **30 000 ms to 300 000 ms**. A value outside the range is
-  rejected with a clear message and the setting is not saved.
+- Allowed range: **30 000 ms to 300 000 ms, inclusive of both ends** (issue #21,
+  ruling 12b). 30 000 and 300 000 are accepted; 29 999 and 300 001 are rejected
+  with a clear message and the setting is not saved.
 - When a match starts, the squad's margin is **copied onto the match**. That copy
   is the `marginMs` used for the match and is retained in the match record.
   Changing the squad setting later does not alter an already-started match.
-- The margin **cannot change while a quarter is running**.
-- One margin value drives the overrun prompt (and its repeats), the early-end
+- The match's margin is **fixed for the whole match once it starts** (issue #21,
+  ruling 12a). It cannot be changed while a quarter is running **nor between
+  quarters** of the same match; an attempt is rejected and the match keeps its
+  copied value.
+- The field that holds the copied margin on the match record belongs to
+  **Spec 01**, and is added in the Spec 01 amendment that goes with the ADR
+  review (tracked with #19), as confirmed by the PO on issue #21. Spec 01 is not
+  edited in this change.
+- One margin value drives the quarter-end prompt (and its repeats), the early-end
   confirmation and the deviation warning. There are not separate margins for
   each.
 
-### The three end-time choices
+### End-time choices
 
-Wherever the app asks when a quarter ended during play (overrun prompt,
-bench/team-sheet review offer), the choices are:
+**In the [quarter-end prompt](#the-quarter-end-prompt)** the choices are:
 
-| Choice | Effective end | Quarter status |
-|---|---|---|
-| **Ended at planned time** | `plannedQuarterMs`, floored at the last recorded event | `ended` |
-| **Ended just now** | Quarter elapsed at the moment of the tap | `ended` |
-| **Still playing** | — | Stays `running`; clock untouched |
+| Choice | Effective end | Quarter status | Shown |
+|---|---|---|---|
+| **Ended at planned time** (the default; called "planned length" in the PR #20 ruling) | `plannedQuarterMs`, floored at the last recorded event | `ended` | Always |
+| **Time of last recorded event** | The last recorded event's quarter elapsed | `ended` | Unless hidden (below) |
+| **Ended just now** (called "now" in the PR #20 ruling) | Quarter elapsed at the moment of the tap | `ended` | Always |
+| **Still playing (resume)** | — | Stays `running`; clock untouched; no end or `recordedAt` recorded | Always |
 
-(When the app opens past planned + margin, the choices are those of the
-[Match in progress prompt](#the-match-in-progress-prompt) instead.)
+**Hiding "Time of last recorded event".** Per the PO rulings on issue #21
+(2026-09-17, open question 11): *"**Hide that choice.**"* — when nothing has
+happened since kickoff (11c); *"**Hide the duplicate.**"* — when it gives the
+same time as planned length (11d).
+
+- **Hidden when there is no last recorded event** in the running quarter, i.e.
+  no substitution or position change since the quarter started. Quarter start
+  itself is not a recorded event for this purpose.
+- **Hidden when its effective end is identical to the "Ended at planned time"
+  choice's effective end.** After the last-event floor is applied, this is the
+  case whenever the last recorded event is at or after `plannedQuarterMs` (when
+  it is after, that choice already reads "Ended at <last event time> (last
+  sub)").
+- Otherwise it is shown.
+
+**In the [bench / team-sheet review offer](#bench--team-sheet-review-offer)**
+the choices remain the three from the issue #18 ruling: **Ended at planned
+time** (floored at the last recorded event), **Ended just now**, **Still
+playing**. Whether this offer should match the quarter-end prompt is open
+question 14.
 
 For every ending choice, the engine retains **both** the effective end and
 `recordedAt`. Neither overwrites the other, so the gap between when the quarter
@@ -260,28 +311,93 @@ Per the PO ruling on open question 7 (PR #20 comment):
   effective end is the last event's time.
 - If the last recorded event is at or before `plannedQuarterMs`, the choice is
   shown and behaves as "Ended at planned time".
-- The same floor applies to the choices in the
-  [Match in progress prompt](#the-match-in-progress-prompt).
+- The same floor applies to every ending choice in the
+  [quarter-end prompt](#the-quarter-end-prompt) and the bench / team-sheet
+  review offer.
 - "Ended just now" / "Now" is always at or after the last event, so it is never
   adjusted.
 
-### Overrun prompt
+### The quarter-end prompt
 
-- Due when quarter elapsed reaches `plannedQuarterMs + marginMs`.
+The overrun prompt and the "when did it end?" question asked on opening the app
+are **one prompt**, described only here. Per the PO ruling on open question 13
+(PR #23 comment, 2026-09-17):
+
+> *"**Treat them as one prompt.** Past planned length + margin they ask the same
+> question with the same choices ("Still playing (resume)", end-time choices
+> with the last-event floor and hiding rules). Describe it once in the spec,
+> triggered by the due time, a fresh launch, or a return from background."*
+
+Earlier rulings it carries forward: the PR #20 ruling on open question 4
+(*"**Merged with the existing "Match in progress — resume?" prompt** into one
+prompt. It appears when the app opens on a running quarter past planned +
+margin. Choices: planned length / time of last recorded event / now."*) and
+issue #21 ruling 11b (*"**Add "Still playing (resume)"** to the Match in
+progress prompt when past planned + margin."*).
+
+**Triggers.** The prompt is shown for a running quarter when any of these
+happens:
+
+1. **Due time reached** — quarter elapsed reaches a due point (below), whether
+   the app is in the foreground or not (see
+   [Locked phone](#locked-phone-local-notification)).
+2. **Fresh launch** with quarter elapsed at or beyond
+   `plannedQuarterMs + marginMs`.
+3. **Return from background** with quarter elapsed at or beyond
+   `plannedQuarterMs + marginMs`.
+
+Whichever trigger fires, it is the **same prompt with the same choices**.
+**At most one is shown at a time:** a trigger that fires while the prompt is
+already showing does not show a second one. Below the threshold, triggers 2
+and 3 do not show this prompt (see
+[Opening the app into a match in progress](#opening-the-app-into-a-match-in-progress)).
+
+**Choices:** see [End-time choices](#end-time-choices) — Ended at planned time /
+Time of last recorded event (unless hidden) / Ended just now / Still playing
+(resume) — with the [last-event floor](#earliest-allowed-end-last-event-floor).
+
+**Behaviour:**
+
 - The clock **keeps running and is not paused** while the prompt is showing or
   after it is dismissed.
-- Offers the three choices above.
-- **Repeats after "Still playing".** Per the PO ruling on open question 3
-  (PR #20 comment): *"**Yes, once per margin** (every 1 min by default),
-  vibrating each time."* After "Still playing", the prompt comes back one
-  `marginMs` later, with vibration, and keeps doing so each margin until the
-  coach ends the quarter. (What the repeat interval is measured from is open
-  question 10.)
-- Because elapsed time excludes manually paused time, the due point is defined
-  in quarter-elapsed terms, not as a fixed wall-clock instant. The engine
+- The quarter is **never** ended silently: nothing changes until the coach
+  picks an ending choice, and that answer is recorded with both its effective
+  end and `recordedAt`.
+- **Due points and repeats.** Per the PO ruling on open question 3 (PR #20
+  comment): *"**Yes, once per margin** (every 1 min by default), vibrating each
+  time."* Per the PO rulings on issue #21 (2026-09-17, open question 10):
+  *"**From the previous due time.** "Still playing" tapped at 11:40 brings the
+  prompt back at 12:00."* (10a) and *"**Yes.** It keeps repeating once per
+  margin."* (10b)
+  - The prompt is due at `plannedQuarterMs + k × marginMs` for k = 1, 2, 3, …
+    (quarter elapsed). Each repeat is timed from the **previous due time**, not
+    from when the coach tapped (issue #21, ruling 10a). With 10 min planned and
+    a 1 min margin: due 11:00, 12:00, 13:00, …; "Still playing (resume)" tapped
+    at 11:40 brings the prompt back at **12:00**, not 12:40.
+  - The schedule is the same whichever trigger showed the prompt: "Still
+    playing (resume)" chosen at 13:30 after a fresh launch or return from
+    background brings the prompt back at the next due point, 14:00.
+  - It **repeats whether or not the coach answers** (issue #21, ruling 10b):
+    an unanswered prompt (e.g. phone stays locked) is followed by the next one
+    at the next due point, with vibration.
+  - Repeats stop only when the quarter ends. "Still playing (resume)" never
+    stops them.
+- Because elapsed time excludes manually paused time, due points are defined
+  in quarter-elapsed terms, not as fixed wall-clock instants. The engine
   computes when the prompt is due (as quarter elapsed, and — while the clock is
   running — the corresponding wall-clock instant derived from
   `runningSinceWallClock`). It does not deliver anything itself.
+
+**Worked example — choices shown** (`plannedQuarterMs` = 600 000, `marginMs` =
+60 000). The choices are identical for every trigger:
+
+| Quarter elapsed when shown | Recorded events this quarter | Choices shown (effective end) |
+|---|---|---|
+| 11:00 (660 000) | none | Ended at planned time (600 000) / Ended just now (660 000) / Still playing (resume) |
+| 13:30 (810 000) | none | Ended at planned time (600 000) / Ended just now (810 000) / Still playing (resume) |
+| 13:30 (810 000) | sub at 07:00 | Ended at planned time (600 000) / Time of last recorded event (420 000) / Ended just now (810 000) / Still playing (resume) |
+| 13:30 (810 000) | sub at 10:00 | Ended at planned time (600 000) / Ended just now (810 000) / Still playing (resume) — last event hidden as identical |
+| 13:30 (810 000) | sub at 10:30 | "Ended at 10:30 (last sub)" (630 000) / Ended just now (810 000) / Still playing (resume) — last event hidden as identical |
 
 ### Early-end confirmation
 
@@ -302,9 +418,10 @@ Per the PO ruling on open question 7 (PR #20 comment):
 ### Locked phone: local notification
 
 - When a quarter starts, a **local notification with vibration** is scheduled
-  for the overrun prompt's due point.
-- Repeat prompts (once per margin, see [Overrun prompt](#overrun-prompt)) are
-  also delivered with vibration.
+  for the quarter-end prompt's first due point.
+- Repeat prompts (at each `plannedQuarterMs + k × marginMs`, answered or not,
+  see [The quarter-end prompt](#the-quarter-end-prompt)) are also delivered
+  with vibration.
 - When the quarter ends, every pending quarter-end notification for it is
   cancelled.
 - Delivery is an **app-layer** concern. The engine stays pure TypeScript (no
@@ -318,20 +435,22 @@ Per the PO ruling on open question 7 (PR #20 comment):
 
 - If the coach opens the bench or team-sheet review while the quarter is
   running and quarter elapsed is **at or beyond** `plannedQuarterMs`, the app
-  **offers** to end the quarter with the three choices above (including the
-  last-event floor).
+  **offers** to end the quarter with the three review-offer choices in
+  [End-time choices](#end-time-choices) (including the last-event floor).
 - The offer can always be declined ("Still playing"). The quarter is **never**
   ended automatically.
 - Before `plannedQuarterMs`, **no offer is made**.
 
 ### Forgotten quarter
 
-Handled by the single [Match in progress prompt](#the-match-in-progress-prompt)
-(PR #20 ruling, open question 4). There is no separate prompt.
+Handled by the single [quarter-end prompt](#the-quarter-end-prompt), shown on
+fresh launch or return from background at or beyond planned + margin (PR #20
+ruling on open question 4; PR #23 ruling on open question 13). There is no
+separate prompt.
 
 ### Technical constraint — for the Architect
 
-Delivering the overrun prompt while the phone is locked or the app is
+Delivering the quarter-end prompt while the phone is locked or the app is
 backgrounded **depends on a scheduled local notification** (a platform
 capability). An in-app JS timer cannot be relied on, because Android suspends
 or throttles background timers ([ADR-002](../decisions/002-wall-clock-time-derivation.md)).
@@ -352,7 +471,9 @@ repeating notifications once per margin. No ADR is written in this change.
 | Coach ends at 10:45 | 645 000 | No | No (before 11:00) | No (45 s) | 4 515 000 |
 | Prompt at 11:00; at 11:40 coach taps **Ended at planned time** | 600 000, `recordedAt` = wall-clock of the 11:40 tap | No | Yes | No | 4 200 000 |
 | Prompt at 11:00; at 11:40 coach taps **Ended just now** | 700 000 | No | Yes | Yes (100 s) | 4 900 000 |
-| Prompt at 11:00; coach taps **Still playing** at 11:00; prompt repeats at 12:00; coach taps **Ended just now** at 12:10 | 730 000 | No | Yes (11:00, 12:00) | Yes (130 s) | 5 110 000 |
+| Prompt at 11:00; coach taps **Still playing (resume)** at 11:00; prompt repeats at 12:00; coach taps **Ended just now** at 12:10 | 730 000 | No | Yes (11:00, 12:00) | Yes (130 s) | 5 110 000 |
+| Prompt at 11:00; coach taps **Still playing (resume)** at 11:40; prompt repeats at 12:00 (not 12:40); coach taps **Ended just now** at 12:05 | 725 000 | No | Yes (11:00, 12:00) | Yes (125 s) | 5 075 000 |
+| Prompt at 11:00, 12:00 and 13:00 all unanswered (phone locked); coach taps **Ended just now** at 13:10 | 790 000 | No | Yes (11:00, 12:00, 13:00) | Yes (190 s) | 5 530 000 |
 | Sub recorded at 10:30; prompt at 11:00 shows **"Ended at 10:30 (last sub)"**; coach taps it at 11:20 | 630 000 | No | Yes | No (30 s) | 4 410 000 |
 
 **With a vacancy** (applies once Spec 01 defines vacancy records; until then the
@@ -394,7 +515,7 @@ out of play, or while a stoppage has eaten the window.
 haptic and sound. Must work with the screen on and the app foregrounded — the
 expected touchline usage. Background notifications for substitution alarms are
 explicitly out of MVP scope; the app is expected to be open during a match. The
-**one exception** is the quarter-end overrun prompt, which the PO ruled
+**one exception** is the quarter-end prompt, which the PO ruled
 (issue #18) is delivered as a local notification with vibration — see
 [Ending a quarter](#ending-a-quarter).
 
@@ -490,10 +611,12 @@ actually defensible.
 | Fewer available players than `onFieldCount` | Match can still start with a recorded short-handed flag. |
 | Match abandoned mid-quarter | Close all intervals at current elapsed; status → `abandoned`. Minutes still count toward the season ledger. |
 | Quarter ended early (ref's whistle) | Coach ends the quarter (as always). Ending with quarter elapsed below `plannedQuarterMs − marginMs` requires a one-tap confirmation; declining leaves the quarter running. Actual elapsed is recorded, not the planned figure. A deviation beyond the margin raises the non-blocking warning. |
-| Quarter overruns (coach has not ended it by planned length + margin) | Overrun prompt fires at `plannedQuarterMs + marginMs` (local notification with vibration if the phone is locked or the app backgrounded). The clock keeps running and is **not** paused. Choices: Ended at planned time / Ended just now / Still playing. After "Still playing" it repeats once per margin, vibrating each time. Effective end and `recordedAt` are both retained. Never ended automatically. |
-| Quarter forgotten (app opens on a running quarter at or beyond planned + margin) | The single "Match in progress" prompt asks when it ended: planned length (default) / time of last recorded event / now, all floored at the last recorded event. Nothing is ended until the coach answers; the answer and its `recordedAt` are retained. Never ended silently. |
+| Quarter overruns (coach has not ended it by planned length + margin) | The single [quarter-end prompt](#the-quarter-end-prompt) is due at `plannedQuarterMs + marginMs` (local notification with vibration if the phone is locked or the app backgrounded). The clock keeps running and is **not** paused. Choices: Ended at planned time / Time of last recorded event (unless hidden) / Ended just now / Still playing (resume). It repeats at `plannedQuarterMs + k × marginMs`, timed from the previous due time not from the tap (a "Still playing (resume)" tap at 11:40 → next prompt 12:00), whether or not the coach answers, vibrating each time (issue #21). Effective end and `recordedAt` are both retained. Never ended automatically. |
+| Quarter forgotten (app freshly launched, or returning from background, on a running quarter at or beyond planned + margin) | The same single [quarter-end prompt](#the-quarter-end-prompt), with the same choices, hiding rules and last-event floor as when triggered by the due time. Exactly one prompt is shown, never two (PR #23). Nothing is ended until the coach answers; an ending answer and its `recordedAt` are retained. Never ended silently. |
+| App returns from background on a running quarter below planned + margin | No prompt; the running clock is shown (PR #23). |
+| App freshly launched on a match in progress below planned + margin, or with no quarter running | "Match in progress — resume?" prompt (PR #23). |
 | Chosen end would be before the last recorded event | Not allowed. The earliest end offered is the last recorded event; "Ended at planned time" is relabelled "Ended at <last event time> (last sub)" when an event came after planned length. |
-| Margin set outside 30 s – 5 min, or changed mid-quarter | Rejected. The match uses the squad margin copied at match start. |
+| Margin set outside 30 s – 5 min (inclusive), or the match's margin changed once the match has started (mid-quarter or between quarters) | Rejected. 30 000 and 300 000 ms are accepted. The match uses the squad margin copied at match start for the whole match (issue #21). |
 | Bench / team-sheet review opened during a running quarter | At or beyond planned length: app **offers** to end the quarter with the three end-time choices; declining keeps it running. Before planned length: no offer. |
 | Same player assigned to two positions | Rejected by the engine with a validation error. |
 | Clock adjusted after the fact | Treated as a correction: requires a note, flagged in the ledger. |
@@ -504,31 +627,29 @@ actually defensible.
 |---|---|---|
 | 2026-09-17 | Quarter end is always a coach action (no automatic hard stop). Quarter check uses actual elapsed time including vacancies. Added quarter-end safety net: overrun prompt, early-end confirmation, deviation warning, local notification, bench/team-sheet review offer, forgotten-quarter question. Invariants, edge cases and open questions updated. | PO ruling on GitHub issue #18 |
 | 2026-09-17 | Open questions 2–9 moved into the body as rules: overrun time counts (Q2); prompt repeats once per margin with vibration (Q3); forgotten-quarter question merged into the single "Match in progress" prompt with three choices (Q4); margin is a squad setting copied onto the match at start, fixed mid-quarter, 30 s–5 min (Q5); backdated end is not a correction (Q6); end floored at last recorded event with adjusted label (Q7); mid-quarter availability deferred to REQ-04 (Q8); vacancy term zero until Spec 01 is amended with #19 (Q9). New open questions 10–12 raised. | PO rulings comment on PR #20 |
+| 2026-09-17 | Open questions 10–12 moved into the body as rules: overrun prompt due at planned + k × margin, repeats timed from the previous due time and repeat when unanswered (Q10); Match in progress prompt shows on fresh launch and return from background, gains "Still playing (resume)" past planned + margin, hides "Time of last recorded event" when there is none or it duplicates planned length (Q11); match margin fixed for the whole match, range 30 000–300 000 ms inclusive (Q12). Definition of "last recorded event" confirmed; copied-margin field assigned to the Spec 01 amendment with #19. Worked examples and edge cases updated. New open question 13 raised. | PO rulings comment on issue #21 |
+| 2026-09-17 | Open question 13 moved into the body as rules: a fresh launch always shows a prompt; return from background below planned + margin shows no prompt, at or beyond it shows exactly one. The overrun prompt and the Match in progress "when did it end?" question merged into one quarter-end prompt, described once, with three triggers (due time, fresh launch, return from background past the threshold) and one choice set (Ended at planned time / Time of last recorded event / Ended just now / Still playing (resume)); Q10 repeat timing and Q11 hiding and floor rules carried over. Cross-references, worked examples and edge cases updated. New open question 14 raised. | PO ruling comment on PR #23 |
 
 ## Open questions for Product Owner
 
 1. Should the app support extra time / a fifth period, or is 4 quarters fixed?
-Questions 2–9 were ruled on 2026-09-17 (PO rulings comment on PR #20) and are
-now rules in the body above. Raised by applying those rulings (not decided
-here):
 
-10. **Repeat-prompt anchor (Q3).** Is the next prompt one margin after the coach
-    taps "Still playing", or one margin after the previous prompt was due (i.e.
-    at planned + 2×margin, + 3×margin, …)? These differ when the coach answers
-    late (tap at 11:40 → 12:40 vs 12:00). And does the prompt/notification also
-    repeat when the coach does not answer at all (e.g. phone stays locked)?
-11. **Match in progress prompt details (Q4).**
-    - Does "when the app opens" include returning from background, or only a
-      cold start/relaunch? (On return from background the overrun prompt may
-      already be showing.)
-    - The three choices have no "Still playing". If play really is still going
-      (e.g. the app crashed during an overrun), is "Now" the intended answer?
-    - If nothing but the quarter start has been recorded, what does "time of
-      last recorded event" offer — hidden, or quarter start (a zero-length
-      quarter)?
-    - When the last event is after planned length, "planned length" and "time of
-      last recorded event" resolve to the same end — show both, or one?
-12. **Margin edits between quarters (Q5).** The ruling fixes the margin
-    mid-quarter and copies it at match start. Can the match's copy be changed
-    between quarters of the same match? And is the 30 s–5 min range inclusive of
-    both ends (this spec assumes inclusive)?
+Questions 2–9 were ruled on 2026-09-17 (PO rulings comment on PR #20),
+questions 10–12 on 2026-09-17 (PO rulings comment on issue #21) and question 13
+on 2026-09-17 (PO ruling comment on PR #23); all are now rules in the body
+above. Raised by applying the PR #23 ruling (not decided here):
+
+14. **Loose ends of the single quarter-end prompt (Q13).**
+    - **Return from background with no quarter running** (e.g. between
+      quarters, while the next team sheet is being prepared). The ruling covers
+      a running quarter below or past planned + margin. Is there a prompt
+      ("Match in progress — resume?") or none?
+    - **Bench / team-sheet review offer.** It still uses the three issue #18
+      choices (Ended at planned time / Ended just now / Still playing). Past
+      planned length should it offer the quarter-end prompt's choices instead
+      (adding "Time of last recorded event", same hiding rules)?
+    - **Early-end confirmation for a backdated choice.** If "Time of last
+      recorded event" gives an effective end below `plannedQuarterMs −
+      marginMs` (e.g. last sub at 07:00 with a 10 min quarter and 1 min
+      margin → 420 000), is the one-tap early-end confirmation required? The
+      confirmation rule is written for ending at the current elapsed.
