@@ -33,7 +33,7 @@ who approves. It is not about capability; it is about independence.
 | **Quinn** | [QA](./qa.md) | Verification, tests, edge cases | Product Owner | Fix the code it finds faults in |
 | **Pip** | [Platform Engineer](./platform-engineer.md) | CI/CD, builds, artifacts, releases | QA | Write product features |
 
-**Product Owner (you)** sits above all four: sets intent, approves specs,
+**Product Owner (you)** sits above all five: sets intent, approves specs,
 arbitrates trade-offs, merges.
 
 ## The critical boundaries
