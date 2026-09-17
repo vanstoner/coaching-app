@@ -1,6 +1,6 @@
 # Spec 02 — Match Engine & Clock
 
-Status: Draft for Product Owner review
+Status: Draft for Product Owner review — **revised 2026-09-17 following PO ruling on issue #18 (quarter end)**
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
@@ -20,10 +20,19 @@ app, locked phone, killed process), and how minutes are attributed.
 
 This is the correct call for touchline reality, and it drives the design below.
 
+> **Superseded in part (issue #18, PO ruling 2026-09-17):** the quarter end is
+> no longer an automatic hard stop. *"The coach always ends the quarter. The
+> clock never stops on its own. When players walk off, the coach stops it.
+> Small differences from the ref's watch don't matter."* The continuous-running
+> rule above is unchanged. See [Ending a quarter](#ending-a-quarter).
+
 ### Rules
 
 - The clock **runs continuously within a quarter**. There is no routine pause.
-- The clock **stops automatically at quarter end** (a hard stop).
+- The clock **never stops on its own**. The **coach always ends the quarter**,
+  when the players walk off. Reaching the planned quarter length does not stop,
+  pause or end anything; it only triggers the safety net described in
+  [Ending a quarter](#ending-a-quarter).
 - A manual pause exists but is an **exception control**, not part of the normal
   flow: it is deliberately not a primary button, to avoid the failure mode where
   a coach pauses for a throw-in and forgets to resume.
@@ -76,16 +85,199 @@ with a clear message naming the unfilled positions.
 2. Open an Appearance for each on-field player at `startElapsedMs = matchElapsedMs`.
 3. Open a BenchStint for each available, unselected player.
 
-**On quarter end (the hard stop):**
-1. Freeze the clock; accumulate into `accumulatedMs`; status → `ended`.
-2. Close every open Appearance with `endReason: quarter_end`.
-3. Close every open BenchStint.
-4. Recompute totals and present the **next quarter's planned team sheet**
+**On quarter end (always a coach action):**
+1. Set the quarter's elapsed to the **effective end** the coach chose (see
+   [Ending a quarter](#ending-a-quarter)); status → `ended`. The clock is not
+   frozen by any timer or threshold — only by this action.
+2. Close every open Appearance at the effective end, with `endReason: quarter_end`.
+3. Close every open vacancy at the effective end.
+4. Close every open BenchStint at the effective end.
+5. Cancel any pending quarter-end notification for this quarter.
+6. Recompute totals and present the **next quarter's planned team sheet**
    (Spec 04), which is editable before the coach confirms.
 
 Closing every interval at the quarter boundary means quarter totals are exact
-and independently checkable — a quarter's Appearance durations must sum to
-`quarterMinutes × onFieldCount`. The test suite asserts this identity.
+and independently checkable against the **actual** length of the quarter, not
+its planned length:
+
+`sum(Appearance durations) + sum(vacancy durations) === actualQuarterElapsedMs × onFieldCount`
+
+where `actualQuarterElapsedMs` is the quarter's elapsed time at its effective
+end. The check is strict and always enforced; the test suite asserts it. See
+[Invariants](#invariants-asserted-in-tests) for the full statement.
+
+## Ending a quarter
+
+### Product Owner ruling (issue #18, 2026-09-17)
+
+> *"**Check:** for a closed quarter, `sum(Appearance durations) + sum(vacancy
+> durations) === actualQuarterElapsedMs × onFieldCount`. It is strict and always
+> enforced."*
+>
+> *"**Warning:** a separate, non-blocking warning when the actual length differs
+> from the planned length by more than the margin, in either direction."*
+>
+> *"**The coach always ends the quarter.** The clock never stops on its own.
+> When players walk off, the coach stops it. Small differences from the ref's
+> watch don't matter."*
+>
+> *"**Overrun prompt:** at planned length + margin, the app prompts. **The clock
+> keeps running and is not paused.** Pausing would lose real time if play is
+> still going. The choices are **Ended at planned time / Ended just now / Still
+> playing**. The chosen end time and the time the coach tapped are both
+> recorded."*
+>
+> *"**Margin:** default **1 minute**, **customisable** by the coach. The same
+> margin sets off the overrun prompt and the early-end confirmation."*
+>
+> *"**Early end:** ending more than the margin before planned length asks for a
+> one-tap confirmation."*
+>
+> *"**Locked phone:** the prompt is delivered as a **local notification with
+> vibration**, scheduled when the quarter starts and cancelled if the quarter
+> ends first. An in-app timer won't fire in the background (ADR-002)."*
+>
+> *"**Bench/team-sheet review opened after planned length:** the app **offers**
+> to end the quarter, with the same end-time choices. It never ends the quarter
+> automatically. Before planned length, no offer is made."*
+>
+> *"**Forgotten quarter:** when the app is next opened, it asks "still running,
+> when did it end?", defaulting to planned length. It never ends a quarter
+> silently."*
+
+### Why
+
+- **Actual, not planned, time is checked.** Early whistles and abandoned
+  matches are normal, and Spec 03's fairness maths uses actual minutes. A check
+  against planned length would push the record toward crediting minutes nobody
+  played, which breaks invariant 1 (minutes derived from intervals). The
+  actual-time check still catches interval double-counting (DEF-001, issue #13).
+- **Its blind spot is a clock that ran too long** — a coach who forgot to end
+  the quarter produces a record that is internally consistent but wrong. The
+  deviation warning and the overrun prompt cover that.
+- **The clock is never paused by the app.** If play is still going, a pause
+  would silently lose real played time.
+
+### Terms
+
+| Term | Meaning |
+|---|---|
+| `plannedQuarterMs` | The quarter's planned length (`quarterMinutes`, Spec 01, in ms) |
+| `marginMs` | The quarter-end margin. Default 60 000 ms (1 minute); customisable by the coach |
+| Effective end | The quarter-elapsed time at which the quarter is recorded as having ended |
+| `recordedAt` | The wall-clock time at which the coach made the end-of-quarter choice |
+| `actualQuarterElapsedMs` | The quarter's elapsed time at its effective end |
+
+One margin value drives the overrun prompt, the early-end confirmation and the
+deviation warning. There are not separate margins for each.
+
+### The three end-time choices
+
+Wherever the app asks when a quarter ended (overrun prompt, bench/team-sheet
+review offer), the choices are:
+
+| Choice | Effective end | Quarter status |
+|---|---|---|
+| **Ended at planned time** | `plannedQuarterMs` | `ended` |
+| **Ended just now** | Quarter elapsed at the moment of the tap | `ended` |
+| **Still playing** | — | Stays `running`; clock untouched |
+
+For both ending choices, the engine retains **both** the effective end and
+`recordedAt`. Neither overwrites the other, so the gap between when the quarter
+ended and when the coach said so is always visible in the record.
+
+### Overrun prompt
+
+- Due when quarter elapsed reaches `plannedQuarterMs + marginMs`.
+- The clock **keeps running and is not paused** while the prompt is showing or
+  after it is dismissed.
+- Offers the three choices above.
+- Because elapsed time excludes manually paused time, the due point is defined
+  in quarter-elapsed terms, not as a fixed wall-clock instant. The engine
+  computes when the prompt is due (as quarter elapsed, and — while the clock is
+  running — the corresponding wall-clock instant derived from
+  `runningSinceWallClock`). It does not deliver anything itself.
+
+### Early-end confirmation
+
+- When the coach ends a quarter with quarter elapsed **less than**
+  `plannedQuarterMs − marginMs`, a **one-tap confirmation** is required before
+  the quarter ends. Declining leaves the quarter `running`, clock untouched.
+- Ending at or after `plannedQuarterMs − marginMs` needs no confirmation.
+- A confirmed early end records actual elapsed, not the planned figure.
+
+### Deviation warning
+
+- Raised for a closed quarter when
+  `|actualQuarterElapsedMs − plannedQuarterMs| > marginMs`, in either direction.
+- **Non-blocking:** it never prevents the quarter from ending, never alters any
+  interval, and never changes the strict invariant check.
+- It is a flag for the coach and for dispute review, not a correction.
+
+### Locked phone: local notification
+
+- When a quarter starts, a **local notification with vibration** is scheduled
+  for the overrun prompt's due point.
+- If the quarter ends before that point, the notification is cancelled.
+- Delivery is an **app-layer** concern. The engine stays pure TypeScript (no
+  platform imports) and only computes when the prompt is due; scheduling,
+  cancelling and delivering the notification sit outside the engine.
+- This is a deliberate exception to "background notifications are out of MVP
+  scope" (see [Substitution alarms](#substitution-alarms-under-a-free-running-clock)),
+  limited to the quarter-end prompt.
+
+### Bench / team-sheet review offer
+
+- If the coach opens the bench or team-sheet review while the quarter is
+  running and quarter elapsed is **at or beyond** `plannedQuarterMs`, the app
+  **offers** to end the quarter with the three choices above.
+- The offer can always be declined ("Still playing"). The quarter is **never**
+  ended automatically.
+- Before `plannedQuarterMs`, **no offer is made**.
+
+### Forgotten quarter
+
+- If the coach did not end a quarter and the app is next opened, the app asks
+  **"still running, when did it end?"**, with the effective end **defaulting to
+  `plannedQuarterMs`**.
+- The quarter is **never** ended silently: nothing changes until the coach
+  answers.
+- The coach's answer is recorded with its `recordedAt`, as for the other
+  end-time choices.
+
+### Technical constraint — for the Architect
+
+Delivering the overrun prompt while the phone is locked or the app is
+backgrounded **depends on a scheduled local notification** (a platform
+capability). An in-app JS timer cannot be relied on, because Android suspends
+or throttles background timers ([ADR-002](../decisions/002-wall-clock-time-derivation.md)).
+This introduces a platform dependency (notification scheduling, vibration, and
+the permission to post notifications) that the Architect needs to assess,
+including rescheduling when a manual pause/resume moves the due point. No ADR
+is written in this change.
+
+### Worked example
+
+7-a-side (`onFieldCount = 7`), squad of 10 available, `plannedQuarterMs` =
+600 000 (10 min), `marginMs` = 60 000 (1 min).
+
+| Scenario | Effective end | Confirmation? | Prompt? | Warning? | `actualQuarterElapsedMs × 7` |
+|---|---|---|---|---|---|
+| Coach ends at 09:20 | 560 000 | No (40 s early ≤ margin) | No | No | 3 920 000 |
+| Coach ends at 08:30 | 510 000 | Yes (90 s early > margin) | No | Yes (90 s) | 3 570 000 |
+| Coach ends at 10:45 | 645 000 | No | No (before 11:00) | No (45 s) | 4 515 000 |
+| Prompt at 11:00; at 11:40 coach taps **Ended at planned time** | 600 000, `recordedAt` = wall-clock of the 11:40 tap | No | Yes | No | 4 200 000 |
+| Prompt at 11:00; at 11:40 coach taps **Ended just now** | 700 000 | No | Yes | Yes (100 s) | 4 900 000 |
+| Prompt at 11:00; coach taps **Still playing**; ends at 12:10 | 730 000 | No | Yes | Yes (130 s) | 5 110 000 |
+
+**With a vacancy:** a player is injured at 06:00 with no replacement, and the
+coach ends the quarter at 10:00 (600 000).
+
+- Appearances: 6 × 600 000 + 360 000 = 3 960 000.
+- Vacancy: 600 000 − 360 000 = 240 000.
+- `3 960 000 + 240 000 = 4 200 000 = 600 000 × 7`. ✓
+
+
 
 ## Substitution alarms under a free-running clock
 
@@ -107,15 +299,18 @@ out of play, or while a stoppage has eaten the window.
    visible rather than silently accumulating.
 4. **Quarter-end backstop.** Any sub not actioned by quarter end is carried into
    the next quarter's planned team sheet automatically, so a missed alarm
-   self-corrects at the next hard stop.
+   self-corrects at the next quarter end.
 5. **Escalation.** An alarm unactioned for more than a configurable threshold
    (default 3 minutes) escalates its visual prominence, since the free-running
    clock means a missed sub costs real fairness minutes.
 
 **Alert delivery:** in-app visual (persistent banner, colour-coded) plus optional
 haptic and sound. Must work with the screen on and the app foregrounded — the
-expected touchline usage. Background notifications are explicitly out of MVP
-scope; the app is expected to be open during a match.
+expected touchline usage. Background notifications for substitution alarms are
+explicitly out of MVP scope; the app is expected to be open during a match. The
+**one exception** is the quarter-end overrun prompt, which the PO ruled
+(issue #18) is delivered as a local notification with vibration — see
+[Ending a quarter](#ending-a-quarter).
 
 ## Attribution of minutes
 
@@ -133,10 +328,47 @@ scope; the app is expected to be open during a match.
   player's interval closes and the incoming player's opens at the same instant,
   so no time is double-counted or lost.
 
-**Invariant (asserted in tests):** for any closed quarter,
-`sum(all Appearance durations) === quarterMinutes × onFieldCount`
-and
-`sum(Appearance durations) + sum(BenchStint durations) === quarterMinutes × availablePlayerCount`.
+### Invariants (asserted in tests)
+
+For any closed quarter, with `actualQuarterElapsedMs` the quarter's elapsed
+time at its effective end (never the planned length):
+
+1. **Positions:**
+   `sum(Appearance durations) + sum(vacancy durations) === actualQuarterElapsedMs × onFieldCount`
+2. **Players:**
+   `sum(Appearance durations) + sum(BenchStint durations) === actualQuarterElapsedMs × availablePlayerCount`
+
+**How vacancies apply.** Identity 1 counts *positions*: every position is, at
+every instant, either held (an Appearance) or vacant. Identity 2 counts
+*players*: every available player is, at every instant, either on the field (an
+Appearance) or on the bench (a BenchStint) — the Spec 01 invariant. A vacancy is
+a position with no player, so it has **no term in identity 2**. A player who
+leaves the field without replacement (e.g. injured) moves from an Appearance to
+a BenchStint if they remain available, never into the vacancy.
+
+Identity 2 holds as stated only while `availablePlayerCount` is constant for
+the whole quarter. Whether a player can stop being available mid-quarter, and
+how the identity applies if so, is an open question (see below).
+
+Subtracting 1 from 2 gives a consistency cross-check:
+`sum(BenchStint durations) === actualQuarterElapsedMs × (availablePlayerCount − onFieldCount) + sum(vacancy durations)`.
+
+**Worked example** (same injury case as above: 7-a-side, 10 available, quarter
+ended at 600 000, one player injured at 360 000 and not replaced, and assuming
+the injured player remains available on the bench):
+
+- Identity 1: `3 960 000 + 240 000 = 4 200 000 = 600 000 × 7`. ✓
+- BenchStints: 3 × 600 000 (unselected) + 240 000 (injured player) = 2 040 000.
+- Identity 2: `3 960 000 + 2 040 000 = 6 000 000 = 600 000 × 10`. ✓
+- Cross-check: `2 040 000 = 600 000 × 3 + 240 000`. ✓
+
+A short-handed quarter (fewer available than `onFieldCount`) is covered by the
+same identities, with the unfilled positions vacant from quarter start.
+
+Separately, a **non-blocking deviation warning** is raised when
+`|actualQuarterElapsedMs − plannedQuarterMs| > marginMs` (see
+[Deviation warning](#deviation-warning)). The warning never relaxes either
+identity.
 
 ## Corrections
 
@@ -161,13 +393,62 @@ actually defensible.
 | Player injured mid-quarter, no replacement | Position becomes vacant; team plays short. Vacancy is recorded, not backfilled silently. |
 | Fewer available players than `onFieldCount` | Match can still start with a recorded short-handed flag. |
 | Match abandoned mid-quarter | Close all intervals at current elapsed; status → `abandoned`. Minutes still count toward the season ledger. |
-| Quarter ended early (ref's whistle) | Coach ends quarter manually; actual elapsed is recorded, not the nominal figure. |
+| Quarter ended early (ref's whistle) | Coach ends the quarter (as always). Ending with quarter elapsed below `plannedQuarterMs − marginMs` requires a one-tap confirmation; declining leaves the quarter running. Actual elapsed is recorded, not the planned figure. A deviation beyond the margin raises the non-blocking warning. |
+| Quarter overruns (coach has not ended it by planned length + margin) | Overrun prompt fires at `plannedQuarterMs + marginMs` (local notification with vibration if the phone is locked or the app backgrounded). The clock keeps running and is **not** paused. Choices: Ended at planned time / Ended just now / Still playing. Effective end and `recordedAt` are both retained. Never ended automatically. |
+| Quarter forgotten (app next opened with the quarter still running) | App asks "still running, when did it end?", defaulting to planned length. Nothing is ended until the coach answers; the answer and its `recordedAt` are retained. Never ended silently. |
+| Bench / team-sheet review opened during a running quarter | At or beyond planned length: app **offers** to end the quarter with the three end-time choices; declining keeps it running. Before planned length: no offer. |
 | Same player assigned to two positions | Rejected by the engine with a validation error. |
 | Clock adjusted after the fact | Treated as a correction: requires a note, flagged in the ledger. |
+
+## Revision history
+
+| Date | Change | Authority |
+|---|---|---|
+| 2026-09-17 | Quarter end is always a coach action (no automatic hard stop). Quarter check uses actual elapsed time including vacancies. Added quarter-end safety net: overrun prompt, early-end confirmation, deviation warning, local notification, bench/team-sheet review offer, forgotten-quarter question. Invariants, edge cases and open questions updated. | PO ruling on GitHub issue #18 |
 
 ## Open questions for Product Owner
 
 1. Should the app support extra time / a fifth period, or is 4 quarters fixed?
-2. When a quarter runs long (ref plays 12 minutes of a 10-minute quarter), should
-   the extra time count toward fairness totals? (Recommendation: yes — it is time
-   the players actually played.)
+2. ~~When a quarter runs long (ref plays 12 minutes of a 10-minute quarter), should
+   the extra time count toward fairness totals?~~ **Answered by the issue #18
+   ruling:** the quarter's record and its check use actual elapsed time to the
+   coach-chosen effective end, and Spec 03 uses actual minutes. If the coach ends
+   the quarter at 12:00 ("Ended just now"), 12 minutes count; if they choose
+   "Ended at planned time", 10 minutes count. *PO to confirm this reading when
+   approving.*
+
+Raised by the issue #18 amendment (not decided here):
+
+3. **"Still playing" — does the overrun prompt repeat?** After the coach taps
+   "Still playing", is there a further prompt or notification (and if so, when),
+   or no further reminder until the coach ends the quarter?
+4. **Forgotten quarter — what counts as "forgotten", and what are the choices?**
+   Does the question appear on any app open while a quarter is running beyond
+   planned length (or planned + margin), or only after a relaunch / a longer
+   absence? Besides the planned-length default, can the coach pick "just now",
+   enter a specific time, or answer "still playing"? How does it interact with
+   the existing "Match in progress — resume?" recovery prompt — replace it, or
+   follow it?
+5. **Margin scope and bounds.** Is the customised margin a per-coach app
+   setting, per squad, or per match? Can it be changed mid-quarter (and if so,
+   does it move a scheduled notification)? Is there a minimum/maximum (e.g. is
+   0 allowed)?
+6. **Is a backdated end a correction?** Invariant 5 says corrections are
+   explicit and noted. "Ended at planned time" (and a forgotten-quarter answer)
+   records an effective end earlier than `recordedAt`. The ruling requires both
+   times to be kept but does not require a note. Confirm this is *not* a
+   correction needing a note, and whether the ledger should flag it.
+7. **Events after the chosen effective end.** If a substitution or position
+   change was recorded at, say, 10:30 and the coach then chooses "Ended at
+   planned time" (10:00), the interval would start after the quarter ended.
+   Should that choice be refused, should the later events be moved to the
+   effective end, or should they be handled as corrections?
+8. **Mid-quarter loss of availability.** Can a player stop being *available*
+   mid-quarter (e.g. injured and taken home), as opposed to moving to the bench?
+   If so, invariant identity 2 needs to account for a changing
+   `availablePlayerCount` within the quarter.
+9. **Vacancy representation (follow-up for Spec 01, flag for Architect).** The
+   ruling's check depends on vacancy durations, but Spec 01 defines no vacancy
+   record, and the Quarter entity has no fields for effective end vs
+   `recordedAt`. Spec 01 needs amending before implementation; this change
+   does not do that.
