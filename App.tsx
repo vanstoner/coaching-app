@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   AppState,
   KeyboardAvoidingView,
   Platform,
@@ -38,68 +39,200 @@ import {
   displayName,
   duplicatedNames,
   squadReadiness,
-  buildTeamSheet,
   MAX_NAME_LENGTH,
 } from './src/app/squad';
+import { foldPlayerMinutes, type PlayerMinutes } from './src/app/playerMinutes';
+import { suggestLineup, teamSheetFor, lineupIsComplete } from './src/app/lineup';
+import {
+  loadSession,
+  saveSession,
+  clearSession,
+  toMatchState,
+  hasMatchUnderway,
+  type SavedSession,
+} from './src/app/persistence';
+import { createDeviceStore } from './src/app/storage';
 
 /**
- * The setup flow, then the clock.
+ * A Saturday, in five screens.
  *
- *   match shape (REQ-10, #10)  ->  squad (REQ-09, #9)  ->  clock (REQ-01, #1)
+ *   resume? -> match shape -> squad -> LINEUP -> clock -> LINEUP -> clock ...
  *
- * Invariant 2 in practice. The interval in ClockScreen is a REPAINT trigger and
- * nothing else — every figure is recomputed by `deriveClockView` from the
- * engine's wall-clock anchors on each render, so dropping every tick still
- * leaves the clock correct the moment it repaints. That is what Android does to
- * a backgrounded app.
+ * The lineup screen is the substitution reminder. This squad rotates **between
+ * quarters**, not mid-play, so the app does not interrupt the game with an
+ * alarm — it stops at each boundary and shows who is owed minutes, sorted so
+ * the top of the list is who should come on. The coach can take the suggestion
+ * or ignore it; the override is what happens.
  *
- * Invariant 4 is enforced in src/app/squad.ts, at the point a name is typed.
- * Names entered here stay in memory on this device: nothing persists yet, and
- * ADR-011 means nothing leaves the phone when it does.
+ * Invariant 2: the interval in ClockScreen is a REPAINT trigger and nothing
+ * else. Every figure is recomputed from the engine's wall-clock anchors, so a
+ * throttled or dead app is still right the moment it repaints.
  *
- * `SafeAreaView` matters: React Native 0.86 activities are edge-to-edge, so
- * without it content slides under the status and navigation bars.
+ * Invariant 3: the fairness column is OUTFIELD minutes. Goalkeeping is shown
+ * separately and never counts toward it.
  *
- * Not built yet: substitutions (REQ-04, #4), minutes per player (REQ-03, #3),
- * persistence, and choosing who plays where (REQ-02, #2).
+ * Invariant 4: first names only, enforced in src/app/squad.ts at entry.
+ * ADR-011: everything stays on this device.
  */
 
-type Step = 'match' | 'squad' | 'playing';
+type Step = 'loading' | 'resume' | 'match' | 'squad' | 'lineup' | 'playing';
 
 interface Match {
   engine: MatchEngine;
   state: MatchState;
-  format: Format;
-  players: Player[];
-  teamSheet: Map<UUID, UUID>;
 }
 
 export default function App() {
-  const [step, setStep] = useState<Step>('match');
+  const store = useMemo(() => createDeviceStore(), []);
+
+  const [step, setStep] = useState<Step>('loading');
   const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
   const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
   const [periodCount, setPeriodCount] = useState(DEFAULT_QUARTER_COUNT);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [format, setFormat] = useState<Format>(() => makeSevenASideFormat());
+  const [squadId, setSquadId] = useState<UUID>(() => uuid());
   const [match, setMatch] = useState<Match | null>(null);
+  const [pending, setPending] = useState<SavedSession | null>(null);
 
-  const squadId = useMemo(() => uuid(), []);
-  const format = useMemo(() => makeSevenASideFormat(), []);
+  // --- load once at launch --------------------------------------------------
 
-  const kickOff = useCallback(() => {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = await loadSession(store);
+      if (cancelled) return;
+      if (!saved) {
+        setStep('match');
+        return;
+      }
+      setSquadName(saved.squadName || PLACEHOLDER_SQUAD_NAME);
+      setTotalMinutes(saved.totalMinutes);
+      setPeriodCount(saved.periodCount);
+      setPlayers(saved.players);
+      setFormat(saved.format);
+      setSquadId(saved.squadId);
+
+      if (hasMatchUnderway(saved)) {
+        setPending(saved);
+        setStep('resume');
+      } else {
+        setStep('match');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
+
+  // --- save on every change that matters ------------------------------------
+  //
+  // Fire and forget. `saveSession` swallows storage failure by design: a phone
+  // with a full disk loses the save, never the match.
+
+  const persist = useCallback(
+    (overrides: Partial<Parameters<typeof saveSession>[1]> = {}) => {
+      void saveSession(store, {
+        squadName,
+        squadId,
+        players,
+        format,
+        totalMinutes,
+        periodCount,
+        plan: {},
+        state: match?.state ?? null,
+        ...overrides,
+      });
+    },
+    [store, squadName, squadId, players, format, totalMinutes, periodCount, match]
+  );
+
+  useEffect(() => {
+    if (step === 'loading' || step === 'resume') return;
+    persist();
+  }, [step, persist]);
+
+  // --- actions --------------------------------------------------------------
+
+  const beginMatch = useCallback(() => {
     const engine = new MatchEngine();
     const state = engine.createMatch(squadId, format.id, {
       totalMinutes,
       quarterCount: periodCount,
     });
-    setMatch({
-      engine,
-      state,
-      format,
-      players,
-      teamSheet: buildTeamSheet(players, format.positions),
-    });
-    setStep('playing');
-  }, [squadId, format, totalMinutes, periodCount, players]);
+    setMatch({ engine, state });
+    setStep('lineup');
+  }, [squadId, format, totalMinutes, periodCount]);
+
+  const resume = useCallback(() => {
+    if (!pending) return;
+    const engine = new MatchEngine();
+    const state = toMatchState(pending);
+    if (!state) {
+      setStep('match');
+      return;
+    }
+    setMatch({ engine, state });
+    // A quarter still running goes straight to the clock; between quarters the
+    // coach is owed the lineup screen, which is the whole point of the app.
+    setStep(state.quarters.some((q) => q.status === 'running') ? 'playing' : 'lineup');
+    setPending(null);
+  }, [pending]);
+
+  const startFresh = useCallback(() => {
+    void clearSession(store);
+    setMatch(null);
+    setPending(null);
+    setPlayers([]);
+    setSquadId(uuid());
+    setFormat(makeSevenASideFormat());
+    setSquadName(PLACEHOLDER_SQUAD_NAME);
+    setStep('match');
+  }, [store]);
+
+  const startQuarter = useCallback(
+    (onPitch: UUID[], goalkeeper: UUID | null) => {
+      if (!match) return;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return;
+      match.engine.startQuarter(
+        match.state,
+        quarter,
+        teamSheetFor(onPitch, goalkeeper, format),
+        format
+      );
+      setStep('playing');
+      persist();
+    },
+    [match, format, persist]
+  );
+
+  const endQuarter = useCallback(() => {
+    if (!match) return;
+    const quarter = currentQuarter(match.state);
+    if (!quarter) return;
+    match.engine.endQuarter(match.state, quarter);
+    persist();
+    // Straight to the lineup for the next period — this IS the reminder.
+    setStep(currentQuarter(match.state) ? 'lineup' : 'playing');
+  }, [match, persist]);
+
+  // --- routing --------------------------------------------------------------
+
+  if (step === 'loading') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.inner}>
+          <ActivityIndicator color="#ffffff" />
+        </View>
+        <StatusBar style="light" />
+      </SafeAreaView>
+    );
+  }
+
+  if (step === 'resume' && pending) {
+    return <ResumeScreen saved={pending} onResume={resume} onFresh={startFresh} />;
+  }
 
   if (step === 'match') {
     return (
@@ -115,7 +248,7 @@ export default function App() {
     );
   }
 
-  if (step === 'squad' || match === null) {
+  if (step === 'squad') {
     return (
       <SquadScreen
         squadId={squadId}
@@ -123,7 +256,34 @@ export default function App() {
         onPlayers={setPlayers}
         onFieldCount={format.onFieldCount}
         onBack={() => setStep('match')}
-        onKickOff={kickOff}
+        onNext={beginMatch}
+      />
+    );
+  }
+
+  if (!match) {
+    // Should not happen; recover rather than render nothing.
+    return (
+      <MatchSetupScreen
+        squadName={squadName}
+        onSquadName={setSquadName}
+        totalMinutes={totalMinutes}
+        periodCount={periodCount}
+        onTotalMinutes={setTotalMinutes}
+        onPeriodCount={setPeriodCount}
+        onNext={() => setStep('squad')}
+      />
+    );
+  }
+
+  if (step === 'lineup') {
+    return (
+      <LineupScreen
+        match={match}
+        players={players}
+        format={format}
+        squadName={squadName}
+        onStart={startQuarter}
       />
     );
   }
@@ -131,9 +291,66 @@ export default function App() {
   return (
     <ClockScreen
       match={match}
+      players={players}
       squadName={squadName}
-      onChangeSetup={() => setStep('match')}
+      onEndQuarter={endQuarter}
+      onStartOver={startFresh}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Resume
+// ---------------------------------------------------------------------------
+
+function ResumeScreen({
+  saved,
+  onResume,
+  onFresh,
+}: {
+  saved: SavedSession;
+  onResume: () => void;
+  onFresh: () => void;
+}) {
+  // Computed here and now from the saved anchors, never read from the file.
+  const engine = useMemo(() => new MatchEngine(), []);
+  const state = useMemo(() => toMatchState(saved), [saved]);
+  const elapsed = state ? engine.getMatchElapsedMs(state) : 0;
+  const played = state ? state.quarters.filter((q) => q.status === 'ended').length : 0;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.inner}>
+        <Text style={styles.squad} numberOfLines={1}>
+          {saved.squadName || PLACEHOLDER_SQUAD_NAME}
+        </Text>
+        <Text style={styles.caption}>There is a match in progress.</Text>
+        <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
+          {formatClock(elapsed)}
+        </Text>
+        <Text style={styles.caption}>
+          {played} of {saved.periodCount}{' '}
+          {periodNounPlural(saved.periodCount).toLowerCase()} played
+        </Text>
+        <Text style={styles.hint}>
+          Time is worked out from the clock, so nothing was lost while the app
+          was closed.
+        </Text>
+
+        <View style={styles.actions}>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={onResume}
+          >
+            <Text style={styles.buttonLabel}>Resume</Text>
+          </Pressable>
+        </View>
+        <Pressable onPress={onFresh} style={styles.linkHit}>
+          <Text style={styles.link}>Start a new match instead</Text>
+        </Pressable>
+      </View>
+      <StatusBar style="light" />
+    </SafeAreaView>
   );
 }
 
@@ -158,10 +375,7 @@ function MatchSetupScreen({
   onPeriodCount: (n: number) => void;
   onNext: () => void;
 }) {
-  // Shown so the coach sees the consequence of the choice before committing,
-  // rather than discovering the period length after kick-off.
   const periodMs = (totalMinutes * 60_000) / periodCount;
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.inner}>
@@ -224,7 +438,7 @@ function MatchSetupScreen({
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — who is playing
+// Step 2 — who is in the squad
 // ---------------------------------------------------------------------------
 
 function SquadScreen({
@@ -233,14 +447,14 @@ function SquadScreen({
   onPlayers,
   onFieldCount,
   onBack,
-  onKickOff,
+  onNext,
 }: {
   squadId: UUID;
   players: Player[];
   onPlayers: (p: Player[]) => void;
   onFieldCount: number;
   onBack: () => void;
-  onKickOff: () => void;
+  onNext: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -259,11 +473,6 @@ function SquadScreen({
     setError('');
   }, [draft, players, onPlayers, squadId]);
 
-  const remove = useCallback(
-    (id: UUID) => onPlayers(players.filter((p) => p.id !== id)),
-    [players, onPlayers]
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -271,10 +480,8 @@ function SquadScreen({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.squadInner}>
-          <Text style={styles.squad}>Who is playing?</Text>
-          <Text style={styles.hint}>
-            First names only. Nothing leaves this phone.
-          </Text>
+          <Text style={styles.squad}>The squad</Text>
+          <Text style={styles.hint}>First names only. Nothing leaves this phone.</Text>
 
           <View style={styles.addRow}>
             <TextInput
@@ -303,29 +510,23 @@ function SquadScreen({
           {error !== '' && <Text style={styles.error}>{error}</Text>}
 
           <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-            {players.map((p, i) => (
+            {players.map((p) => (
               <View key={p.id} style={styles.playerRow}>
-                <Text style={styles.playerIndex}>
-                  {i < onFieldCount ? `${i + 1}` : 'sub'}
-                </Text>
                 <Text style={styles.playerName}>{displayName(p)}</Text>
-                <Pressable onPress={() => remove(p.id)} style={styles.removeHit}>
+                <Pressable
+                  onPress={() => onPlayers(players.filter((x) => x.id !== p.id))}
+                  style={styles.removeHit}
+                >
                   <Text style={styles.remove}>Remove</Text>
                 </Pressable>
               </View>
             ))}
-            {players.length === 0 && (
-              <Text style={styles.caption}>No players yet.</Text>
-            )}
+            {players.length === 0 && <Text style={styles.caption}>No players yet.</Text>}
           </ScrollView>
 
           {dupes.length > 0 && (
-            <Text style={styles.hint}>
-              Two players called {dupes.join(', ')} — you can tell them apart on
-              the teamsheet later.
-            </Text>
+            <Text style={styles.hint}>Two players called {dupes.join(', ')}.</Text>
           )}
-
           <Text style={[styles.caption, !readiness.ready && styles.overtime]}>
             {readiness.message}
           </Text>
@@ -341,9 +542,9 @@ function SquadScreen({
                 !readiness.ready && styles.buttonDisabled,
                 pressed && styles.buttonPressed,
               ]}
-              onPress={onKickOff}
+              onPress={onNext}
             >
-              <Text style={styles.buttonLabel}>Start match</Text>
+              <Text style={styles.buttonLabel}>Pick the lineup</Text>
             </Pressable>
           </View>
         </View>
@@ -354,20 +555,174 @@ function SquadScreen({
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — the clock
+// Step 3 — the lineup. This is the substitution reminder.
+// ---------------------------------------------------------------------------
+
+function LineupScreen({
+  match,
+  players,
+  format,
+  squadName,
+  onStart,
+}: {
+  match: Match;
+  players: Player[];
+  format: Format;
+  squadName: string;
+  onStart: (onPitch: UUID[], goalkeeper: UUID | null) => void;
+}) {
+  const { engine, state } = match;
+  const quarter = currentQuarter(state);
+  const minutes = useMemo(
+    () => foldPlayerMinutes(engine, state, players),
+    [engine, state, players]
+  );
+  const suggestion = useMemo(
+    () => suggestLineup(players, minutes, format),
+    [players, minutes, format]
+  );
+
+  const [onPitch, setOnPitch] = useState<UUID[]>(suggestion.onPitch);
+  const [goalkeeper, setGoalkeeper] = useState<UUID | null>(suggestion.goalkeeper);
+  const suggestedFor = useRef(quarter?.id);
+
+  // A new period means a new suggestion.
+  useEffect(() => {
+    if (suggestedFor.current !== quarter?.id) {
+      suggestedFor.current = quarter?.id;
+      setOnPitch(suggestion.onPitch);
+      setGoalkeeper(suggestion.goalkeeper);
+    }
+  }, [quarter?.id, suggestion]);
+
+  const byId = useMemo(() => {
+    const m = new Map<UUID, PlayerMinutes>();
+    for (const row of minutes) m.set(row.playerId, row);
+    return m;
+  }, [minutes]);
+
+  const selected = new Set(onPitch);
+  const complete = lineupIsComplete(onPitch, format);
+  const noun = periodNoun(state.match.quarterCount);
+
+  const toggle = (id: UUID) => {
+    if (selected.has(id)) {
+      setOnPitch(onPitch.filter((x) => x !== id));
+      if (goalkeeper === id) setGoalkeeper(null);
+    } else if (onPitch.length < format.onFieldCount) {
+      setOnPitch([...onPitch, id]);
+    }
+  };
+
+  // Players owed the most time first — the answer to "who comes on".
+  const ordered = useMemo(
+    () =>
+      [...players].sort(
+        (a, b) => (byId.get(a.id)?.outfieldMs ?? 0) - (byId.get(b.id)?.outfieldMs ?? 0)
+      ),
+    [players, byId]
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.squadInner}>
+        <Text style={styles.squad} numberOfLines={1}>
+          {squadName || PLACEHOLDER_SQUAD_NAME}
+        </Text>
+        <Text style={styles.quarter}>
+          {noun} {quarter?.index ?? 1} of {state.match.quarterCount} — who is on?
+        </Text>
+        <Text style={styles.hint}>{suggestion.rationale}</Text>
+
+        <ScrollView style={styles.list}>
+          {ordered.map((p) => {
+            const m = byId.get(p.id);
+            const on = selected.has(p.id);
+            const isKeeper = goalkeeper === p.id;
+            return (
+              <Pressable
+                key={p.id}
+                onPress={() => toggle(p.id)}
+                style={({ pressed }) => [
+                  styles.pickRow,
+                  on && styles.pickRowOn,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <View style={styles.pickMain}>
+                  <Text style={styles.playerName}>{displayName(p)}</Text>
+                  <Text style={styles.pickMinutes}>
+                    {formatClock(m?.outfieldMs ?? 0)} outfield
+                    {(m?.goalkeeperMs ?? 0) > 0
+                      ? ` · ${formatClock(m!.goalkeeperMs)} in goal`
+                      : ''}
+                  </Text>
+                </View>
+                {on && (
+                  <Pressable
+                    onPress={() => setGoalkeeper(isKeeper ? null : p.id)}
+                    style={[styles.gkChip, isKeeper && styles.gkChipOn]}
+                  >
+                    <Text style={[styles.gkLabel, isKeeper && styles.gkLabelOn]}>GK</Text>
+                  </Pressable>
+                )}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={[styles.caption, !complete && styles.overtime]}>
+          {onPitch.length} of {format.onFieldCount} picked
+          {goalkeeper === null ? ' · no goalkeeper chosen' : ''}
+        </Text>
+
+        <View style={styles.actions}>
+          <Pressable
+            onPress={() => {
+              setOnPitch(suggestion.onPitch);
+              setGoalkeeper(suggestion.goalkeeper);
+            }}
+            style={styles.linkHit}
+          >
+            <Text style={styles.link}>Use suggestion</Text>
+          </Pressable>
+          <Pressable
+            disabled={!complete}
+            style={({ pressed }) => [
+              styles.button,
+              !complete && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={() => onStart(onPitch, goalkeeper)}
+          >
+            <Text style={styles.buttonLabel}>Start {noun.toLowerCase()}</Text>
+          </Pressable>
+        </View>
+      </View>
+      <StatusBar style="light" />
+    </SafeAreaView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 4 — the clock, and who is on
 // ---------------------------------------------------------------------------
 
 function ClockScreen({
   match,
+  players,
   squadName,
-  onChangeSetup,
+  onEndQuarter,
+  onStartOver,
 }: {
   match: Match;
+  players: Player[];
   squadName: string;
-  onChangeSetup: () => void;
+  onEndQuarter: () => void;
+  onStartOver: () => void;
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
-  const { engine, state, format, teamSheet } = match;
+  const { engine, state } = match;
 
   useEffect(() => {
     const id = setInterval(forceRepaint, 500);
@@ -381,32 +736,16 @@ function ClockScreen({
   }, []);
 
   const view = deriveClockView(engine, state);
-
-  // Changing the match shape mid-game would silently rewrite what has already
-  // been played, so the way back is offered only before the first whistle.
-  const notStartedYet = state.quarters.every((q) => q.status === 'pending');
-
-  const onStart = useCallback(() => {
-    const quarter = currentQuarter(state);
-    if (!quarter) return;
-    engine.startQuarter(state, quarter, teamSheet, format);
-    forceRepaint();
-  }, [engine, state, teamSheet, format]);
-
-  const onEnd = useCallback(() => {
-    const quarter = currentQuarter(state);
-    if (!quarter) return;
-    engine.endQuarter(state, quarter);
-    forceRepaint();
-  }, [engine, state]);
-
+  const minutes = foldPlayerMinutes(engine, state, players);
+  const onPitch = minutes.filter((m) => m.onPitchNow);
   const noun = periodNoun(state.match.quarterCount).toLowerCase();
+  const nameOf = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? '—';
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.inner}>
+      <View style={styles.squadInner}>
         <Text style={styles.squad} numberOfLines={1}>
-          {squadName.trim() === '' ? PLACEHOLDER_SQUAD_NAME : squadName}
+          {squadName || PLACEHOLDER_SQUAD_NAME}
         </Text>
         <Text style={styles.quarter}>{view.quarterLabel}</Text>
 
@@ -416,7 +755,7 @@ function ClockScreen({
 
         {view.isMatchOver ? (
           <Text style={styles.caption}>
-            Match elapsed {formatClock(view.matchElapsedMs)}
+            Full time — {formatClock(view.matchElapsedMs)} played
           </Text>
         ) : (
           <Text style={[styles.caption, view.isOvertime && styles.overtime]}>
@@ -426,20 +765,23 @@ function ClockScreen({
           </Text>
         )}
 
-        <Text style={styles.caption}>
-          Match total {formatClock(view.matchElapsedMs)} of{' '}
-          {state.match.totalMinutes}:00
+        <Text style={styles.hint}>
+          Match total {formatClock(view.matchElapsedMs)} of {state.match.totalMinutes}:00
         </Text>
 
+        <ScrollView style={styles.list}>
+          {(view.isMatchOver ? minutes : onPitch).map((m) => (
+            <View key={m.playerId} style={styles.playerRow}>
+              <Text style={styles.playerName}>{nameOf(m.playerId)}</Text>
+              <Text style={styles.pickMinutes}>
+                {formatClock(m.outfieldMs)}
+                {m.goalkeeperMs > 0 ? ` · GK ${formatClock(m.goalkeeperMs)}` : ''}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+
         <View style={styles.actions}>
-          {view.canStart && (
-            <Pressable
-              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-              onPress={onStart}
-            >
-              <Text style={styles.buttonLabel}>Start {noun}</Text>
-            </Pressable>
-          )}
           {view.canEnd && (
             <Pressable
               style={({ pressed }) => [
@@ -447,23 +789,17 @@ function ClockScreen({
                 view.isOvertime && styles.buttonUrgent,
                 pressed && styles.buttonPressed,
               ]}
-              onPress={onEnd}
+              onPress={onEndQuarter}
             >
               <Text style={styles.buttonLabel}>End {noun}</Text>
             </Pressable>
           )}
+          {view.isMatchOver && (
+            <Pressable onPress={onStartOver} style={styles.linkHit}>
+              <Text style={styles.link}>New match</Text>
+            </Pressable>
+          )}
         </View>
-
-        {notStartedYet && (
-          <Pressable onPress={onChangeSetup} style={styles.linkHit}>
-            <Text style={styles.link}>Change match setup</Text>
-          </Pressable>
-        )}
-
-        <Text style={styles.footnote}>
-          {match.players.length} in the squad. Substitutions and fairness are not
-          built yet.
-        </Text>
       </View>
       <StatusBar style="light" />
     </SafeAreaView>
@@ -510,14 +846,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  squadInner: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
+  squadInner: { flex: 1, paddingHorizontal: 18, paddingVertical: 14 },
   squad: {
     color: '#ffffff',
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '600',
     alignSelf: 'stretch',
     textAlign: 'center',
@@ -527,27 +859,27 @@ const styles = StyleSheet.create({
     color: '#cfe3da',
     fontSize: 16,
     marginTop: 4,
-    marginBottom: 4,
     alignSelf: 'stretch',
     textAlign: 'center',
     includeFontPadding: false,
   },
-  // No `fontVariant: ['tabular-nums']`. On a real phone that clipped the last
-  // glyph and the first release read "00:0" instead of "00:00".
+  // No `fontVariant: ['tabular-nums']`. On a real phone it clipped the last
+  // glyph and the first release read "00:0".
   clock: {
     color: '#ffffff',
-    fontSize: 80,
+    fontSize: 68,
     fontWeight: '300',
     letterSpacing: 2,
     width: '100%',
     textAlign: 'center',
     paddingHorizontal: 8,
+    marginTop: 4,
   },
   caption: {
     color: '#cfe3da',
     fontSize: 15,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 6,
     alignSelf: 'stretch',
     includeFontPadding: false,
   },
@@ -557,12 +889,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '600',
-    marginTop: 24,
+    marginTop: 22,
     marginBottom: 8,
   },
   choiceRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap' },
-  // Fixed width, not minWidth: the box no longer depends on Android's
-  // measurement of its own text, which is what clipped "90" to "9".
   choice: {
     width: 76,
     paddingVertical: 12,
@@ -576,10 +906,8 @@ const styles = StyleSheet.create({
   },
   choiceWide: { width: 124 },
   choiceSelected: { backgroundColor: '#12855a', borderColor: '#12855a' },
-  // fontWeight is the SAME in both states. Changing it on selection forces a
-  // re-measure that Android applies late, so an unselected label rendered at
-  // the selected width and lost its last character until it was tapped.
-  // Selection is shown by colour and fill, never by metrics.
+  // fontWeight is the SAME in both states: changing it forces an Android
+  // re-measure applied late, which clipped the last character until tapped.
   choiceLabel: {
     color: '#cfe3da',
     fontSize: 17,
@@ -599,13 +927,13 @@ const styles = StyleSheet.create({
   summary: {
     color: '#ffffff',
     fontSize: 17,
-    marginTop: 24,
-    marginBottom: 20,
+    marginTop: 22,
+    marginBottom: 18,
     alignSelf: 'stretch',
     textAlign: 'center',
     includeFontPadding: false,
   },
-  addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
+  addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
   input: {
     flex: 1,
     backgroundColor: '#0f4d3a',
@@ -618,55 +946,63 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginRight: 8,
   },
+  nameInput: { alignSelf: 'stretch', marginRight: 0, textAlign: 'center' },
   addButton: {
     backgroundColor: '#12855a',
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: 8,
   },
-  nameInput: {
-    alignSelf: 'stretch',
-    marginRight: 0,
-    textAlign: 'center',
-  },
-  list: { flex: 1, marginTop: 12 },
+  list: { flex: 1, marginTop: 10 },
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#164f3c',
   },
-  playerIndex: {
-    color: '#8fb3a5',
-    fontSize: 12,
-    width: 34,
-  },
-  playerName: { color: '#ffffff', fontSize: 18, flex: 1 },
+  playerName: { color: '#ffffff', fontSize: 17, flex: 1 },
   removeHit: { padding: 6 },
   remove: { color: '#8fb3a5', fontSize: 13, textDecorationLine: 'underline' },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#164f3c',
+  },
+  pickRowOn: { backgroundColor: '#12855a', borderColor: '#12855a' },
+  pickMain: { flex: 1 },
+  pickMinutes: { color: '#cfe3da', fontSize: 12, marginTop: 2 },
+  gkChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#cfe3da',
+  },
+  gkChipOn: { backgroundColor: '#ffd166', borderColor: '#ffd166' },
+  gkLabel: { color: '#cfe3da', fontSize: 13, fontWeight: '600' },
+  gkLabelOn: { color: '#3a2a00', fontSize: 13, fontWeight: '600' },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 12,
   },
   button: {
     backgroundColor: '#12855a',
     paddingVertical: 15,
-    paddingHorizontal: 28,
+    paddingHorizontal: 26,
     borderRadius: 10,
   },
   buttonDisabled: { backgroundColor: '#2f6b55', opacity: 0.6 },
   buttonUrgent: { backgroundColor: '#c47f1a' },
   buttonPressed: { opacity: 0.7 },
   buttonLabel: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
-  linkHit: { marginTop: 4, padding: 10, marginRight: 8 },
+  linkHit: { padding: 10, marginRight: 8 },
   link: { color: '#8fb3a5', fontSize: 14, textDecorationLine: 'underline' },
-  footnote: {
-    color: '#8fb3a5',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 20,
-  },
 });
