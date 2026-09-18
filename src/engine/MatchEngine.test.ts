@@ -10,9 +10,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MatchEngine, MatchEngineError } from './MatchEngine.js';
-import { UUID, uuid } from '../types/index.js';
-import type { Format, Position } from '../types/index.js';
+import { MatchEngine, MatchEngineError } from './MatchEngine';
+import { UUID, uuid } from '../types/index';
+import type { Format, Position } from '../types/index';
 
 // ============================================================================
 // Test Fixtures

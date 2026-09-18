@@ -38,3 +38,6 @@ expo-env.d.ts
 *.db
 exports/
 backups/
+
+# Output of `npm run bundle:check` — the Metro resolution gate.
+.expo-bundle-check/

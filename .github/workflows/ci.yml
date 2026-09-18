@@ -33,6 +33,19 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # Metro resolves differently from tsc and vitest. It does NOT map a `.js`
+      # import specifier onto a `.ts` file, so `import '../types/index.js'`
+      # typechecks, tests green, and then fails inside Gradle's
+      # `createBundleReleaseJsAndAssets` four and a half minutes into an Android
+      # build. That happened on PR #51 the moment App.tsx first imported from
+      # src/ — until then Metro never saw those modules.
+      #
+      # Bundling here catches it in seconds, in the fast job, before any
+      # emulator or Gradle time is spent. Run `npm run bundle:check` before
+      # pushing anything that changes an import.
+      - name: Bundle with Metro
+        run: npm run bundle:check
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

@@ -311,6 +311,41 @@ def main() -> int:
                     text=True,
                 )
                 check(label, proc.returncode == want, f"exit {proc.returncode}")
+
+            # --expect is repeatable, and EVERY expectation must be found.
+            # Without this case the multi-expect path would ship ungated,
+            # which is how a gate quietly becomes a no-op.
+            print("\nRepeated --expect requires every expectation")
+            good = os.path.join(FIXTURES, "good.png")
+            multi = (
+                (["Example FC"], 0, "one expectation that is present PASSES"),
+                (
+                    ["Example FC", "Example FC"],
+                    0,
+                    "two expectations both present PASSES",
+                ),
+                (
+                    ["Example FC", "Substitution due"],
+                    1,
+                    "one present, one absent FAILS — an absent expectation is not "
+                    "excused by a present one",
+                ),
+                (
+                    ["Nonexistent Rovers", "Substitution due"],
+                    1,
+                    "neither present FAILS",
+                ),
+            )
+            for expects, want, label in multi:
+                if not os.path.exists(good):
+                    check(label, False, f"missing fixture {good}")
+                    continue
+                argv = [sys.executable, os.path.join(HERE, "smoke_assert.py"), good]
+                for e in expects:
+                    argv += ["--expect", e]
+                argv += ["--workdir", tmp, "--quiet"]
+                proc = subprocess.run(argv, capture_output=True, text=True)
+                check(label, proc.returncode == want, f"exit {proc.returncode}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

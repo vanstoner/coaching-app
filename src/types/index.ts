@@ -6,8 +6,68 @@
 // UUIDs represented as strings
 export type UUID = string & { readonly __brand: 'UUID' };
 
+/**
+ * A v4 UUID, on every engine this code runs on.
+ *
+ * `crypto.randomUUID()` alone was a latent crash. It exists in Node, so vitest
+ * and tsc were both satisfied, and it does NOT exist in Hermes — React Native's
+ * JS engine — so the app threw on launch the first time the screen imported the
+ * engine. The emulator smoke test caught it; nothing else could have.
+ *
+ * Three tiers, best first. No platform imports and no dependency, so the engine
+ * stays pure TypeScript and testable without a device.
+ *
+ * The last tier uses `Math.random`, which is not cryptographically secure. That
+ * is acceptable here and nowhere else: these identify a match, a quarter and an
+ * appearance on one coach's phone. They are never secrets, never tokens, and
+ * never leave the device (ADR-011). If an id is ever used to authenticate
+ * anything, this function is the wrong source and must be revisited.
+ */
+/**
+ * Only the two members this needs. The DOM `Crypto` type is unavailable —
+ * tsconfig's `lib` is ES2020 with no DOM — and naming it structurally also
+ * states exactly what a host has to provide.
+ */
+interface MaybeCrypto {
+  randomUUID?: () => string;
+  getRandomValues?: <T extends Uint8Array>(array: T) => T;
+}
+
 export function uuid(): UUID {
-  return crypto.randomUUID() as UUID;
+  const c: MaybeCrypto | undefined = (globalThis as { crypto?: MaybeCrypto }).crypto;
+
+  if (typeof c?.randomUUID === 'function') {
+    return c.randomUUID() as UUID;
+  }
+
+  if (typeof c?.getRandomValues === 'function') {
+    const bytes = c.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+    return bytesToUuid(bytes) as UUID;
+  }
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  return bytesToUuid(bytes) as UUID;
+}
+
+function bytesToUuid(bytes: Uint8Array): string {
+  const hex: string[] = [];
+  for (let i = 0; i < 16; i++) hex.push(bytes[i].toString(16).padStart(2, '0'));
+  return (
+    hex.slice(0, 4).join('') +
+    '-' +
+    hex.slice(4, 6).join('') +
+    '-' +
+    hex.slice(6, 8).join('') +
+    '-' +
+    hex.slice(8, 10).join('') +
+    '-' +
+    hex.slice(10, 16).join('')
+  );
 }
 
 // ============================================================================
