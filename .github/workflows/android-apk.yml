@@ -199,10 +199,26 @@ jobs:
           sed -n 's/^uses-permission: name=.//p' /tmp/perms.txt | sed "s/'$//" \
             > /tmp/perm-names.txt || true
           echo "permissions in the APK:"; cat /tmp/perm-names.txt
+          # Two classes are allowed, and the distinction is the point:
+          #
+          #  - the two system permissions we agreed (INTERNET, VIBRATE);
+          #  - permissions in the app's OWN namespace. Android and AndroidX
+          #    mint these for internal use -- e.g.
+          #    <pkg>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, which guards
+          #    dynamically-registered receivers on API 33+. They are declared
+          #    and held by this app alone, grant nothing to any other app, and
+          #    cannot be requested by one. They are not a capability the coach
+          #    is granting away.
+          #
+          # Any real system permission still fails the job, which is what #44
+          # is for. Self-permissions are listed explicitly so a new one is
+          # visible in the log rather than silently absorbed.
           while read -r perm; do
             [ -n "$perm" ] || continue
             case "$perm" in
               android.permission.INTERNET|android.permission.VIBRATE) ;;
+              com.example.coachingapp.*)
+                echo "app-scoped self-permission (allowed): $perm" ;;
               *) note "unexpected permission in the APK: $perm" ;;
             esac
           done < /tmp/perm-names.txt
