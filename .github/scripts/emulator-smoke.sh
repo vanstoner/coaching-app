@@ -284,8 +284,8 @@ echo "::endgroup::"
 
 echo "::group::Assertions 2 and 3 — the screen is not blank, and shows: $EXPECT"
 python3 "$ASSERT" "$FRAME" "${EXPECT_ARGS[@]}" --workdir "$OUT" \
-  --png-out "$OUT/screenshot.png"
-rc=$?
+  --png-out "$OUT/screenshot.png" 2>&1 | tee "$OUT/frame-assertions.txt"
+rc="${PIPESTATUS[0]}"
 if [ "$rc" = "2" ]; then
   note "the captured frame could not be read at all"
 elif [ "$rc" != "0" ]; then
@@ -293,10 +293,34 @@ elif [ "$rc" != "0" ]; then
 fi
 echo "::endgroup::"
 
+# Diagnosability, learned the hard way on run 35374171616. The logcat dump used
+# to be the LAST thing printed, so `tail` of the job log showed 200 lines of
+# GMS chatter and not one line of why the job failed. Three separate log
+# fetches failed to reach the assertion output. A diagnostic you cannot find is
+# not a diagnostic.
+#
+# So: logcat first and shorter, then the assertion output repeated last. The
+# final 40 lines of this job now always say what actually failed.
 if [ "$fail" != "0" ]; then
-  echo "::group::last 200 lines of logcat"
-  tail -n 200 "$OUT/logcat.txt"
+  echo "::group::last 80 lines of logcat"
+  tail -n 80 "$OUT/logcat.txt"
   echo "::endgroup::"
+
+  echo "=============================================================="
+  echo "WHY THIS JOB FAILED"
+  echo "=============================================================="
+  echo "expectations: $EXPECT"
+  echo "--- frame assertions ---"
+  cat "$OUT/frame-assertions.txt"
+  if [ -s "$OUT/crashes.txt" ]; then
+    echo "--- crashes ---"
+    sed -n '1,20p' "$OUT/crashes.txt"
+  fi
+  if [ -s "$OUT/bundle-errors.txt" ]; then
+    echo "--- bundle errors ---"
+    sed -n '1,20p' "$OUT/bundle-errors.txt"
+  fi
+  echo "=============================================================="
 fi
 
 say "evidence in $OUT: $(ls "$OUT" | tr '\n' ' ')"
