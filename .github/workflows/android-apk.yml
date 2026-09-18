@@ -350,21 +350,36 @@ jobs:
           name: coaching-app-smoke-evidence
           path: smoke-evidence/
           if-no-files-found: warn
-
-  # Cuts a GitHub Release when a v* tag is pushed. Everything else in this
-  # workflow runs on every PR; this runs only on a tag.
+  # ---------------------------------------------------------------------------
+  # Cut the release
+  # ---------------------------------------------------------------------------
   #
-  # Claude Code sessions CANNOT create or edit releases — the API returns
-  # 403 "not permitted for this session type" on both POST and PATCH. This job
-  # uses the runner's GITHUB_TOKEN, which is a different credential. If it
-  # fails on permissions, that is a finding to report, not YAML to debug.
+  # Fires on a push to `main` and on a `v*` tag. It does NOT fire on pull
+  # requests: a PR builds a candidate, it does not publish one.
   #
-  # Created as a DRAFT (D9, #47). Publishing is the PO's Test sign-off after
-  # Tuesday training, done by hand in the GitHub UI (D10) — Claude cannot.
+  # Why main and not only tags. The tag-only design assumed somebody could push
+  # a tag. A Claude Code session cannot: `git push` of a tag ref disconnects,
+  # and `POST /git/refs` returns 403 "Write access to this GitHub API path is
+  # not permitted through this proxy". The release job was therefore
+  # unreachable and had never once executed. The runner's GITHUB_TOKEN is a
+  # different credential and is not behind that proxy, so CI creates the tag
+  # itself via `gh release create --target`.
+  #
+  # Why not a draft. A draft release's assets are not downloadable without an
+  # authenticated session, which makes them useless on a phone. A main build
+  # publishes a PRERELEASE: public, installable, clearly marked as not yet
+  # signed off. Promotion to a full release stays the Product Owner's call.
+  #
+  # The repository is public, so a published asset is world-readable. That is
+  # acceptable for this artifact and only this artifact: the APK contains no
+  # player data (ADR-011 keeps all of it on the device) and the app ships with
+  # a placeholder squad.
   release:
     name: Cut the release
     needs: [apk, smoke]           # never attach a build whose smoke test failed
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      github.event_name == 'push' &&
+      (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write             # least privilege: this job only
@@ -380,45 +395,72 @@ jobs:
           name: coaching-app-apk
           path: release-apk
 
-      - name: Rename, hash and verify the artifact against the tag
+      - name: Work out the tag and verify the APK carries that version
         run: |
           set -uo pipefail
           gh --version
-          VERSION="${GITHUB_REF_NAME#v}"
+
+          # The version of record lives in app.json (D2). The tag is derived
+          # from it, never the other way round.
+          VERSION="$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")"
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-          SRC="$(find release-apk -name '*.apk' | head -n 1)"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            PRERELEASE=""
+            if [ "$TAG" != "v$VERSION" ]; then
+              echo "tag $TAG does not match app.json version $VERSION — refusing to publish"
+              exit 1
+            fi
+          else
+            # One immutable prerelease per green build of main: the audit trail.
+            TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+            PRERELEASE="--prerelease"
+          fi
+          echo "tag: $TAG   version: $VERSION"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+
+          # -print -quit rather than `| head -n 1`: a pipeline that exits 141
+          # on SIGPIPE under pipefail has already cost this project three runs.
+          SRC="$(find release-apk -name '*.apk' -print -quit)"
           test -n "$SRC" || { echo "no APK in the artifact"; exit 1; }
 
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" || true
           if [ -n "${BT:-}" ] && [ -x "$BT/aapt2" ]; then
             "$BT/aapt2" dump badging "$SRC" > /tmp/badging.txt 2>&1 || true
             APK_VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
-            echo "tag says: $VERSION   APK says: ${APK_VERSION:-<unreadable>}"
-            # The gate that was only a convention before CI owned this.
+            echo "app.json says: $VERSION   APK says: ${APK_VERSION:-<unreadable>}"
             if [ "${APK_VERSION:-}" != "$VERSION" ]; then
-              echo "versionName in the APK does not equal the tag — refusing to publish"
+              echo "versionName in the APK does not equal app.json — refusing to publish"
               exit 1
             fi
           else
             echo "aapt2 unavailable on this runner; skipping the versionName check"
           fi
 
-          NAME="coaching-app_${VERSION}_release_${SHORT_SHA}.apk"
+          NAME="coaching-app_${VERSION}_${SHORT_SHA}.apk"
           cp "$SRC" "$NAME"
           sha256sum "$NAME" > "$NAME.sha256"
           cat "$NAME.sha256"
           echo "ASSET=$NAME" >> "$GITHUB_ENV"
 
-      - name: Generate the changelog from Refs trailers
+      - name: Generate the release notes
         run: |
           set -uo pipefail
-          PREV="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
-          RANGE="${PREV:+$PREV..}${GITHUB_REF_NAME}"
+          PREV="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          RANGE="${PREV:+$PREV..}HEAD"
           echo "range: ${RANGE}"
           {
+            echo "## Install it"
+            echo
+            echo "Download the \`.apk\` below on an Android phone and open it."
+            echo "Allow installation from this source when prompted — it is signed"
+            echo "with the Android debug key, not a Play Store key."
+            echo
             echo "## What changed"
             echo
-            git log --no-merges --format='- %s' "$RANGE" || true
+            git log --no-merges --format='- %s' "$RANGE" 2>/dev/null || echo "- initial build"
             echo
             echo "## Artifact"
             echo
@@ -427,27 +469,46 @@ jobs:
             echo '```'
             echo
             echo "Built by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) from \`${GITHUB_SHA}\`."
-            echo "Release APK — the JS bundle is embedded, so it runs with no dev server (#46)."
+            echo "The JS bundle is embedded, so it runs with no dev server (#46),"
+            echo "and the emulator smoke test passed on this exact artifact."
             echo
             echo "## Sign-offs"
             echo
-            echo "- [ ] **Test** — Tuesday training. Publishing this release *is* the sign-off."
+            echo "- [ ] **Test** — Tuesday training."
             echo "- [ ] **Prod** — Saturday match. Outcome appended here afterwards."
           } > notes.md
           cat notes.md
 
-      - name: Create the draft release
+      - name: Publish the release
         run: |
           set -uo pipefail
-          if ! gh release create "$GITHUB_REF_NAME" \
-              --draft \
-              --title "$GITHUB_REF_NAME" \
+          # --target creates the tag at this commit, which is the whole point:
+          # nothing outside CI has to be able to push a tag.
+          if gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
               --notes-file notes.md \
+              $PRERELEASE \
               "$ASSET" "$ASSET.sha256" 2>/tmp/gh-err.txt; then
-            echo "--- gh release create failed ---"
+            echo "release created"
+          else
+            echo "--- gh release create failed; stderr follows ---"
             cat /tmp/gh-err.txt
-            exit 1
+            # A re-run of the same build should update, not fail.
+            echo "attempting to update an existing release of the same tag"
+            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber || exit 1
           fi
-          echo "draft release created:"
-          gh release view "$GITHUB_REF_NAME" --json url,isDraft,assets \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+
+          URL="$(gh release view "$TAG" --json url --jq .url)"
+          IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          IS_PRE="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
+          echo "release: $URL  draft=$IS_DRAFT prerelease=$IS_PRE"
+          gh release view "$TAG" --json assets --jq '.assets[] | "asset: \(.name)"'
+
+          {
+            echo "### Release \`$TAG\`"
+            echo
+            echo "**[Open the release]($URL)** — draft=\`$IS_DRAFT\` prerelease=\`$IS_PRE\`"
+            echo
+            gh release view "$TAG" --json assets --jq '.assets[] | "- \(.name)"'
+          } >> "$GITHUB_STEP_SUMMARY"
