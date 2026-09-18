@@ -147,11 +147,17 @@ cat "$OUT/wm-size.txt"
 say "removing every adb reverse tunnel: the app must have no dev server to reach"
 "$ADB" reverse --remove-all > /dev/null 2>&1 || true
 "$ADB" reverse --list > "$OUT/reverse-tunnels.txt" 2>&1 || true
-if [ -s "$OUT/reverse-tunnels.txt" ]; then
+# `adb reverse --list` with nothing forwarded prints a single empty line, not
+# zero bytes, so `[ -s ]` read "no tunnels" as "tunnels present" and failed the
+# job on the healthy case. Test for non-whitespace content instead. A real
+# tunnel line, or an adb error written to the same file, still fails the gate:
+# if the tunnel state cannot be read, standalone is not proven.
+tunnels="$(tr -d '[:space:]' < "$OUT/reverse-tunnels.txt")"
+if [ -n "$tunnels" ]; then
   note "adb reverse tunnels still present — this run would not prove standalone:"
   cat "$OUT/reverse-tunnels.txt"
 else
-  echo "adb reverse --list is empty: no tunnel from the device to this runner"
+  echo "adb reverse --list reports nothing: no tunnel from the device to this runner"
 fi
 
 # --- Install ---------------------------------------------------------------
