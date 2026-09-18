@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Coaching App",
+    "slug": "coaching-app",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.example.coachingapp",
+      "allowBackup": false
+    }
+  }
+}

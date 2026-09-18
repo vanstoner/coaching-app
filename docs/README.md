@@ -1,5 +1,12 @@
 # Android Coaching App — Knowledge Base
 
+## Start here
+
+**New to this project, or want to know how it is run?** Read
+[HOW-THIS-IS-BUILT.md](./HOW-THIS-IS-BUILT.md) — an outward-facing account of the
+agent squad, the approval gates, and what has gone wrong as well as right.
+
+
 The working memory of this project. Agents have no institutional memory between
 sessions; this is where it lives instead.
 

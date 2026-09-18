@@ -83,11 +83,19 @@ that matter every session:
 
 ## Squad roles
 
-Four separate agents, charters in `docs/roles/`. Key separations:
+Five separate agents, charters in `docs/roles/`, diagrams in
+`docs/roles/squad.md`. They have first names so handoffs read as a chain of
+custody: **Bea** (BA), **Ada** (Architect), **Ellis** (Engineer), **Quinn** (QA),
+**Pip** (Platform Engineer). Key separations:
 
 - The Engineer does **not** write its own acceptance criteria.
 - QA does **not** fix what it finds — it reports, the Engineer fixes.
 - The BA does **not** implement.
+- The Platform Engineer does **not** write product features, and does not decide
+  what counts as verified — QA specifies the proof, Pip builds the mechanism.
+
+End every commit with a `Squad-Role:` trailer naming the agent, above the
+`Co-Authored-By` line.
 
 Run sequentially rather than orchestrated unless Rob asks otherwise — he wants
 visibility into each handoff.
