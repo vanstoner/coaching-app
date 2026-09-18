@@ -65,6 +65,24 @@ def with_speckles(width, height, rgb, speckles) -> bytes:
     return bytes(buf)
 
 
+def two_tone(width, height, rgb_a, rgb_b, pixels_b) -> bytes:
+    """A frame of exactly two colours, `pixels_b` of the content region in B.
+
+    Two distinct colours is far below MIN_DISTINCT_COLOURS, while a few per
+    cent of a second colour puts the dominant fraction comfortably *under*
+    MAX_DOMINANT_FRACTION. So the dominant-fraction gate cannot fire on this
+    frame and the distinct-colour floor is the only thing that can fail it —
+    which is what makes it a test of the floor rather than of both gates at
+    once.
+    """
+    buf = bytearray(solid(width, height, rgb_a))
+    top = int(height * sa.CONTENT_TOP) + 1
+    start = top * width
+    for i in range(start, start + pixels_b):
+        buf[i * 3 : i * 3 + 3] = bytes(rgb_b)
+    return bytes(buf)
+
+
 def assert_on(pixels, width, height, channels, expect, tmp) -> tuple[int, str]:
     """Run the real entry point on synthetic pixels and return (exit code, log)."""
     frame = os.path.join(tmp, "frame.png")
@@ -138,15 +156,41 @@ def main() -> int:
             rc == 1 and "uniformly one colour" in log,
             f"exit {rc}",
         )
-        # 20 speckles in a 120x200 content region: 99.9% dominant, so the
-        # dominant-fraction threshold alone would let it through. The
-        # distinct-colour floor is what catches it.
+        # 12 speckles in a 120x200 content region measures 99.939% dominant,
+        # which is *above* MAX_DOMINANT_FRACTION (99.5%), so both gates fire on
+        # this frame. The expectation below therefore requires both failure
+        # messages — the earlier version of this check asserted on the string
+        # "distinct colours", which also appears in the informational line
+        # printed for every frame, so it could not tell the floor firing from
+        # the floor not firing. QA Note 1 on PR #45.
         rc, log = assert_on(
             with_speckles(W, H, (255, 255, 255), 12), W, H, 3, "Example FC", tmp
         )
         check(
             "a near-blank screen with a handful of stray pixels FAILS",
-            rc == 1 and "distinct colours" in log,
+            rc == 1
+            and "uniformly one colour" in log
+            and "expected at least" in log,
+            f"exit {rc}",
+        )
+        # The frame MIN_DISTINCT_COLOURS exists for: two flat colours, ~3% of
+        # the content region in the second, so dominant is ~97% and the
+        # dominant-fraction gate cannot fire. Only the floor can fail this, and
+        # "uniformly one colour" must be absent from the log to prove it did.
+        rc, log = assert_on(
+            two_tone(W, H, (255, 255, 255), (11, 61, 46), 600),
+            W,
+            H,
+            3,
+            "Example FC",
+            tmp,
+        )
+        check(
+            "a two-colour screen under the dominant threshold FAILS on the "
+            "distinct-colour floor alone",
+            rc == 1
+            and "expected at least" in log
+            and "uniformly one colour" not in log,
             f"exit {rc}",
         )
 

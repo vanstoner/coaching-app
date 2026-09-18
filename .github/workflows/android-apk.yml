@@ -15,6 +15,8 @@ on:
   pull_request:
   push:
     branches: [main]
+    # A tag cuts a release. The release job below is gated on this.
+    tags: ['v*']
   # AC-A7: a rebuild needs no new commit.
   workflow_dispatch:
 
@@ -27,10 +29,12 @@ permissions:
 
 jobs:
   apk:
-    name: Build debug APK
+    name: Build release APK
     runs-on: ubuntu-latest
     env:
-      APK: android/app/build/outputs/apk/debug/app-debug.apk
+      APK: android/app/build/outputs/apk/release/app-release.apk
+      # D2 (#47): versionCode is the Actions run number. app.config.js reads it.
+      ANDROID_VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -91,8 +95,16 @@ jobs:
           echo "could not install ndk;$NDK_VERSION after 3 attempts"
           exit 1
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      # assembleRelease, NOT assembleDebug — #46. A debug APK does not embed
+      # the JS bundle (verified in React Native 0.86.3's gradle plugin: the
+      # bundle task is only registered for non-debuggable variants), so it
+      # cannot render without a Metro dev server. Release embeds it.
+      #
+      # Expo's generated build.gradle signs release with the DEBUG keystore by
+      # default, which is what keeps this sideloadable with no keystore
+      # management. The AC-A4 assertion below proves that held.
+      - name: Build release APK with the bundle embedded
+        run: ./gradlew assembleRelease --no-daemon
         working-directory: android
 
       # Every assertion below gates the job: the build is only a deliverable if
@@ -178,13 +190,47 @@ jobs:
           esac
           echo "::endgroup::"
 
+          echo "::group::#44 — no permission beyond the agreed set"
+          # blockedPermissions in app.json strips the three we rejected. This
+          # asserts against the BUILT APK, because config can be overridden by
+          # a library's manifest merge and the APK is what reaches the phone.
+          "$BT/aapt2" dump permissions "$APK" > /tmp/perms.txt 2>&1 || \
+            note "aapt2 dump permissions failed"
+          sed -n 's/^uses-permission: name=.//p' /tmp/perms.txt | sed "s/'$//" \
+            > /tmp/perm-names.txt || true
+          echo "permissions in the APK:"; cat /tmp/perm-names.txt
+          # Two classes are allowed, and the distinction is the point:
+          #
+          #  - the two system permissions we agreed (INTERNET, VIBRATE);
+          #  - permissions in the app's OWN namespace. Android and AndroidX
+          #    mint these for internal use -- e.g.
+          #    <pkg>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, which guards
+          #    dynamically-registered receivers on API 33+. They are declared
+          #    and held by this app alone, grant nothing to any other app, and
+          #    cannot be requested by one. They are not a capability the coach
+          #    is granting away.
+          #
+          # Any real system permission still fails the job, which is what #44
+          # is for. Self-permissions are listed explicitly so a new one is
+          # visible in the log rather than silently absorbed.
+          while read -r perm; do
+            [ -n "$perm" ] || continue
+            case "$perm" in
+              android.permission.INTERNET|android.permission.VIBRATE) ;;
+              com.example.coachingapp.*)
+                echo "app-scoped self-permission (allowed): $perm" ;;
+              *) note "unexpected permission in the APK: $perm" ;;
+            esac
+          done < /tmp/perm-names.txt
+          echo "::endgroup::"
+
           exit $fail
 
       # AC-A1: exactly one .apk in the artifact.
       - name: Upload the APK
         uses: actions/upload-artifact@v4
         with:
-          name: coaching-app-debug-apk
+          name: coaching-app-apk
           path: ${{ env.APK }}
           if-no-files-found: error
 
@@ -208,7 +254,7 @@ jobs:
     timeout-minutes: 45
     env:
       SMOKE_PACKAGE: com.example.coachingapp
-      SMOKE_APK: apk-under-test/app-debug.apk
+      SMOKE_APK: apk-under-test/app-release.apk
       # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
       # Data protection. If the screen changes, this moves with it.
       SMOKE_EXPECT: Example FC
@@ -276,7 +322,7 @@ jobs:
       - name: Download the APK this run built
         uses: actions/download-artifact@v4
         with:
-          name: coaching-app-debug-apk
+          name: coaching-app-apk
           path: apk-under-test
 
       # Pinned deliberately: API level, image target and ABI are all inputs a
@@ -304,3 +350,104 @@ jobs:
           name: coaching-app-smoke-evidence
           path: smoke-evidence/
           if-no-files-found: warn
+
+  # Cuts a GitHub Release when a v* tag is pushed. Everything else in this
+  # workflow runs on every PR; this runs only on a tag.
+  #
+  # Claude Code sessions CANNOT create or edit releases — the API returns
+  # 403 "not permitted for this session type" on both POST and PATCH. This job
+  # uses the runner's GITHUB_TOKEN, which is a different credential. If it
+  # fails on permissions, that is a finding to report, not YAML to debug.
+  #
+  # Created as a DRAFT (D9, #47). Publishing is the PO's Test sign-off after
+  # Tuesday training, done by hand in the GitHub UI (D10) — Claude cannot.
+  release:
+    name: Cut the release
+    needs: [apk, smoke]           # never attach a build whose smoke test failed
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write             # least privilege: this job only
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the changelog needs the previous tag
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coaching-app-apk
+          path: release-apk
+
+      - name: Rename, hash and verify the artifact against the tag
+        run: |
+          set -uo pipefail
+          gh --version
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          SRC="$(find release-apk -name '*.apk' | head -n 1)"
+          test -n "$SRC" || { echo "no APK in the artifact"; exit 1; }
+
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -n 1)" || true
+          if [ -n "${BT:-}" ] && [ -x "$BT/aapt2" ]; then
+            "$BT/aapt2" dump badging "$SRC" > /tmp/badging.txt 2>&1 || true
+            APK_VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
+            echo "tag says: $VERSION   APK says: ${APK_VERSION:-<unreadable>}"
+            # The gate that was only a convention before CI owned this.
+            if [ "${APK_VERSION:-}" != "$VERSION" ]; then
+              echo "versionName in the APK does not equal the tag — refusing to publish"
+              exit 1
+            fi
+          else
+            echo "aapt2 unavailable on this runner; skipping the versionName check"
+          fi
+
+          NAME="coaching-app_${VERSION}_release_${SHORT_SHA}.apk"
+          cp "$SRC" "$NAME"
+          sha256sum "$NAME" > "$NAME.sha256"
+          cat "$NAME.sha256"
+          echo "ASSET=$NAME" >> "$GITHUB_ENV"
+
+      - name: Generate the changelog from Refs trailers
+        run: |
+          set -uo pipefail
+          PREV="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          RANGE="${PREV:+$PREV..}${GITHUB_REF_NAME}"
+          echo "range: ${RANGE}"
+          {
+            echo "## What changed"
+            echo
+            git log --no-merges --format='- %s' "$RANGE" || true
+            echo
+            echo "## Artifact"
+            echo
+            echo '```'
+            cat "${ASSET}.sha256"
+            echo '```'
+            echo
+            echo "Built by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) from \`${GITHUB_SHA}\`."
+            echo "Release APK — the JS bundle is embedded, so it runs with no dev server (#46)."
+            echo
+            echo "## Sign-offs"
+            echo
+            echo "- [ ] **Test** — Tuesday training. Publishing this release *is* the sign-off."
+            echo "- [ ] **Prod** — Saturday match. Outcome appended here afterwards."
+          } > notes.md
+          cat notes.md
+
+      - name: Create the draft release
+        run: |
+          set -uo pipefail
+          if ! gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file notes.md \
+              "$ASSET" "$ASSET.sha256" 2>/tmp/gh-err.txt; then
+            echo "--- gh release create failed ---"
+            cat /tmp/gh-err.txt
+            exit 1
+          fi
+          echo "draft release created:"
+          gh release view "$GITHUB_REF_NAME" --json url,isDraft,assets \
+            | tee -a "$GITHUB_STEP_SUMMARY"
