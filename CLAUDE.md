@@ -1,121 +1,111 @@
 # Project instructions for Claude
 
-Junior football coaching app. Android first, iOS later. Spec-driven development
-with an agentic squad; Rob is Product Owner with approval gates.
+Junior football coaching app for one under-10s squad. Android first. Rob is
+Product Owner and the only approver.
 
-**On first working in this repo, read `HANDOFF.md`** — full context transfer
-from the session that created these specs.
+**Every session ends with a releasable artifact.** A green build of `main`
+publishes a prerelease APK automatically. If a session produces no installable
+APK, it produced nothing.
+
+## What we are building
+
+One coach, one squad, one match a week on a Saturday, 50 minutes, quarters or
+halves. It answers one question at the touchline: **who comes off next, and is
+everyone getting a fair share?**
+
+It is a substitution reminder, not a timing system.
 
 ## Invariants — never break these
 
-Each is an ADR in `docs/decisions/`. They are load-bearing, not preferences.
+Each is an ADR in `docs/decisions/`. Load-bearing, not preferences. If an
+implementation would break one, stop and escalate.
 
-1. **Minutes are derived by folding, never stored as running totals.** The
-   displayed figure and the audit trail must be incapable of disagreeing.
-   Minutes fold from intervals; intervals fold from an append-only event log
-   (ADR-007, accepted 2026-09-17, which supersedes ADR-003). No derived value
-   is ever persisted as authoritative — including quarter elapsed time.
+1. **Minutes fold from events; nothing derived is stored as authoritative.**
+   The displayed figure and the audit trail must be incapable of disagreeing
+   (ADR-007, supersedes ADR-003).
 2. **Elapsed time comes from wall-clock anchors, never tick counting.** Android
-   throttles background JS timers; ticks are silently lost. Never increment an
-   authoritative value in a timer callback.
+   throttles background timers; ticks are silently lost. Never increment an
+   authoritative value in a timer callback. A timer may trigger a *repaint*; the
+   value it paints is recomputed from anchors every time.
 3. **Fairness is total outfield playing time, never per position.** Positions
-   are assigned deliberately by affinity; per-position measurement would flag
-   the coach's own decisions as anomalies.
+   are assigned by affinity; per-position measurement would flag the coach's own
+   decisions as anomalies.
 4. **First names only. No PII.** Children's data. No surnames, DOB, contacts or
    photos — in the model or the UI.
-5. **Corrections are explicit, noted, and never destructive.** A correction is
-   a new event referencing what it corrects, carrying a mandatory note. The
-   original is never overwritten.
+5. **Corrections are explicit, noted, and never destructive.** A correction is a
+   new event referencing what it corrects, with a mandatory note.
 
-**Proportionality (PO, 2026-09-17).** These five are structural guarantees and
-they stay. They are not a precision target: this app reminds the coach to make a
-substitution and tracks fair playing time — it is not audit-grade timing.
-Seconds-level accuracy is sufficient, and surviving a forgotten clock matters
-more than refining it. Don't spend complexity buying precision past that bar.
+**Proportionality (PO ruling).** These five are structural guarantees, not a
+precision target. Seconds-level accuracy is enough, and surviving a forgotten
+clock matters more than refining it. Don't buy precision past that bar.
 
-If an implementation would break one of these, stop and escalate.
+## How we work
 
-## Working rules
+**Delivery first.** At the last count this repository held 6,147 lines of
+documentation against 114 lines of app. That ratio is the problem, not the
+solution. Before writing a document, ask whether an issue comment would do.
 
-- **Specs are approved before implementation.** Don't write feature code against
-  an unapproved spec.
-- **Escalate ambiguity rather than guessing.** A confident wrong guess is the
-  most expensive failure mode here. Escalation is success, not failure.
-- **Never silently "fix" a spec you think is wrong.** It may encode reasoning
-  you can't see. Propose the change.
+- **Issues are the audit trail.** Decisions, rulings, findings and status go in
+  the issue they affect. `decision-needed` is the label for anything waiting on
+  Rob. Don't create a document where an issue comment works.
+- **Build, then test the build.** Those two together are a working, documented
+  codebase. Everything else is overhead until proven otherwise.
+- **Work an issue, not an idea.** The 21 open issues are the intent. Iterate:
+  each release better than the last.
+- **Acceptance criteria come from the issue**, never from whoever implements it.
+  No criteria, no merge — infrastructure included.
+- **Dry-run every gate against the healthy case**, not just the failure case.
+  Five of six CI failures here were assertions rejecting a correct artifact.
+- **Verify preconditions before designing on them.** The release pipeline was
+  built on a tag push nobody had checked was possible. It wasn't.
+- **Escalate ambiguity; never silently "fix" a spec.** A confident wrong guess
+  is the most expensive failure mode here.
+- **Report partial work as partial.** A known gap reported is a managed risk.
 - **The match engine stays pure TypeScript** — no React or platform imports.
-  It must be testable without a device.
-- **Report partial work as partial.** A known gap reported is a managed risk; a
-  concealed one is a latent defect.
-- **Update the spec when behaviour changes.** A decision that lives only in a
-  chat log is lost at the end of the session.
 
-## How we operate
+## Git and approval
 
-Full model: `docs/process/operating-model.md` (decided in OMP-002). The rules
-that matter every session:
-
-- **Repo work happens only in Claude Code, in this repo.** Never hand Rob
-  manual steps — no "copy this file", no "run these git commands".
-- **Claude does all git.** Branch per unit of work, commit, push, open a PR.
-  Nothing goes to `main` directly. Claude merges only when Rob approves.
-- **PRs carry evidence.** Paste `npx vitest run` and
-  `python3 docs/process/validate-docs.py` output against the PR head. Partial
-  work is a draft PR titled `WIP:` listing what's missing.
-- **Decisions queue as GitHub issues labelled `decision-needed`**; rulings are
-  recorded in the spec/ADR/OMP they affect. `/queue` presents the batch.
-- **How Rob interacts** (decided 2026-09-17, full detail in
-  `docs/process/operating-model.md` §2a). His response time is the bottleneck,
-  not agent throughput:
-  - **Decide** — put options to him in chat, *before* the work. Every decision
-    carries: what, the options, **a recommendation with reasoning**, cost to
-    reverse, what it unblocks, and a link. A neutral menu with no
-    recommendation is an unfinished handoff.
-  - **Approve** — he says `approve <n>`; Claude merges. He never touches the
-    GitHub merge button.
-  - **Interrogate** — PR bodies, issues and repo docs, always linked, never the
-    entry point. Issues are the queue, not the interface.
-- **Report only what you verified in this session.** Counts, statuses, file
-  paths and "scheduled"/"running" claims must come from a tool result.
-- **All roles run on Opus.** Use the role agents in `.claude/agents/`.
-- **End of session:** every decision reached a document or issue; every change
-  is on a pushed branch; nothing is left for Rob to do by hand.
+- **Claude does all git.** Branch per unit of work, commit, push, PR. Nothing
+  goes to `main` directly. Claude merges only when Rob approves.
+- **Never hand Rob manual steps.** No "copy this file", no "run these commands".
+- **PRs carry pasted evidence**, not assertions: `npx vitest run` and
+  `python3 docs/process/validate-docs.py` against the PR head.
+- **Rob's interface is chat.** Put decisions to him *before* the work, each with:
+  what, the options, **a recommendation with reasoning**, cost to reverse, what
+  it unblocks, and a link. A menu with no recommendation is an unfinished
+  handoff. He replies `approve <n>`; Claude merges.
+- **Report only what you verified this session.** Counts, statuses and paths
+  must come from a tool result.
 
 ## Squad roles
 
-Five separate agents, charters in `docs/roles/`, diagrams in
-`docs/roles/squad.md`. They have first names so handoffs read as a chain of
-custody: **Bea** (BA), **Ada** (Architect), **Ellis** (Engineer), **Quinn** (QA),
-**Pip** (Platform Engineer). Key separations:
+Five agents, charters in `docs/roles/`: **Bea** (BA), **Ada** (Architect),
+**Ellis** (Engineer), **Quinn** (QA), **Pip** (Platform). The separations that
+matter: the Engineer doesn't write its own acceptance criteria; QA reports and
+never fixes; Pip builds no product features.
 
-- The Engineer does **not** write its own acceptance criteria.
-- QA does **not** fix what it finds — it reports, the Engineer fixes.
-- The BA does **not** implement.
-- The Platform Engineer does **not** write product features, and does not decide
-  what counts as verified — QA specifies the proof, Pip builds the mechanism.
+Agents die to rate limits often. When one does, say so — work silently falling
+back to the orchestrator is how the boundaries dissolve.
 
-End every commit with a `Squad-Role:` trailer naming the agent, above the
-`Co-Authored-By` line.
-
-Run sequentially rather than orchestrated unless Rob asks otherwise — he wants
-visibility into each handoff.
+End every commit with a `Squad-Role:` trailer above `Co-Authored-By`.
 
 ## Commands
 
 ```bash
-python3 docs/process/validate-docs.py      # validate docs; exits non-zero on failure
-bash docs/issues/create-issues.sh          # create GitHub issues (re-runnable)
-DRY_RUN=1 bash docs/issues/create-issues.sh  # preview without creating
+npx vitest run                             # tests
+npx tsc --noEmit                           # typecheck
+python3 docs/process/validate-docs.py      # docs; non-zero on failure
 ```
 
 ## Data protection
 
-Real squad data must **never** be committed. `.gitignore` guards common
-patterns, but the rule matters more than the guard. Player data belongs on the
-device, not in version control.
+Real squad data is **never** committed — it belongs on the device. The
+repository is public and release assets are world-readable and permanent, so
+nothing captured from a device running a real squad is ever attached to one: no
+database export, no screenshot from Rob's phone, no logcat, no crash dump.
 
 ## Stack
 
-React Native + Expo, TypeScript strict. iOS is aspirational, not committed —
-avoid gratuitously Android-only choices, but don't pay real complexity cost for
-portability that may never be used.
+React Native + Expo, TypeScript strict. iOS is aspirational — avoid gratuitously
+Android-only choices, but don't pay real complexity for portability that may
+never be used.

@@ -414,7 +414,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--expect",
         required=True,
-        help="text that must appear on screen, e.g. 'Example FC'",
+        action="append",
+        metavar="TEXT",
+        help="text that must appear on screen, e.g. 'Example FC'. Repeatable; "
+        "EVERY expectation must be found or the frame fails. Repeating it is "
+        "how a gate proves a feature rendered rather than only that the app "
+        "drew its title.",
     )
     ap.add_argument(
         "--png-out", help="write the decoded frame here as a PNG for the artifact"
@@ -427,17 +432,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    needle = normalise(args.expect)
-    if len(needle) < MIN_NEEDLE_LENGTH:
-        print(
-            f"--expect {args.expect!r} normalises to {needle!r}, "
-            f"{len(needle)} characters, below the {MIN_NEEDLE_LENGTH}-character "
-            "floor. A needle that short would pass on noise, which would make "
-            "this gate worse than no gate.",
-            file=sys.stderr,
-            flush=True,
-        )
-        return 2
+    for expected in args.expect:
+        needle = normalise(expected)
+        if len(needle) < MIN_NEEDLE_LENGTH:
+            print(
+                f"--expect {expected!r} normalises to {needle!r}, "
+                f"{len(needle)} characters, below the {MIN_NEEDLE_LENGTH}-character "
+                "floor. A needle that short would pass on noise, which would make "
+                "this gate worse than no gate.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
 
     lines: list[str] = []
 
@@ -459,12 +465,21 @@ def main(argv: list[str] | None = None) -> int:
     # Order matters: the PO ruled these in increasing order of strength, and a
     # blank-screen diagnosis is more useful than "OCR found nothing".
     not_blank = check_not_blank(width, height, pixels, channels, report)
-    has_text = check_expected_text(
-        width, height, pixels, channels, args.expect, args.workdir, report
-    )
 
-    if not_blank and has_text:
-        report("frame assertions passed: not blank, and the expected text is on screen")
+    # Every expectation must be found. They are all checked even after one
+    # fails, so the log names all of the missing text rather than only the
+    # first — a second CI round trip to discover the second miss is the cost
+    # of short-circuiting here.
+    found_all = True
+    for expected in args.expect:
+        if not check_expected_text(
+            width, height, pixels, channels, expected, args.workdir, report
+        ):
+            found_all = False
+
+    if not_blank and found_all:
+        expectations = ", ".join(repr(e) for e in args.expect)
+        report(f"frame assertions passed: not blank, and on screen: {expectations}")
         return 0
     return 1
 

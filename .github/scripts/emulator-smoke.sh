@@ -71,6 +71,15 @@ set -u
 PKG="${SMOKE_PACKAGE:?SMOKE_PACKAGE is not set}"
 APK="${SMOKE_APK:?SMOKE_APK is not set}"
 EXPECT="${SMOKE_EXPECT:?SMOKE_EXPECT is not set}"
+
+# SMOKE_EXPECT is a `|`-separated list, and EVERY entry must appear on screen.
+# One entry proves the app drew its title; a second proves the feature under
+# test actually rendered. Built into an array once, used everywhere below.
+EXPECT_ARGS=()
+IFS='|' read -r -a _expects <<< "$EXPECT"
+for _e in "${_expects[@]}"; do
+  EXPECT_ARGS+=(--expect "$_e")
+done
 OUT="${SMOKE_OUT:-smoke-evidence}"
 SETTLE_SECONDS="${SMOKE_SETTLE_SECONDS:-10}"
 ATTEMPTS="${SMOKE_ATTEMPTS:-18}"
@@ -108,7 +117,7 @@ bail() {
   echo "SMOKE FAILED (infrastructure): $*"
   say "capturing whatever evidence the device will still give up"
   if capture_frame; then
-    python3 "$ASSERT" "$FRAME" --expect "$EXPECT" --workdir "$OUT" \
+    python3 "$ASSERT" "$FRAME" "${EXPECT_ARGS[@]}" --workdir "$OUT" \
       --png-out "$OUT/screenshot.png" || true
   else
     say "no frame could be captured"
@@ -213,7 +222,7 @@ for attempt in $(seq 1 "$ATTEMPTS"); do
     sleep "$ATTEMPT_GAP"
     continue
   fi
-  python3 "$ASSERT" "$FRAME" --expect "$EXPECT" --workdir "$OUT" --quiet
+  python3 "$ASSERT" "$FRAME" "${EXPECT_ARGS[@]}" --workdir "$OUT" --quiet
   rc=$?
   if [ "$rc" = "0" ]; then
     say "attempt $attempt: the frame satisfies both frame assertions"
@@ -273,8 +282,8 @@ echo "::endgroup::"
 
 # --- Assertions 2 and 3: not blank, and the expected text is on screen ------
 
-echo "::group::Assertions 2 and 3 — the screen is not blank, and shows '$EXPECT'"
-python3 "$ASSERT" "$FRAME" --expect "$EXPECT" --workdir "$OUT" \
+echo "::group::Assertions 2 and 3 — the screen is not blank, and shows: $EXPECT"
+python3 "$ASSERT" "$FRAME" "${EXPECT_ARGS[@]}" --workdir "$OUT" \
   --png-out "$OUT/screenshot.png"
 rc=$?
 if [ "$rc" = "2" ]; then

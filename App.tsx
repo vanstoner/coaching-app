@@ -1,28 +1,133 @@
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
 
-// Slice 0a is the walking skeleton: this screen is deliberately static.
-//
-// It imports nothing from src/engine or src/types, holds no state, and runs no
-// timer. The clock face below is a fixed string, not a rendering of elapsed
-// time — wiring it to the real engine is Slice 0b. Invariant 2 (elapsed time
-// comes from wall-clock anchors, never tick counting) is why there is no
-// setInterval here even for decoration: a decorative ticker is a pattern that
-// gets copied.
+import { MatchEngine } from './src/engine/MatchEngine';
+import { deriveClockView, formatClock, currentQuarter } from './src/app/matchClock';
+import {
+  makePlaceholderSquad,
+  PLACEHOLDER_SQUAD_NAME,
+  DEFAULT_TOTAL_MINUTES,
+  DEFAULT_QUARTER_COUNT,
+} from './src/app/placeholderSquad';
+
+/**
+ * REQ-01 (#1): the match clock.
+ *
+ * Invariant 2 in practice. The interval below is a REPAINT trigger and nothing
+ * else — it calls `forceRepaint`, which holds no time and accumulates nothing.
+ * Every figure on screen is recomputed by `deriveClockView` from the engine's
+ * wall-clock anchors on each render. Drop every one of these ticks and the
+ * clock is still right the moment it repaints, which is exactly what happens
+ * when Android throttles a backgrounded app.
+ *
+ * The AppState listener exists for the same reason from the other direction:
+ * on return to the foreground it repaints immediately rather than waiting up
+ * to a full interval to stop showing a stale figure.
+ *
+ * Not yet built, and deliberately: the squad is a placeholder (REQ-09, #9),
+ * there is no persistence so a relaunch starts a fresh match (part of #1's
+ * resume criterion), and there are no substitutions (REQ-04, #4).
+ */
 export default function App() {
+  const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
+
+  // Built exactly once. Two calls to makePlaceholderSquad() would mint two
+  // different formats, and the match would be created against one while the
+  // team sheet belonged to the other.
+  const { engine, state, squad } = useMemo(() => {
+    const s = makePlaceholderSquad();
+    const e = new MatchEngine();
+    return {
+      engine: e,
+      squad: s,
+      state: e.createMatch(s.squadId, s.format.id, {
+        totalMinutes: DEFAULT_TOTAL_MINUTES,
+        quarterCount: DEFAULT_QUARTER_COUNT,
+      }),
+    };
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(forceRepaint, 500);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') forceRepaint();
+    });
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, []);
+
+  const view = deriveClockView(engine, state);
+
+  const onStart = useCallback(() => {
+    const quarter = currentQuarter(state);
+    if (!quarter) return;
+    engine.startQuarter(state, quarter, squad.teamSheet, squad.format);
+    forceRepaint();
+  }, [engine, state, squad]);
+
+  const onEnd = useCallback(() => {
+    const quarter = currentQuarter(state);
+    if (!quarter) return;
+    engine.endQuarter(state, quarter);
+    forceRepaint();
+  }, [engine, state]);
+
   return (
     <View style={styles.container}>
-      {/* Placeholder squad name. Not a real club, and no real squad data ships
-          in this repository — see CLAUDE.md, Data protection. */}
-      <Text style={styles.squad}>Example FC</Text>
+      <Text style={styles.squad}>{PLACEHOLDER_SQUAD_NAME}</Text>
+      <Text style={styles.quarter}>{view.quarterLabel}</Text>
 
-      {/* Placeholder clock face. Static by PO ruling (issue #11, 2026-09-17). */}
-      <Text style={styles.clock}>00:00</Text>
+      <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
+        {formatClock(view.quarterElapsedMs)}
+      </Text>
 
-      <Text style={styles.caption}>Slice 0a — walking skeleton</Text>
-      <Text style={styles.caption}>The clock is a placeholder and does not run.</Text>
+      {view.isMatchOver ? (
+        <Text style={styles.caption}>
+          Match elapsed {formatClock(view.matchElapsedMs)}
+        </Text>
+      ) : (
+        <Text style={[styles.caption, view.isOvertime && styles.overtime]}>
+          {view.isOvertime
+            ? 'Quarter over — end it when play stops'
+            : `${formatClock(view.quarterRemainingMs)} left in this quarter`}
+        </Text>
+      )}
 
-      <StatusBar style="auto" />
+      <Text style={styles.caption}>
+        Match total {formatClock(view.matchElapsedMs)} of {DEFAULT_TOTAL_MINUTES}:00
+      </Text>
+
+      <View style={styles.actions}>
+        {view.canStart && (
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={onStart}
+          >
+            <Text style={styles.buttonLabel}>Start quarter</Text>
+          </Pressable>
+        )}
+        {view.canEnd && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.button,
+              view.isOvertime && styles.buttonUrgent,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={onEnd}
+          >
+            <Text style={styles.buttonLabel}>End quarter</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <Text style={styles.footnote}>
+        Placeholder squad. Substitutions and fairness are not built yet.
+      </Text>
+
+      <StatusBar style="light" />
     </View>
   );
 }
@@ -39,17 +144,60 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 28,
     fontWeight: '600',
+  },
+  quarter: {
+    color: '#cfe3da',
+    fontSize: 16,
+    marginTop: 4,
     marginBottom: 8,
   },
+  // No `fontVariant: ['tabular-nums']`. On a real phone that clipped the last
+  // glyph and the first release read "00:0" instead of "00:00". The width is
+  // explicit and the text is allowed to shrink rather than be cut.
   clock: {
     color: '#ffffff',
-    fontSize: 72,
-    fontVariant: ['tabular-nums'],
-    marginBottom: 24,
+    fontSize: 88,
+    fontWeight: '300',
+    letterSpacing: 2,
+    width: '100%',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   caption: {
     color: '#cfe3da',
-    fontSize: 14,
+    fontSize: 15,
     textAlign: 'center',
+    marginTop: 4,
+  },
+  overtime: {
+    color: '#ffd166',
+    fontWeight: '600',
+  },
+  actions: {
+    flexDirection: 'row',
+    marginTop: 28,
+  },
+  button: {
+    backgroundColor: '#12855a',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 10,
+  },
+  buttonUrgent: {
+    backgroundColor: '#c47f1a',
+  },
+  buttonPressed: {
+    opacity: 0.7,
+  },
+  buttonLabel: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  footnote: {
+    color: '#8fb3a5',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 32,
   },
 });
