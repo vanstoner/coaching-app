@@ -1,8 +1,15 @@
 name: Android APK
 
 # Separate from ci.yml on purpose. ci.yml is the test gate (vitest, tsc,
-# validate-docs) and is shared with the engine lane; this workflow only builds
-# the app and must never duplicate those steps (AC-E1/E2/E3, issue #11).
+# validate-docs) and is shared with the engine lane; this workflow owns the
+# Android artifact end to end — building it, and proving it runs — and must
+# never duplicate ci.yml's steps (AC-E1/E2/E3, issue #11).
+#
+# Two jobs:
+#   apk    builds the debug APK and asserts what can be asserted about the file.
+#   smoke  boots an emulator, installs that same APK, and proves the app
+#          renders (issue #43). It consumes the `apk` job's artifact rather
+#          than rebuilding, so the ~6-minute build happens once per run.
 
 on:
   pull_request:
@@ -180,3 +187,120 @@ jobs:
           name: coaching-app-debug-apk
           path: ${{ env.APK }}
           if-no-files-found: error
+
+  # Issue #43. Every assertion in the `apk` job above passes on an APK that
+  # shows a blank white screen — that is the gap this job closes, and the
+  # reason the PO waived the manual sideload check (A6) on the understanding
+  # that this replaces it automatically, on every PR.
+  #
+  # Three assertions, in the order the PO ruled on 2026-09-18 and in
+  # increasing order of strength:
+  #   1. the app launches and does not crash
+  #   2. the screen is not blank
+  #   3. OCR finds "Example FC" on it
+  #
+  # What this job proves and what it does not is written out in full in the
+  # header of .github/scripts/emulator-smoke.sh and in the PR that added it.
+  smoke:
+    name: Prove the app renders on an emulator
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SMOKE_PACKAGE: com.example.coachingapp
+      SMOKE_APK: apk-under-test/app-debug.apk
+      # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
+      # Data protection. If the screen changes, this moves with it.
+      SMOKE_EXPECT: Example FC
+      SMOKE_OUT: smoke-evidence
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the same major as ci.yml and the apk job above. Node is
+      # needed here because a debug APK fetches its JS bundle from Metro at
+      # launch; see the Metro section of emulator-smoke.sh.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # avdmanager and sdkmanager are JVM tools; the emulator action shells
+      # out to both.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tesseract-ocr Depends on tesseract-ocr-eng, so --no-install-recommends
+      # still gets the English training data. Both are named anyway, and the
+      # installed versions are printed into the log, so an OCR result can
+      # always be traced to the engine that produced it.
+      - name: Install the OCR engine
+        run: |
+          set -uo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+          tesseract --version
+          dpkg-query -W -f='${binary:Package} ${Version}\n' tesseract-ocr tesseract-ocr-eng
+
+      # Runs before the emulator boots, and gates. It proves the assertions
+      # this job is about to rely on actually fail on a blank screen, on the
+      # wrong text and on noise. A gate nobody has seen fail is not a gate.
+      - name: Prove the screen assertions gate before trusting them
+        run: python3 .github/scripts/test_smoke_assert.py
+
+      # Issue #43 names this as the single unverified assumption. If it turns
+      # out to be wrong, this is where the job stops — in seconds, with a
+      # diagnosis, rather than after an hour of software CPU emulation.
+      - name: Fail fast if this runner has no KVM
+        run: |
+          set -uo pipefail
+          if [ ! -e /dev/kvm ]; then
+            echo "/dev/kvm is absent on this runner."
+            echo "Without it the emulator falls back to full software CPU emulation:"
+            echo "minutes per interaction, which is not usable in CI."
+            echo "Issue #43 records this as the assumption behind the whole approach."
+            exit 1
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      # The same bytes the apk job asserted on and the same bytes the PO would
+      # sideload — not a rebuild.
+      - name: Download the APK this run built
+        uses: actions/download-artifact@v4
+        with:
+          name: coaching-app-debug-apk
+          path: apk-under-test
+
+      # Pinned deliberately: API level, image target and ABI are all inputs a
+      # runner default would otherwise move underneath us. api-level 34 is
+      # above the app's minSdk and below nothing it needs; google_apis/x86_64
+      # is the image combination with KVM acceleration on this runner.
+      - name: Boot an emulator, install the APK and assert the app renders
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: bash .github/scripts/emulator-smoke.sh
+
+      # if: always() is the point. A screenshot of a crash is the most useful
+      # artifact this job can produce, and it is only useful if a failing run
+      # still uploads it.
+      - name: Upload the screenshot and the logs behind the verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coaching-app-smoke-evidence
+          path: smoke-evidence/
+          if-no-files-found: warn

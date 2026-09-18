@@ -4,6 +4,8 @@ dist/
 coverage/
 .expo/
 *.tsbuildinfo
+# Byte-code for the CI helper scripts in .github/scripts/.
+__pycache__/
 
 # Environment and secrets
 .env
