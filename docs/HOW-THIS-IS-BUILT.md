@@ -215,10 +215,16 @@ being audited.
   is [tracked](https://github.com/vanstoner/coaching-app/issues/38) and deferred.
 - **There is no path for a decision that arrives between sessions.** The
   interface works while a session runs. Overnight CI has nowhere to put a ruling.
-- **A green build proves compilation, not behaviour.** The pipeline builds,
-  signs and asserts an APK. Every one of those assertions would pass on an app
-  that shows a blank screen. An emulator smoke test is
-  [raised](https://github.com/vanstoner/coaching-app/issues/43) and not yet built.
+- **A green build proves the app renders, but only with a dev server behind
+  it.** The emulator smoke test
+  ([#43](https://github.com/vanstoner/coaching-app/issues/43)) boots an
+  emulator on every pull request, installs the APK the build job produced, and
+  asserts three things: the app launches without crashing, the screen is not
+  uniformly one colour, and OCR finds the squad name on it. Before it existed,
+  every assertion in the pipeline would have passed on an app showing a blank
+  white screen. What it still does not prove: a debug build does not embed its
+  JavaScript bundle, so the job runs Metro to serve it. The APK on its own, on
+  a phone with no dev server, remains unproven.
 - **Nothing has run on real hardware.** At the time of writing, no human has
   installed the app.
 - **Parallelism is constrained by one branch.** Two agents were briefly run as
