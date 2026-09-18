@@ -261,7 +261,7 @@ jobs:
       # app drew something; "Start quarter" proves REQ-01 actually rendered —
       # the engine built a match, deriveClockView ran, and the control the
       # coach presses is on the screen. A title alone would pass on a dead app.
-      SMOKE_EXPECT: Example FC|Start match
+      SMOKE_EXPECT: Example FC|Set up the match
       SMOKE_OUT: smoke-evidence
     steps:
       - uses: actions/checkout@v4
