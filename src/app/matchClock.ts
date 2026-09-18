@@ -33,6 +33,57 @@ export function formatClock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+/** The match lengths the coach can pick. PO ruling, 2026-09-18. */
+export const TOTAL_MINUTES_CHOICES = [50, 60, 75, 90] as const;
+
+/** Halves or quarters. Every combination above divides exactly into both. */
+export const PERIOD_COUNT_CHOICES = [2, 4] as const;
+
+/**
+ * What a period is called, so the screen reads "Half 1 of 2" rather than
+ * "Quarter 1 of 2".
+ *
+ * The engine counts periods and does not name them — naming is presentation,
+ * and the domain has exactly one concept here. Thirds are included because the
+ * engine accepts a count of 3 even though no format offers it; a label that
+ * says "Period 2 of 3" is better than one that lies.
+ */
+export function periodNoun(periodCount: number): string {
+  switch (periodCount) {
+    case 1:
+      return 'Match';
+    case 2:
+      return 'Half';
+    case 3:
+      return 'Third';
+    case 4:
+      return 'Quarter';
+    default:
+      return 'Period';
+  }
+}
+
+/**
+ * "Halves" / "Quarters", for the setup screen.
+ *
+ * Spelled out rather than suffixed with "s", because "Halfs" is what that
+ * produces and a coach reading it would rightly lose confidence in the rest.
+ */
+export function periodNounPlural(periodCount: number): string {
+  switch (periodCount) {
+    case 1:
+      return 'One period';
+    case 2:
+      return 'Halves';
+    case 3:
+      return 'Thirds';
+    case 4:
+      return 'Quarters';
+    default:
+      return 'Periods';
+  }
+}
+
 /** What the screen needs to render. Everything derived, nothing stored. */
 export interface ClockView {
   /** e.g. "Quarter 2 of 4". */
@@ -98,7 +149,7 @@ export function deriveClockView(engine: MatchEngine, state: MatchState): ClockVi
   const isOvertime = isRunning && rawElapsed >= plannedMs;
 
   return {
-    quarterLabel: `Quarter ${quarter.index} of ${state.match.quarterCount}`,
+    quarterLabel: `${periodNoun(state.match.quarterCount)} ${quarter.index} of ${state.match.quarterCount}`,
     quarterElapsedMs: Math.min(rawElapsed, plannedMs),
     quarterRemainingMs: Math.max(plannedMs - rawElapsed, 0),
     matchElapsedMs,

@@ -10,7 +10,15 @@ import { describe, it, expect } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
 import type { Format, Position, UUID } from '../types/index';
-import { formatClock, deriveClockView, currentQuarter } from './matchClock';
+import {
+  formatClock,
+  deriveClockView,
+  currentQuarter,
+  periodNoun,
+  periodNounPlural,
+  TOTAL_MINUTES_CHOICES,
+  PERIOD_COUNT_CHOICES,
+} from './matchClock';
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -235,5 +243,70 @@ describe('currentQuarter', () => {
       engine.endQuarter(state, q);
     }
     expect(currentQuarter(state)).toBeNull();
+  });
+});
+
+// --- period naming and the setup choices (PO, 2026-09-18) -------------------
+
+describe('period naming', () => {
+  it('names halves and quarters, not "quarter" for everything', () => {
+    // The label said "Quarter 2 of 2" when the match was played in halves.
+    expect(periodNoun(2)).toBe('Half');
+    expect(periodNoun(4)).toBe('Quarter');
+  });
+
+  it('never lies about a count it was not designed for', () => {
+    expect(periodNoun(1)).toBe('Match');
+    expect(periodNoun(3)).toBe('Third');
+    expect(periodNoun(5)).toBe('Period');
+    expect(periodNoun(0)).toBe('Period');
+  });
+
+  it('pluralises for the setup screen', () => {
+    expect(periodNounPlural(2)).toBe('Halves');
+    expect(periodNounPlural(4)).toBe('Quarters');
+  });
+
+  it('labels the running period correctly in halves', () => {
+    const { engine, state, teamSheet, format } = setUp(50, 2);
+    expect(deriveClockView(engine, state).quarterLabel).toBe('Half 1 of 2');
+    engine.startQuarter(state, state.quarters[0], teamSheet, format);
+    engine.endQuarter(state, state.quarters[0]);
+    expect(deriveClockView(engine, state).quarterLabel).toBe('Half 2 of 2');
+  });
+
+  it('labels the running period correctly in quarters', () => {
+    const { engine, state } = setUp(60, 4);
+    expect(deriveClockView(engine, state).quarterLabel).toBe('Quarter 1 of 4');
+  });
+});
+
+describe('every offered match configuration is playable', () => {
+  it('divides exactly, and the period length is what the coach expects', () => {
+    const expected: Record<string, string> = {
+      '50-2': '25:00', '50-4': '12:30',
+      '60-2': '30:00', '60-4': '15:00',
+      '75-2': '37:30', '75-4': '18:45',
+      '90-2': '45:00', '90-4': '22:30',
+    };
+    for (const minutes of TOTAL_MINUTES_CHOICES) {
+      for (const periods of PERIOD_COUNT_CHOICES) {
+        // Must not throw: an offered choice that the engine rejects would be a
+        // dead button.
+        const { engine, state, teamSheet, format } = setUp(minutes, periods);
+        const planned = engine.getPlannedQuarterMs(state.match);
+        expect(formatClock(planned), `${minutes} over ${periods}`).toBe(
+          expected[`${minutes}-${periods}`]
+        );
+        // And the periods sum back to the whole match, with nothing rounded away.
+        expect(planned * periods).toBe(minutes * 60_000);
+        // And it can actually be played through to full time.
+        for (const q of state.quarters) {
+          engine.startQuarter(state, q, teamSheet, format);
+          engine.endQuarter(state, q);
+        }
+        expect(deriveClockView(engine, state).isMatchOver).toBe(true);
+      }
+    }
   });
 });
