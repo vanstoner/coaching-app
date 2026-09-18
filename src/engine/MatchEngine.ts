@@ -315,6 +315,92 @@ export class MatchEngine {
   }
 
   /**
+   * Swap one player for another while a period is running (REQ-04, #4).
+   *
+   * This is what makes a substitution reminder honest. Without it the app
+   * could tell a coach to bring someone on, and then go on recording minutes
+   * for the child who had just walked off — the displayed figure and the truth
+   * would part company, which is the one thing invariant 1 exists to prevent.
+   *
+   * The outgoing player's Appearance is closed at the current match-elapsed and
+   * a new one is opened for the incoming player **at the same position**. No
+   * total is adjusted anywhere: minutes still fold from the intervals, so the
+   * arithmetic cannot drift.
+   *
+   * Every rejection throws before any state is touched — all validation first,
+   * then the writes applied together (DEF-003, #32).
+   */
+  substitute(
+    state: MatchState,
+    quarter: Quarter,
+    outPlayerId: UUID,
+    inPlayerId: UUID
+  ): void {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(
+        `Cannot substitute in quarter ${quarter.index}; status is ${quarter.status} (expected running)`
+      );
+    }
+    if (outPlayerId === inPlayerId) {
+      throw new MatchEngineError('Cannot substitute a player for themselves');
+    }
+
+    const outgoing = state.appearances.find(
+      (a) => a.quarterId === quarter.id && a.playerId === outPlayerId && a.endElapsedMs === null
+    );
+    if (!outgoing) {
+      throw new MatchEngineError(
+        `Cannot substitute ${outPlayerId}; they are not currently on the pitch`
+      );
+    }
+
+    const alreadyOn = state.appearances.find(
+      (a) => a.quarterId === quarter.id && a.playerId === inPlayerId && a.endElapsedMs === null
+    );
+    if (alreadyOn) {
+      throw new MatchEngineError(
+        `Cannot bring on ${inPlayerId}; they are already on the pitch`
+      );
+    }
+
+    // Validation complete. Nothing above writes to state.
+
+    const matchElapsedMs = this.getMatchElapsedMs(state);
+
+    outgoing.endElapsedMs = matchElapsedMs;
+    outgoing.endReason = 'substitution';
+
+    state.appearances.push({
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      playerId: inPlayerId,
+      positionId: outgoing.positionId,
+      positionKind: outgoing.positionKind,
+      startElapsedMs: matchElapsedMs,
+      endElapsedMs: null,
+      endReason: null,
+      corrected: false,
+      correctionNote: null,
+    });
+
+    // The incoming player stops being on the bench; the outgoing player starts.
+    const benchStint = state.benchStints.find(
+      (b) => b.quarterId === quarter.id && b.playerId === inPlayerId && b.endElapsedMs === null
+    );
+    if (benchStint) benchStint.endElapsedMs = matchElapsedMs;
+
+    state.benchStints.push({
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      playerId: outPlayerId,
+      startElapsedMs: matchElapsedMs,
+      endElapsedMs: null,
+    });
+  }
+
+  /**
    * End a quarter. Always a coach action; the clock never stops on its own
    * (Spec 02, "Ending a quarter").
    * Closes all open Appearances and BenchStints at match-elapsed at the end.
