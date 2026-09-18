@@ -76,6 +76,7 @@ interface Match {
 
 export default function App() {
   const [step, setStep] = useState<Step>('match');
+  const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
   const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
   const [periodCount, setPeriodCount] = useState(DEFAULT_QUARTER_COUNT);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -103,6 +104,8 @@ export default function App() {
   if (step === 'match') {
     return (
       <MatchSetupScreen
+        squadName={squadName}
+        onSquadName={setSquadName}
         totalMinutes={totalMinutes}
         periodCount={periodCount}
         onTotalMinutes={setTotalMinutes}
@@ -125,7 +128,13 @@ export default function App() {
     );
   }
 
-  return <ClockScreen match={match} onChangeSetup={() => setStep('match')} />;
+  return (
+    <ClockScreen
+      match={match}
+      squadName={squadName}
+      onChangeSetup={() => setStep('match')}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -133,12 +142,16 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function MatchSetupScreen({
+  squadName,
+  onSquadName,
   totalMinutes,
   periodCount,
   onTotalMinutes,
   onPeriodCount,
   onNext,
 }: {
+  squadName: string;
+  onSquadName: (s: string) => void;
   totalMinutes: number;
   periodCount: number;
   onTotalMinutes: (n: number) => void;
@@ -152,8 +165,20 @@ function MatchSetupScreen({
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.inner}>
-        <Text style={styles.squad}>{PLACEHOLDER_SQUAD_NAME}</Text>
         <Text style={styles.caption}>Set up the match</Text>
+
+        <Text style={styles.fieldLabel}>Team name</Text>
+        <TextInput
+          style={[styles.input, styles.nameInput]}
+          value={squadName}
+          onChangeText={onSquadName}
+          placeholder="Your team"
+          placeholderTextColor="#6e9787"
+          autoCapitalize="words"
+          autoCorrect={false}
+          maxLength={28}
+          returnKeyType="done"
+        />
 
         <Text style={styles.fieldLabel}>Match length</Text>
         <View style={styles.choiceRow}>
@@ -334,9 +359,11 @@ function SquadScreen({
 
 function ClockScreen({
   match,
+  squadName,
   onChangeSetup,
 }: {
   match: Match;
+  squadName: string;
   onChangeSetup: () => void;
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
@@ -378,7 +405,9 @@ function ClockScreen({
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.inner}>
-        <Text style={styles.squad}>{PLACEHOLDER_SQUAD_NAME}</Text>
+        <Text style={styles.squad} numberOfLines={1}>
+          {squadName.trim() === '' ? PLACEHOLDER_SQUAD_NAME : squadName}
+        </Text>
         <Text style={styles.quarter}>{view.quarterLabel}</Text>
 
         <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
@@ -486,8 +515,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  squad: { color: '#ffffff', fontSize: 26, fontWeight: '600' },
-  quarter: { color: '#cfe3da', fontSize: 16, marginTop: 4, marginBottom: 4 },
+  squad: {
+    color: '#ffffff',
+    fontSize: 26,
+    fontWeight: '600',
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  quarter: {
+    color: '#cfe3da',
+    fontSize: 16,
+    marginTop: 4,
+    marginBottom: 4,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   // No `fontVariant: ['tabular-nums']`. On a real phone that clipped the last
   // glyph and the first release read "00:0" instead of "00:00".
   clock: {
@@ -499,7 +543,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 8,
   },
-  caption: { color: '#cfe3da', fontSize: 15, textAlign: 'center', marginTop: 8 },
+  caption: {
+    color: '#cfe3da',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 8,
+    alignSelf: 'stretch',
+    includeFontPadding: false,
+  },
   overtime: { color: '#ffd166', fontWeight: '600' },
   error: { color: '#ffb4a2', fontSize: 14, marginTop: 8 },
   fieldLabel: {
@@ -510,22 +561,50 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   choiceRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap' },
+  // Fixed width, not minWidth: the box no longer depends on Android's
+  // measurement of its own text, which is what clipped "90" to "9".
   choice: {
-    minWidth: 60,
+    width: 76,
     paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#2f6b55',
-    margin: 4,
+    margin: 5,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  choiceWide: { minWidth: 104 },
+  choiceWide: { width: 124 },
   choiceSelected: { backgroundColor: '#12855a', borderColor: '#12855a' },
-  choiceLabel: { color: '#cfe3da', fontSize: 16 },
-  choiceLabelSelected: { color: '#ffffff', fontWeight: '700' },
-  hint: { color: '#8fb3a5', fontSize: 12, marginTop: 4 },
-  summary: { color: '#ffffff', fontSize: 17, marginTop: 24, marginBottom: 20 },
+  // fontWeight is the SAME in both states. Changing it on selection forces a
+  // re-measure that Android applies late, so an unselected label rendered at
+  // the selected width and lost its last character until it was tapped.
+  // Selection is shown by colour and fill, never by metrics.
+  choiceLabel: {
+    color: '#cfe3da',
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+    alignSelf: 'stretch',
+  },
+  choiceLabelSelected: { color: '#ffffff' },
+  hint: {
+    color: '#8fb3a5',
+    fontSize: 12,
+    marginTop: 4,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+  },
+  summary: {
+    color: '#ffffff',
+    fontSize: 17,
+    marginTop: 24,
+    marginBottom: 20,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
   input: {
     flex: 1,
@@ -544,6 +623,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 18,
     borderRadius: 8,
+  },
+  nameInput: {
+    alignSelf: 'stretch',
+    marginRight: 0,
+    textAlign: 'center',
   },
   list: { flex: 1, marginTop: 12 },
   playerRow: {
