@@ -1,6 +1,8 @@
 # Spec 02 — Match Engine & Clock
 
-Status: Draft for Product Owner review — **revised 2026-09-17 following PO rulings on issue #18 (quarter end), PR #20 (open questions 2–9), issue #21 (open questions 10–12), issue #24 (quarter sequencing), issue #26 (open question 14), issue #16 (fractional quarter lengths) and issue #29 (open questions 15 and 16)**
+Status: **Approved** by the Product Owner, 2026-09-18.
+
+> Approved 2026-09-18 — the engine is built and 66 tests pass against it. A line-by-line alignment audit of this spec is still outstanding; discrepancies will be raised as issues rather than held against approval.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
