@@ -12,9 +12,9 @@
  * time, and it is why this is a function of state rather than a counter.
  */
 
-import { MatchEngine } from '../engine/MatchEngine.js';
-import type { MatchState } from '../engine/MatchEngine.js';
-import type { Quarter } from '../types/index.js';
+import { MatchEngine } from '../engine/MatchEngine';
+import type { MatchState } from '../engine/MatchEngine';
+import type { Quarter } from '../types/index';
 
 /**
  * Milliseconds as MM:SS, always two digits each.

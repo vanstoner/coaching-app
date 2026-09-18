@@ -20,7 +20,7 @@ import {
   BenchStint,
   PositionKind,
   AvailabilityStatus,
-} from '../types/index.js';
+} from '../types/index';
 
 // ============================================================================
 // Configuration

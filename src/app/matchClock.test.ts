@@ -7,10 +7,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { MatchEngine } from '../engine/MatchEngine.js';
-import { uuid } from '../types/index.js';
-import type { Format, Position, UUID } from '../types/index.js';
-import { formatClock, deriveClockView, currentQuarter } from './matchClock.js';
+import { MatchEngine } from '../engine/MatchEngine';
+import { uuid } from '../types/index';
+import type { Format, Position, UUID } from '../types/index';
+import { formatClock, deriveClockView, currentQuarter } from './matchClock';
 
 // --- fixtures ---------------------------------------------------------------
 

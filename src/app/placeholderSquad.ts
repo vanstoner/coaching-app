@@ -12,8 +12,8 @@
  * shape gets built.
  */
 
-import { uuid } from '../types/index.js';
-import type { Format, Position, UUID } from '../types/index.js';
+import { uuid } from '../types/index';
+import type { Format, Position, UUID } from '../types/index';
 
 /** Default match shape: the PO's under-10s play 50 minutes in quarters. */
 export const DEFAULT_TOTAL_MINUTES = 50;
