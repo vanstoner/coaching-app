@@ -71,3 +71,27 @@ export function makePlaceholderSquad(): PlaceholderSquad {
 
   return { squadId: uuid(), format, teamSheet, playerNames };
 }
+
+/**
+ * The 7-a-side format on its own, without placeholder players.
+ *
+ * Once the coach enters a real squad (REQ-09), the players come from them and
+ * only the shape of the team comes from here. Custom formats and positions are
+ * REQ-10 (#10), still open.
+ */
+export function makeSevenASideFormat(): Format {
+  const formatId = uuid();
+  const positions: Position[] = POSITION_LABELS.map((label, i) => ({
+    id: uuid(),
+    formatId,
+    label,
+    kind: label === 'GK' ? ('goalkeeper' as const) : ('outfield' as const),
+    sortOrder: i,
+  }));
+  return {
+    id: formatId,
+    name: '7-a-side',
+    onFieldCount: POSITION_LABELS.length,
+    positions,
+  };
+}
