@@ -399,6 +399,17 @@ export default function App() {
         format={format}
         squadName={squadName}
         onStart={startQuarter}
+        // Only before the first whistle. Once a period has been played the
+        // squad screen is not a place to return to, and offering it would
+        // suggest the match can be unwound.
+        onBack={
+          match.state.quarters.every((q) => q.status === 'pending')
+            ? () => {
+                setSquadReturn('match');
+                setStep('squad');
+              }
+            : null
+        }
       />
     );
   }
@@ -498,7 +509,21 @@ function MatchSetupScreen({
   const periodMs = (totalMinutes * 60_000) / periodCount;
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.inner}>
+      {/*
+        SCROLLS. It did not, and the screen is centred with `justifyContent`,
+        so on a shorter phone everything below the fold was simply
+        unreachable — which is how build 42 shipped a Settings link and a
+        build label that the coach could not see or scroll to. The APK had the
+        features; the screen had no way to reach them.
+
+        The emulator smoke gate did not catch it because it asserts that two
+        strings are PRESENT, not that the whole screen is reachable. That is
+        the third distinct thing that gate has been blind to.
+      */}
+      <ScrollView
+        contentContainerStyle={styles.scrollInner}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.caption}>Set up the match</Text>
 
         <Text style={styles.fieldLabel}>Team name</Text>
@@ -554,7 +579,7 @@ function MatchSetupScreen({
         <Pressable onPress={onSettings} style={styles.linkHit}>
           <Text style={styles.link}>Settings</Text>
         </Pressable>
-      </View>
+      </ScrollView>
       <BuildLabel />
       <StatusBar style="light" />
     </SafeAreaView>
@@ -698,12 +723,23 @@ function LineupScreen({
   format,
   squadName,
   onStart,
+  onBack,
 }: {
   match: Match;
   players: Player[];
   format: Format;
   squadName: string;
   onStart: (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => void;
+  /**
+   * A way out. Before this there was none: the lineup screen had one exit and
+   * it was "Start quarter", so a coach who reached it with the wrong squad —
+   * or simply wanted to look at something else — was stuck until they started
+   * a period they did not mean to start.
+   *
+   * Null between periods, where there is genuinely nowhere to go back TO: the
+   * match is underway and the previous screen is a quarter that has ended.
+   */
+  onBack: (() => void) | null;
 }) {
   const { engine, state } = match;
   const quarter = currentQuarter(state);
@@ -863,6 +899,11 @@ function LineupScreen({
         </Text>
 
         <View style={styles.actions}>
+          {onBack && (
+            <Pressable onPress={onBack} style={styles.linkHit}>
+              <Text style={styles.link}>Back</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => {
               setOnPitch(suggestion.onPitch);
@@ -1244,6 +1285,15 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   inner: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  // flexGrow with justifyContent: 'center' keeps a short screen centred and
+  // lets a tall one scroll, rather than centring content off the top.
+  scrollInner: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,

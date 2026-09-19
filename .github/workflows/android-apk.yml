@@ -54,7 +54,27 @@ jobs:
 
       # android/ is never committed (PO ruling, #11): CI generates it, so
       # app.json stays the single source of truth for the manifest.
+      # #52 — the build label the app shows. Computed by the SAME script the
+      # release job uses to name the release, so the string on the phone and
+      # the tag on the releases page cannot disagree.
+      #
+      # It is WRITTEN INTO A GENERATED MODULE rather than passed as
+      # EXPO_PUBLIC_BUILD_LABEL. The env-var route was tried and looked proven
+      # — the literal appeared in the bytecode under `expo export` — and then
+      # did nothing at all here, where Gradle produces the bundle. Run
+      # 35428198347 built with the variable correctly set in this job's
+      # environment and shipped an APK still saying `local dev`. A mechanism
+      # proven on one path is not proven on the path that ships.
+      - name: Compute the build label
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
       - name: Generate the native Android project
+        # APP_VERSION_NAME must be set BEFORE prebuild: app.config.js is read
+        # here, and a version injected later would never reach the manifest.
+        env:
+          APP_VERSION_NAME: ${{ env.VERSION }}
         run: npx expo prebuild --platform android --no-install
 
       # Run 35265658389 failed mid-configuration with
@@ -103,22 +123,6 @@ jobs:
       # Expo's generated build.gradle signs release with the DEBUG keystore by
       # default, which is what keeps this sideloadable with no keystore
       # management. The AC-A4 assertion below proves that held.
-      # #52 — the build label the app shows. Computed by the SAME script the
-      # release job uses to name the release, so the string on the phone and
-      # the tag on the releases page cannot disagree.
-      #
-      # It is WRITTEN INTO A GENERATED MODULE rather than passed as
-      # EXPO_PUBLIC_BUILD_LABEL. The env-var route was tried and looked proven
-      # — the literal appeared in the bytecode under `expo export` — and then
-      # did nothing at all here, where Gradle produces the bundle. Run
-      # 35428198347 built with the variable correctly set in this job's
-      # environment and shipped an APK still saying `local dev`. A mechanism
-      # proven on one path is not proven on the path that ships.
-      - name: Compute the build label
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
-
       # Dry-run the writer against a throwaway value BEFORE trusting it, then
       # write the real one. Five of six CI failures on this project were gates
       # nobody had exercised against a healthy input.
@@ -465,9 +469,8 @@ jobs:
           set -uo pipefail
           gh --version
 
-          # The version of record lives in app.json (D2). The tag is derived
-          # from it, never the other way round.
-          VERSION="$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")"
+          # The version is the build commit's date, computed by the same
+          # script the apk job used. app.json is a local-run fallback only.
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 
           # #52: the SAME script the apk job used to bake the on-screen label.
@@ -504,7 +507,7 @@ jobs:
           if [ -n "${BT:-}" ] && [ -x "$BT/aapt2" ]; then
             "$BT/aapt2" dump badging "$SRC" > /tmp/badging.txt 2>&1 || true
             APK_VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" /tmp/badging.txt | sed -n 1p)"
-            echo "app.json says: $VERSION   APK says: ${APK_VERSION:-<unreadable>}"
+            echo "computed: $VERSION   APK says: ${APK_VERSION:-<unreadable>}"
             if [ "${APK_VERSION:-}" != "$VERSION" ]; then
               echo "versionName in the APK does not equal app.json — refusing to publish"
               exit 1

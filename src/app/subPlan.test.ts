@@ -67,6 +67,20 @@ function setUp(size = 9, totalMinutes = 50, quarterCount = 4) {
 
 // --- the default the PO asked for -------------------------------------------
 
+/**
+ * The plan after a coach has scheduled EVERY bench player at the default time.
+ *
+ * `planSubs` now starts with nobody scheduled (PO ruling, #62), so tests about
+ * what a scheduled sub does have to schedule one first. That is the point of
+ * the ruling: scheduling is a deliberate act, including here.
+ */
+function allScheduled(ids: UUID[], periodMs: number) {
+  return ids.reduce(
+    (plan, id) => setSubTime(plan, id, defaultSubTimeMs(periodMs), periodMs),
+    planSubs(ids, periodMs)
+  );
+}
+
 describe('defaultSubTimeMs', () => {
   it('is the midpoint of the period — 6:15 into a 12:30 quarter', () => {
     // The PO's own example: a 50-minute match in quarters.
@@ -89,9 +103,9 @@ describe('defaultSubTimeMs', () => {
 });
 
 describe('planSubs', () => {
-  it('plans every bench player at the default time', () => {
+  it('plans every bench player at the default time once scheduled', () => {
     const ids = [uuid(), uuid()] as UUID[];
-    const plan = planSubs(ids, 12 * 60_000 + 30_000);
+    const plan = allScheduled(ids, 12 * 60_000 + 30_000);
     expect(plan).toHaveLength(2);
     for (const s of plan) {
       expect(formatClock(s.atMs)).toBe('06:15');
@@ -112,7 +126,7 @@ describe('setting the time next to a name', () => {
 
   it('moves only that player', () => {
     const [a, b] = [uuid(), uuid()] as UUID[];
-    const plan = setSubTime(planSubs([a, b], periodMs), a, 3 * 60_000, periodMs);
+    const plan = setSubTime(allScheduled([a, b], periodMs), a, 3 * 60_000, periodMs);
     expect(formatClock(plan[0].atMs)).toBe('03:00');
     expect(formatClock(plan[1].atMs)).toBe('06:15');
   });
@@ -135,7 +149,7 @@ describe('setting the time next to a name', () => {
 
   it('nudges by a step and stays inside the period', () => {
     const a = uuid() as UUID;
-    let plan = planSubs([a], periodMs);
+    let plan = allScheduled([a], periodMs);
     plan = nudgeSubTime(plan, a, 60_000, periodMs);
     expect(formatClock(plan[0].atMs)).toBe('07:15');
     plan = nudgeSubTime(plan, a, -2 * 60_000, periodMs);
@@ -159,14 +173,14 @@ describe('when the reminder fires', () => {
 
   it('is not due before the time, and is due at it', () => {
     const a = uuid() as UUID;
-    const plan = planSubs([a], periodMs);
+    const plan = allScheduled([a], periodMs);
     expect(dueSubs(plan, 6 * 60_000)).toHaveLength(0);
     expect(dueSubs(plan, 6 * 60_000 + 15_000)).toHaveLength(1);
   });
 
   it('stays due when the coach forgets — that is the entire point', () => {
     const a = uuid() as UUID;
-    const plan = planSubs([a], periodMs);
+    const plan = allScheduled([a], periodMs);
     // Three minutes late and still shouting.
     expect(dueSubs(plan, 9 * 60_000)).toHaveLength(1);
   });
@@ -187,7 +201,7 @@ describe('when the reminder fires', () => {
 
   it('counts down to the next one', () => {
     const a = uuid() as UUID;
-    const plan = planSubs([a], periodMs);
+    const plan = allScheduled([a], periodMs);
     expect(formatClock(msUntilNextSub(plan, 0)!)).toBe('06:15');
     expect(formatClock(msUntilNextSub(plan, 5 * 60_000)!)).toBe('01:15');
     // Once it is due there is nothing left to count down to.
@@ -420,7 +434,7 @@ describe('a substitute with no planned time', () => {
     // The case from the match: three on the bench, two coming on.
     const off = uuid() as UUID;
     const on = uuid() as UUID;
-    let plan = planSubs([off, on], periodMs);
+    let plan = allScheduled([off, on], periodMs);
     plan = clearSubTime(plan, off);
 
     expect(isPlanned(plan[0])).toBe(false);
@@ -456,12 +470,45 @@ describe('a substitute with no planned time', () => {
     expect(isPlanned(plan[0])).toBe(true);
   });
 
-  it('leaves the default plan fully planned, so nothing changes by accident', () => {
-    // The regression that would matter most: every bench player silently
-    // becoming "no sub" would turn the reminder off for everyone.
+  it('starts with NOBODY scheduled, so a sub is opted into', () => {
+    // PO ruling, second round of field testing: defaulting everyone to the
+    // midpoint meant a coach wanting two of three substitutes on had to turn
+    // one OFF — undoing something they never asked for.
     const ids = [uuid(), uuid(), uuid()] as UUID[];
     const plan = planSubs(ids, periodMs);
-    expect(plan.every(isPlanned)).toBe(true);
-    expect(dueSubs(plan, periodMs)).toHaveLength(3);
+    expect(plan.every((s) => !isPlanned(s))).toBe(true);
+    expect(dueSubs(plan, periodMs)).toEqual([]);
+    expect(nextSub(plan, 0)).toBeNull();
+  });
+
+  it('takes one press to schedule a sub, landing halfway through', () => {
+    // "first increment should be half way through the half or quarter"
+    const a = uuid() as UUID;
+    const plan = nudgeSubTime(planSubs([a], periodMs), a, 30_000, periodMs);
+    expect(plan[0].atMs).toBe(defaultSubTimeMs(periodMs));
+    expect(plan[0].atMs).toBe(375_000); // 6:15 into a 12:30 quarter
+  });
+
+  it('then steps by 30 seconds in either direction', () => {
+    // "then + and - should just increment or decrement by as appropriate 30s"
+    const a = uuid() as UUID;
+    let plan = nudgeSubTime(planSubs([a], periodMs), a, 30_000, periodMs);
+    const mid = plan[0].atMs;
+
+    plan = nudgeSubTime(plan, a, 30_000, periodMs);
+    expect(plan[0].atMs).toBe(mid + 30_000);
+
+    plan = nudgeSubTime(plan, a, -30_000, periodMs);
+    expect(plan[0].atMs).toBe(mid);
+
+    plan = nudgeSubTime(plan, a, -30_000, periodMs);
+    expect(plan[0].atMs).toBe(mid - 30_000);
+  });
+
+  it('walks all the way back down to no sub, and no further', () => {
+    const a = uuid() as UUID;
+    let plan = nudgeSubTime(planSubs([a], periodMs), a, 30_000, periodMs);
+    for (let i = 0; i < 40; i++) plan = nudgeSubTime(plan, a, -30_000, periodMs);
+    expect(plan[0].atMs).toBe(NO_SUB_PLANNED);
   });
 });
