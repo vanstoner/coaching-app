@@ -19,6 +19,8 @@ import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
 import type { Format, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
+import { FixturesScreen } from './src/screens/FixturesScreen';
+import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import {
   describeDefaults,
   normaliseTeamName,
@@ -95,6 +97,8 @@ import { createDeviceStore } from './src/app/storage';
 type Step =
   | 'loading'
   | 'resume'
+  | 'fixtures'
+  | 'fixtureForm'
   | 'match'
   | 'settings'
   | 'squad'
@@ -139,7 +143,7 @@ export default function App() {
       const saved = await loadSession(store);
       if (cancelled) return;
       if (!saved) {
-        setStep('match');
+        setStep('fixtures');
         return;
       }
       setSquadName(saved.squadName || PLACEHOLDER_SQUAD_NAME);
@@ -154,7 +158,9 @@ export default function App() {
         setPending(saved);
         setStep('resume');
       } else {
-        setStep('match');
+        // The front door (#62): "when I enter the app I should immediately see
+        // a list of Future, Current, Past Fixtures if they exist."
+        setStep('fixtures');
       }
     })();
     return () => {
@@ -192,6 +198,63 @@ export default function App() {
 
   // --- actions --------------------------------------------------------------
 
+  /**
+   * Save a planned fixture. A fixture IS a Match with status 'planned', so
+   * this goes through the engine rather than building a parallel record.
+   */
+  const saveFixture = useCallback(
+    (draft: FixtureDraft) => {
+      const engine = new MatchEngine();
+      const state = engine.createMatch(squadId, format.id, {
+        totalMinutes: draft.totalMinutes,
+        quarterCount: draft.periodCount,
+        opponent: draft.opponent.trim() === '' ? null : draft.opponent.trim(),
+        competition: draft.competition,
+        kickoffAt: draft.kickoffAt,
+      });
+      const stored: SavedMatch = {
+        match: state.match,
+        quarters: state.quarters,
+        appearances: [],
+        benchStints: [],
+        availability: [],
+      };
+      const next = [...matches, stored];
+      setMatches(next);
+      // Persist immediately with the new list: the effect that saves on step
+      // change would otherwise run before this state update lands, and the
+      // fixture would exist on screen and not on disk.
+      persist({ matches: next, state: null });
+      setStep('fixtures');
+    },
+    [squadId, format, matches, persist]
+  );
+
+  /** Open a fixture: play it if it is today's, otherwise look at it. */
+  const openFixture = useCallback(
+    (matchId: UUID) => {
+      const stored = matches.find((m) => m.match.id === matchId);
+      if (!stored) return;
+      const engine = new MatchEngine();
+      setMatch({
+        engine,
+        state: {
+          match: stored.match,
+          quarters: stored.quarters,
+          appearances: stored.appearances,
+          benchStints: stored.benchStints,
+          playerAvailability: new Map(stored.availability),
+        },
+      });
+      setSubPlan([]);
+      // A played match has nothing to set up; a planned one needs a lineup.
+      const played = stored.quarters.some((q) => q.status === 'ended');
+      const running = stored.quarters.some((q) => q.status === 'running');
+      setStep(running ? 'playing' : played ? 'playing' : 'lineup');
+    },
+    [matches]
+  );
+
   const beginMatch = useCallback(() => {
     const engine = new MatchEngine();
     const state = engine.createMatch(squadId, format.id, {
@@ -228,7 +291,7 @@ export default function App() {
     setMatch(null);
     setPending(null);
     setSubPlan([]);
-    setStep('match');
+    setStep('fixtures');
   }, []);
 
   /**
@@ -245,7 +308,7 @@ export default function App() {
     setSquadId(uuid());
     setFormat(makeSevenASideFormat());
     setSquadName(PLACEHOLDER_SQUAD_NAME);
-    setStep('match');
+    setStep('fixtures');
   }, [store]);
 
   const startQuarter = useCallback(
@@ -335,6 +398,37 @@ export default function App() {
     );
   }
 
+  if (step === 'fixtures') {
+    return (
+      <FixturesScreen
+        squadName={squadName}
+        matches={matches.map((m) => m.match)}
+        currentMatchId={match?.state.match.id ?? null}
+        now={new Date()}
+        onOpen={openFixture}
+        onAdd={() => setStep('fixtureForm')}
+        onSettings={() => setStep('settings')}
+        buildLabel={currentBuildLabel()}
+      />
+    );
+  }
+
+  if (step === 'fixtureForm') {
+    return (
+      <FixtureFormScreen
+        initial={{
+          opponent: '',
+          competition: null,
+          kickoffAt: null,
+          totalMinutes,
+          periodCount,
+        }}
+        onSave={saveFixture}
+        onCancel={() => setStep('fixtures')}
+      />
+    );
+  }
+
   if (step === 'settings') {
     return (
       <SettingsScreen
@@ -350,7 +444,7 @@ export default function App() {
           setStep('squad');
         }}
         onForget={forgetEverything}
-        onDone={() => setStep('match')}
+        onDone={() => setStep('fixtures')}
       />
     );
   }
