@@ -12,6 +12,7 @@
  *    survivable; an app that will not start is not.
  */
 
+import { makeSevenASideFormat } from './placeholderSquad';
 import { describe, it, expect } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
@@ -32,6 +33,7 @@ import {
   hasMatchInProgress,
   hasMatchUnderway,
   type KeyValueStore,
+  type SavedMatch,
 } from './persistence';
 
 function makeFormat(onFieldCount = 7): Format {
@@ -172,7 +174,7 @@ describe('invariant 1 — nothing derived is written as authoritative', () => {
     x.state.quarters[0].elapsedMs = 999_999;
 
     const saved = toSavedSession(sessionOf(x));
-    for (const q of saved.match!.quarters) expect(q.elapsedMs).toBe(0);
+    for (const q of saved.matches[0].quarters) expect(q.elapsedMs).toBe(0);
   });
 
   it('keeps the anchors, which are what the elapsed time is rebuilt from', () => {
@@ -184,7 +186,7 @@ describe('invariant 1 — nothing derived is written as authoritative', () => {
       x.format
     );
     const saved = toSavedSession(sessionOf(x));
-    const q = saved.match!.quarters[0];
+    const q = saved.matches[0].quarters[0];
     expect(q.runningSinceWallClock).not.toBeNull();
     expect(typeof q.accumulatedMs).toBe('number');
   });
@@ -214,7 +216,7 @@ describe('a corrupt save starts a clean session rather than crashing', () => {
     const x = setUp();
     const saved = toSavedSession(sessionOf(x));
     const broken = JSON.parse(JSON.stringify(saved));
-    delete broken.match.quarters;
+    delete broken.matches[0].quarters;
     expect(parseSession(JSON.stringify(broken))).toBeNull();
   });
 
@@ -272,7 +274,8 @@ describe('round trip', () => {
     const store = createMemoryStore();
     await saveSession(store, sessionOf(x, { state: null }));
     const saved = (await loadSession(store))!;
-    expect(saved.match).toBeNull();
+    expect(saved.matches).toEqual([]);
+    expect(saved.currentMatchId).toBeNull();
     expect(toMatchState(saved)).toBeNull();
     expect(saved.players).toHaveLength(10);
   });
@@ -368,5 +371,122 @@ describe('resume detection', () => {
     await saveSession(store, sessionOf(x));
     expect(hasMatchUnderway(await loadSession(store))).toBe(false);
     expect(hasMatchInProgress(null)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// History survives a save — #62, slice 3
+// ---------------------------------------------------------------------------
+
+describe('many matches', () => {
+  it('keeps played matches when the current one is saved', () => {
+    // The property that protects a season. `saveSession` writes the WHOLE
+    // document, so anything not passed is not written — a save that forgot to
+    // carry the history would silently delete it, one match at a time, with
+    // nothing failing.
+    const played = toSavedSession({
+      squadName: 'Rovers',
+      squadId: uuid(),
+      players: [],
+      format: makeSevenASideFormat(),
+      totalMinutes: 50,
+      periodCount: 4,
+      plan: {},
+      state: null,
+    });
+
+    const history: SavedMatch[] = [
+      {
+        match: {
+          id: uuid(),
+          squadId: played.squadId,
+          formatId: played.format.id,
+          opponent: 'Last week',
+          competition: 'league',
+          kickoffAt: '2026-09-12T10:00:00Z',
+          totalMinutes: 50,
+          quarterCount: 4,
+          status: 'completed',
+          createdAt: '2026-09-01T00:00:00Z',
+        },
+        quarters: [],
+        appearances: [],
+        benchStints: [],
+        availability: [],
+      },
+    ];
+
+    const saved = toSavedSession({
+      squadName: 'Rovers',
+      squadId: played.squadId,
+      players: [],
+      format: played.format,
+      totalMinutes: 50,
+      periodCount: 4,
+      plan: {},
+      matches: history,
+      state: null,
+    });
+
+    expect(saved.matches).toHaveLength(1);
+    expect(saved.matches[0].match.opponent).toBe('Last week');
+
+    // And it round-trips.
+    const back = parseSession(JSON.stringify(saved))!;
+    expect(back.matches).toHaveLength(1);
+    expect(back.matches[0].match.opponent).toBe('Last week');
+    expect(back.matches[0].match.competition).toBe('league');
+  });
+
+  it('replaces the current match rather than appending a second copy', () => {
+    // A coach who opens a planned fixture and kicks off must end up with ONE
+    // match that changed status, not a planned one and an in-progress one
+    // that disagree about the same game.
+    const engine = new MatchEngine();
+    const squadId = uuid();
+    const format = makeSevenASideFormat();
+    const state = engine.createMatch(squadId, format.id, {
+      totalMinutes: 50,
+      quarterCount: 4,
+      opponent: 'Riverside',
+    });
+
+    const base = {
+      squadName: 'Rovers',
+      squadId,
+      players: [],
+      format,
+      totalMinutes: 50,
+      periodCount: 4,
+      plan: {},
+    };
+
+    const first = toSavedSession({ ...base, state });
+    expect(first.matches).toHaveLength(1);
+    expect(first.currentMatchId).toBe(state.match.id);
+
+    // Save again, same match, now mutated.
+    state.match.status = 'in_progress';
+    const second = toSavedSession({ ...base, matches: first.matches, state });
+
+    expect(second.matches).toHaveLength(1);
+    expect(second.matches[0].match.status).toBe('in_progress');
+  });
+
+  it('drops a currentMatchId that names a match which is not there', () => {
+    // It would otherwise send the app to a screen with nothing behind it.
+    const saved = toSavedSession({
+      squadName: 'Rovers',
+      squadId: uuid(),
+      players: [],
+      format: makeSevenASideFormat(),
+      totalMinutes: 50,
+      periodCount: 4,
+      plan: {},
+      state: null,
+    });
+    const tampered = { ...saved, currentMatchId: uuid() };
+    const back = parseSession(JSON.stringify(tampered))!;
+    expect(back.currentMatchId).toBeNull();
   });
 });

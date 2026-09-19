@@ -75,6 +75,18 @@ function bytesToUuid(bytes: Uint8Array): string {
 // ============================================================================
 
 export type MatchStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
+
+/**
+ * What kind of match it is — PO ruling, 2026-09-19 (#62).
+ *
+ * > *"A fixture should have an opposition team, formation (7x7 right now),
+ * > format (cup, league), date and time."*
+ *
+ * His four values, confirmed: *"cup league friendly and tournament cover
+ * everything."* Stored as the code, never the label, so these can be renamed
+ * on screen without re-bucketing a season's history.
+ */
+export type Competition = 'league' | 'cup' | 'friendly' | 'tournament';
 export type QuarterStatus = 'pending' | 'running' | 'ended';
 
 export interface Match {
@@ -82,6 +94,8 @@ export interface Match {
   squadId: UUID;
   formatId: UUID;
   opponent: string | null;
+  /** Null on a fixture created before competitions existed, or not yet set. */
+  competition: Competition | null;
   kickoffAt: string | null; // ISO timestamp
   totalMinutes: number; // 40, 50, or 60
   quarterCount: number; // default 4
