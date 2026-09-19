@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { uuid } from '../types/index';
 import type { Competition, Match, MatchStatus, UUID } from '../types/index';
 import {
+  canDeleteFixture,
+  openDestination,
   COMPETITIONS,
   NO_FIXTURES_YET,
   bucketOf,
@@ -184,5 +186,66 @@ describe('labels', () => {
   it('adds the year only when it is not this one', () => {
     expect(kickoffLabel(fixture({ kickoffAt: '2026-09-26T10:00:00Z' }), NOW)).not.toMatch(/2026/);
     expect(kickoffLabel(fixture({ kickoffAt: '2027-03-06T10:00:00Z' }), NOW)).toMatch(/2027/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two routing defects found in the slice 3b audit
+// ---------------------------------------------------------------------------
+
+const pending = [{ status: 'pending' as const }, { status: 'pending' as const }];
+const running = [{ status: 'ended' as const }, { status: 'running' as const }];
+const finished = [{ status: 'ended' as const }, { status: 'ended' as const }];
+
+describe('openDestination', () => {
+  it('goes to the clock when a quarter is running', () => {
+    expect(openDestination(running, 'in_progress', true)).toBe('playing');
+    // Even with no squad loaded: the match is live and interrupting it to
+    // pick players would be worse than a thin screen.
+    expect(openDestination(running, 'in_progress', false)).toBe('playing');
+  });
+
+  it('shows a SUMMARY for a finished match, not the live clock', () => {
+    // The defect: opening a match played weeks ago showed a running-match UI.
+    expect(openDestination(finished, 'completed', true)).toBe('summary');
+    expect(openDestination(finished, 'in_progress', true)).toBe('summary');
+    expect(openDestination([], 'completed', true)).toBe('summary');
+    expect(openDestination(pending, 'abandoned', true)).toBe('summary');
+  });
+
+  it('sends a planned match to the lineup when the squad is ready', () => {
+    expect(openDestination(pending, 'planned', true)).toBe('lineup');
+  });
+
+  it('sends it to the SQUAD first when there are not enough players', () => {
+    // The defect: opening a fixture on a fresh install landed on a lineup
+    // screen with nobody in it.
+    expect(openDestination(pending, 'planned', false)).toBe('squad');
+    expect(openDestination([], 'planned', false)).toBe('squad');
+  });
+
+  it('never treats an empty quarter list as finished', () => {
+    // A fixture created but never started has no quarters yet; calling that
+    // "finished" would hide it behind a summary of nothing.
+    expect(openDestination([], 'planned', true)).toBe('lineup');
+  });
+});
+
+describe('canDeleteFixture', () => {
+  it('allows removing a fixture nobody has kicked off', () => {
+    expect(canDeleteFixture(pending, 'planned')).toBe(true);
+    expect(canDeleteFixture([], 'planned')).toBe(true);
+  });
+
+  it('refuses to delete a match that has been played', () => {
+    // Deleting it would destroy the record its minutes were folded from.
+    // Invariant 5: corrections are explicit, noted and never destructive.
+    expect(canDeleteFixture(finished, 'completed')).toBe(false);
+    expect(canDeleteFixture(running, 'in_progress')).toBe(false);
+    expect(canDeleteFixture(pending, 'abandoned')).toBe(false);
+  });
+
+  it('refuses even one started quarter', () => {
+    expect(canDeleteFixture([{ status: 'ended' }, { status: 'pending' }], 'planned')).toBe(false);
   });
 });

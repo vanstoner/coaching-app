@@ -163,6 +163,8 @@ function KickoffField({
 
   const [date, setDate] = useState(valid ? toDateInput(parsed!) : '');
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
+  /** True once the coach has typed something, so an empty field stays quiet. */
+  const typed = date.trim() !== '';
 
   const push = (d: string, t: string) => {
     const iso = toIso(d, t);
@@ -208,8 +210,17 @@ function KickoffField({
       >
         <Text style={screen.link}>Next Saturday</Text>
       </Pressable>
-      <Text style={screen.hint}>
-        {value ? '' : 'Leave blank if you do not know yet — you can add it later.'}
+      {/*
+        Say WHY a date was not accepted. It used to fail silently: typing
+        31/02/2026 left the fixture with no kick-off and no explanation, so a
+        coach would save it believing the date had taken.
+      */}
+      <Text style={[screen.hint, typed && !value && local.rejected]}>
+        {value
+          ? ''
+          : typed
+            ? 'That is not a real date and time — check the day and the month.'
+            : 'Leave blank if you do not know yet — you can add it later.'}
       </Text>
     </View>
   );
@@ -266,6 +277,7 @@ const local = StyleSheet.create({
   },
   chipLabelSelected: { color: colours.ink },
   kickoff: { alignSelf: 'stretch' },
+  rejected: { color: colours.danger },
   kickoffRow: { flexDirection: 'row', alignSelf: 'stretch' },
   dateInput: { flex: 1, marginRight: 8 },
   timeInput: { width: 104 },

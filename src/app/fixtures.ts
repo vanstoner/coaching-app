@@ -155,3 +155,50 @@ export function kickoffLabel(match: Match, now: Date): string {
   });
   return `${date} · ${time}`;
 }
+
+// ---------------------------------------------------------------------------
+// What opening or removing a fixture should do
+// ---------------------------------------------------------------------------
+
+/** Where opening a fixture takes the coach. */
+export type OpenDestination = 'playing' | 'summary' | 'squad' | 'lineup';
+
+export interface QuarterLike {
+  status: 'pending' | 'running' | 'ended';
+}
+
+/**
+ * Decide where opening a fixture lands, from what the match actually is.
+ *
+ * Extracted from the screen so it can be tested: two defects lived here at
+ * once and neither was catchable by any existing gate.
+ *
+ * - A FINISHED match used to land on the live clock screen — a running-match
+ *   UI for a game that ended weeks ago.
+ * - A PLANNED match landed straight on the lineup even with an empty squad,
+ *   so opening a fixture on a fresh install showed a team sheet with nobody
+ *   in it.
+ */
+export function openDestination(
+  quarters: QuarterLike[],
+  status: MatchStatus,
+  squadReady: boolean
+): OpenDestination {
+  if (quarters.some((q) => q.status === 'running')) return 'playing';
+  const finished = quarters.length > 0 && quarters.every((q) => q.status === 'ended');
+  if (finished || status === 'completed' || status === 'abandoned') return 'summary';
+  return squadReady ? 'lineup' : 'squad';
+}
+
+/**
+ * Whether a fixture can be removed.
+ *
+ * Only one that has never been played. Deleting a played match would destroy
+ * the record its minutes were folded from, and invariant 5 says corrections
+ * are explicit, noted and never destructive — a silent delete is none of
+ * those. A fixture nobody has kicked off carries no history to lose.
+ */
+export function canDeleteFixture(quarters: QuarterLike[], status: MatchStatus): boolean {
+  if (status === 'completed' || status === 'in_progress' || status === 'abandoned') return false;
+  return quarters.every((q) => q.status === 'pending');
+}

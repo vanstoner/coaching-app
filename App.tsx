@@ -19,8 +19,10 @@ import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
 import type { Format, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
+import { canDeleteFixture, openDestination } from './src/app/fixtures';
 import { FixturesScreen } from './src/screens/FixturesScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
+import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import {
   describeDefaults,
   normaliseTeamName,
@@ -99,6 +101,7 @@ type Step =
   | 'resume'
   | 'fixtures'
   | 'fixtureForm'
+  | 'summary'
   | 'match'
   | 'settings'
   | 'squad'
@@ -224,10 +227,36 @@ export default function App() {
       // Persist immediately with the new list: the effect that saves on step
       // change would otherwise run before this state update lands, and the
       // fixture would exist on screen and not on disk.
-      persist({ matches: next, state: null });
+      //
+      // `state` is the LIVE match, not null. Passing null here wrote
+      // currentMatchId as null and dropped the in-progress match's latest
+      // anchors — so adding a fixture at half time would have lost the match
+      // being played, and the coach would have relaunched into a fixture list
+      // instead of their game.
+      persist({ matches: next, state: match?.state ?? null });
       setStep('fixtures');
     },
-    [squadId, format, matches, persist]
+    [squadId, format, matches, persist, match]
+  );
+
+  /**
+   * Remove a fixture.
+   *
+   * Only a match that has never been played: deleting a played one would
+   * destroy the record its minutes came from, and invariant 5 says
+   * corrections are never destructive. A typo in an opponent's name, on the
+   * other hand, was permanent until this existed.
+   */
+  const deleteFixture = useCallback(
+    (matchId: UUID) => {
+      const stored = matches.find((m) => m.match.id === matchId);
+      if (!stored) return;
+      if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
+      const next = matches.filter((m) => m.match.id !== matchId);
+      setMatches(next);
+      persist({ matches: next, state: match?.state ?? null });
+    },
+    [matches, persist, match]
   );
 
   /** Open a fixture: play it if it is today's, otherwise look at it. */
@@ -247,12 +276,18 @@ export default function App() {
         },
       });
       setSubPlan([]);
-      // A played match has nothing to set up; a planned one needs a lineup.
-      const played = stored.quarters.some((q) => q.status === 'ended');
-      const running = stored.quarters.some((q) => q.status === 'running');
-      setStep(running ? 'playing' : played ? 'playing' : 'lineup');
+
+      // The rule lives in fixtures.ts and is tested there: two defects lived
+      // in this decision at once and no gate could have caught either.
+      const to = openDestination(
+        stored.quarters,
+        stored.match.status,
+        squadReadiness(players, format.onFieldCount).ready
+      );
+      if (to === 'squad') setSquadReturn('match');
+      setStep(to);
     },
-    [matches]
+    [matches, players, format]
   );
 
   const beginMatch = useCallback(() => {
@@ -270,7 +305,9 @@ export default function App() {
     const engine = new MatchEngine();
     const state = toMatchState(pending);
     if (!state) {
-      setStep('match');
+      // The saved match could not be rebuilt. The fixtures list is somewhere
+      // a coach can act from; the setup screen is no longer a front door.
+      setStep('fixtures');
       return;
     }
     setMatch({ engine, state });
@@ -406,6 +443,7 @@ export default function App() {
         currentMatchId={match?.state.match.id ?? null}
         now={new Date()}
         onOpen={openFixture}
+        onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
         onSettings={() => setStep('settings')}
         buildLabel={currentBuildLabel()}
@@ -425,6 +463,21 @@ export default function App() {
         }}
         onSave={saveFixture}
         onCancel={() => setStep('fixtures')}
+      />
+    );
+  }
+
+  if (step === 'summary' && match) {
+    return (
+      <MatchSummaryScreen
+        engine={match.engine}
+        state={match.state}
+        players={players}
+        now={new Date()}
+        onBack={() => {
+          setMatch(null);
+          setStep('fixtures');
+        }}
       />
     );
   }

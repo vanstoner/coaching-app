@@ -10,6 +10,7 @@
  * the match they are about to play without scrolling or thinking.
  */
 
+import { useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -31,6 +32,7 @@ export function FixturesScreen({
   currentMatchId,
   now,
   onOpen,
+  onDelete,
   onAdd,
   onSettings,
   buildLabel,
@@ -41,6 +43,8 @@ export function FixturesScreen({
   /** Injected so the list is testable and never reads the clock itself. */
   now: Date;
   onOpen: (matchId: UUID) => void;
+  /** Only offered on a fixture that has never been played. */
+  onDelete: (matchId: UUID) => void;
   onAdd: () => void;
   onSettings: () => void;
   buildLabel: string;
@@ -62,7 +66,13 @@ export function FixturesScreen({
         ) : (
           <>
             <Section title="Now" rows={current} now={now} onOpen={onOpen} />
-            <Section title="Coming up" rows={future} now={now} onOpen={onOpen} />
+            <Section
+              title="Coming up"
+              rows={future}
+              now={now}
+              onOpen={onOpen}
+              onDelete={onDelete}
+            />
             <Section title="Played" rows={past} now={now} onOpen={onOpen} />
           </>
         )}
@@ -93,18 +103,27 @@ function Section({
   rows,
   now,
   onOpen,
+  onDelete,
 }: {
   title: string;
   rows: FixtureRow[];
   now: Date;
   onOpen: (matchId: UUID) => void;
+  /** Absent on buckets where deleting would destroy a played record. */
+  onDelete?: (matchId: UUID) => void;
 }) {
   if (rows.length === 0) return null;
   return (
     <View style={local.section}>
       <Text style={screen.fieldLabel}>{title}</Text>
       {rows.map((row) => (
-        <FixtureCard key={row.match.id} row={row} now={now} onOpen={onOpen} />
+        <FixtureCard
+          key={row.match.id}
+          row={row}
+          now={now}
+          onOpen={onOpen}
+          onDelete={onDelete}
+        />
       ))}
     </View>
   );
@@ -114,13 +133,18 @@ function FixtureCard({
   row,
   now,
   onOpen,
+  onDelete,
 }: {
   row: FixtureRow;
   now: Date;
   onOpen: (matchId: UUID) => void;
+  onDelete?: (matchId: UUID) => void;
 }) {
   const { match } = row;
   const competition = competitionLabel(match.competition);
+  // Two taps, in place, no dialog module. A fixture is cheap to re-add, but
+  // deleting one the coach meant to keep is not cheap to undo.
+  const [confirming, setConfirming] = useState(false);
   return (
     <Pressable
       onPress={() => onOpen(match.id)}
@@ -138,6 +162,22 @@ function FixtureCard({
         {competition === '' ? '' : ` · ${competition}`}
       </Text>
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
+
+      {onDelete &&
+        (confirming ? (
+          <View style={local.confirmRow}>
+            <Pressable onPress={() => onDelete(match.id)} hitSlop={8}>
+              <Text style={local.deleteConfirm}>Delete this fixture</Text>
+            </Pressable>
+            <Pressable onPress={() => setConfirming(false)} hitSlop={8}>
+              <Text style={local.keep}>Keep</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={() => setConfirming(true)} hitSlop={8}>
+            <Text style={local.remove}>Remove</Text>
+          </Pressable>
+        ))}
     </Pressable>
   );
 }
@@ -169,6 +209,20 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginTop: 2,
   },
+  confirmRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  remove: {
+    color: colours.inkFaint,
+    fontSize: 13,
+    includeFontPadding: false,
+    marginTop: 6,
+  },
+  deleteConfirm: {
+    color: colours.danger,
+    fontSize: 13,
+    includeFontPadding: false,
+    marginRight: 16,
+  },
+  keep: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
   nowTag: {
     color: colours.warn,
     fontSize: 13,
