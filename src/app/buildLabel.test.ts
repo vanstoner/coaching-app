@@ -49,8 +49,12 @@ describe('formatBuildLabel', () => {
 });
 
 describe('APP_VERSION', () => {
-  it('is the version from app.json, which is what versionName in the APK comes from', () => {
-    expect(APP_VERSION).toMatch(/^\d{4}\.\d{2}\.\d{2}-\d+$/);
+  it('is a date, which is what a build is actually stamped with', () => {
+    // app.json is the LOCAL fallback; CI injects the build commit's date into
+    // the APK's versionName (#62). Both are YYYY.MM.DD — the trailing "-N"
+    // went when the hand-maintained version did, because nobody maintained it
+    // and every build for two days claimed to be the 18th.
+    expect(APP_VERSION).toMatch(/^\d{4}\.\d{2}\.\d{2}$/);
   });
 });
 

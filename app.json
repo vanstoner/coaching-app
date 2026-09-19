@@ -2,7 +2,7 @@
   "expo": {
     "name": "Coaching App",
     "slug": "coaching-app",
-    "version": "2026.09.18-4",
+    "version": "2026.09.19",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {

@@ -20,8 +20,23 @@
 
 set -euo pipefail
 
-VERSION="$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")"
-[ -n "$VERSION" ] || { echo "could not read version from app.json" >&2; exit 1; }
+# The version is the DATE THIS BUILD'S COMMIT WAS MADE, not a number someone
+# remembers to bump.
+#
+# app.json carried "2026.09.18-4" as the version of record (D2, #47). Nobody
+# bumped it, so every build for two days claimed to be the 18th — including
+# build 42, cut on the 19th. A version of record that nobody maintains is not
+# a record, it is a lie with a process attached.
+#
+# The commit date is the one thing that is always true about a build and can
+# never go stale. Paired with the run number in the tag it is unique,
+# monotonic and needs no upkeep. Falls back to today for a local run outside
+# a git checkout.
+VERSION="$(git show -s --format=%cd --date=format-local:%Y.%m.%d HEAD 2>/dev/null || true)"
+if [ -z "$VERSION" ]; then
+  VERSION="$(date -u +%Y.%m.%d)"
+fi
+export TZ=UTC
 
 EVENT="${GITHUB_EVENT_NAME:-}"
 REF_TYPE="${GITHUB_REF_TYPE:-}"
@@ -34,7 +49,7 @@ if [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
   # than discovered eight minutes later after a Gradle build.
   TAG="$REF_NAME"
   if [ "$TAG" != "v$VERSION" ]; then
-    echo "tag $TAG does not match app.json version $VERSION" >&2
+    echo "tag $TAG does not match this commit's date $VERSION" >&2
     exit 1
   fi
   LABEL="$TAG"
@@ -55,5 +70,6 @@ else
   fi
 fi
 
+echo "VERSION=$VERSION"
 echo "TAG=$TAG"
 echo "BUILD_LABEL=$LABEL"

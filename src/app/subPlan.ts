@@ -77,12 +77,29 @@ export function defaultSubTimeMs(periodMs: number): number {
   return Math.floor(periodMs / 2);
 }
 
-/** Build a starting plan: everyone on the bench, all at the default time. */
+/**
+ * Build a starting plan: everyone on the bench, NOBODY scheduled.
+ *
+ * PO ruling from the second round of field testing, 2026-09-19 (#62):
+ *
+ * > *"always start with no sub then I can increment the sub timer, first
+ * > increment should be half way through the half or quarter then + and -
+ * > should just increment or decrement by as appropriate 30s"*
+ *
+ * The first version defaulted everyone to the midpoint, which meant a coach
+ * who wanted two of three substitutes on had to turn one OFF — work to undo
+ * something they never asked for. Defaulting to nothing makes the common case
+ * one press per player who is actually coming on, and the uncommon case
+ * costs nothing at all.
+ *
+ * `defaultSubTimeMs` is still the midpoint; it is now where the FIRST press
+ * lands rather than where everyone starts.
+ */
 export function planSubs(benchPlayerIds: UUID[], periodMs: number): PlannedSub[] {
-  const atMs = defaultSubTimeMs(periodMs);
+  void periodMs; // kept in the signature: the period is what a time would clamp to
   return benchPlayerIds.map((playerId) => ({
     playerId,
-    atMs,
+    atMs: NO_SUB_PLANNED,
     forPlayerId: null,
     done: false,
   }));
