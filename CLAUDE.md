@@ -87,7 +87,16 @@ never fixes; Pip builds no product features.
 Agents die to rate limits often. When one does, say so — work silently falling
 back to the orchestrator is how the boundaries dissolve.
 
-End every commit with a `Squad-Role:` trailer above `Co-Authored-By`.
+End every commit with a `Refs:` trailer naming the issue it serves, then
+`Squad-Role:`, above `Co-Authored-By`. `Refs:` is CI-gated (#47 D5) — a
+subject-line `(#NN)` does not count, because it means the PR on some commits
+and the issue on others.
+
+```
+Refs: #4, #9
+Squad-Role: Ellis (Engineer)
+Co-Authored-By: ...
+```
 
 ## Commands
 
