@@ -103,9 +103,28 @@ jobs:
       # Expo's generated build.gradle signs release with the DEBUG keystore by
       # default, which is what keeps this sideloadable with no keystore
       # management. The AC-A4 assertion below proves that held.
+      # #52 — the build label the app shows. Computed by the SAME script the
+      # release job uses to name the release, so the string on the phone and
+      # the tag on the releases page cannot disagree.
+      #
+      # Expo's Metro config substitutes EXPO_PUBLIC_* with a string literal at
+      # bundle time, so this needs no dependency and no generated file. Proven
+      # by export rather than assumed, and asserted against the built APK below
+      # — on this project an injection that silently does not happen is the
+      # expected failure, not the surprising one.
+      - name: Compute the build label
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      - name: Show what will be baked into the bundle
+        run: echo "EXPO_PUBLIC_BUILD_LABEL=$BUILD_LABEL"
+
       - name: Build release APK with the bundle embedded
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
+        env:
+          EXPO_PUBLIC_BUILD_LABEL: ${{ env.BUILD_LABEL }}
 
       # Every assertion below gates the job: the build is only a deliverable if
       # the APK is structurally valid, debug-signed, and has backup disabled.
@@ -222,6 +241,35 @@ jobs:
               *) note "unexpected permission in the APK: $perm" ;;
             esac
           done < /tmp/perm-names.txt
+          echo "::endgroup::"
+
+
+          echo "::group::#52 — the build label is baked into the bundle"
+          # The label lives in the Hermes bytecode's string table inside the
+          # embedded JS bundle. If Metro's substitution did not happen, the
+          # app would quietly show 'local dev' on a release build, which is
+          # precisely the confusion #52 exists to end — so it fails the build.
+          BUNDLE_ENTRY="$(grep -oE 'assets/index\.android\.bundle' /tmp/apk-entries.txt | sed -n 1p)"
+          if [ -z "$BUNDLE_ENTRY" ]; then
+            note "no assets/index.android.bundle in the APK — nothing to label"
+          else
+            unzip -p "$APK" "$BUNDLE_ENTRY" > /tmp/bundle.bin
+            echo "bundle size: $(stat -c%s /tmp/bundle.bin) bytes"
+            echo "expecting label: $BUILD_LABEL"
+            if grep -qF "$BUILD_LABEL" /tmp/bundle.bin; then
+              echo "build label is present in the APK's bundle"
+            else
+              note "build label '$BUILD_LABEL' is NOT in the APK's bundle"
+            fi
+            # A release build must never claim to be a local one. This is the
+            # assertion that catches a stale Metro transform cache serving the
+            # previous run's substitution, which is reproducible locally.
+            if grep -qF 'local dev' /tmp/bundle.bin; then
+              note "the APK's bundle still contains the 'local dev' fallback"
+            else
+              echo "no 'local dev' fallback in a CI build, as expected"
+            fi
+          fi
           echo "::endgroup::"
 
           exit $fail
@@ -409,16 +457,25 @@ jobs:
           VERSION="$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")"
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 
+          # #52: the SAME script the apk job used to bake the on-screen label.
+          # Deriving the tag twice, in two jobs, is how the label on the phone
+          # and the tag on the releases page would eventually disagree — and
+          # the entire value of the label is that they cannot.
+          # Guarded rather than bare `eval "$(...)"`: this step runs without
+          # `set -e`, so a script that exits non-zero would otherwise eval an
+          # empty string and fail later with an obscure unbound-variable error
+          # instead of the real reason.
+          if ! LABEL_ENV="$(.github/scripts/build-label.sh)"; then
+            echo "build-label.sh failed — refusing to publish"
+            exit 1
+          fi
+          eval "$LABEL_ENV"
+          echo "computed by build-label.sh: TAG=$TAG BUILD_LABEL=$BUILD_LABEL"
+
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            TAG="${GITHUB_REF_NAME}"
             PRERELEASE=""
-            if [ "$TAG" != "v$VERSION" ]; then
-              echo "tag $TAG does not match app.json version $VERSION — refusing to publish"
-              exit 1
-            fi
           else
             # One immutable prerelease per green build of main: the audit trail.
-            TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
             PRERELEASE="--prerelease"
           fi
           echo "tag: $TAG   version: $VERSION"
