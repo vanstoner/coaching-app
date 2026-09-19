@@ -1,0 +1,493 @@
+{
+  "schemaVersion": 1,
+  "savedAt": "2025-09-19T00:27:00.000Z",
+  "squadName": "Riverside Rovers",
+  "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+  "players": [
+    {
+      "id": "bcbea0e9-f104-462f-a640-7f05752beaf2",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Ash",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "45d35e32-00d4-4385-9e87-6e510f0b8a39",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Blue",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "fc9a631c-5f15-47ad-a7fc-e67316a68cae",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Cedar",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "41ec1df2-c35d-4d69-b94e-1bf55a35e299",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Dune",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "8fd9c57c-65d3-44cc-9ac4-542e4843dbb9",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Ember",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "55bd0ec8-17b7-4311-8233-f4039da3b558",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Flint",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "67911a12-5d58-46f7-8730-2bcded3b4da8",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Grove",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "a2cea70b-f225-4df2-872d-940850049444",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Haze",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "134e68a3-438b-47b2-9d9f-dd76d5141b75",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Iris",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    },
+    {
+      "id": "4015a54c-8b14-496f-bbb3-d4afaade6e74",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "firstName": "Juno",
+      "displaySuffix": null,
+      "squadNumber": null,
+      "active": true,
+      "createdAt": "2026-09-19T16:40:13.503Z"
+    }
+  ],
+  "format": {
+    "id": "7c15e618-07e0-44ff-84b2-670d4272d628",
+    "name": "7-a-side",
+    "onFieldCount": 7,
+    "positions": [
+      {
+        "id": "ba07a91a-24db-4eca-a01b-6545e47541e9",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "GK",
+        "kind": "goalkeeper",
+        "sortOrder": 0
+      },
+      {
+        "id": "7b6c5e6a-f685-4398-a4aa-a573d3b4c369",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "LB",
+        "kind": "outfield",
+        "sortOrder": 1
+      },
+      {
+        "id": "80e19bf2-e5b8-47d3-a48b-7498c7643c3b",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "RB",
+        "kind": "outfield",
+        "sortOrder": 2
+      },
+      {
+        "id": "4dda34ea-b225-48c3-a7e1-19b0abf63900",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "CM",
+        "kind": "outfield",
+        "sortOrder": 3
+      },
+      {
+        "id": "9dc52d99-b700-43b1-9e34-014fce87ff46",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "LW",
+        "kind": "outfield",
+        "sortOrder": 4
+      },
+      {
+        "id": "2e3843aa-10f5-42bd-a544-421a26fd56f8",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "RW",
+        "kind": "outfield",
+        "sortOrder": 5
+      },
+      {
+        "id": "2ae53692-fd23-459c-93c6-aa2d245ef5f6",
+        "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+        "label": "ST",
+        "kind": "outfield",
+        "sortOrder": 6
+      }
+    ]
+  },
+  "totalMinutes": 50,
+  "periodCount": 4,
+  "plan": {},
+  "match": {
+    "match": {
+      "id": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+      "squadId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "formatId": "7c15e618-07e0-44ff-84b2-670d4272d628",
+      "opponent": null,
+      "kickoffAt": null,
+      "totalMinutes": 50,
+      "quarterCount": 4,
+      "status": "in_progress",
+      "createdAt": "2025-09-19T00:00:00.000Z"
+    },
+    "quarters": [
+      {
+        "id": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "index": 1,
+        "status": "ended",
+        "startedAt": "2025-09-19T00:00:00.000Z",
+        "endedAt": "2025-09-19T00:12:30.000Z",
+        "runningSinceWallClock": null,
+        "accumulatedMs": 750000,
+        "elapsedMs": 0
+      },
+      {
+        "id": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "index": 2,
+        "status": "ended",
+        "startedAt": "2025-09-19T00:12:30.000Z",
+        "endedAt": "2025-09-19T00:25:00.000Z",
+        "runningSinceWallClock": null,
+        "accumulatedMs": 750000,
+        "elapsedMs": 0
+      },
+      {
+        "id": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "index": 3,
+        "status": "running",
+        "startedAt": "2025-09-19T00:25:00.000Z",
+        "endedAt": null,
+        "runningSinceWallClock": "2025-09-19T00:25:00.000Z",
+        "accumulatedMs": 0,
+        "elapsedMs": 0
+      },
+      {
+        "id": "c63824f4-316f-4f4c-bdb3-a7a48d1c2fd7",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "index": 4,
+        "status": "pending",
+        "startedAt": null,
+        "endedAt": null,
+        "runningSinceWallClock": null,
+        "accumulatedMs": 0,
+        "elapsedMs": 0
+      }
+    ],
+    "appearances": [
+      {
+        "id": "73af8c64-20dd-41c1-8fdb-beab4ffd66d4",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "bcbea0e9-f104-462f-a640-7f05752beaf2",
+        "positionId": "ba07a91a-24db-4eca-a01b-6545e47541e9",
+        "positionKind": "goalkeeper",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "083c6ac9-0f1a-4323-ae22-1b8b83746f17",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "45d35e32-00d4-4385-9e87-6e510f0b8a39",
+        "positionId": "7b6c5e6a-f685-4398-a4aa-a573d3b4c369",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "81678dc8-fa8e-4d9a-b05d-65d46938e2ba",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "fc9a631c-5f15-47ad-a7fc-e67316a68cae",
+        "positionId": "80e19bf2-e5b8-47d3-a48b-7498c7643c3b",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "86cc0d67-5ba0-4ba0-8011-1d672cfd027d",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "41ec1df2-c35d-4d69-b94e-1bf55a35e299",
+        "positionId": "4dda34ea-b225-48c3-a7e1-19b0abf63900",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "c0d9e72a-a2f9-43c1-8e03-28630f2cde2c",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "8fd9c57c-65d3-44cc-9ac4-542e4843dbb9",
+        "positionId": "9dc52d99-b700-43b1-9e34-014fce87ff46",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "03bc78c5-42b5-4458-9f60-a7cad7ff88a5",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "55bd0ec8-17b7-4311-8233-f4039da3b558",
+        "positionId": "2e3843aa-10f5-42bd-a544-421a26fd56f8",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "e386b184-5f46-479e-83f1-a7be218bc4c8",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "1a81485c-9ab4-4780-bd3b-475e163782cc",
+        "playerId": "67911a12-5d58-46f7-8730-2bcded3b4da8",
+        "positionId": "2ae53692-fd23-459c-93c6-aa2d245ef5f6",
+        "positionKind": "outfield",
+        "startElapsedMs": 0,
+        "endElapsedMs": 750000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "5aaff1ef-e8e1-49cd-870e-4a56e029944e",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "45d35e32-00d4-4385-9e87-6e510f0b8a39",
+        "positionId": "ba07a91a-24db-4eca-a01b-6545e47541e9",
+        "positionKind": "goalkeeper",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "2e2f3664-8ba7-428f-836d-006a153a8553",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "bcbea0e9-f104-462f-a640-7f05752beaf2",
+        "positionId": "7b6c5e6a-f685-4398-a4aa-a573d3b4c369",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "48b46c91-70ec-4638-b488-311dfb060baf",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "fc9a631c-5f15-47ad-a7fc-e67316a68cae",
+        "positionId": "80e19bf2-e5b8-47d3-a48b-7498c7643c3b",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "702ed691-6591-4700-b7bb-6ee34bee4972",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "41ec1df2-c35d-4d69-b94e-1bf55a35e299",
+        "positionId": "4dda34ea-b225-48c3-a7e1-19b0abf63900",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "5f9f0b78-6649-4a5f-9218-1e79cdbd4347",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "a2cea70b-f225-4df2-872d-940850049444",
+        "positionId": "9dc52d99-b700-43b1-9e34-014fce87ff46",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "feb0b009-a35e-4df5-bae4-56f338d86739",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "134e68a3-438b-47b2-9d9f-dd76d5141b75",
+        "positionId": "2e3843aa-10f5-42bd-a544-421a26fd56f8",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "e0927313-b168-4bc1-b779-53f6a640f8fc",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "74d76be5-710c-4e2b-bc7a-676df84d8d7a",
+        "playerId": "4015a54c-8b14-496f-bbb3-d4afaade6e74",
+        "positionId": "2ae53692-fd23-459c-93c6-aa2d245ef5f6",
+        "positionKind": "outfield",
+        "startElapsedMs": 750000,
+        "endElapsedMs": 1500000,
+        "endReason": "quarter_end",
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "cb72141b-0e9e-457e-811d-f183a0ff0bc0",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "fc9a631c-5f15-47ad-a7fc-e67316a68cae",
+        "positionId": "ba07a91a-24db-4eca-a01b-6545e47541e9",
+        "positionKind": "goalkeeper",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "22a2a431-6230-4729-b515-1bfcfaa11c17",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "bcbea0e9-f104-462f-a640-7f05752beaf2",
+        "positionId": "7b6c5e6a-f685-4398-a4aa-a573d3b4c369",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "29dd3476-0872-4ad0-951d-9f286485b359",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "45d35e32-00d4-4385-9e87-6e510f0b8a39",
+        "positionId": "80e19bf2-e5b8-47d3-a48b-7498c7643c3b",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "c3e96e4f-cfa8-4f57-bce7-26e8f07f7a21",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "8fd9c57c-65d3-44cc-9ac4-542e4843dbb9",
+        "positionId": "4dda34ea-b225-48c3-a7e1-19b0abf63900",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "b9dcb40d-21be-456e-bc32-0c22e4d60af6",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "55bd0ec8-17b7-4311-8233-f4039da3b558",
+        "positionId": "9dc52d99-b700-43b1-9e34-014fce87ff46",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "c65cce7f-4c18-4939-9525-d53830234755",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "67911a12-5d58-46f7-8730-2bcded3b4da8",
+        "positionId": "2e3843aa-10f5-42bd-a544-421a26fd56f8",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      },
+      {
+        "id": "6809fb4e-ceb6-4f9c-aa4c-c04815015dc1",
+        "matchId": "c31cbcd6-874c-4299-8209-0fbd9b37dfa0",
+        "quarterId": "d0ec147a-33cb-4fe0-9b80-597aedb5fdbf",
+        "playerId": "a2cea70b-f225-4df2-872d-940850049444",
+        "positionId": "2ae53692-fd23-459c-93c6-aa2d245ef5f6",
+        "positionKind": "outfield",
+        "startElapsedMs": 1500000,
+        "endElapsedMs": null,
+        "endReason": null,
+        "corrected": false,
+        "correctionNote": null
+      }
+    ],
+    "benchStints": [],
+    "availability": []
+  }
+}

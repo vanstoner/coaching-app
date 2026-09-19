@@ -124,11 +124,54 @@ export interface Squad {
 
 export type PositionKind = 'goalkeeper' | 'outfield';
 
+/**
+ * The primitive a position belongs to — PO ruling, 2026-09-19 (#62).
+ *
+ * > *"they fall into three categories for now Defence, Midfield, Attack. The
+ * > actual positions might change names. So I would build in hard primitives
+ * > like the three I just had then allow the user to call the positions what
+ * > they want. We will track time at the primitive level so it survives
+ * > renaming."*
+ *
+ * These four values are FIXED and never renamed. A coach may call a position
+ * "Left Wing", "LM", "Left Mid" or "out wide" — the label is theirs and can
+ * change on a whim. The unit underneath it cannot, which is what makes
+ * "40% of the season in midfield" a question that survives the coach changing
+ * their vocabulary halfway through it.
+ *
+ * This is the same discipline as Protobuf field numbers: the wire value is
+ * stable, the name is a convenience. Renaming a role must never silently
+ * re-bucket a child's recorded minutes.
+ *
+ * `PositionKind` remains derived from this — GK is goalkeeping, everything
+ * else is outfield — so invariant 3 is unchanged: fairness is total outfield
+ * time, which is now simply DEF + MID + ATT.
+ */
+export type PositionUnit = 'GK' | 'DEF' | 'MID' | 'ATT';
+
+/** Invariant 3, expressed once: goalkeeping is the only thing excluded. */
+export function kindOfUnit(unit: PositionUnit): PositionKind {
+  return unit === 'GK' ? 'goalkeeper' : 'outfield';
+}
+
 export interface Position {
   id: UUID;
   formatId: UUID;
+  /** What the coach calls it. Free to rename; nothing is measured against it. */
   label: string; // e.g. "GK", "LB", "CM", "ST"
   kind: PositionKind;
+  /**
+   * The primitive time is measured against.
+   *
+   * Null on positions created before units existed, and ONLY for outfield
+   * ones — a v1 goalkeeping position is unambiguously GK, but a v1 outfield
+   * position could be any of DEF, MID or ATT and the app has no way to know
+   * which. Guessing would silently put a child's minutes in the wrong bucket,
+   * so it stays null until a coach says. See migration v1 → v2.
+   */
+  unit: PositionUnit | null;
+  /** The catalogue role this came from, if any — 'CB', 'CAM', 'ST'. */
+  roleCode?: string;
   sortOrder: number;
 }
 
@@ -152,6 +195,15 @@ export interface Appearance {
   playerId: UUID;
   positionId: UUID;
   positionKind: PositionKind; // Denormalised & snapshotted
+  /**
+   * The unit, snapshotted at the moment the interval opened.
+   *
+   * Snapshotted for the same reason `positionKind` is: re-reading it from the
+   * Position later would let a coach reclassifying a position rewrite history
+   * that has already been played. Null on intervals recorded before units
+   * existed.
+   */
+  positionUnit: PositionUnit | null;
   startElapsedMs: number; // Match-elapsed time at interval start
   endElapsedMs: number | null; // Null while open
   endReason: EndReason | null;

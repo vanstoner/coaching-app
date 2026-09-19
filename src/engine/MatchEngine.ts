@@ -19,6 +19,7 @@ import {
   Appearance,
   BenchStint,
   PositionKind,
+  PositionUnit,
   AvailabilityStatus,
 } from '../types/index';
 
@@ -260,13 +261,23 @@ export class MatchEngine {
     }
 
     // Resolve every position before anything is written (DEF-003, #32).
-    const assignments: { positionId: UUID; playerId: UUID; positionKind: PositionKind }[] = [];
+    const assignments: {
+      positionId: UUID;
+      playerId: UUID;
+      positionKind: PositionKind;
+      positionUnit: PositionUnit | null;
+    }[] = [];
     for (const [positionId, playerId] of teamSheet) {
       const position = format.positions.find((p) => p.id === positionId);
       if (!position) {
         throw new MatchEngineError(`Position ${positionId} not found in format`);
       }
-      assignments.push({ positionId, playerId, positionKind: position.kind });
+      assignments.push({
+        positionId,
+        playerId,
+        positionKind: position.kind,
+        positionUnit: position.unit,
+      });
     }
 
     // Validation complete. Nothing above writes to state. New checks belong
@@ -276,19 +287,24 @@ export class MatchEngine {
     const now = this.now();
 
     // Build the new intervals, then apply every write together.
-    const appearances: Appearance[] = assignments.map(({ positionId, playerId, positionKind }) => ({
+    const appearances: Appearance[] = assignments.map(
+      ({ positionId, playerId, positionKind, positionUnit }) => ({
       id: uuid(),
       matchId: state.match.id,
       quarterId: quarter.id,
       playerId,
       positionId,
       positionKind,
+      // Snapshotted, like positionKind: a coach reclassifying a position later
+      // must not rewrite minutes that have already been played.
+      positionUnit,
       startElapsedMs: matchElapsedMs,
       endElapsedMs: null,
       endReason: null,
-      corrected: false,
-      correctionNote: null,
-    }));
+        corrected: false,
+        correctionNote: null,
+      })
+    );
 
     // A BenchStint for each available, unselected player
     const benchStints: BenchStint[] = [];
@@ -377,6 +393,10 @@ export class MatchEngine {
       playerId: inPlayerId,
       positionId: outgoing.positionId,
       positionKind: outgoing.positionKind,
+      // Inherited from the player coming off, not re-read from the Position.
+      // The substitute takes over the slot as it was when the period started,
+      // so the two halves of a swapped slot always agree.
+      positionUnit: outgoing.positionUnit,
       startElapsedMs: matchElapsedMs,
       endElapsedMs: null,
       endReason: null,
