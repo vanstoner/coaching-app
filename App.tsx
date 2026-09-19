@@ -52,6 +52,7 @@ import { suggestLineup, teamSheetFor, lineupIsComplete } from './src/app/lineup'
 import {
   planSubs,
   nudgeSubTime,
+  NO_SUB_PLANNED,
   markDone,
   dueSubs,
   msUntilNextSub,
@@ -831,8 +832,17 @@ function LineupScreen({
                     >
                       <Text style={styles.step}>−</Text>
                     </Pressable>
-                    <Text style={styles.subTime} numberOfLines={1}>
-                      {formatClock(plan.find((e) => e.playerId === p.id)?.atMs ?? 0)}
+                    <Text
+                      style={[
+                        styles.subTime,
+                        (plan.find((e) => e.playerId === p.id)?.atMs ?? 0) ===
+                          NO_SUB_PLANNED && styles.subTimeOff,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {(plan.find((e) => e.playerId === p.id)?.atMs ?? 0) === NO_SUB_PLANNED
+                        ? 'No sub'
+                        : formatClock(plan.find((e) => e.playerId === p.id)?.atMs ?? 0)}
                     </Text>
                     <Pressable
                       onPress={() => setPlan((c) => nudgeSubTime(c, p.id, 30_000, periodMs))}
@@ -1400,6 +1410,10 @@ const styles = StyleSheet.create({
     minWidth: 92,
   },
   subTimeRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
+  // Same metrics as styles.subTime — only the colour changes. Switching
+  // fontWeight between states is what clipped the last glyph off the choice
+  // boxes and the clock, three times.
+  subTimeOff: { color: '#6e9787' },
   stepHit: { paddingHorizontal: 10, paddingVertical: 6 },
   step: { color: '#ffffff', fontSize: 20, includeFontPadding: false },
   subTime: {
@@ -1410,7 +1424,11 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     paddingHorizontal: 2,
     textAlign: 'center',
-    minWidth: 58,
+    // A FIXED width, not minWidth. "No sub" is wider than "06:15", and a box
+    // that sizes itself to its own text is what clipped the last glyph off
+    // the clock and the choice boxes. Wide enough for both, so neither the
+    // text nor the row reflows when the coach toggles a sub off.
+    width: 68,
   },
   subDue: {
     flexDirection: 'row',

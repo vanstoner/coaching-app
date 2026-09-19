@@ -27,7 +27,13 @@
  * and the override is the thing that happens.
  */
 
-import type { Format, Player, UUID } from '../types/index';
+import type {
+  Format,
+  Player,
+  PlayerPositionAffinity,
+  PreferenceLevel,
+  UUID,
+} from '../types/index';
 import type { PlayerMinutes } from './playerMinutes';
 
 /** Who is on the pitch for one quarter. `plan[quarterIndex]` is 1-based. */
@@ -60,11 +66,33 @@ const byId = (minutes: PlayerMinutes[]) => {
  * `available` lets a coach exclude someone who is injured or absent without
  * deleting them from the squad.
  */
+/**
+ * Who keeps goal, when the coach has said.
+ *
+ * Field note, 2026-09-19 (#62), after the first real match:
+ *
+ * > *"I'd like a bit of affinity for the goalkeeper, they tend not to change
+ * > between 3 out of 4 quarters so trying to rotate was slight annoyance"*
+ *
+ * Rotating the gloves every period is what picking the keeper by least
+ * goalkeeper time does by construction. Real squads have a keeper who keeps,
+ * and a suggestion that fights the coach every period is one they stop reading.
+ *
+ * This reads `PlayerPositionAffinity`, which has been in the domain model since
+ * the start and unused. A `primary` affinity for a goalkeeping position means
+ * that player keeps whenever they are available; `secondary` is the deputy,
+ * used when no primary is. With neither, the old behaviour stands exactly.
+ *
+ * Invariant 3 is untouched. Goalkeeping time is still excluded from the
+ * fairness figure, so a child who keeps every week is still picked on outfield
+ * fairness for the rest of the match — which is the protection that makes a
+ * fixed keeper safe rather than unfair.
+ */
 export function suggestLineup(
   players: Player[],
   minutes: PlayerMinutes[],
   format: Format,
-  options: { available?: Set<UUID> } = {}
+  options: { available?: Set<UUID>; affinities?: PlayerPositionAffinity[] } = {}
 ): Suggestion {
   const rows = byId(minutes);
   const pool = players.filter((p) => options.available?.has(p.id) ?? true);
@@ -84,9 +112,30 @@ export function suggestLineup(
   // landing on whoever happens to be least played outfield.
   let goalkeeper: UUID | null = null;
   if (hasKeeper) {
-    goalkeeper = [...pool]
-      .map((p) => p.id)
-      .sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b))[0];
+    const keeperPositions = new Set(
+      format.positions.filter((p) => p.kind === 'goalkeeper').map((p) => p.id)
+    );
+    const available = new Set(pool.map((p) => p.id));
+    const withAffinity = (level: PreferenceLevel) =>
+      (options.affinities ?? [])
+        .filter(
+          (a) =>
+            a.preference === level &&
+            keeperPositions.has(a.positionId) &&
+            available.has(a.playerId)
+        )
+        .map((a) => a.playerId)
+        // More than one nominated keeper is a real possibility in a squad that
+        // shares the gloves; the least-kept of them goes in, so the coach's
+        // shortlist is honoured and fairness still decides within it.
+        .sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b));
+
+    goalkeeper =
+      withAffinity('primary')[0] ??
+      withAffinity('secondary')[0] ??
+      [...pool]
+        .map((p) => p.id)
+        .sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b))[0];
   }
 
   // Then the outfielders, least outfield time first.

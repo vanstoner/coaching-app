@@ -16,6 +16,9 @@ import { foldPlayerMinutes } from './playerMinutes';
 import { teamSheetFor } from './lineup';
 import { formatClock } from './matchClock';
 import {
+  NO_SUB_PLANNED,
+  isPlanned,
+  clearSubTime,
   defaultSubTimeMs,
   planSubs,
   setSubTime,
@@ -120,10 +123,14 @@ describe('setting the time next to a name', () => {
     expect(plan[0].atMs).toBeLessThan(periodMs);
   });
 
-  it('will not plan a sub at kick-off, which would make them a starter', () => {
+  it('treats zero as "not coming on this period", not as kick-off', () => {
+    // Was clamped to 1s, which made the coach's actual intention
+    // inexpressible. Field note from the first real match, #62.
     const a = uuid() as UUID;
-    expect(setSubTime(planSubs([a], periodMs), a, 0, periodMs)[0].atMs).toBe(1_000);
-    expect(setSubTime(planSubs([a], periodMs), a, -60_000, periodMs)[0].atMs).toBe(1_000);
+    expect(setSubTime(planSubs([a], periodMs), a, 0, periodMs)[0].atMs).toBe(NO_SUB_PLANNED);
+    expect(setSubTime(planSubs([a], periodMs), a, -60_000, periodMs)[0].atMs).toBe(
+      NO_SUB_PLANNED
+    );
   });
 
   it('nudges by a step and stays inside the period', () => {
@@ -381,5 +388,80 @@ describe('MatchEngine.substitute', () => {
       // expected
     }
     expect(JSON.stringify(state.appearances)).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Not coming on this period" — field note #62, from the first real match
+// ---------------------------------------------------------------------------
+
+describe('a substitute with no planned time', () => {
+  const periodMs = 750_000; // a 12:30 quarter
+
+  it('never becomes due, however long the period runs', () => {
+    const a = uuid() as UUID;
+    const plan = clearSubTime(planSubs([a], periodMs), a);
+
+    // The whole period, and well past it. A plan of "not this quarter" that
+    // starts shouting at 6:15 is the exact bug this fixes.
+    for (const t of [0, 1_000, 375_000, 749_000, periodMs, periodMs * 3]) {
+      expect(dueSubs(plan, t)).toEqual([]);
+    }
+  });
+
+  it('is not counted as the next sub, so the countdown ignores it', () => {
+    const a = uuid() as UUID;
+    const plan = clearSubTime(planSubs([a], periodMs), a);
+    expect(nextSub(plan, 0)).toBeNull();
+    expect(msUntilNextSub(plan, 0)).toBeNull();
+  });
+
+  it('does not hide a real sub planned for someone else', () => {
+    // The case from the match: three on the bench, two coming on.
+    const off = uuid() as UUID;
+    const on = uuid() as UUID;
+    let plan = planSubs([off, on], periodMs);
+    plan = clearSubTime(plan, off);
+
+    expect(isPlanned(plan[0])).toBe(false);
+    expect(isPlanned(plan[1])).toBe(true);
+
+    const due = dueSubs(plan, periodMs);
+    expect(due).toHaveLength(1);
+    expect(due[0].playerId).toBe(on);
+  });
+
+  it('turns off by nudging down past the start, and back on at the default', () => {
+    // One button a coach is already pressing, rather than a separate control.
+    const a = uuid() as UUID;
+    let plan = setSubTime(planSubs([a], periodMs), a, 30_000, periodMs);
+
+    plan = nudgeSubTime(plan, a, -60_000, periodMs);
+    expect(plan[0].atMs).toBe(NO_SUB_PLANNED);
+
+    // Nudging down again has nothing below it to reach.
+    plan = nudgeSubTime(plan, a, -60_000, periodMs);
+    expect(plan[0].atMs).toBe(NO_SUB_PLANNED);
+
+    // Back on means "about halfway", not "immediately".
+    plan = nudgeSubTime(plan, a, 60_000, periodMs);
+    expect(plan[0].atMs).toBe(defaultSubTimeMs(periodMs));
+  });
+
+  it('can be set back to a real time directly', () => {
+    const a = uuid() as UUID;
+    let plan = clearSubTime(planSubs([a], periodMs), a);
+    plan = setSubTime(plan, a, 400_000, periodMs);
+    expect(plan[0].atMs).toBe(400_000);
+    expect(isPlanned(plan[0])).toBe(true);
+  });
+
+  it('leaves the default plan fully planned, so nothing changes by accident', () => {
+    // The regression that would matter most: every bench player silently
+    // becoming "no sub" would turn the reminder off for everyone.
+    const ids = [uuid(), uuid(), uuid()] as UUID[];
+    const plan = planSubs(ids, periodMs);
+    expect(plan.every(isPlanned)).toBe(true);
+    expect(dueSubs(plan, periodMs)).toHaveLength(3);
   });
 });
