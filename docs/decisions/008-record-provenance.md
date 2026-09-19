@@ -53,6 +53,32 @@ account in the MVP.
 
 IDs remain client-generated UUIDs. No autoincrement or sequence keys anywhere.
 
+### First run adopts the `actorId` already in use; it never mints a fresh one (#39)
+
+`actorId` is a command input — the engine rejects `MISSING_RECORDING_CONTEXT`
+rather than inventing one. But a coach profile is created at first run, and
+until it exists there is a window in which events can be written with an
+`actorId` that no profile explains.
+
+**If first run mints a new `actorId` for the new profile, every event written
+before that point is orphaned** — attributed to an id belonging to no profile,
+unresolvable, permanently. That is the same backfill loss this ADR exists to
+prevent, reached by another road, and it cannot be repaired afterwards.
+
+So, binding on whoever builds first run:
+
+- the install generates a stable `actorId` and `deviceId` on first launch,
+  **before any event can be written**, and the profile created later attaches
+  its display name to that existing id; **or**
+- no event may be written until a profile exists, so no window opens.
+
+The first fits a flow where a screen exists before any profile UI does, which
+is the likelier shape here. Either is acceptable; minting a second id is not.
+
+**Nothing is broken today** — no event log exists yet, so no event has ever
+been written. The window opens with the first persisted event, which is also
+when the schema freezes (#35). Both deadlines fall on the same merge.
+
 ## Consequences
 
 **Easier:**

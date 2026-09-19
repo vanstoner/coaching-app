@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The trailer check walks base..head, so it needs the history, not
+          # just the tip.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -49,6 +53,39 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # OMP-004 D5 (#47): every commit says which ISSUE it serves.
+      #
+      # The trailing `(#NN)` convention means the PR number on some commits and
+      # the issue number on others, so `git log --grep` cannot answer "what
+      # went into REQ-04?". Trailers cannot be retrofitted, which is why this
+      # is enforced now rather than when it is convenient.
+      #
+      # The script's own self-test runs FIRST, against the healthy cases as
+      # well as the failing ones. Five of six CI failures on this project were
+      # assertions rejecting a correct artifact; a gate nobody has dry-run is
+      # not yet a gate.
+      - name: Prove the trailer check gates before trusting it
+        run: python3 .github/scripts/check_refs_trailer.py --self-test
+
+      - name: Every commit references its issue
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          # `github.event.before` is all-zeroes on a branch's first push, and
+          # naming a commit that does not exist would fail the job on correct
+          # software. Fall back to the first parent.
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse "${HEAD}^" 2>/dev/null || echo "")"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "no base commit to compare against — nothing to check"
+            exit 0
+          fi
+          echo "checking $BASE..$HEAD"
+          python3 .github/scripts/check_refs_trailer.py "$BASE" "$HEAD"
 
       # Exits non-zero on failure, so it gates like the other two steps.
       - name: Validate docs
