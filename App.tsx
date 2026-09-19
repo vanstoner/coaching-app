@@ -44,6 +44,15 @@ import {
 import { foldPlayerMinutes, type PlayerMinutes } from './src/app/playerMinutes';
 import { suggestLineup, teamSheetFor, lineupIsComplete } from './src/app/lineup';
 import {
+  planSubs,
+  nudgeSubTime,
+  markDone,
+  dueSubs,
+  msUntilNextSub,
+  whoComesOff,
+  type PlannedSub,
+} from './src/app/subPlan';
+import {
   loadSession,
   saveSession,
   clearSession,
@@ -94,6 +103,7 @@ export default function App() {
   const [squadId, setSquadId] = useState<UUID>(() => uuid());
   const [match, setMatch] = useState<Match | null>(null);
   const [pending, setPending] = useState<SavedSession | null>(null);
+  const [subPlan, setSubPlan] = useState<PlannedSub[]>([]);
 
   // --- load once at launch --------------------------------------------------
 
@@ -179,10 +189,30 @@ export default function App() {
     setPending(null);
   }, [pending]);
 
-  const startFresh = useCallback(() => {
+  /**
+   * Start another match, KEEPING the squad, the team name and the defaults.
+   *
+   * This used to wipe all of it, so "New match" at full time threw away ten
+   * names the coach had just typed. A squad is a standing thing that barely
+   * changes week to week; a match is the thing that ends.
+   */
+  const newMatch = useCallback(() => {
+    setMatch(null);
+    setPending(null);
+    setSubPlan([]);
+    setStep('match');
+  }, []);
+
+  /**
+   * Forget everything, including the squad. Deliberately separate from
+   * `newMatch` and deliberately harder to reach — it is how a coach hands the
+   * phone on, not how they start next Saturday.
+   */
+  const forgetEverything = useCallback(() => {
     void clearSession(store);
     setMatch(null);
     setPending(null);
+    setSubPlan([]);
     setPlayers([]);
     setSquadId(uuid());
     setFormat(makeSevenASideFormat());
@@ -191,7 +221,7 @@ export default function App() {
   }, [store]);
 
   const startQuarter = useCallback(
-    (onPitch: UUID[], goalkeeper: UUID | null) => {
+    (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => {
       if (!match) return;
       const quarter = currentQuarter(match.state);
       if (!quarter) return;
@@ -201,10 +231,34 @@ export default function App() {
         teamSheetFor(onPitch, goalkeeper, format),
         format
       );
+      setSubPlan(plan);
       setStep('playing');
       persist();
     },
     [match, format, persist]
+  );
+
+  /**
+   * Make a planned substitution. The engine does the swap, so the minutes move
+   * with the players — a reminder that only nudged the coach would leave the
+   * app recording time for a child who had walked off.
+   */
+  const makeSub = useCallback(
+    (outPlayerId: UUID, inPlayerId: UUID) => {
+      if (!match) return;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return;
+      try {
+        match.engine.substitute(match.state, quarter, outPlayerId, inPlayerId);
+      } catch {
+        // The engine refuses swaps that would corrupt the record. Marking the
+        // plan done anyway would hide that from the coach, so leave it due.
+        return;
+      }
+      setSubPlan((plan) => markDone(plan, inPlayerId));
+      persist();
+    },
+    [match, persist]
   );
 
   const endQuarter = useCallback(() => {
@@ -212,6 +266,7 @@ export default function App() {
     const quarter = currentQuarter(match.state);
     if (!quarter) return;
     match.engine.endQuarter(match.state, quarter);
+    setSubPlan([]);
     persist();
     // Straight to the lineup for the next period — this IS the reminder.
     setStep(currentQuarter(match.state) ? 'lineup' : 'playing');
@@ -231,7 +286,7 @@ export default function App() {
   }
 
   if (step === 'resume' && pending) {
-    return <ResumeScreen saved={pending} onResume={resume} onFresh={startFresh} />;
+    return <ResumeScreen saved={pending} onResume={resume} onFresh={newMatch} />;
   }
 
   if (step === 'match') {
@@ -293,8 +348,10 @@ export default function App() {
       match={match}
       players={players}
       squadName={squadName}
+      subPlan={subPlan}
+      onMakeSub={makeSub}
       onEndQuarter={endQuarter}
-      onStartOver={startFresh}
+      onStartOver={newMatch}
     />
   );
 }
@@ -569,7 +626,7 @@ function LineupScreen({
   players: Player[];
   format: Format;
   squadName: string;
-  onStart: (onPitch: UUID[], goalkeeper: UUID | null) => void;
+  onStart: (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => void;
 }) {
   const { engine, state } = match;
   const quarter = currentQuarter(state);
@@ -586,14 +643,32 @@ function LineupScreen({
   const [goalkeeper, setGoalkeeper] = useState<UUID | null>(suggestion.goalkeeper);
   const suggestedFor = useRef(quarter?.id);
 
+  // How long this period will run, which is what a sub time is an offset into.
+  const periodMs = engine.getPlannedQuarterMs(state.match);
+  const [plan, setPlan] = useState<PlannedSub[]>(() =>
+    planSubs(suggestion.bench, periodMs)
+  );
+
   // A new period means a new suggestion.
   useEffect(() => {
     if (suggestedFor.current !== quarter?.id) {
       suggestedFor.current = quarter?.id;
       setOnPitch(suggestion.onPitch);
       setGoalkeeper(suggestion.goalkeeper);
+      setPlan(planSubs(suggestion.bench, periodMs));
     }
-  }, [quarter?.id, suggestion]);
+  }, [quarter?.id, suggestion, periodMs]);
+
+  // The bench changes as the coach taps names, so the plan follows it: a new
+  // bench player gets the default time, and one brought on loses their entry.
+  useEffect(() => {
+    const bench = players.map((p) => p.id).filter((id) => !onPitch.includes(id));
+    setPlan((current) => {
+      const kept = current.filter((entry) => bench.includes(entry.playerId));
+      const added = bench.filter((id) => !current.some((e) => e.playerId === id));
+      return [...kept, ...planSubs(added, periodMs)];
+    });
+  }, [onPitch, players, periodMs]);
 
   const byId = useMemo(() => {
     const m = new Map<UUID, PlayerMinutes>();
@@ -633,6 +708,10 @@ function LineupScreen({
           {noun} {quarter?.index ?? 1} of {state.match.quarterCount} — who is on?
         </Text>
         <Text style={styles.hint}>{suggestion.rationale}</Text>
+        <Text style={styles.hint}>
+          Tap a name to pick them. The time beside a substitute is when you
+          will be reminded to bring them on.
+        </Text>
 
         <ScrollView style={styles.list}>
           {ordered.map((p) => {
@@ -658,13 +737,34 @@ function LineupScreen({
                       : ''}
                   </Text>
                 </View>
-                {on && (
+                {on ? (
                   <Pressable
                     onPress={() => setGoalkeeper(isKeeper ? null : p.id)}
                     style={[styles.gkChip, isKeeper && styles.gkChipOn]}
                   >
                     <Text style={[styles.gkLabel, isKeeper && styles.gkLabelOn]}>GK</Text>
                   </Pressable>
+                ) : (
+                  // A bench player carries the time they come on. The PO asked
+                  // for exactly this: "set that time for a sub next to their
+                  // name and that's the anchor for a reminder".
+                  <View style={styles.subTimeRow}>
+                    <Pressable
+                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, -30_000, periodMs))}
+                      style={styles.stepHit}
+                    >
+                      <Text style={styles.step}>−</Text>
+                    </Pressable>
+                    <Text style={styles.subTime} numberOfLines={1}>
+                      {formatClock(plan.find((e) => e.playerId === p.id)?.atMs ?? 0)}
+                    </Text>
+                    <Pressable
+                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, 30_000, periodMs))}
+                      style={styles.stepHit}
+                    >
+                      <Text style={styles.step}>+</Text>
+                    </Pressable>
+                  </View>
                 )}
               </Pressable>
             );
@@ -693,7 +793,7 @@ function LineupScreen({
               !complete && styles.buttonDisabled,
               pressed && styles.buttonPressed,
             ]}
-            onPress={() => onStart(onPitch, goalkeeper)}
+            onPress={() => onStart(onPitch, goalkeeper, plan)}
           >
             <Text style={styles.buttonLabel}>Start {noun.toLowerCase()}</Text>
           </Pressable>
@@ -712,12 +812,16 @@ function ClockScreen({
   match,
   players,
   squadName,
+  subPlan,
+  onMakeSub,
   onEndQuarter,
   onStartOver,
 }: {
   match: Match;
   players: Player[];
   squadName: string;
+  subPlan: PlannedSub[];
+  onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
   onEndQuarter: () => void;
   onStartOver: () => void;
 }) {
@@ -740,6 +844,15 @@ function ClockScreen({
   const onPitch = minutes.filter((m) => m.onPitchNow);
   const noun = periodNoun(state.match.quarterCount).toLowerCase();
   const nameOf = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? '—';
+
+  // The reminder. `quarterElapsedMs` is capped at the planned length, so the
+  // raw period elapsed is used here — a sub due at 6:15 must still show when
+  // the coach is three minutes over.
+  const periodElapsedMs = view.isRunning
+    ? engine.getQuarterElapsedMs(currentQuarter(state)!)
+    : 0;
+  const due = view.isRunning ? dueSubs(subPlan, periodElapsedMs) : [];
+  const untilNext = view.isRunning ? msUntilNextSub(subPlan, periodElapsedMs) : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -769,11 +882,35 @@ function ClockScreen({
           Match total {formatClock(view.matchElapsedMs)} of {state.match.totalMinutes}:00
         </Text>
 
+        {due.map((sub) => {
+          const off = whoComesOff(sub, onPitch);
+          return (
+            <View key={sub.playerId} style={styles.subDue}>
+              <Text style={styles.subDueText} numberOfLines={2}>
+                Bring on {nameOf(sub.playerId)}
+                {off ? ` for ${nameOf(off)}` : ''}
+              </Text>
+              {off && (
+                <Pressable
+                  onPress={() => onMakeSub(off, sub.playerId)}
+                  style={({ pressed }) => [styles.subDueButton, pressed && styles.buttonPressed]}
+                >
+                  <Text style={styles.subDueButtonLabel}>Done</Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
+
+        {due.length === 0 && untilNext !== null && (
+          <Text style={styles.hint}>Next substitution in {formatClock(untilNext)}</Text>
+        )}
+
         <ScrollView style={styles.list}>
           {(view.isMatchOver ? minutes : onPitch).map((m) => (
             <View key={m.playerId} style={styles.playerRow}>
               <Text style={styles.playerName}>{nameOf(m.playerId)}</Text>
-              <Text style={styles.pickMinutes}>
+              <Text style={styles.rowMinutes} numberOfLines={1}>
                 {formatClock(m.outfieldMs)}
                 {m.goalkeeperMs > 0 ? ` · GK ${formatClock(m.goalkeeperMs)}` : ''}
               </Text>
@@ -961,7 +1098,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#164f3c',
   },
-  playerName: { color: '#ffffff', fontSize: 17, flex: 1 },
+  playerName: { color: '#ffffff', fontSize: 17, flex: 1, includeFontPadding: false },
   removeHit: { padding: 6 },
   remove: { color: '#8fb3a5', fontSize: 13, textDecorationLine: 'underline' },
   pickRow: {
@@ -976,7 +1113,70 @@ const styles = StyleSheet.create({
   },
   pickRowOn: { backgroundColor: '#12855a', borderColor: '#12855a' },
   pickMain: { flex: 1 },
-  pickMinutes: { color: '#cfe3da', fontSize: 12, marginTop: 2 },
+  // FIX: every right-hand character was missing from the per-player times.
+  // Android measures a Text once; sitting beside a `flex: 1` sibling it gets
+  // squeezed and the tail is cut. `flexShrink: 0` stops the squeeze,
+  // `includeFontPadding: false` makes the box match the glyphs, and the
+  // trailing pad absorbs the rounding that clipped the final digit.
+  pickMinutes: {
+    color: '#cfe3da',
+    fontSize: 12,
+    marginTop: 2,
+    includeFontPadding: false,
+    flexShrink: 0,
+    paddingRight: 4,
+  },
+  rowMinutes: {
+    color: '#cfe3da',
+    fontSize: 13,
+    includeFontPadding: false,
+    flexShrink: 0,
+    paddingRight: 4,
+    textAlign: 'right',
+    minWidth: 92,
+  },
+  subTimeRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
+  stepHit: { paddingHorizontal: 10, paddingVertical: 6 },
+  step: { color: '#ffffff', fontSize: 20, includeFontPadding: false },
+  subTime: {
+    color: '#ffd166',
+    fontSize: 15,
+    fontWeight: '600',
+    includeFontPadding: false,
+    flexShrink: 0,
+    paddingHorizontal: 2,
+    textAlign: 'center',
+    minWidth: 58,
+  },
+  subDue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#c47f1a',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  subDueText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    includeFontPadding: false,
+  },
+  subDueButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    flexShrink: 0,
+  },
+  subDueButtonLabel: {
+    color: '#8a5600',
+    fontSize: 15,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
   gkChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
