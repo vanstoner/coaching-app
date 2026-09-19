@@ -20,6 +20,11 @@ import { uuid } from './src/types/index';
 import type { Format, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
+  describeDefaults,
+  normaliseTeamName,
+  MAX_TEAM_NAME_LENGTH,
+} from './src/app/settings';
+import {
   deriveClockView,
   formatClock,
   currentQuarter,
@@ -85,7 +90,14 @@ import { createDeviceStore } from './src/app/storage';
  * ADR-011: everything stays on this device.
  */
 
-type Step = 'loading' | 'resume' | 'match' | 'squad' | 'lineup' | 'playing';
+type Step =
+  | 'loading'
+  | 'resume'
+  | 'match'
+  | 'settings'
+  | 'squad'
+  | 'lineup'
+  | 'playing';
 
 interface Match {
   engine: MatchEngine;
@@ -105,6 +117,10 @@ export default function App() {
   const [match, setMatch] = useState<Match | null>(null);
   const [pending, setPending] = useState<SavedSession | null>(null);
   const [subPlan, setSubPlan] = useState<PlannedSub[]>([]);
+  // Where the squad editor goes when it is done. The same screen serves the
+  // pre-match flow and settings, and it must not dump a coach who came from
+  // settings into a lineup they did not ask for.
+  const [squadReturn, setSquadReturn] = useState<'match' | 'settings'>('match');
 
   // --- load once at launch --------------------------------------------------
 
@@ -299,20 +315,58 @@ export default function App() {
         periodCount={periodCount}
         onTotalMinutes={setTotalMinutes}
         onPeriodCount={setPeriodCount}
-        onNext={() => setStep('squad')}
+        onNext={() => {
+          setSquadReturn('match');
+          setStep('squad');
+        }}
+        onSettings={() => setStep('settings')}
+      />
+    );
+  }
+
+  if (step === 'settings') {
+    return (
+      <SettingsScreen
+        squadName={squadName}
+        onSquadName={setSquadName}
+        totalMinutes={totalMinutes}
+        periodCount={periodCount}
+        onTotalMinutes={setTotalMinutes}
+        onPeriodCount={setPeriodCount}
+        players={players}
+        onEditSquad={() => {
+          setSquadReturn('settings');
+          setStep('squad');
+        }}
+        onForget={forgetEverything}
+        onDone={() => setStep('match')}
       />
     );
   }
 
   if (step === 'squad') {
+    const fromSettings = squadReturn === 'settings';
     return (
       <SquadScreen
         squadId={squadId}
         players={players}
         onPlayers={setPlayers}
         onFieldCount={format.onFieldCount}
-        onBack={() => setStep('match')}
-        onNext={beginMatch}
+        onBack={() => setStep(fromSettings ? 'settings' : 'match')}
+        onNext={() => {
+          if (fromSettings) {
+            // Came from settings: the squad is the errand, not a prelude to a
+            // match. Going on to a lineup here would start a match the coach
+            // never asked to start.
+            setStep('settings');
+            return;
+          }
+          beginMatch();
+        }}
+        nextLabel={fromSettings ? 'Done' : 'Pick the lineup'}
+        // Settings is for tidying a squad between matches, so a short squad is
+        // a normal state there rather than something to block on.
+        requireReady={!fromSettings}
       />
     );
   }
@@ -327,7 +381,11 @@ export default function App() {
         periodCount={periodCount}
         onTotalMinutes={setTotalMinutes}
         onPeriodCount={setPeriodCount}
-        onNext={() => setStep('squad')}
+        onNext={() => {
+          setSquadReturn('match');
+          setStep('squad');
+        }}
+        onSettings={() => setStep('settings')}
       />
     );
   }
@@ -425,6 +483,7 @@ function MatchSetupScreen({
   onTotalMinutes,
   onPeriodCount,
   onNext,
+  onSettings,
 }: {
   squadName: string;
   onSquadName: (s: string) => void;
@@ -433,6 +492,7 @@ function MatchSetupScreen({
   onTotalMinutes: (n: number) => void;
   onPeriodCount: (n: number) => void;
   onNext: () => void;
+  onSettings: () => void;
 }) {
   const periodMs = (totalMinutes * 60_000) / periodCount;
   return (
@@ -490,6 +550,9 @@ function MatchSetupScreen({
         >
           <Text style={styles.buttonLabel}>Next: the squad</Text>
         </Pressable>
+        <Pressable onPress={onSettings} style={styles.linkHit}>
+          <Text style={styles.link}>Settings</Text>
+        </Pressable>
       </View>
       <BuildLabel />
       <StatusBar style="light" />
@@ -508,6 +571,8 @@ function SquadScreen({
   onFieldCount,
   onBack,
   onNext,
+  nextLabel = 'Pick the lineup',
+  requireReady = true,
 }: {
   squadId: UUID;
   players: Player[];
@@ -515,6 +580,14 @@ function SquadScreen({
   onFieldCount: number;
   onBack: () => void;
   onNext: () => void;
+  /** What the forward button says. The screen serves two errands. */
+  nextLabel?: string;
+  /**
+   * Whether a full squad is required to go forward. True in the pre-match
+   * flow; false from settings, where tidying a squad between matches is the
+   * normal reason to be here.
+   */
+  requireReady?: boolean;
 }) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -596,15 +669,15 @@ function SquadScreen({
               <Text style={styles.link}>Back</Text>
             </Pressable>
             <Pressable
-              disabled={!readiness.ready}
+              disabled={requireReady && !readiness.ready}
               style={({ pressed }) => [
                 styles.button,
-                !readiness.ready && styles.buttonDisabled,
+                requireReady && !readiness.ready && styles.buttonDisabled,
                 pressed && styles.buttonPressed,
               ]}
               onPress={onNext}
             >
-              <Text style={styles.buttonLabel}>Pick the lineup</Text>
+              <Text style={styles.buttonLabel}>{nextLabel}</Text>
             </Pressable>
           </View>
         </View>
@@ -977,6 +1050,152 @@ function Choice({
 }
 
 // ---------------------------------------------------------------------------
+// Settings — the things a coach sets once, not every Saturday
+// ---------------------------------------------------------------------------
+
+/**
+ * Reachable without starting a match, which is the point. Before this, the
+ * only door to the team name, the defaults and the squad was the pre-match
+ * flow, so a coach who just wanted to add a player had to begin setting up a
+ * game they were not about to play.
+ *
+ * The same state backs this screen and the setup screen, so the two cannot
+ * disagree. That duplication is deliberate for now — the setup screen works,
+ * is tested and is on the phone — and collapsing them belongs with the
+ * structural design work, not with a change made on a match day.
+ *
+ * Nothing new is stored. `SavedSession` already carried all of it, so there is
+ * no schema bump and every existing save still loads unchanged.
+ */
+function SettingsScreen({
+  squadName,
+  onSquadName,
+  totalMinutes,
+  periodCount,
+  onTotalMinutes,
+  onPeriodCount,
+  players,
+  onEditSquad,
+  onForget,
+  onDone,
+}: {
+  squadName: string;
+  onSquadName: (s: string) => void;
+  totalMinutes: number;
+  periodCount: number;
+  onTotalMinutes: (n: number) => void;
+  onPeriodCount: (n: number) => void;
+  players: Player[];
+  onEditSquad: () => void;
+  onForget: () => void;
+  onDone: () => void;
+}) {
+  // Confirm before wiping, because the coach whose squad this deletes is the
+  // one who typed all ten names in. Two taps, in-screen, no dialog module.
+  const [confirmForget, setConfirmForget] = useState(false);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.settingsInner}>
+          <Text style={styles.squad}>Settings</Text>
+          <Text style={styles.hint}>
+            Kept between matches. Nothing leaves this phone.
+          </Text>
+
+          <Text style={styles.fieldLabel}>Team name</Text>
+          <TextInput
+            style={[styles.input, styles.nameInput]}
+            value={squadName}
+            onChangeText={onSquadName}
+            // Cleaned when the coach leaves the field rather than as they
+            // type, so a space mid-word is not eaten under their thumb.
+            onBlur={() =>
+              onSquadName(normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME))
+            }
+            placeholder="Your team"
+            placeholderTextColor="#6e9787"
+            autoCapitalize="words"
+            autoCorrect={false}
+            maxLength={MAX_TEAM_NAME_LENGTH}
+            returnKeyType="done"
+          />
+
+          <Text style={styles.fieldLabel}>Match length</Text>
+          <View style={styles.choiceRow}>
+            {TOTAL_MINUTES_CHOICES.map((m) => (
+              <Choice
+                key={m}
+                label={`${m}`}
+                selected={m === totalMinutes}
+                onPress={() => onTotalMinutes(m)}
+              />
+            ))}
+          </View>
+          <Text style={styles.hint}>minutes</Text>
+
+          <Text style={styles.fieldLabel}>Played in</Text>
+          <View style={styles.choiceRow}>
+            {PERIOD_COUNT_CHOICES.map((pc) => (
+              <Choice
+                key={pc}
+                label={periodNounPlural(pc)}
+                selected={pc === periodCount}
+                onPress={() => onPeriodCount(pc)}
+                wide
+              />
+            ))}
+          </View>
+
+          {/* The arithmetic a coach should see before Saturday, not at kick-off. */}
+          <Text style={styles.summary}>{describeDefaults(totalMinutes, periodCount)}</Text>
+
+          <Text style={styles.fieldLabel}>Squad</Text>
+          <Text style={styles.caption}>
+            {players.length === 0
+              ? 'Nobody yet'
+              : `${players.length} ${players.length === 1 ? 'player' : 'players'}`}
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={onEditSquad}
+          >
+            <Text style={styles.buttonLabel}>Edit the squad</Text>
+          </Pressable>
+
+          <Pressable onPress={onDone} style={styles.linkHit}>
+            <Text style={styles.link}>Done</Text>
+          </Pressable>
+
+          {confirmForget ? (
+            <>
+              <Text style={[styles.hint, styles.overtime]}>
+                This deletes the squad, the team name and any saved match.
+              </Text>
+              <Pressable onPress={onForget} style={styles.linkHit}>
+                <Text style={styles.dangerLink}>Yes, forget everything</Text>
+              </Pressable>
+              <Pressable onPress={() => setConfirmForget(false)} style={styles.linkHit}>
+                <Text style={styles.link}>Keep it</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable onPress={() => setConfirmForget(true)} style={styles.linkHit}>
+              <Text style={styles.dangerLink}>Forget everything</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <BuildLabel />
+      <StatusBar style="light" />
+    </SafeAreaView>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Which build am I looking at? — #52
 // ---------------------------------------------------------------------------
 
@@ -1021,6 +1240,14 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   squadInner: { flex: 1, paddingHorizontal: 18, paddingVertical: 14 },
+  settingsInner: { paddingHorizontal: 18, paddingVertical: 14, paddingBottom: 28 },
+  dangerLink: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    includeFontPadding: false,
+    color: '#ffb4a2',
+    fontSize: 15,
+  },
   squad: {
     color: '#ffffff',
     fontSize: 24,
