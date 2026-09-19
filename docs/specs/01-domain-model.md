@@ -1,6 +1,8 @@
 # Spec 01 — Domain Model
 
-Status: Draft for Product Owner review
+Status: **Approved** by the Product Owner, 2026-09-18.
+
+> Approved 2026-09-18 — 12 of its 13 entities exist in `src/types/index.ts` and match. Only `Vacancy` is unbuilt. Open questions below are carried as issues, not blockers.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 

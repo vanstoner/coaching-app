@@ -1,6 +1,8 @@
 # Spec 03 — Fairness Ledger (Season-Scoped)
 
-Status: Draft for Product Owner review — **revised 2026-09-17 following PO correction**
+Status: **Approved** by the Product Owner, 2026-09-18.
+
+> Approved 2026-09-18 — its defining rule (fairness is total outfield time, goalkeeper excluded, position never part of the arithmetic) is implemented in `src/app/playerMinutes.ts` and `src/app/lineup.ts`. The season-scoped ledger it describes is still ahead of what is built; that is REQ-07 (#7).
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
