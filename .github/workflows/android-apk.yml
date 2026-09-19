@@ -333,7 +333,18 @@ jobs:
       #
       # Both strings are on the empty-state front door: the team name, and the
       # button that is the only thing to do on a fresh install.
-      SMOKE_EXPECT: Example FC|Add a fixture
+      # Chosen from ACTUAL OCR OUTPUT, not by reading the source. Run
+      # 35463050703 read this frame as:
+      #
+      #   Example FC No fixtures yet. Add your first match. Settings ...
+      #
+      # so both of these are proven legible at 320x640. "Add a fixture" was
+      # tried first and is NOT readable: it is white on the accent green, and
+      # tesseract misses it at this width even though the button renders (the
+      # frame's dominant colour drops to 91.1%, which is the button occupying
+      # most of the rest). Asserting on it rejects a correct artifact — the
+      # failure mode that accounts for five of this project's six CI failures.
+      SMOKE_EXPECT: Example FC|No fixtures yet
       SMOKE_OUT: smoke-evidence
     steps:
       - uses: actions/checkout@v4
