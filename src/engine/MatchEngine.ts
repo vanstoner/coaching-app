@@ -18,6 +18,7 @@ import {
   Format,
   Appearance,
   BenchStint,
+  Competition,
   PositionKind,
   PositionUnit,
   AvailabilityStatus,
@@ -94,6 +95,7 @@ export class MatchEngine {
       kickoffAt?: string | null;
       totalMinutes?: number;
       quarterCount?: number;
+      competition?: Competition | null;
     } = {}
   ): MatchState {
     const totalMinutes = options.totalMinutes ?? 60;
@@ -125,6 +127,7 @@ export class MatchEngine {
       squadId,
       formatId,
       opponent: options.opponent ?? null,
+      competition: options.competition ?? null,
       kickoffAt: options.kickoffAt ?? null,
       totalMinutes,
       quarterCount,

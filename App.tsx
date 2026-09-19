@@ -66,6 +66,7 @@ import {
   toMatchState,
   hasMatchUnderway,
   type SavedSession,
+  type SavedMatch,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
 
@@ -122,6 +123,13 @@ export default function App() {
   // pre-match flow and settings, and it must not dump a coach who came from
   // settings into a lineup they did not ask for.
   const [squadReturn, setSquadReturn] = useState<'match' | 'settings'>('match');
+  /**
+   * Every match on disk: planned fixtures, played history, and the one being
+   * played. Held in state because `saveSession` writes the WHOLE document —
+   * anything not passed is not written, so a save that forgot this would
+   * silently delete the season it was meant to be keeping.
+   */
+  const [matches, setMatches] = useState<SavedMatch[]>([]);
 
   // --- load once at launch --------------------------------------------------
 
@@ -140,6 +148,7 @@ export default function App() {
       setPlayers(saved.players);
       setFormat(saved.format);
       setSquadId(saved.squadId);
+      setMatches(saved.matches);
 
       if (hasMatchUnderway(saved)) {
         setPending(saved);
@@ -168,11 +177,12 @@ export default function App() {
         totalMinutes,
         periodCount,
         plan: {},
+        matches,
         state: match?.state ?? null,
         ...overrides,
       });
     },
-    [store, squadName, squadId, players, format, totalMinutes, periodCount, match]
+    [store, squadName, squadId, players, format, totalMinutes, periodCount, match, matches]
   );
 
   useEffect(() => {

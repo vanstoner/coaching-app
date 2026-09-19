@@ -60,7 +60,7 @@ describe('a v1 save written by the released app', () => {
   it('keeps the match, every quarter and every recorded interval', () => {
     const result = readSession(rawV1);
     if (result.status !== 'ok') throw new Error(result.status);
-    const match = result.session.match!;
+    const match = result.session.matches[0];
     expect(match.quarters).toHaveLength(4);
     expect(match.appearances).toHaveLength(fixtureV1.match.appearances.length);
     expect(match.appearances).toHaveLength(21);
@@ -71,6 +71,7 @@ describe('a v1 save written by the released app', () => {
     if (result.status !== 'ok') throw new Error(result.status);
     expect(result.migrationsApplied).toEqual([
       'v1 → v2: positions and appearances carry a unit',
+      'v2 → v3: matches become plural',
     ]);
   });
 
@@ -140,7 +141,7 @@ describe('what v1 → v2 does and does not invent', () => {
     const result = readSession(rawV1);
     if (result.status !== 'ok') throw new Error(result.status);
     const unitOf = new Map(result.session.format.positions.map((p) => [p.id, p.unit]));
-    const match = result.session.match!;
+    const match = result.session.matches[0];
     expect(match.appearances.length).toBeGreaterThan(0);
     for (const appearance of match.appearances) {
       expect(appearance.positionUnit).toBe(unitOf.get(appearance.positionId));
@@ -153,7 +154,7 @@ describe('what v1 → v2 does and does not invent', () => {
     v1.format.positions = [];
     const result = readSession(JSON.stringify(v1));
     if (result.status !== 'ok') throw new Error(result.status);
-    const keeperIntervals = result.session.match!.appearances.filter(
+    const keeperIntervals = result.session.matches[0].appearances.filter(
       (a) => a.positionKind === 'goalkeeper'
     );
     expect(keeperIntervals.length).toBeGreaterThan(0);
@@ -181,7 +182,7 @@ describe('a round trip does not lose anything', () => {
     expect(second.format.positions.map((p) => p.unit)).toEqual(
       first.session.format.positions.map((p) => p.unit)
     );
-    expect(second.match!.appearances).toHaveLength(21);
+    expect(second.matches[0].appearances).toHaveLength(21);
   });
 
   it('carries a field from a FUTURE version through untouched', () => {
@@ -210,9 +211,33 @@ describe('a save from a newer build', () => {
   });
 
   it('is READ when it declares that older builds are safe', () => {
-    const future = { ...JSON.parse(rawV1), schemaVersion: 99, minReaderVersion: 2 };
+    // Built from the CURRENT shape, not the v1 one: a writer claiming older
+    // readers are safe is promising the shape still parses, and a v1-shaped
+    // document carrying schemaVersion 99 would be lying about that. Reading
+    // it anyway is what would corrupt a coach's data.
+    const migrated = readSession(rawV1);
+    if (migrated.status !== 'ok') throw new Error(migrated.status);
+    const future = {
+      ...migrated.session,
+      schemaVersion: 99,
+      minReaderVersion: SCHEMA_VERSION,
+      somethingAddedLater: 'x',
+    };
     const result = readSession(JSON.stringify(future));
     expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.session.players).toHaveLength(10);
+    // And the field this build knows nothing about comes back out again.
+    expect((result.session as Record<string, unknown>).somethingAddedLater).toBe('x');
+  });
+
+  it('is refused when its shape cannot actually be read, whatever it claims', () => {
+    // minReaderVersion is a promise, not proof. A document that claims older
+    // readers are safe and then fails validation is refused rather than
+    // half-loaded into screens that would read a match that is not there.
+    const lying = { ...JSON.parse(rawV1), schemaVersion: 99, minReaderVersion: 2 };
+    const result = readSession(JSON.stringify(lying));
+    expect(result.status).toBe('corrupt');
   });
 });
 

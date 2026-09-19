@@ -55,12 +55,15 @@ import { inferUnit, unitOfRole } from './positions';
  * v1 — the original. One match, positions with a kind but no unit.
  * v2 — positions and appearances carry a `PositionUnit` (#62), and every
  *      document declares `minReaderVersion`.
+ * v3 — matches are PLURAL (#62). One saved match becomes a list of them, with
+ *      the one being played named separately. This is what makes fixtures,
+ *      history and season fairness possible.
  *
  * An OLD save is migrated, never discarded (#61). The previous code returned
  * null on any mismatch, which meant the first version bump would have silently
  * emptied a coach's squad with no backup to recover from.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * The oldest build that can safely read what this one writes.
@@ -71,7 +74,7 @@ export const SCHEMA_VERSION = 2;
  * working, which is the entire point of tracking it separately from
  * `SCHEMA_VERSION`.
  */
-export const MIN_READER_VERSION = 2;
+export const MIN_READER_VERSION = 3;
 
 /**
  * Every top-level field this build understands.
@@ -91,7 +94,8 @@ const KNOWN_FIELDS = [
   'totalMinutes',
   'periodCount',
   'plan',
-  'match',
+  'matches',
+  'currentMatchId',
 ] as const;
 
 /**
@@ -120,11 +124,11 @@ export const MIGRATIONS: Migration[] = [
 
       const unitOfPosition = new Map(positions.map((p) => [p.id, p.unit]));
 
-      const match = doc.match as SavedSession['match'];
+      const match = doc.match as SavedMatch | null | undefined;
       const migratedMatch = match
         ? {
             ...match,
-            appearances: match.appearances.map((appearance) => ({
+            appearances: match.appearances.map((appearance: Appearance) => ({
               ...appearance,
               positionUnit:
                 appearance.positionUnit ??
@@ -144,6 +148,24 @@ export const MIGRATIONS: Migration[] = [
       };
     },
   },
+  {
+    from: 2,
+    to: 3,
+    describe: 'v2 \u2192 v3: matches become plural',
+    up: (doc) => {
+      // A v2 document held at most one match. It becomes a list of one, and
+      // that match stays current — a coach mid-match must relaunch into the
+      // match they were playing, not into a fixture list.
+      const match = doc.match as SavedMatch | null | undefined;
+      const { match: _dropped, ...rest } = doc;
+      return {
+        ...rest,
+        minReaderVersion: MIN_READER_VERSION,
+        matches: match ? [match] : [],
+        currentMatchId: match ? match.match.id : null,
+      };
+    },
+  },
 ];
 
 export const STORAGE_KEY = 'coaching-app/session/v1';
@@ -153,6 +175,15 @@ export interface KeyValueStore {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
+}
+
+/** One match on disk: the log and the anchors, never a computed total. */
+export interface SavedMatch {
+  match: Match;
+  quarters: Quarter[];
+  appearances: Appearance[];
+  benchStints: BenchStint[];
+  availability: [UUID, AvailabilityStatus][];
 }
 
 /** Everything worth surviving a relaunch. */
@@ -169,14 +200,16 @@ export interface SavedSession {
   periodCount: number;
   /** The mid-week plan: quarter index (1-based) → the players on the pitch. */
   plan: Record<string, UUID[]>;
-  /** Null when no match has kicked off yet. */
-  match: {
-    match: Match;
-    quarters: Quarter[];
-    appearances: Appearance[];
-    benchStints: BenchStint[];
-    availability: [UUID, AvailabilityStatus][];
-  } | null;
+  /**
+   * Every match: planned fixtures, the one underway, and everything played.
+   *
+   * A fixture IS a match with status 'planned' — the domain model said so from
+   * the start, and inventing a separate Fixture entity would have created two
+   * things meaning the same.
+   */
+  matches: SavedMatch[];
+  /** The match being played or set up. Null between matches. */
+  currentMatchId: UUID | null;
 }
 
 export interface SessionInput {
@@ -187,6 +220,9 @@ export interface SessionInput {
   totalMinutes: number;
   periodCount: number;
   plan: Record<string, UUID[]>;
+  /** Every match already on disk, other than the one being played. */
+  matches?: SavedMatch[];
+  /** The match being played or set up, if there is one. */
   state: MatchState | null;
   now?: Date;
 }
@@ -204,29 +240,59 @@ export function toSavedSession(input: SessionInput): SavedSession {
     totalMinutes: input.totalMinutes,
     periodCount: input.periodCount,
     plan: input.plan,
-    match: input.state
-      ? {
-          match: input.state.match,
-          // elapsedMs zeroed: see the note at the top. The anchors are
-          // accumulatedMs and runningSinceWallClock, and they are kept.
-          quarters: input.state.quarters.map((q) => ({ ...q, elapsedMs: 0 })),
-          appearances: input.state.appearances,
-          benchStints: input.state.benchStints,
-          availability: [...input.state.playerAvailability.entries()],
-        }
-      : null,
+    matches: mergeCurrentMatch(input.matches ?? [], input.state),
+    currentMatchId: input.state?.match.id ?? null,
   };
 }
 
-/** Rebuild a MatchState the engine can be handed. Null when nothing was saved. */
-export function toMatchState(saved: SavedSession): MatchState | null {
-  if (!saved.match) return null;
+/**
+ * Fold the match being played into the stored list, replacing its earlier
+ * version rather than appending a second copy of the same match.
+ *
+ * Matching on id rather than position is the point: a coach who opens a
+ * planned fixture and kicks off must end up with ONE match that changed
+ * status, not a planned one and an in-progress one that disagree.
+ */
+function mergeCurrentMatch(existing: SavedMatch[], state: MatchState | null): SavedMatch[] {
+  if (!state) return existing;
+  const current: SavedMatch = {
+    match: state.match,
+    // elapsedMs zeroed: see the note at the top. The anchors are
+    // accumulatedMs and runningSinceWallClock, and they are kept.
+    quarters: state.quarters.map((q) => ({ ...q, elapsedMs: 0 })),
+    appearances: state.appearances,
+    benchStints: state.benchStints,
+    availability: [...state.playerAvailability.entries()],
+  };
+  const at = existing.findIndex((m) => m.match.id === state.match.id);
+  if (at === -1) return [...existing, current];
+  return existing.map((m, i) => (i === at ? current : m));
+}
+
+/** The stored match with this id, or undefined. */
+export function savedMatchById(
+  saved: SavedSession,
+  matchId: UUID | null
+): SavedMatch | undefined {
+  if (!matchId) return undefined;
+  return saved.matches.find((m) => m.match.id === matchId);
+}
+
+/**
+ * Rebuild a MatchState the engine can be handed.
+ *
+ * Defaults to the current match, so callers that do not care which one — the
+ * resume screen, the clock — keep working unchanged.
+ */
+export function toMatchState(saved: SavedSession, matchId?: UUID): MatchState | null {
+  const stored = savedMatchById(saved, matchId ?? saved.currentMatchId);
+  if (!stored) return null;
   return {
-    match: saved.match.match,
-    quarters: saved.match.quarters,
-    appearances: saved.match.appearances,
-    benchStints: saved.match.benchStints,
-    playerAvailability: new Map(saved.match.availability ?? []),
+    match: stored.match,
+    quarters: stored.quarters,
+    appearances: stored.appearances,
+    benchStints: stored.benchStints,
+    playerAvailability: new Map(stored.availability ?? []),
   };
 }
 
@@ -304,10 +370,13 @@ function validate(doc: VersionedDocument): SavedSession | null {
   if (typeof s.periodCount !== 'number' || !(s.periodCount > 0)) return null;
   if (!s.format || !Array.isArray((s.format as Format).positions)) return null;
 
-  // The match is optional, but if present it must be whole.
-  if (s.match !== null && s.match !== undefined) {
-    const m = s.match;
-    if (!m.match || !Array.isArray(m.quarters) || !Array.isArray(m.appearances)) {
+  // Matches are optional — a squad with no fixtures yet is a valid session —
+  // but each one present must be whole. A half-written match is discarded
+  // along with the session rather than loaded into a screen that will then
+  // read a quarter that does not exist.
+  if (!Array.isArray(s.matches)) return null;
+  for (const m of s.matches) {
+    if (!m || !m.match || !Array.isArray(m.quarters) || !Array.isArray(m.appearances)) {
       return null;
     }
     if (!Array.isArray(m.benchStints)) return null;
@@ -325,12 +394,17 @@ function validate(doc: VersionedDocument): SavedSession | null {
     totalMinutes: s.totalMinutes,
     periodCount: s.periodCount,
     plan: (s.plan ?? {}) as Record<string, UUID[]>,
-    match: s.match
-      ? {
-          ...s.match,
-          availability: Array.isArray(s.match.availability) ? s.match.availability : [],
-        }
-      : null,
+    matches: s.matches.map((m) => ({
+      ...m,
+      availability: Array.isArray(m.availability) ? m.availability : [],
+    })),
+    // A currentMatchId naming a match that is not there is dropped rather
+    // than trusted: it would send the app to a screen with nothing behind it.
+    currentMatchId:
+      typeof s.currentMatchId === 'string' &&
+      s.matches.some((m) => m.match.id === s.currentMatchId)
+        ? (s.currentMatchId as UUID)
+        : null,
   };
 }
 
@@ -343,17 +417,25 @@ export function parseSession(raw: string | null): SavedSession | null {
   return result.status === 'ok' ? result.session : null;
 }
 
-/** True when the saved match has a quarter still running — i.e. offer a resume. */
-export function hasMatchInProgress(saved: SavedSession | null): boolean {
-  if (!saved?.match) return false;
-  return saved.match.quarters.some((q) => q.status === 'running');
+/** The match the app should open into, if any. */
+function currentMatch(saved: SavedSession | null): SavedMatch | undefined {
+  if (!saved) return undefined;
+  return savedMatchById(saved, saved.currentMatchId);
 }
 
-/** True when a saved match has started but not finished every quarter. */
+/** True when the current match has a quarter still running — i.e. offer a resume. */
+export function hasMatchInProgress(saved: SavedSession | null): boolean {
+  const m = currentMatch(saved);
+  if (!m) return false;
+  return m.quarters.some((q) => q.status === 'running');
+}
+
+/** True when the current match has started but not finished every quarter. */
 export function hasMatchUnderway(saved: SavedSession | null): boolean {
-  if (!saved?.match) return false;
-  const started = saved.match.quarters.some((q) => q.status !== 'pending');
-  const finished = saved.match.quarters.every((q) => q.status === 'ended');
+  const m = currentMatch(saved);
+  if (!m) return false;
+  const started = m.quarters.some((q) => q.status !== 'pending');
+  const finished = m.quarters.every((q) => q.status === 'ended');
   return started && !finished;
 }
 
