@@ -40,12 +40,111 @@ import type {
   UUID,
 } from '../types/index';
 import type { MatchState } from '../engine/MatchEngine';
+import {
+  migrateDocument,
+  tooNewMessage,
+  unknownFields,
+  type Migration,
+  type VersionedDocument,
+} from './schema';
+import { inferUnit, unitOfRole } from './positions';
 
 /**
- * Bumped only when an old saved session can no longer be read. A session
- * written by a newer schema is discarded rather than guessed at.
+ * The shape this build writes.
+ *
+ * v1 — the original. One match, positions with a kind but no unit.
+ * v2 — positions and appearances carry a `PositionUnit` (#62), and every
+ *      document declares `minReaderVersion`.
+ *
+ * An OLD save is migrated, never discarded (#61). The previous code returned
+ * null on any mismatch, which meant the first version bump would have silently
+ * emptied a coach's squad with no backup to recover from.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * The oldest build that can safely read what this one writes.
+ *
+ * v2 adds fields a v1 reader does not know about, and a v1 reader would drop
+ * them on write-back — so v1 is NOT safe and this says so. When a later
+ * version only adds optional fields, this stays put and older builds keep
+ * working, which is the entire point of tracking it separately from
+ * `SCHEMA_VERSION`.
+ */
+export const MIN_READER_VERSION = 2;
+
+/**
+ * Every top-level field this build understands.
+ *
+ * Anything else found in a document is kept and written back untouched, so an
+ * older build cannot destroy a newer one's data — the property that decides
+ * whether a second device is ever workable (#61).
+ */
+const KNOWN_FIELDS = [
+  'schemaVersion',
+  'minReaderVersion',
+  'savedAt',
+  'squadName',
+  'squadId',
+  'players',
+  'format',
+  'totalMinutes',
+  'periodCount',
+  'plan',
+  'match',
+] as const;
+
+/**
+ * The migration chain. Each step is pure and individually tested, and the
+ * committed fixture in `fixtures/session-v1.json` is a real v1 document that
+ * must still load after every future step is added.
+ */
+export const MIGRATIONS: Migration[] = [
+  {
+    from: 1,
+    to: 2,
+    describe: 'v1 → v2: positions and appearances carry a unit',
+    up: (doc) => {
+      const format = doc.format as Format | undefined;
+
+      // A v1 goalkeeping position is unambiguously GK. A v1 OUTFIELD position
+      // could be DEF, MID or ATT and v1 recorded nothing that distinguishes
+      // them — so unless the label is a catalogue code, it stays null and the
+      // coach is asked. Guessing would write a fabricated value into a child's
+      // history where nobody would ever see that it was a guess.
+      const positions = (format?.positions ?? []).map((position) => ({
+        ...position,
+        unit: position.unit ?? inferUnit(position.kind, position.label),
+        roleCode: position.roleCode ?? (unitOfRole(position.label) ? position.label : undefined),
+      }));
+
+      const unitOfPosition = new Map(positions.map((p) => [p.id, p.unit]));
+
+      const match = doc.match as SavedSession['match'];
+      const migratedMatch = match
+        ? {
+            ...match,
+            appearances: match.appearances.map((appearance) => ({
+              ...appearance,
+              positionUnit:
+                appearance.positionUnit ??
+                unitOfPosition.get(appearance.positionId) ??
+                // The position is gone from the format but the interval still
+                // knows whether it was in goal, which is the half we can honour.
+                (appearance.positionKind === 'goalkeeper' ? 'GK' : null),
+            })),
+          }
+        : null;
+
+      return {
+        ...doc,
+        minReaderVersion: MIN_READER_VERSION,
+        format: format ? { ...format, positions } : format,
+        match: migratedMatch,
+      };
+    },
+  },
+];
 
 export const STORAGE_KEY = 'coaching-app/session/v1';
 
@@ -59,6 +158,8 @@ export interface KeyValueStore {
 /** Everything worth surviving a relaunch. */
 export interface SavedSession {
   schemaVersion: number;
+  /** The oldest build that can safely read this. See MIN_READER_VERSION. */
+  minReaderVersion: number;
   savedAt: string;
   squadName: string;
   squadId: UUID;
@@ -94,6 +195,7 @@ export interface SessionInput {
 export function toSavedSession(input: SessionInput): SavedSession {
   return {
     schemaVersion: SCHEMA_VERSION,
+    minReaderVersion: MIN_READER_VERSION,
     savedAt: (input.now ?? new Date()).toISOString(),
     squadName: input.squadName,
     squadId: input.squadId,
@@ -136,23 +238,65 @@ export function toMatchState(saved: SavedSession): MatchState | null {
  * crash on launch**: a coach standing on a touchline at 9am cannot debug JSON,
  * and an app that will not open is worse than one that forgot the squad.
  */
-export function parseSession(raw: string | null): SavedSession | null {
-  if (raw === null || raw === '') return null;
+/**
+ * What a read produced: a session, nothing, or a reason a coach can act on.
+ *
+ * The middle case used to be the ONLY case for anything unexpected, including
+ * "written by a slightly newer build", which is how a version bump would have
+ * quietly emptied a squad (#61).
+ */
+export type ReadResult =
+  | { status: 'ok'; session: SavedSession; migrationsApplied: string[] }
+  | { status: 'empty' }
+  /** Not a document this app wrote, or damaged beyond reading. */
+  | { status: 'corrupt' }
+  /** Written by a build newer than this one, which said old readers are unsafe. */
+  | { status: 'too_new'; message: string };
+
+/**
+ * Read a stored document: migrate it forward, then validate it.
+ *
+ * What changed, and why it matters: this used to say
+ *
+ *     if (s.schemaVersion !== SCHEMA_VERSION) return null;
+ *
+ * which discarded every older save the moment the version moved. With
+ * `allowBackup="false"` (ADR-011) and no export, that was unrecoverable data
+ * loss dressed up as caution. An older save is now UPGRADED; only a genuinely
+ * unreadable one is refused, and a newer one says so in words.
+ */
+export function readSession(raw: string | null): ReadResult {
+  if (raw === null || raw === '') return { status: 'empty' };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return null;
+    return { status: 'corrupt' };
   }
-  if (typeof parsed !== 'object' || parsed === null) return null;
 
-  const s = parsed as Partial<SavedSession>;
+  const outcome = migrateDocument(parsed, MIGRATIONS, SCHEMA_VERSION, SCHEMA_VERSION);
+  if (!outcome.ok) {
+    if (outcome.reason === 'too_new') {
+      return {
+        status: 'too_new',
+        message: tooNewMessage(outcome.writtenBy, outcome.needsReader),
+      };
+    }
+    return { status: 'corrupt' };
+  }
 
-  // A session from a future version of the app. Discard rather than guess:
-  // half-understanding a newer shape is how a fairness figure goes quietly
-  // wrong.
-  if (s.schemaVersion !== SCHEMA_VERSION) return null;
+  const session = validate(outcome.doc);
+  if (!session) return { status: 'corrupt' };
+  return { status: 'ok', session, migrationsApplied: outcome.applied };
+}
+
+/**
+ * Check a migrated document is whole, and keep anything this build does not
+ * recognise so writing back cannot destroy it.
+ */
+function validate(doc: VersionedDocument): SavedSession | null {
+  const s = doc as Partial<SavedSession> & VersionedDocument;
 
   if (!Array.isArray(s.players)) return null;
   if (typeof s.squadId !== 'string') return null;
@@ -170,7 +314,9 @@ export function parseSession(raw: string | null): SavedSession | null {
   }
 
   return {
+    ...unknownFields(doc, KNOWN_FIELDS),
     schemaVersion: SCHEMA_VERSION,
+    minReaderVersion: MIN_READER_VERSION,
     savedAt: typeof s.savedAt === 'string' ? s.savedAt : new Date(0).toISOString(),
     squadName: typeof s.squadName === 'string' ? s.squadName : '',
     squadId: s.squadId as UUID,
@@ -186,6 +332,15 @@ export function parseSession(raw: string | null): SavedSession | null {
         }
       : null,
   };
+}
+
+/**
+ * The old shape, kept because callers and tests are written against it.
+ * Null for anything that is not a readable session, exactly as before.
+ */
+export function parseSession(raw: string | null): SavedSession | null {
+  const result = readSession(raw);
+  return result.status === 'ok' ? result.session : null;
 }
 
 /** True when the saved match has a quarter still running — i.e. offer a resume. */

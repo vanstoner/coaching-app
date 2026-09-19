@@ -14,6 +14,7 @@
 
 import { uuid } from '../types/index';
 import type { Format, Position, UUID } from '../types/index';
+import { inferUnit } from './positions';
 
 /** Default match shape: the PO's under-10s play 50 minutes in quarters. */
 export const DEFAULT_TOTAL_MINUTES = 50;
@@ -51,6 +52,10 @@ export function makePlaceholderSquad(): PlaceholderSquad {
     formatId,
     label,
     kind: label === 'GK' ? ('goalkeeper' as const) : ('outfield' as const),
+    // The labels ARE catalogue codes ('GK', 'LB', 'CM', 'ST'), so the unit is
+    // known rather than guessed. A coach renaming them later keeps the unit.
+    unit: inferUnit(label === 'GK' ? 'goalkeeper' : 'outfield', label),
+    roleCode: label,
     sortOrder: i,
   }));
 
@@ -86,6 +91,10 @@ export function makeSevenASideFormat(): Format {
     formatId,
     label,
     kind: label === 'GK' ? ('goalkeeper' as const) : ('outfield' as const),
+    // The labels ARE catalogue codes ('GK', 'LB', 'CM', 'ST'), so the unit is
+    // known rather than guessed. A coach renaming them later keeps the unit.
+    unit: inferUnit(label === 'GK' ? 'goalkeeper' : 'outfield', label),
+    roleCode: label,
     sortOrder: i,
   }));
   return {
