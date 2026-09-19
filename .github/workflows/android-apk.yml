@@ -269,13 +269,13 @@ jobs:
             note "no assets/index.android.bundle in the APK — nothing to label"
           else
             unzip -p "$APK" "$BUNDLE_ENTRY" > /tmp/bundle.bin
-            echo "bundle size: $(stat -c%s /tmp/bundle.bin) bytes"
-            echo "expecting label: $BUILD_LABEL"
-            if grep -qF "$BUILD_LABEL" /tmp/bundle.bin; then
-              echo "build label is present in the APK's bundle"
-            else
-              note "build label '$BUILD_LABEL' is NOT in the APK's bundle"
-            fi
+            # NOT grep: Hermes stores a string as ASCII when every character
+            # fits and as UTF-16LE the moment one does not, so a byte-grep for
+            # the UTF-8 form fails on a correct build the instant the label
+            # contains a non-ASCII character. That false red cost two runs and
+            # a wrong diagnosis. The script checks both encodings.
+            python3 .github/scripts/assert_label_in_bundle.py /tmp/bundle.bin "$BUILD_LABEL" \
+              || note "build label '$BUILD_LABEL' is NOT in the APK's bundle"
             # NOT asserted: the absence of the string 'local dev'. It is a
             # constant in buildLabel.ts and is therefore in every bundle,
             # labelled or not, so asserting on it rejects correct artifacts —

@@ -45,7 +45,11 @@ else
     # A PR build is real, installable, and is NOT published as a release. The
     # label says so, because a label that names a release page you cannot find
     # is worse than one that admits what it is.
-    LABEL="${TAG} · pr ${PR_NUMBER:-?}"
+    #
+    # ASCII only. Hermes stores a non-ASCII string as UTF-16, which is legal
+    # and invisible on screen but changes how the artifact can be inspected.
+    # A diagnostic string should be the easiest thing in the build to grep.
+    LABEL="${TAG} (pr ${PR_NUMBER:-?})"
   else
     LABEL="$TAG"
   fi
