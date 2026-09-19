@@ -31,7 +31,7 @@ own charter, context and boundaries.
 | **Quinn** | QA | Adversarial verification | Fix what it finds |
 | **Pip** | Platform Engineer | CI/CD, builds, releases | Write product features |
 
-See [`roles/squad.md`](./roles/squad.md) for the diagrams.
+See [`roles/README.md`](./roles/README.md) for the squad and the flow.
 
 ### Why five agents rather than one
 

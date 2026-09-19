@@ -79,10 +79,13 @@ solution. Before writing a document, ask whether an issue comment would do.
 
 ## Squad roles
 
-Five agents, charters in `docs/roles/`: **Bea** (BA), **Ada** (Architect),
-**Ellis** (Engineer), **Quinn** (QA), **Pip** (Platform). The separations that
-matter: the Engineer doesn't write its own acceptance criteria; QA reports and
-never fixes; Pip builds no product features.
+Six disciplines, each a **skill** in `.claude/skills/` — `analyse`, `design`,
+`architect`, `implement`, `verify`, `ship`. The skill is the charter, so it
+binds a single session as well as a spawned agent. Index in
+`docs/roles/README.md`.
+
+The separations that matter: the Engineer doesn't write its own acceptance
+criteria; QA reports and never fixes; Platform builds no product features.
 
 Agents die to rate limits often. When one does, say so — work silently falling
 back to the orchestrator is how the boundaries dissolve.

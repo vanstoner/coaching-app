@@ -1,113 +1,69 @@
-# Squad Roles
+# Squad roles
 
-Five roles, each a separate agent with its own charter, context and boundaries.
-Separation is deliberate: it creates the independent verification that makes
-output trustworthy.
+Six disciplines. **Each one is a skill in `.claude/skills/`** — that is the
+charter, and it is the single source of truth.
 
-**See [squad.md](./squad.md) for the diagrams** — who hands off to whom, where
-the approval gates sit, and the boundaries that must never be crossed.
+The skill matters more than the agent. A charter in an agent file only binds a
+spawned subagent; a skill binds whoever is doing that kind of work, including a
+single session doing all six. If the squad dissolves — and it has before — the
+skills still hold.
 
-The agents have first names — Bea, Ada, Ellis, Quinn, Pip — so handoffs read as
-a chain of custody rather than as process documentation, and so
-`git log --grep="Squad-Role: Quinn"` is a useful query. First names only, the
-same rule the app applies to the children whose minutes it tracks.
-
-## Why separate agents rather than one capable one
-
-A single agent asked to spec, build and test will produce code that passes its
-own tests — because it wrote both from one interpretation. If that
-interpretation is wrong, nothing catches it. Separation means the QA agent reads
-the *acceptance criteria*, not the Engineer's reasoning, and can therefore
-disagree.
-
-This is the same principle as separating the person who deploys from the person
-who approves. It is not about capability; it is about independence.
-
-## The squad
-
-| Name | Role | Owns | Hands off to | Never does |
+| Name | Discipline | Skill | Produces | Never |
 |---|---|---|---|---|
-| **Bea** | [Business Analyst](./business-analyst.md) | Specs, issues, acceptance criteria | Architect, Engineer, Platform | Write implementation code |
-| **Ada** | [Architect](./architect.md) | Technical design, ADRs, domain integrity | Engineer, Platform | Write feature code |
-| **Ellis** | [Engineer](./engineer.md) | Feature implementation | QA | Write its own acceptance criteria |
-| **Quinn** | [QA](./qa.md) | Verification, tests, edge cases | Product Owner | Fix the code it finds faults in |
-| **Pip** | [Platform Engineer](./platform-engineer.md) | CI/CD, builds, artifacts, releases | QA | Write product features |
+| **Bea** | Business Analyst | `analyse` | Specs, issues, acceptance criteria | Implements |
+| **Ada** | Architect | `architect` | ADRs, domain model, design | Writes feature code |
+| — | UX Designer | `design` | Clickable prototypes Rob opens on his phone | Implements |
+| **Ellis** | Engineer | `implement` | Product code, tests, PRs with evidence | Writes its own acceptance criteria |
+| **Quinn** | QA | `verify` | Defects with evidence | Fixes what it finds |
+| **Pip** | Platform | `ship` | CI, builds, APKs, releases | Writes product features |
 
-**Product Owner (you)** sits above all five: sets intent, approves specs,
-arbitrates trade-offs, merges.
+## The boundaries that matter
 
-## The critical boundaries
+Three, and they are the reason for the separation at all:
 
-Three separations carry most of the value. If you keep only three rules, keep
-these:
+1. **The Engineer does not write its own acceptance criteria.** Criteria that
+   describe what was built are not criteria.
+2. **QA reports and never fixes.** Finding and fixing in one pass turns a
+   defect into a design change nobody reviewed.
+3. **Platform builds no product features.** A pipeline owner who also ships
+   features will always prioritise their own feature over a red build.
 
-**1. The Engineer does not write its own acceptance criteria.**
-Otherwise it defines success as whatever it built.
+The rest is convenience. These three are load-bearing.
 
-**2. QA does not fix what it finds.**
-A QA agent that fixes bugs starts optimising for fixable bugs and stops looking
-for design-level problems. It reports; the Engineer fixes.
-
-**3. The BA does not implement.**
-A BA that writes code starts writing specs that describe code it has already
-imagined, rather than the behaviour you actually asked for.
-
-## Handoff protocol
-
-Each handoff carries a defined payload. A handoff missing its payload is
-rejected rather than guessed at.
+## Flow
 
 ```
-Product Owner  ──intent──▶  BA
-BA  ──draft spec──▶  Product Owner        [HARD GATE: approval]
-BA  ──approved spec──▶  Architect
-Architect  ──design + ADRs──▶  Product Owner   [HARD GATE if architectural]
-Architect  ──approved design──▶  BA
-BA  ──issues + acceptance criteria──▶  Engineer
-Engineer  ──implementation──▶  QA
-QA  ──verdict──▶  Product Owner           [HARD GATE: merge]
-QA  ──defects──▶  Engineer                [loop until clean]
+Rob's intent ──> analyse ──> issue + criteria
+                               │
+                    design ────┤  (new screen or flow)
+                               │
+                 architect ────┤  (invariant, model or dependency)
+                               │
+                               ▼
+                          implement ──> PR with pasted evidence
+                               │
+                            verify ──> defects, or a plain verdict
+                               │
+                               ▼
+                        Rob approves ──> merge ──> ship cuts the release
 ```
 
-### Handoff payloads
+## Gates
 
-| Handoff | Must include |
-|---|---|
-| BA → Architect | Approved spec, open questions, constraints |
-| Architect → BA | Design decisions, ADR references, technical constraints |
-| BA → Engineer | Issue, acceptance criteria, spec reference, out-of-scope note |
-| Engineer → QA | PR link, what changed, how to run it, **pasted test output against the PR head**, deviations from spec and why |
-| QA → Engineer | Failing criterion, reproduction, expected vs actual (as a PR comment or `DEF-NNN` issue) |
-| QA → PO | Criteria met/unmet, **pasted output of QA's own run**, risks accepted, recommendation |
-
-A handoff that asserts a result without the output is rejected. See
-[operating-model.md](../process/operating-model.md).
+- **No acceptance criteria, no merge.** Infrastructure included.
+- **Rob approves every merge.** His interface is chat; he replies `approve <n>`.
+- **PRs carry pasted evidence**, never assertions.
+- **Every commit carries `Refs: #NN`**, CI-gated.
 
 ## Escalation
 
-Any role escalates to the Product Owner rather than guessing when it hits:
+Anything ambiguous, invariant-breaking or scope-growing goes to Rob *before*
+the work, with a recommendation. A menu with no recommendation is an
+unfinished handoff.
 
-- Ambiguity in the spec that changes behaviour
-- A trade-off between two stated requirements
-- Anything touching real player data or GDPR
-- Scope that appears to have grown
-- A spec that appears wrong once implementation has begun
+## History
 
-**Escalation is success, not failure.** An agent that escalates has caught
-something at the cheapest possible moment. This is stated in every role charter
-because the default agent behaviour is to guess confidently instead.
-
-## Running the squad
-
-These roles map to subagents. Two modes:
-
-**Sequential (default).** One role at a time, output reviewed between steps.
-Slower, maximum visibility — start here while you're learning the model.
-
-**Orchestrated.** A workflow runs several agents with defined handoffs, and you
-review at the gates. Faster, less visible. Move here once you trust the
-handoffs. Requires explicit opt-in — it can spawn many agents and consume
-significant budget, so it never happens implicitly.
-
-Given the educational goal, sequential is the right default. You see each
-handoff, which is where the model is actually learned.
+Per-role charter files used to live here — 755 lines across six documents that
+the agent files then pointed at. They were merged into the skills above, where
+they are read by whoever does the work rather than only by a spawned agent.
+Nothing was dropped; the rules that bite and the lessons learned came across.
