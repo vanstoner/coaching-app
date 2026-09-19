@@ -211,6 +211,7 @@ export default function App() {
       const state = engine.createMatch(squadId, format.id, {
         totalMinutes: draft.totalMinutes,
         quarterCount: draft.periodCount,
+        availablePlayerIds: players.map((p) => p.id),
         opponent: draft.opponent.trim() === '' ? null : draft.opponent.trim(),
         competition: draft.competition,
         kickoffAt: draft.kickoffAt,
@@ -236,7 +237,7 @@ export default function App() {
       persist({ matches: next, state: match?.state ?? null });
       setStep('fixtures');
     },
-    [squadId, format, matches, persist, match]
+    [squadId, format, matches, persist, match, players]
   );
 
   /**
@@ -265,6 +266,20 @@ export default function App() {
       const stored = matches.find((m) => m.match.id === matchId);
       if (!stored) return;
       const engine = new MatchEngine();
+
+      const availability = new Map(stored.availability);
+      const notStarted = stored.quarters.every((q) => q.status === 'pending');
+      if (availability.size === 0 && notStarted) {
+        // A fixture planned before availability was recorded (#64) would
+        // otherwise play with an empty map and write no bench stints at all.
+        //
+        // Only for a match NOT YET STARTED. Back-filling one that has been
+        // played would invent a bench for children who may not have been
+        // there, and a fabricated figure is indistinguishable from a measured
+        // one once it is stored.
+        for (const player of players) availability.set(player.id, 'available');
+      }
+
       setMatch({
         engine,
         state: {
@@ -272,7 +287,7 @@ export default function App() {
           quarters: stored.quarters,
           appearances: stored.appearances,
           benchStints: stored.benchStints,
-          playerAvailability: new Map(stored.availability),
+          playerAvailability: availability,
         },
       });
       setSubPlan([]);
@@ -295,10 +310,12 @@ export default function App() {
     const state = engine.createMatch(squadId, format.id, {
       totalMinutes,
       quarterCount: periodCount,
+      // #64: without this the bench ledger is never written at all.
+      availablePlayerIds: players.map((p) => p.id),
     });
     setMatch({ engine, state });
     setStep('lineup');
-  }, [squadId, format, totalMinutes, periodCount]);
+  }, [squadId, format, totalMinutes, periodCount, players]);
 
   const resume = useCallback(() => {
     if (!pending) return;
