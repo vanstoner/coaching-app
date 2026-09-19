@@ -103,6 +103,40 @@ jobs:
       # Expo's generated build.gradle signs release with the DEBUG keystore by
       # default, which is what keeps this sideloadable with no keystore
       # management. The AC-A4 assertion below proves that held.
+      # #52 — the build label the app shows. Computed by the SAME script the
+      # release job uses to name the release, so the string on the phone and
+      # the tag on the releases page cannot disagree.
+      #
+      # It is WRITTEN INTO A GENERATED MODULE rather than passed as
+      # EXPO_PUBLIC_BUILD_LABEL. The env-var route was tried and looked proven
+      # — the literal appeared in the bytecode under `expo export` — and then
+      # did nothing at all here, where Gradle produces the bundle. Run
+      # 35428198347 built with the variable correctly set in this job's
+      # environment and shipped an APK still saying `local dev`. A mechanism
+      # proven on one path is not proven on the path that ships.
+      - name: Compute the build label
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      # Dry-run the writer against a throwaway value BEFORE trusting it, then
+      # write the real one. Five of six CI failures on this project were gates
+      # nobody had exercised against a healthy input.
+      - name: Write the build label into the bundle, and prove it took
+        run: |
+          set -euo pipefail
+          echo "--- refuses an empty label ---"
+          if python3 .github/scripts/write-build-label.py "" 2>&1; then
+            echo "writer accepted an empty label — it should not"; exit 1
+          fi
+          echo "--- writes the real label ---"
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          grep -n 'GENERATED_BUILD_LABEL =' src/app/generated-build-label.ts
+          # The file must now contain the label. If it does not, fail HERE,
+          # not eight minutes later after a Gradle build.
+          grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
+            || { echo "the generated module does not contain the label"; exit 1; }
+
       - name: Build release APK with the bundle embedded
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
@@ -222,6 +256,33 @@ jobs:
               *) note "unexpected permission in the APK: $perm" ;;
             esac
           done < /tmp/perm-names.txt
+          echo "::endgroup::"
+
+
+          echo "::group::#52 — the build label is baked into the bundle"
+          # The label lives in the Hermes bytecode's string table inside the
+          # embedded JS bundle. If Metro's substitution did not happen, the
+          # app would quietly show 'local dev' on a release build, which is
+          # precisely the confusion #52 exists to end — so it fails the build.
+          BUNDLE_ENTRY="$(grep -oE 'assets/index\.android\.bundle' /tmp/apk-entries.txt | sed -n 1p)"
+          if [ -z "$BUNDLE_ENTRY" ]; then
+            note "no assets/index.android.bundle in the APK — nothing to label"
+          else
+            unzip -p "$APK" "$BUNDLE_ENTRY" > /tmp/bundle.bin
+            # NOT grep: Hermes stores a string as ASCII when every character
+            # fits and as UTF-16LE the moment one does not, so a byte-grep for
+            # the UTF-8 form fails on a correct build the instant the label
+            # contains a non-ASCII character. That false red cost two runs and
+            # a wrong diagnosis. The script checks both encodings.
+            python3 .github/scripts/assert_label_in_bundle.py /tmp/bundle.bin "$BUILD_LABEL" \
+              || note "build label '$BUILD_LABEL' is NOT in the APK's bundle"
+            # NOT asserted: the absence of the string 'local dev'. It is a
+            # constant in buildLabel.ts and is therefore in every bundle,
+            # labelled or not, so asserting on it rejects correct artifacts —
+            # which is what five of this project's six CI failures were. The
+            # presence of the exact expected label is the assertion that
+            # carries information; this one only looked like it did.
+          fi
           echo "::endgroup::"
 
           exit $fail
@@ -409,16 +470,25 @@ jobs:
           VERSION="$(python3 -c "import json; print(json.load(open('app.json'))['expo']['version'])")"
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 
+          # #52: the SAME script the apk job used to bake the on-screen label.
+          # Deriving the tag twice, in two jobs, is how the label on the phone
+          # and the tag on the releases page would eventually disagree — and
+          # the entire value of the label is that they cannot.
+          # Guarded rather than bare `eval "$(...)"`: this step runs without
+          # `set -e`, so a script that exits non-zero would otherwise eval an
+          # empty string and fail later with an obscure unbound-variable error
+          # instead of the real reason.
+          if ! LABEL_ENV="$(.github/scripts/build-label.sh)"; then
+            echo "build-label.sh failed — refusing to publish"
+            exit 1
+          fi
+          eval "$LABEL_ENV"
+          echo "computed by build-label.sh: TAG=$TAG BUILD_LABEL=$BUILD_LABEL"
+
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            TAG="${GITHUB_REF_NAME}"
             PRERELEASE=""
-            if [ "$TAG" != "v$VERSION" ]; then
-              echo "tag $TAG does not match app.json version $VERSION — refusing to publish"
-              exit 1
-            fi
           else
             # One immutable prerelease per green build of main: the audit trail.
-            TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
             PRERELEASE="--prerelease"
           fi
           echo "tag: $TAG   version: $VERSION"
