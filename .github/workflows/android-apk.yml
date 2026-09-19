@@ -107,24 +107,39 @@ jobs:
       # release job uses to name the release, so the string on the phone and
       # the tag on the releases page cannot disagree.
       #
-      # Expo's Metro config substitutes EXPO_PUBLIC_* with a string literal at
-      # bundle time, so this needs no dependency and no generated file. Proven
-      # by export rather than assumed, and asserted against the built APK below
-      # — on this project an injection that silently does not happen is the
-      # expected failure, not the surprising one.
+      # It is WRITTEN INTO A GENERATED MODULE rather than passed as
+      # EXPO_PUBLIC_BUILD_LABEL. The env-var route was tried and looked proven
+      # — the literal appeared in the bytecode under `expo export` — and then
+      # did nothing at all here, where Gradle produces the bundle. Run
+      # 35428198347 built with the variable correctly set in this job's
+      # environment and shipped an APK still saying `local dev`. A mechanism
+      # proven on one path is not proven on the path that ships.
       - name: Compute the build label
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
 
-      - name: Show what will be baked into the bundle
-        run: echo "EXPO_PUBLIC_BUILD_LABEL=$BUILD_LABEL"
+      # Dry-run the writer against a throwaway value BEFORE trusting it, then
+      # write the real one. Five of six CI failures on this project were gates
+      # nobody had exercised against a healthy input.
+      - name: Write the build label into the bundle, and prove it took
+        run: |
+          set -euo pipefail
+          echo "--- refuses an empty label ---"
+          if python3 .github/scripts/write-build-label.py "" 2>&1; then
+            echo "writer accepted an empty label — it should not"; exit 1
+          fi
+          echo "--- writes the real label ---"
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          grep -n 'GENERATED_BUILD_LABEL =' src/app/generated-build-label.ts
+          # The file must now contain the label. If it does not, fail HERE,
+          # not eight minutes later after a Gradle build.
+          grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
+            || { echo "the generated module does not contain the label"; exit 1; }
 
       - name: Build release APK with the bundle embedded
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
-        env:
-          EXPO_PUBLIC_BUILD_LABEL: ${{ env.BUILD_LABEL }}
 
       # Every assertion below gates the job: the build is only a deliverable if
       # the APK is structurally valid, debug-signed, and has backup disabled.
@@ -261,14 +276,12 @@ jobs:
             else
               note "build label '$BUILD_LABEL' is NOT in the APK's bundle"
             fi
-            # A release build must never claim to be a local one. This is the
-            # assertion that catches a stale Metro transform cache serving the
-            # previous run's substitution, which is reproducible locally.
-            if grep -qF 'local dev' /tmp/bundle.bin; then
-              note "the APK's bundle still contains the 'local dev' fallback"
-            else
-              echo "no 'local dev' fallback in a CI build, as expected"
-            fi
+            # NOT asserted: the absence of the string 'local dev'. It is a
+            # constant in buildLabel.ts and is therefore in every bundle,
+            # labelled or not, so asserting on it rejects correct artifacts —
+            # which is what five of this project's six CI failures were. The
+            # presence of the exact expected label is the assertion that
+            # carries information; this one only looked like it did.
           fi
           echo "::endgroup::"
 

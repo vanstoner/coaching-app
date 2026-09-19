@@ -1,8 +1,7 @@
 /**
  * Which build am I looking at? — #52.
  *
- * Pure TypeScript apart from one env read, which is why the formatting rules
- * are tested in Node with no device.
+ * Pure TypeScript, so the formatting rules are tested in Node with no device.
  *
  * ---------------------------------------------------------------------------
  * The property worth having
@@ -25,15 +24,26 @@
  * installed, and adding it means every contributor needs `npm ci` rather than
  * `git pull` for a diagnostic string.
  *
- * Expo's Metro config substitutes `process.env.EXPO_PUBLIC_*` with a string
- * literal at bundle time, so the value is baked into the bundle with no
- * dependency and no generated file in the tree. That substitution is asserted
- * against the built APK in `android-apk.yml`, because on this project an
- * injection that silently does not happen is the expected failure, not the
- * surprising one.
+ * Instead the value arrives in a module CI generates immediately before the
+ * bundle is built. No dependency, and no bundler-specific behaviour to be
+ * wrong about.
+ *
+ * `process.env.EXPO_PUBLIC_BUILD_LABEL` was tried first and looked proven: the
+ * literal appeared in the bytecode under `expo export`. It then did nothing at
+ * all in the Gradle embed path that actually ships the APK, with the variable
+ * correctly set in the job environment (run 35428198347). A mechanism proven
+ * on one path is not proven on the path that ships — the lesson this project
+ * keeps paying for.
+ *
+ * The CI assertion that caught it greps the built APK's embedded bundle for
+ * the exact expected label, and fails if the `local dev` fallback survives
+ * into a release build. That assertion turned a silently wrong label into a
+ * red build, which is the whole argument for gating this rather than
+ * trusting it.
  */
 
 import appJson from '../../app.json';
+import { GENERATED_BUILD_LABEL } from './generated-build-label';
 
 /** What a local run says. Words, never a version-shaped string. */
 export const LOCAL_DEV_LABEL = 'local dev';
@@ -55,23 +65,14 @@ export function formatBuildLabel(injectedTag: string | undefined | null, version
 }
 
 /**
- * Read the injected tag.
+ * The tag CI wrote into the generated module, or undefined for a local run.
  *
- * Written as a direct static member expression because that is the form Metro
- * substitutes; assigning `process.env` to a variable first would defeat it.
- *
- * The try/catch is for Hermes, where `process` is not guaranteed to exist and
- * the reference would throw rather than yield undefined. `crypto.randomUUID`
- * crashed this app on launch for exactly that reason, so the guard is a scar,
- * not a superstition. When Metro has substituted, this is a string literal and
- * the guard costs nothing.
+ * An ordinary import of an ordinary constant: nothing to substitute, nothing
+ * to cache, nothing that behaves differently between two bundlers.
  */
 export function injectedBuildTag(): string | undefined {
-  try {
-    return process.env.EXPO_PUBLIC_BUILD_LABEL;
-  } catch {
-    return undefined;
-  }
+  const tag = GENERATED_BUILD_LABEL.trim();
+  return tag === '' ? undefined : tag;
 }
 
 /** The label this running build should show. */

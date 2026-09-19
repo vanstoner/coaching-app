@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   APP_VERSION,
@@ -7,6 +7,7 @@ import {
   formatBuildLabel,
   injectedBuildTag,
 } from './buildLabel';
+import { GENERATED_BUILD_LABEL } from './generated-build-label';
 
 describe('formatBuildLabel', () => {
   it('shows a CI tag verbatim, character for character', () => {
@@ -54,37 +55,46 @@ describe('APP_VERSION', () => {
 });
 
 describe('injectedBuildTag', () => {
-  const original = process.env.EXPO_PUBLIC_BUILD_LABEL;
-
-  afterEach(() => {
-    if (original === undefined) delete process.env.EXPO_PUBLIC_BUILD_LABEL;
-    else process.env.EXPO_PUBLIC_BUILD_LABEL = original;
-  });
-
-  it('reads the injected value when there is one', () => {
-    process.env.EXPO_PUBLIC_BUILD_LABEL = 'v2026.09.19-1-build.40';
-    expect(injectedBuildTag()).toBe('v2026.09.19-1-build.40');
-    expect(currentBuildLabel()).toBe('v2026.09.19-1-build.40');
-  });
-
-  it('falls back to the local label when nothing was injected', () => {
-    delete process.env.EXPO_PUBLIC_BUILD_LABEL;
+  it('is undefined in the repository, because the generated file ships empty', () => {
+    // The checked-in value must stay empty. If it is ever committed with a tag
+    // in it, every local run would claim to be that release — which is the
+    // exact confusion #52 exists to end, arriving by the back door.
+    expect(GENERATED_BUILD_LABEL).toBe('');
     expect(injectedBuildTag()).toBeUndefined();
-    expect(currentBuildLabel()).toContain(LOCAL_DEV_LABEL);
   });
 
-  it('survives `process` being absent, as it is under Hermes', () => {
-    // crypto.randomUUID() crashed this app on launch for exactly this reason:
-    // a global that exists in Node and not on the device. The guard is tested
-    // with the capability removed rather than assumed to work.
+  it('falls back to the local label when nothing was generated', () => {
+    expect(currentBuildLabel()).toContain(LOCAL_DEV_LABEL);
+    expect(currentBuildLabel()).toContain(APP_VERSION);
+  });
+
+  it('needs no global that Hermes might not have', () => {
+    // The previous implementation read process.env, which does not exist under
+    // Hermes and — worse — silently did nothing in the Gradle bundle path.
+    // An imported constant has neither failure mode. Proven by removing the
+    // global entirely: crypto.randomUUID() crashed this app on launch for
+    // exactly this class of reason.
     const saved = globalThis.process;
     try {
       // @ts-expect-error — deliberately removing a global to model Hermes.
       delete globalThis.process;
-      expect(() => injectedBuildTag()).not.toThrow();
-      expect(injectedBuildTag()).toBeUndefined();
+      expect(() => currentBuildLabel()).not.toThrow();
+      expect(currentBuildLabel()).toContain(LOCAL_DEV_LABEL);
     } finally {
       globalThis.process = saved;
     }
+  });
+});
+
+describe('the label CI will generate', () => {
+  it('is shown verbatim once written', () => {
+    // What .github/scripts/write-build-label.py puts in the generated file.
+    const tag = 'v2026.09.18-4-build.34';
+    expect(formatBuildLabel(tag, APP_VERSION)).toBe(tag);
+  });
+
+  it('is shown verbatim even with the PR suffix the script writes', () => {
+    const tag = 'v2026.09.18-4-build.34 · pr 59';
+    expect(formatBuildLabel(tag, APP_VERSION)).toBe(tag);
   });
 });
