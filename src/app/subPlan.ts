@@ -28,10 +28,26 @@
 
 import type { UUID } from '../types/index';
 
+/**
+ * `atMs` when the coach has decided this player is NOT coming on this period.
+ *
+ * Field note, 2026-09-19 (#62), from the first real match:
+ *
+ * > *"we need to cater for the case where we don't plan to sub them on in a
+ * > quarter. So a value of 0 should be allowed which would indicate no sub
+ * > plan"*
+ *
+ * Zero is not a time here, it is the absence of one. Before this, every bench
+ * player carried a planned time whether the coach wanted one or not, so a
+ * squad with three substitutes and two coming on had no way to say so — and
+ * the third player's reminder fired anyway, mid-match, wrongly.
+ */
+export const NO_SUB_PLANNED = 0;
+
 export interface PlannedSub {
   /** The player coming on. */
   playerId: UUID;
-  /** How far into the period they should come on. */
+  /** How far into the period they should come on, or NO_SUB_PLANNED. */
   atMs: number;
   /**
    * Who they replace. Null means the coach has not said, and the app will
@@ -40,6 +56,11 @@ export interface PlannedSub {
   forPlayerId: UUID | null;
   /** Set once the coach has actually made the swap. */
   done: boolean;
+}
+
+/** True when this entry names a real moment rather than "not this period". */
+export function isPlanned(sub: PlannedSub): boolean {
+  return sub.atMs > 0;
 }
 
 /**
@@ -79,11 +100,25 @@ export function setSubTime(
   atMs: number,
   periodMs: number
 ): PlannedSub[] {
-  const clamped = Math.max(1_000, Math.min(atMs, Math.max(1_000, periodMs - 1_000)));
-  return plan.map((s) => (s.playerId === playerId ? { ...s, atMs: clamped } : s));
+  // Zero or below means "not coming on this period" and is kept exactly,
+  // rather than clamped up to one second as it used to be. The old clamp made
+  // the coach's actual intention inexpressible.
+  const value =
+    atMs <= 0
+      ? NO_SUB_PLANNED
+      : Math.max(1_000, Math.min(atMs, Math.max(1_000, periodMs - 1_000)));
+  return plan.map((s) => (s.playerId === playerId ? { ...s, atMs: value } : s));
 }
 
-/** Nudge a planned time by a step, keeping it inside the period. */
+/**
+ * Nudge a planned time by a step, keeping it inside the period.
+ *
+ * The two ends are where this earns its keep at a touchline. Nudging DOWN past
+ * the start turns the plan off — one more press of the same button a coach is
+ * already pressing, rather than a separate control. Nudging UP from off jumps
+ * straight to the default rather than to one second, because a coach turning a
+ * sub back on means "about halfway", not "immediately".
+ */
 export function nudgeSubTime(
   plan: PlannedSub[],
   playerId: UUID,
@@ -92,7 +127,16 @@ export function nudgeSubTime(
 ): PlannedSub[] {
   const entry = plan.find((s) => s.playerId === playerId);
   if (!entry) return plan;
+  if (entry.atMs === NO_SUB_PLANNED) {
+    if (deltaMs <= 0) return plan; // already off; nothing below it
+    return setSubTime(plan, playerId, defaultSubTimeMs(periodMs), periodMs);
+  }
   return setSubTime(plan, playerId, entry.atMs + deltaMs, periodMs);
+}
+
+/** Turn a planned substitution off without losing the player from the plan. */
+export function clearSubTime(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
+  return plan.map((s) => (s.playerId === playerId ? { ...s, atMs: NO_SUB_PLANNED } : s));
 }
 
 export function markDone(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
@@ -109,14 +153,14 @@ export function markDone(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
  */
 export function dueSubs(plan: PlannedSub[], periodElapsedMs: number): PlannedSub[] {
   return plan
-    .filter((s) => !s.done && periodElapsedMs >= s.atMs)
+    .filter((s) => isPlanned(s) && !s.done && periodElapsedMs >= s.atMs)
     .sort((a, b) => a.atMs - b.atMs);
 }
 
 /** The next substitution not yet due, for a countdown. Null when none remain. */
 export function nextSub(plan: PlannedSub[], periodElapsedMs: number): PlannedSub | null {
   const upcoming = plan
-    .filter((s) => !s.done && periodElapsedMs < s.atMs)
+    .filter((s) => isPlanned(s) && !s.done && periodElapsedMs < s.atMs)
     .sort((a, b) => a.atMs - b.atMs);
   return upcoming[0] ?? null;
 }

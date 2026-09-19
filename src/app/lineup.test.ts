@@ -10,7 +10,13 @@
 import { describe, it, expect } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
-import type { Format, Player, Position, UUID } from '../types/index';
+import type {
+  Format,
+  Player,
+  PlayerPositionAffinity,
+  Position,
+  UUID,
+} from '../types/index';
 import { makePlayer } from './squad';
 import { foldPlayerMinutes, fairnessSpreadMs } from './playerMinutes';
 import { suggestLineup, teamSheetFor, lineupIsComplete, fairnessTable } from './lineup';
@@ -276,5 +282,142 @@ describe('rotating on the suggestion actually produces fair time', () => {
     // suggestion must still have favoured those owed time.
     const played = minutes.filter((m) => m.totalMs > 0);
     expect(played.length).toBeGreaterThanOrEqual(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The keeper who keeps — field note #62, from the first real match
+// ---------------------------------------------------------------------------
+
+describe('goalkeeper affinity', () => {
+  const gkPositionOf = (format: Format) =>
+    format.positions.find((p) => p.kind === 'goalkeeper')!.id;
+
+  const affinity = (
+    playerId: UUID,
+    positionId: UUID,
+    preference: 'primary' | 'secondary'
+  ): PlayerPositionAffinity => ({ playerId, positionId, preference });
+
+  it('keeps the nominated keeper in goal every period', () => {
+    // The annoyance, exactly: "they tend not to change between 3 out of 4
+    // quarters so trying to rotate was slight annoyance".
+    const { players, engine, state, format, clock } = setUp();
+    const keeper = players[4].id; // deliberately not first in squad order
+    const affinities = [affinity(keeper, gkPositionOf(format), 'primary')];
+
+    for (let q = 1; q <= 4; q++) {
+      const minutes = foldPlayerMinutes(engine, state, players);
+      const s = suggestLineup(players, minutes, format, { affinities });
+      expect(s.goalkeeper).toBe(keeper);
+
+      const quarter = state.quarters[q - 1];
+      engine.startQuarter(
+        state,
+        quarter,
+        teamSheetFor(s.onPitch, s.goalkeeper, format),
+        format
+      );
+      clock.advance(750_000);
+      engine.endQuarter(state, quarter);
+    }
+  });
+
+  it('still excludes their goalkeeping time from the fairness figure', () => {
+    // Invariant 3 is what makes a fixed keeper safe rather than unfair. A
+    // child who keeps all match must not thereby be "ahead" on minutes.
+    const { players, engine, state, format, clock } = setUp();
+    const keeper = players[4].id;
+    const affinities = [affinity(keeper, gkPositionOf(format), 'primary')];
+
+    for (let q = 1; q <= 4; q++) {
+      const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format, {
+        affinities,
+      });
+      const quarter = state.quarters[q - 1];
+      engine.startQuarter(
+        state,
+        quarter,
+        teamSheetFor(s.onPitch, s.goalkeeper, format),
+        format
+      );
+      clock.advance(750_000);
+      engine.endQuarter(state, quarter);
+    }
+
+    const row = foldPlayerMinutes(engine, state, players).find((r) => r.playerId === keeper)!;
+    expect(row.goalkeeperMs).toBe(3_000_000); // the whole match in goal
+    expect(row.outfieldMs).toBe(0); // and nothing on the fairness ledger
+  });
+
+  it('falls back to the deputy when the first choice is not available', () => {
+    const { players, engine, state, format } = setUp();
+    const first = players[4].id;
+    const deputy = players[7].id;
+    const affinities = [
+      affinity(first, gkPositionOf(format), 'primary'),
+      affinity(deputy, gkPositionOf(format), 'secondary'),
+    ];
+
+    const available = new Set(players.map((p) => p.id).filter((id) => id !== first));
+    const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format, {
+      affinities,
+      available,
+    });
+    expect(s.goalkeeper).toBe(deputy);
+  });
+
+  it('shares the gloves fairly between two nominated keepers', () => {
+    const { players, engine, state, format, clock } = setUp();
+    const a = players[2].id;
+    const b = players[6].id;
+    const gk = gkPositionOf(format);
+    const affinities = [affinity(a, gk, 'primary'), affinity(b, gk, 'primary')];
+
+    const kept: UUID[] = [];
+    for (let q = 1; q <= 4; q++) {
+      const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format, {
+        affinities,
+      });
+      kept.push(s.goalkeeper!);
+      const quarter = state.quarters[q - 1];
+      engine.startQuarter(
+        state,
+        quarter,
+        teamSheetFor(s.onPitch, s.goalkeeper, format),
+        format
+      );
+      clock.advance(750_000);
+      engine.endQuarter(state, quarter);
+    }
+
+    // Both nominees used, nobody outside the shortlist.
+    expect(new Set(kept)).toEqual(new Set([a, b]));
+    expect(kept.filter((id) => id === a)).toHaveLength(2);
+    expect(kept.filter((id) => id === b)).toHaveLength(2);
+  });
+
+  it('behaves exactly as before when no affinity is recorded', () => {
+    // The default must not change for a squad that has never set one.
+    const { players, engine, state, format } = setUp();
+    const minutes = foldPlayerMinutes(engine, state, players);
+    expect(suggestLineup(players, minutes, format, { affinities: [] })).toEqual(
+      suggestLineup(players, minutes, format)
+    );
+  });
+
+  it('ignores an affinity for an outfield position when picking the keeper', () => {
+    const { players, engine, state, format } = setUp();
+    const outfield = format.positions.find((p) => p.kind === 'outfield')!.id;
+    const striker = players[3].id;
+
+    const withAffinity = suggestLineup(
+      players,
+      foldPlayerMinutes(engine, state, players),
+      format,
+      { affinities: [affinity(striker, outfield, 'primary')] }
+    );
+    const without = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
+    expect(withAffinity.goalkeeper).toBe(without.goalkeeper);
   });
 });
