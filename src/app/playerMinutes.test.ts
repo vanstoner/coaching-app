@@ -18,6 +18,7 @@ import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
 import type { Format, Player, Position, UUID } from '../types/index';
 import { makePlayer } from './squad';
+import { teamSheetFor } from './lineup';
 import {
   foldPlayerMinutes,
   fairnessSpreadMs,
@@ -292,5 +293,108 @@ describe('who comes off, who comes on', () => {
   it('reports nobody as due when no quarter is running', () => {
     const { engine, state, players } = setUp(10);
     expect(longestOnPitchFirst(foldPlayerMinutes(engine, state, players))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bench time is actually recorded — #64
+// ---------------------------------------------------------------------------
+
+describe('bench time', () => {
+  it('is recorded for everyone not on the pitch', () => {
+    // The defect: playerAvailability was never populated, so startQuarter's
+    // bench loop never ran and benchMs was silently ZERO for every player in
+    // every match. A figure that is always zero looks like an answer.
+    const clock = makeClock(1_700_000_000_000);
+    const engine = new MatchEngine({ nowFn: clock.nowFn });
+    const format = makeFormat();
+    const squadId = uuid();
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(squadId, `P${i}`));
+
+    const state = engine.createMatch(squadId, format.id, {
+      totalMinutes: 50,
+      quarterCount: 4,
+      availablePlayerIds: players.map((p) => p.id),
+    });
+
+    const onPitch = players.slice(0, 7).map((p) => p.id);
+    engine.startQuarter(
+      state,
+      state.quarters[0],
+      teamSheetFor(onPitch, players[0].id, format),
+      format
+    );
+    clock.advance(750_000);
+    engine.endQuarter(state, state.quarters[0]);
+
+    expect(state.benchStints.length).toBe(3);
+
+    const minutes = foldPlayerMinutes(engine, state, players);
+    const benched = players.slice(7);
+    for (const p of benched) {
+      const row = minutes.find((m) => m.playerId === p.id)!;
+      expect(row.benchMs).toBe(750_000);
+      expect(row.outfieldMs).toBe(0);
+    }
+    for (const p of players.slice(1, 7)) {
+      const row = minutes.find((m) => m.playerId === p.id)!;
+      expect(row.benchMs).toBe(0);
+      expect(row.outfieldMs).toBe(750_000);
+    }
+  });
+
+  it('is still zero when nobody was recorded as available', () => {
+    // Old saves have an empty availability map. The figure must stay honest
+    // rather than being back-filled with a guess.
+    const clock = makeClock(1_700_000_000_000);
+    const engine = new MatchEngine({ nowFn: clock.nowFn });
+    const format = makeFormat();
+    const squadId = uuid();
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(squadId, `P${i}`));
+    const state = engine.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 4 });
+
+    engine.startQuarter(
+      state,
+      state.quarters[0],
+      teamSheetFor(players.slice(0, 7).map((p) => p.id), players[0].id, format),
+      format
+    );
+    clock.advance(750_000);
+    engine.endQuarter(state, state.quarters[0]);
+
+    expect(state.benchStints).toHaveLength(0);
+  });
+
+  it('tracks availability so an absent player gets no bench time', () => {
+    const clock = makeClock(1_700_000_000_000);
+    const engine = new MatchEngine({ nowFn: clock.nowFn });
+    const format = makeFormat();
+    const squadId = uuid();
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(squadId, `P${i}`));
+    const state = engine.createMatch(squadId, format.id, {
+      totalMinutes: 50,
+      quarterCount: 4,
+      availablePlayerIds: players.map((p) => p.id),
+    });
+
+    // One child is away. They are not on the pitch and not on the bench.
+    engine.setAvailability(state, players[9].id, 'absent');
+    expect(engine.availablePlayers(state)).toHaveLength(9);
+
+    engine.startQuarter(
+      state,
+      state.quarters[0],
+      teamSheetFor(players.slice(0, 7).map((p) => p.id), players[0].id, format),
+      format
+    );
+    clock.advance(750_000);
+    engine.endQuarter(state, state.quarters[0]);
+
+    expect(state.benchStints).toHaveLength(2);
+    const row = foldPlayerMinutes(engine, state, players).find(
+      (m) => m.playerId === players[9].id
+    )!;
+    expect(row.benchMs).toBe(0);
+    expect(row.totalMs).toBe(0);
   });
 });

@@ -326,7 +326,25 @@ jobs:
       # app drew something; "Start quarter" proves REQ-01 actually rendered —
       # the engine built a match, deriveClockView ran, and the control the
       # coach presses is on the screen. A title alone would pass on a dead app.
-      SMOKE_EXPECT: Example FC|Set up the match
+      # The first screen is now the FIXTURES LIST (#62), not match setup. A gate
+      # looking for a control the app no longer shows fails on correct software,
+      # and that has already happened twice here — both times because a flow
+      # changed and this line did not.
+      #
+      # Both strings are on the empty-state front door: the team name, and the
+      # button that is the only thing to do on a fresh install.
+      # Chosen from ACTUAL OCR OUTPUT, not by reading the source. Run
+      # 35463050703 read this frame as:
+      #
+      #   Example FC No fixtures yet. Add your first match. Settings ...
+      #
+      # so both of these are proven legible at 320x640. "Add a fixture" was
+      # tried first and is NOT readable: it is white on the accent green, and
+      # tesseract misses it at this width even though the button renders (the
+      # frame's dominant colour drops to 91.1%, which is the button occupying
+      # most of the rest). Asserting on it rejects a correct artifact — the
+      # failure mode that accounts for five of this project's six CI failures.
+      SMOKE_EXPECT: Example FC|No fixtures yet
       SMOKE_OUT: smoke-evidence
     steps:
       - uses: actions/checkout@v4

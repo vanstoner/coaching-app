@@ -96,6 +96,19 @@ export class MatchEngine {
       totalMinutes?: number;
       quarterCount?: number;
       competition?: Competition | null;
+      /**
+       * Who is in the squad for this match — #64.
+       *
+       * Everyone named here is marked `available`, which is what makes a
+       * BenchStint get written for the players not on the pitch. Before this
+       * the map was left EMPTY and `startQuarter`'s bench loop never ran, so
+       * `benchMs` was silently zero for every player in every match — a
+       * figure that looked like an answer and was not.
+       *
+       * Absences are a later, deliberate act (#41). "Everybody unless told
+       * otherwise" is the honest default for a squad that turns up.
+       */
+      availablePlayerIds?: UUID[];
     } = {}
   ): MatchState {
     const totalMinutes = options.totalMinutes ?? 60;
@@ -152,7 +165,9 @@ export class MatchEngine {
       quarters,
       appearances: [],
       benchStints: [],
-      playerAvailability: new Map(),
+      playerAvailability: new Map(
+        (options.availablePlayerIds ?? []).map((id) => [id, 'available' as const])
+      ),
     };
   }
 
@@ -331,6 +346,24 @@ export class MatchEngine {
     state.appearances.push(...appearances);
     state.benchStints.push(...benchStints);
     state.match.status = 'in_progress';
+  }
+
+  /**
+   * Mark a player available, absent, injured or unavailable for this match.
+   *
+   * Availability is per match, not per squad: a child missing one Saturday is
+   * not gone from the squad. Setting it for a player who is not in the map
+   * adds them, so a late arrival can be marked available mid-match.
+   */
+  setAvailability(state: MatchState, playerId: UUID, status: AvailabilityStatus): void {
+    state.playerAvailability.set(playerId, status);
+  }
+
+  /** Everyone marked available for this match. */
+  availablePlayers(state: MatchState): UUID[] {
+    return [...state.playerAvailability.entries()]
+      .filter(([, status]) => status === 'available')
+      .map(([playerId]) => playerId);
   }
 
   /**
