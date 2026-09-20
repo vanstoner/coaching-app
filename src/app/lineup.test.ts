@@ -19,7 +19,15 @@ import type {
 } from '../types/index';
 import { makePlayer } from './squad';
 import { foldPlayerMinutes, fairnessSpreadMs } from './playerMinutes';
-import { suggestLineup, teamSheetFor, lineupIsComplete, fairnessTable } from './lineup';
+import {
+  suggestLineup,
+  teamSheetFor,
+  lineupIsComplete,
+  fairnessTable,
+  namedSlots,
+} from './lineup';
+import { makeSevenASideFormat } from './placeholderSquad';
+import { makeFormat as makeFormatForShape } from './shapes';
 
 function makeFormat(onFieldCount = 7): Format {
   const formatId = uuid();
@@ -185,6 +193,74 @@ describe('teamSheetFor', () => {
         format
       )
     ).not.toThrow();
+  });
+});
+
+describe('namedSlots — the lineup as a list of positions (#70)', () => {
+  it('names every slot in the shape, keeper first', () => {
+    const { players } = setUp(10);
+    const format = makeSevenASideFormat();
+    const onPitch = players.slice(0, 7).map((p) => p.id);
+    const slots = namedSlots(onPitch, players[3].id, format, players);
+
+    expect(slots).toHaveLength(7);
+    expect(slots.map((s) => s.label)).toEqual(['GK', 'LB', 'RB', 'CM', 'LW', 'RW', 'ST']);
+    expect(slots[0].playerId).toBe(players[3].id);
+    expect(slots[0].firstName).toBe(players[3].firstName);
+  });
+
+  it('reads the shape a match is actually played in, not the default', () => {
+    const { players } = setUp(10);
+    const slots = namedSlots(
+      players.slice(0, 7).map((p) => p.id),
+      players[0].id,
+      makeFormatForShape('2-2-2'),
+      players
+    );
+    expect(slots.map((s) => s.label)).toEqual(['GK', 'LB', 'RB', 'LM', 'RM', 'LF', 'RF']);
+    expect(slots.filter((s) => s.unit === 'ATT')).toHaveLength(2);
+  });
+
+  it('carries the unit, so a renamed label never moves the minutes', () => {
+    const { players } = setUp(10);
+    const format = makeSevenASideFormat();
+    const renamed = {
+      ...format,
+      positions: format.positions.map((p) =>
+        p.label === 'LB' ? { ...p, label: 'Sweeper' } : p
+      ),
+    };
+    const slots = namedSlots(
+      players.slice(0, 7).map((p) => p.id),
+      players[0].id,
+      renamed,
+      players
+    );
+    const sweeper = slots.find((s) => s.label === 'Sweeper')!;
+    expect(sweeper.unit).toBe('DEF');
+  });
+
+  it('shows an empty slot as empty rather than hiding it', () => {
+    // A half-picked lineup must read as half-picked. Dropping the empty rows
+    // would tell the coach they had a full team.
+    const { players } = setUp(10);
+    const format = makeSevenASideFormat();
+    const slots = namedSlots([players[0].id, players[1].id], players[0].id, format, players);
+    expect(slots).toHaveLength(7);
+    expect(slots.filter((s) => s.playerId === null)).toHaveLength(5);
+    expect(slots.filter((s) => s.playerId !== null)).toHaveLength(2);
+  });
+
+  it('agrees with the sheet the engine is given', () => {
+    // Two renderings of one decision would eventually disagree; this is the
+    // same `teamSheetFor` the engine is handed, named.
+    const { players } = setUp(10);
+    const format = makeSevenASideFormat();
+    const onPitch = players.slice(0, 7).map((p) => p.id);
+    const sheet = teamSheetFor(onPitch, players[2].id, format);
+    for (const slot of namedSlots(onPitch, players[2].id, format, players)) {
+      expect(slot.playerId).toBe(sheet.get(slot.positionId) ?? null);
+    }
   });
 });
 

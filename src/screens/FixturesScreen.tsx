@@ -11,8 +11,7 @@
  */
 
 import { useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { Match, UUID } from '../types/index';
 import {
@@ -21,10 +20,11 @@ import {
   fixtureList,
   inBucket,
   kickoffLabel,
+  lengthLabel,
   opponentLabel,
   type FixtureRow,
 } from '../app/fixtures';
-import { colours, screen } from './theme';
+import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function FixturesScreen({
   squadName,
@@ -34,7 +34,7 @@ export function FixturesScreen({
   onOpen,
   onDelete,
   onAdd,
-  onSettings,
+  onPlayNow,
   buildLabel,
 }: {
   squadName: string;
@@ -46,7 +46,14 @@ export function FixturesScreen({
   /** Only offered on a fixture that has never been played. */
   onDelete: (matchId: UUID) => void;
   onAdd: () => void;
-  onSettings: () => void;
+  /**
+   * Kick off now, from the defaults, with no fixture form — PO ruling,
+   * 2026-09-20: *Play now: **yes.***
+   *
+   * Null while a match is already underway. Starting a second one would
+   * orphan the first, and the In-progress card above is the way back into it.
+   */
+  onPlayNow: (() => void) | null;
   buildLabel: string;
 }) {
   const rows = fixtureList(matches, now, currentMatchId);
@@ -55,7 +62,7 @@ export function FixturesScreen({
   const past = inBucket(rows, 'past');
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
         <Text style={screen.title} numberOfLines={1}>
           {squadName}
@@ -77,23 +84,32 @@ export function FixturesScreen({
           </>
         )}
 
+        {onPlayNow && (
+          <Pressable
+            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+            onPress={onPlayNow}
+          >
+            <Text style={screen.buttonLabel}>Play now</Text>
+          </Pressable>
+        )}
+        {onPlayNow && (
+          <Text style={screen.hint}>
+            An unplanned kickabout, using your defaults. No form to fill in.
+          </Text>
+        )}
+
         <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
           onPress={onAdd}
         >
           <Text style={screen.buttonLabel}>Add a fixture</Text>
         </Pressable>
-
-        <Pressable onPress={onSettings} style={screen.linkHit}>
-          <Text style={screen.link}>Settings</Text>
-        </Pressable>
       </ScrollView>
 
-      <Text style={local.build} numberOfLines={1}>
+      <Text style={screen.buildLabel} numberOfLines={1}>
         {buildLabel}
       </Text>
-      <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -161,20 +177,24 @@ function FixtureCard({
         {kickoffLabel(match, now)}
         {competition === '' ? '' : ` · ${competition}`}
       </Text>
+      {/* This match's OWN length and periods, not the squad default (#70). */}
+      <Text style={local.meta} numberOfLines={1}>
+        {lengthLabel(match)}
+      </Text>
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
 
       {onDelete &&
         (confirming ? (
           <View style={local.confirmRow}>
-            <Pressable onPress={() => onDelete(match.id)} hitSlop={8}>
+            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit}>
               <Text style={local.deleteConfirm}>Delete this fixture</Text>
             </Pressable>
-            <Pressable onPress={() => setConfirming(false)} hitSlop={8}>
+            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit}>
               <Text style={local.keep}>Keep</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={() => setConfirming(true)} hitSlop={8}>
+          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit}>
             <Text style={local.remove}>Remove</Text>
           </Pressable>
         ))}
@@ -209,18 +229,23 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginTop: 2,
   },
-  confirmRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  confirmRow: { flexDirection: 'row', alignItems: 'center' },
+  // A real target rather than hitSlop: 13px text with 8px slop measured about
+  // 31dp, under the 44 floor, on the control that deletes a fixture.
+  confirmHit: {
+    justifyContent: 'center',
+    minHeight: TOUCH_TARGET,
+    paddingRight: 16,
+  },
   remove: {
     color: colours.inkFaint,
     fontSize: 13,
     includeFontPadding: false,
-    marginTop: 6,
   },
   deleteConfirm: {
     color: colours.danger,
     fontSize: 13,
     includeFontPadding: false,
-    marginRight: 16,
   },
   keep: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
   nowTag: {
@@ -228,13 +253,5 @@ const local = StyleSheet.create({
     fontSize: 13,
     includeFontPadding: false,
     marginTop: 4,
-  },
-  build: {
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-    color: '#4e7a67',
-    fontSize: 11,
-    paddingBottom: 6,
   },
 });

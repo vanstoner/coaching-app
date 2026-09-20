@@ -11,8 +11,8 @@
  * and the public-repository ruling (#38) mean nothing from a device running a
  * real squad goes into this repository, and PO-approved on 2026-09-19.
  *
- * THIS FILE IS NEVER REGENERATED. It is a historical artifact. When v3 arrives
- * this same document must still load, through two migrations instead of one.
+ * THIS FILE IS NEVER REGENERATED. It is a historical artifact. When a later
+ * version arrives this same document must still load, through one more step.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -72,6 +72,7 @@ describe('a v1 save written by the released app', () => {
     expect(result.migrationsApplied).toEqual([
       'v1 → v2: positions and appearances carry a unit',
       'v2 → v3: matches become plural',
+      'v3 → v4: each match carries the format it is played in',
     ]);
   });
 
@@ -146,6 +147,19 @@ describe('what v1 → v2 does and does not invent', () => {
     for (const appearance of match.appearances) {
       expect(appearance.positionUnit).toBe(unitOf.get(appearance.positionId));
     }
+  });
+
+  it('gives a v1 match the only format that ever existed, inventing nothing', () => {
+    // v3 → v4. Up to v3 there was exactly one format and every match used it,
+    // so attaching it states what was already true — and it keeps the very
+    // position ids the appearances already reference.
+    const result = readSession(rawV1);
+    if (result.status !== 'ok') throw new Error(result.status);
+    const stored = result.session.matches[0];
+    expect(stored.format).toBeDefined();
+    expect(stored.format!.id).toBe(result.session.format.id);
+    const known = new Set(stored.format!.positions.map((p) => p.id));
+    expect(stored.appearances.every((a) => known.has(a.positionId))).toBe(true);
   });
 
   it('still knows a keeper was a keeper even if the position has vanished', () => {

@@ -1,17 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  AppState,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, SafeAreaView, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine } from './src/engine/MatchEngine';
@@ -19,98 +7,86 @@ import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
 import type { Format, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
-import { canDeleteFixture, openDestination } from './src/app/fixtures';
-import { FixturesScreen } from './src/screens/FixturesScreen';
-import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
-import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
+import { canDeleteFixture, matchIsUnderway, openDestination } from './src/app/fixtures';
+import { currentQuarter } from './src/app/matchClock';
 import {
-  describeDefaults,
-  normaliseTeamName,
-  MAX_TEAM_NAME_LENGTH,
-} from './src/app/settings';
-import {
-  deriveClockView,
-  formatClock,
-  currentQuarter,
-  periodNoun,
-  periodNounPlural,
-  TOTAL_MINUTES_CHOICES,
-  PERIOD_COUNT_CHOICES,
-} from './src/app/matchClock';
-import {
-  makeSevenASideFormat,
-  PLACEHOLDER_SQUAD_NAME,
-  DEFAULT_TOTAL_MINUTES,
   DEFAULT_QUARTER_COUNT,
+  DEFAULT_TOTAL_MINUTES,
+  PLACEHOLDER_SQUAD_NAME,
+  makeSevenASideFormat,
 } from './src/app/placeholderSquad';
+import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './src/app/shapes';
+import { squadReadiness } from './src/app/squad';
+import { teamSheetFor } from './src/app/lineup';
+import { markDone, type PlannedSub } from './src/app/subPlan';
 import {
-  validateName,
-  makePlayer,
-  displayName,
-  duplicatedNames,
-  squadReadiness,
-  MAX_NAME_LENGTH,
-} from './src/app/squad';
-import { foldPlayerMinutes, type PlayerMinutes } from './src/app/playerMinutes';
-import { suggestLineup, teamSheetFor, lineupIsComplete } from './src/app/lineup';
+  stepForTab,
+  tabForStep,
+  type SquadErrand,
+  type Step,
+  type Tab,
+} from './src/app/tabs';
 import {
-  planSubs,
-  nudgeSubTime,
-  NO_SUB_PLANNED,
-  markDone,
-  dueSubs,
-  msUntilNextSub,
-  whoComesOff,
-  type PlannedSub,
-} from './src/app/subPlan';
-import {
+  clearSession,
+  hasMatchUnderway,
   loadSession,
   saveSession,
-  clearSession,
   toMatchState,
-  hasMatchUnderway,
-  type SavedSession,
   type SavedMatch,
+  type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
+import { ClockScreen } from './src/screens/ClockScreen';
+import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
+import { FixturesScreen } from './src/screens/FixturesScreen';
+import { LineupScreen } from './src/screens/LineupScreen';
+import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
+import { ResumeScreen } from './src/screens/ResumeScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SquadScreen } from './src/screens/SquadScreen';
+import { TabBar } from './src/screens/TabBar';
+import { screen } from './src/screens/theme';
 
 /**
- * A Saturday, in five screens.
+ * The shell — #70.
  *
- *   resume? -> match shape -> squad -> LINEUP -> clock -> LINEUP -> clock ...
+ * This file is the router and the actions, and nothing else: every screen
+ * lives in `src/screens/`, every rule it routes on is a tested pure function
+ * in `src/app/`. It held 1,714 lines and every screen before this slice, which
+ * is why the next feature would have made build 55 worse rather than better.
  *
- * The lineup screen is the substitution reminder. This squad rotates **between
- * quarters**, not mid-play, so the app does not interrupt the game with an
- * alarm — it stops at each boundary and shows who is owed minutes, sorted so
- * the top of the list is who should come on. The coach can take the suggestion
- * or ignore it; the override is what happens.
+ * ---------------------------------------------------------------------------
+ * Tuesday and Saturday
+ * ---------------------------------------------------------------------------
  *
- * Invariant 2: the interval in ClockScreen is a REPAINT trigger and nothing
- * else. Every figure is recomputed from the engine's wall-clock anchors, so a
- * throttled or dead app is still right the moment it repaints.
+ * **Tuesday** is three tabs — Home, Squad, Settings — and the frame below
+ * draws them. **Saturday** is full-screen: the lineup and the clock get the
+ * whole display, and their only exit is an explicit Leave which returns to
+ * Home and leaves the match running. `src/app/tabs.ts` decides which is which.
  *
- * Invariant 3: the fairness column is OUTFIELD minutes. Goalkeeping is shown
- * separately and never counts toward it.
+ * ---------------------------------------------------------------------------
+ * What belongs to the squad and what belongs to the match
+ * ---------------------------------------------------------------------------
  *
- * Invariant 4: first names only, enforced in src/app/squad.ts at entry.
+ * Settings holds **defaults**: team name, default length, default periods,
+ * default shape. A match holds the length, period count and shape it is
+ * actually played in, and carries its own format snapshot (ADR-012). So a cup
+ * game in halves does not change next Saturday's league default, and changing
+ * a default does not reach back into a fixture already saved.
+ *
+ * Invariant 2: a timer may trigger a repaint; the value it paints is always
+ * recomputed from the engine's wall-clock anchors. Nothing here increments
+ * anything.
+ *
+ * Invariant 4: first names only, enforced in `src/app/squad.ts` at entry.
  * ADR-011: everything stays on this device.
  */
 
-type Step =
-  | 'loading'
-  | 'resume'
-  | 'fixtures'
-  | 'fixtureForm'
-  | 'summary'
-  | 'match'
-  | 'settings'
-  | 'squad'
-  | 'lineup'
-  | 'playing';
-
-interface Match {
+/** The live match: the engine, its state, and the shape it is played in. */
+interface LiveMatch {
   engine: MatchEngine;
   state: MatchState;
+  format: Format;
 }
 
 export default function App() {
@@ -118,18 +94,25 @@ export default function App() {
 
   const [step, setStep] = useState<Step>('loading');
   const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
-  const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
-  const [periodCount, setPeriodCount] = useState(DEFAULT_QUARTER_COUNT);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [format, setFormat] = useState<Format>(() => makeSevenASideFormat());
   const [squadId, setSquadId] = useState<UUID>(() => uuid());
-  const [match, setMatch] = useState<Match | null>(null);
+  const [match, setMatch] = useState<LiveMatch | null>(null);
   const [pending, setPending] = useState<SavedSession | null>(null);
   const [subPlan, setSubPlan] = useState<PlannedSub[]>([]);
-  // Where the squad editor goes when it is done. The same screen serves the
-  // pre-match flow and settings, and it must not dump a coach who came from
-  // settings into a lineup they did not ask for.
-  const [squadReturn, setSquadReturn] = useState<'match' | 'settings'>('match');
+
+  // --- the defaults. Settings owns these; a match copies them. --------------
+  const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
+  const [periodCount, setPeriodCount] = useState(DEFAULT_QUARTER_COUNT);
+  /** The DEFAULT shape, as a format. The one in play is on `match`. */
+  const [format, setFormat] = useState<Format>(() => makeSevenASideFormat());
+
+  /**
+   * Why the squad editor is open. As a tab it is housekeeping; on the way to a
+   * match it is step one of a kick-off, and the same screen must not behave
+   * the same in both — see `SquadErrand`.
+   */
+  const [squadErrand, setSquadErrand] = useState<SquadErrand>('home');
+
   /**
    * Every match on disk: planned fixtures, played history, and the one being
    * played. Held in state because `saveSession` writes the WHOLE document —
@@ -188,6 +171,9 @@ export default function App() {
         plan: {},
         matches,
         state: match?.state ?? null,
+        // The shape the live match is played in, which is no longer the same
+        // thing as the squad default.
+        matchFormat: match?.format ?? null,
         ...overrides,
       });
     },
@@ -199,16 +185,59 @@ export default function App() {
     persist();
   }, [step, persist]);
 
+  // --- navigation -----------------------------------------------------------
+
+  /**
+   * The step actually rendered.
+   *
+   * A Saturday step with no match behind it cannot be drawn, and rendering a
+   * recovery screen while the shell still believes it is on the clock is how
+   * the tab bar and the body end up disagreeing. Collapsing it here keeps one
+   * answer for both.
+   */
+  const effectiveStep: Step =
+    !match && (step === 'lineup' || step === 'playing' || step === 'summary')
+      ? 'fixtures'
+      : step;
+
+  const tab = tabForStep(effectiveStep, squadErrand);
+
+  const goToTab = useCallback((next: Tab) => {
+    // A tab is housekeeping by definition, so the squad editor reached this
+    // way must not offer to start a match.
+    setSquadErrand('home');
+    setStep(stepForTab(next));
+  }, []);
+
+  /**
+   * Home, without committing to anything.
+   *
+   * Used by every Leave on every screen. The match is deliberately KEPT in
+   * state: it stays `in_progress` with its anchors intact, it stays the
+   * current match on disk, and it sits at the top of Home as "In progress".
+   * Clearing it here would drop `currentMatchId`, and a relaunch would then
+   * not offer to resume the game the coach is standing in the middle of.
+   */
+  const goHome = useCallback(() => {
+    persist();
+    setSquadErrand('home');
+    setStep('fixtures');
+  }, [persist]);
+
   // --- actions --------------------------------------------------------------
 
   /**
    * Save a planned fixture. A fixture IS a Match with status 'planned', so
    * this goes through the engine rather than building a parallel record.
+   *
+   * The draft's length, period count and shape are copied onto the match here
+   * and belong to it from then on (#70).
    */
   const saveFixture = useCallback(
     (draft: FixtureDraft) => {
       const engine = new MatchEngine();
-      const state = engine.createMatch(squadId, format.id, {
+      const matchFormat = formatForShape(draft.shape, format);
+      const state = engine.createMatch(squadId, matchFormat.id, {
         totalMinutes: draft.totalMinutes,
         quarterCount: draft.periodCount,
         availablePlayerIds: players.map((p) => p.id),
@@ -222,6 +251,9 @@ export default function App() {
         appearances: [],
         benchStints: [],
         availability: [],
+        // Snapshotted, not referenced: changing the default shape later must
+        // not re-shape a fixture already saved.
+        format: matchFormat,
       };
       const next = [...matches, stored];
       setMatches(next);
@@ -234,7 +266,7 @@ export default function App() {
       // anchors — so adding a fixture at half time would have lost the match
       // being played, and the coach would have relaunched into a fixture list
       // instead of their game.
-      persist({ matches: next, state: match?.state ?? null });
+      persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
     },
     [squadId, format, matches, persist, match, players]
@@ -255,9 +287,9 @@ export default function App() {
       if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
       const next = matches.filter((m) => m.match.id !== matchId);
       setMatches(next);
-      persist({ matches: next, state: match?.state ?? null });
+      persist({ matches: next });
     },
-    [matches, persist, match]
+    [matches, persist]
   );
 
   /** Open a fixture: play it if it is today's, otherwise look at it. */
@@ -280,8 +312,14 @@ export default function App() {
         for (const player of players) availability.set(player.id, 'available');
       }
 
+      // The shape THIS match is played in. A v3 save that somehow arrives
+      // unmigrated has none, and the squad default is the only honest
+      // fallback — it is the format that match was created against.
+      const matchFormat = stored.format ?? format;
+
       setMatch({
         engine,
+        format: matchFormat,
         state: {
           match: stored.match,
           quarters: stored.quarters,
@@ -297,37 +335,65 @@ export default function App() {
       const to = openDestination(
         stored.quarters,
         stored.match.status,
-        squadReadiness(players, format.onFieldCount).ready
+        squadReadiness(players, matchFormat.onFieldCount).ready
       );
-      if (to === 'squad') setSquadReturn('match');
+      if (to === 'squad') setSquadErrand('match');
       setStep(to);
     },
     [matches, players, format]
   );
 
+  /**
+   * Start a match now, from the defaults, with no fixture form — PO ruling,
+   * 2026-09-20: *Play now: **yes.***
+   *
+   * > *"an unplanned kickabout must not force the fixture form."*
+   *
+   * The defaults are COPIED onto the match: its length, its period count and
+   * its shape are its own from this moment, and changing Settings afterwards
+   * does not touch it.
+   */
   const beginMatch = useCallback(() => {
     const engine = new MatchEngine();
-    const state = engine.createMatch(squadId, format.id, {
+    const matchFormat = formatForShape(shapeOfFormat(format) ?? DEFAULT_SHAPE, format);
+    const state = engine.createMatch(squadId, matchFormat.id, {
       totalMinutes,
       quarterCount: periodCount,
       // #64: without this the bench ledger is never written at all.
       availablePlayerIds: players.map((p) => p.id),
     });
-    setMatch({ engine, state });
+    setMatch({ engine, state, format: matchFormat });
+    setSubPlan([]);
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, players]);
 
+  const playNow = useCallback(() => {
+    if (squadReadiness(players, format.onFieldCount).ready) {
+      beginMatch();
+      return;
+    }
+    // Not enough players yet. The squad editor, then the lineup — never the
+    // fixture form, which is the thing Play now exists to skip.
+    setSquadErrand('match');
+    setStep('squad');
+  }, [players, format, beginMatch]);
+
   const resume = useCallback(() => {
     if (!pending) return;
-    const engine = new MatchEngine();
     const state = toMatchState(pending);
     if (!state) {
       // The saved match could not be rebuilt. The fixtures list is somewhere
       // a coach can act from; the setup screen is no longer a front door.
+      setPending(null);
       setStep('fixtures');
       return;
     }
-    setMatch({ engine, state });
+    const stored = pending.matches.find((m) => m.match.id === state.match.id);
+    setMatch({
+      engine: new MatchEngine(),
+      state,
+      format: stored?.format ?? pending.format,
+    });
     // A quarter still running goes straight to the clock; between quarters the
     // coach is owed the lineup screen, which is the whole point of the app.
     setStep(state.quarters.some((q) => q.status === 'running') ? 'playing' : 'lineup');
@@ -335,23 +401,34 @@ export default function App() {
   }, [pending]);
 
   /**
-   * Start another match, KEEPING the squad, the team name and the defaults.
+   * Leave the resume prompt without resuming and without ending anything.
    *
-   * This used to wipe all of it, so "New match" at full time threw away ten
-   * names the coach had just typed. A squad is a standing thing that barely
-   * changes week to week; a match is the thing that ends.
+   * The match is loaded anyway rather than dropped: it stays the current match
+   * with its anchors, so Home shows it as in progress and a relaunch still
+   * offers to resume it.
    */
-  const newMatch = useCallback(() => {
-    setMatch(null);
+  const leaveResume = useCallback(() => {
+    if (!pending) {
+      setStep('fixtures');
+      return;
+    }
+    const state = toMatchState(pending);
+    if (state) {
+      const stored = pending.matches.find((m) => m.match.id === state.match.id);
+      setMatch({
+        engine: new MatchEngine(),
+        state,
+        format: stored?.format ?? pending.format,
+      });
+    }
     setPending(null);
-    setSubPlan([]);
+    setSquadErrand('home');
     setStep('fixtures');
-  }, []);
+  }, [pending]);
 
   /**
-   * Forget everything, including the squad. Deliberately separate from
-   * `newMatch` and deliberately harder to reach — it is how a coach hands the
-   * phone on, not how they start next Saturday.
+   * Forget everything, including the squad. Deliberately harder to reach — it
+   * is how a coach hands the phone on, not how they start next Saturday.
    */
   const forgetEverything = useCallback(() => {
     void clearSession(store);
@@ -359,11 +436,18 @@ export default function App() {
     setPending(null);
     setSubPlan([]);
     setPlayers([]);
+    setMatches([]);
     setSquadId(uuid());
     setFormat(makeSevenASideFormat());
     setSquadName(PLACEHOLDER_SQUAD_NAME);
+    setSquadErrand('home');
     setStep('fixtures');
   }, [store]);
+
+  /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
+  const setDefaultShape = useCallback((shape: ShapeCode) => {
+    setFormat((current) => formatForShape(shape, current));
+  }, []);
 
   const startQuarter = useCallback(
     (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => {
@@ -373,14 +457,14 @@ export default function App() {
       match.engine.startQuarter(
         match.state,
         quarter,
-        teamSheetFor(onPitch, goalkeeper, format),
-        format
+        teamSheetFor(onPitch, goalkeeper, match.format),
+        match.format
       );
       setSubPlan(plan);
       setStep('playing');
       persist();
     },
-    [match, format, persist]
+    [match, persist]
   );
 
   /**
@@ -419,40 +503,115 @@ export default function App() {
 
   // --- routing --------------------------------------------------------------
 
-  if (step === 'loading') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.inner}>
+  const body = (() => {
+    if (effectiveStep === 'loading') {
+      return (
+        <View style={[screen.pane, screen.centre]}>
           <ActivityIndicator color="#ffffff" />
         </View>
-        <StatusBar style="light" />
-      </SafeAreaView>
-    );
-  }
+      );
+    }
 
-  if (step === 'resume' && pending) {
-    return <ResumeScreen saved={pending} onResume={resume} onFresh={newMatch} />;
-  }
+    if (effectiveStep === 'resume' && pending) {
+      return <ResumeScreen saved={pending} onResume={resume} onLeave={leaveResume} />;
+    }
 
-  if (step === 'match') {
-    return (
-      <MatchSetupScreen
-        squadName={squadName}
-        onSquadName={setSquadName}
-        totalMinutes={totalMinutes}
-        periodCount={periodCount}
-        onTotalMinutes={setTotalMinutes}
-        onPeriodCount={setPeriodCount}
-        onNext={() => {
-          setSquadReturn('match');
-          setStep('squad');
-        }}
-        onSettings={() => setStep('settings')}
-      />
-    );
-  }
+    if (effectiveStep === 'fixtureForm') {
+      return (
+        <FixtureFormScreen
+          // Seeded from the defaults, owned by the fixture from here on.
+          initial={{
+            opponent: '',
+            competition: null,
+            kickoffAt: null,
+            totalMinutes,
+            periodCount,
+            shape: shapeOfFormat(format) ?? DEFAULT_SHAPE,
+          }}
+          onSave={saveFixture}
+          onCancel={() => setStep('fixtures')}
+        />
+      );
+    }
 
-  if (step === 'fixtures') {
+    if (effectiveStep === 'summary' && match) {
+      return (
+        <MatchSummaryScreen
+          engine={match.engine}
+          state={match.state}
+          players={players}
+          now={new Date()}
+          onBack={() => {
+            // A finished match is history: it is safe to let go of, and
+            // holding it would make Home think one is still current.
+            setMatch(null);
+            setStep('fixtures');
+          }}
+        />
+      );
+    }
+
+    if (effectiveStep === 'settings') {
+      return (
+        <SettingsScreen
+          squadName={squadName}
+          onSquadName={setSquadName}
+          totalMinutes={totalMinutes}
+          periodCount={periodCount}
+          shape={shapeOfFormat(format)}
+          onTotalMinutes={setTotalMinutes}
+          onPeriodCount={setPeriodCount}
+          onShape={setDefaultShape}
+          onForget={forgetEverything}
+        />
+      );
+    }
+
+    if (effectiveStep === 'squad') {
+      const forMatch = squadErrand === 'match';
+      return (
+        <SquadScreen
+          squadId={squadId}
+          players={players}
+          onPlayers={setPlayers}
+          onFieldCount={format.onFieldCount}
+          onStartMatch={forMatch ? beginMatch : null}
+          onLeave={forMatch ? goHome : null}
+        />
+      );
+    }
+
+    if (effectiveStep === 'lineup' && match) {
+      return (
+        <LineupScreen
+          engine={match.engine}
+          state={match.state}
+          format={match.format}
+          players={players}
+          squadName={squadName}
+          onStart={startQuarter}
+          onLeave={goHome}
+        />
+      );
+    }
+
+    if (effectiveStep === 'playing' && match) {
+      return (
+        <ClockScreen
+          engine={match.engine}
+          state={match.state}
+          players={players}
+          squadName={squadName}
+          subPlan={subPlan}
+          onMakeSub={makeSub}
+          onEndQuarter={endQuarter}
+          onFinish={() => setStep('summary')}
+          onLeave={goHome}
+        />
+      );
+    }
+
+    // Home, and the recovery for any step that needs a match and has none.
     return (
       <FixturesScreen
         squadName={squadName}
@@ -462,1253 +621,22 @@ export default function App() {
         onOpen={openFixture}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
-        onSettings={() => setStep('settings')}
+        onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
       />
     );
-  }
+  })();
 
-  if (step === 'fixtureForm') {
-    return (
-      <FixtureFormScreen
-        initial={{
-          opponent: '',
-          competition: null,
-          kickoffAt: null,
-          totalMinutes,
-          periodCount,
-        }}
-        onSave={saveFixture}
-        onCancel={() => setStep('fixtures')}
-      />
-    );
-  }
-
-  if (step === 'summary' && match) {
-    return (
-      <MatchSummaryScreen
-        engine={match.engine}
-        state={match.state}
-        players={players}
-        now={new Date()}
-        onBack={() => {
-          setMatch(null);
-          setStep('fixtures');
-        }}
-      />
-    );
-  }
-
-  if (step === 'settings') {
-    return (
-      <SettingsScreen
-        squadName={squadName}
-        onSquadName={setSquadName}
-        totalMinutes={totalMinutes}
-        periodCount={periodCount}
-        onTotalMinutes={setTotalMinutes}
-        onPeriodCount={setPeriodCount}
-        players={players}
-        onEditSquad={() => {
-          setSquadReturn('settings');
-          setStep('squad');
-        }}
-        onForget={forgetEverything}
-        onDone={() => setStep('fixtures')}
-      />
-    );
-  }
-
-  if (step === 'squad') {
-    const fromSettings = squadReturn === 'settings';
-    return (
-      <SquadScreen
-        squadId={squadId}
-        players={players}
-        onPlayers={setPlayers}
-        onFieldCount={format.onFieldCount}
-        onBack={() => setStep(fromSettings ? 'settings' : 'match')}
-        onNext={() => {
-          if (fromSettings) {
-            // Came from settings: the squad is the errand, not a prelude to a
-            // match. Going on to a lineup here would start a match the coach
-            // never asked to start.
-            setStep('settings');
-            return;
-          }
-          beginMatch();
-        }}
-        nextLabel={fromSettings ? 'Done' : 'Pick the lineup'}
-        // Settings is for tidying a squad between matches, so a short squad is
-        // a normal state there rather than something to block on.
-        requireReady={!fromSettings}
-      />
-    );
-  }
-
-  if (!match) {
-    // Should not happen; recover rather than render nothing.
-    return (
-      <MatchSetupScreen
-        squadName={squadName}
-        onSquadName={setSquadName}
-        totalMinutes={totalMinutes}
-        periodCount={periodCount}
-        onTotalMinutes={setTotalMinutes}
-        onPeriodCount={setPeriodCount}
-        onNext={() => {
-          setSquadReturn('match');
-          setStep('squad');
-        }}
-        onSettings={() => setStep('settings')}
-      />
-    );
-  }
-
-  if (step === 'lineup') {
-    return (
-      <LineupScreen
-        match={match}
-        players={players}
-        format={format}
-        squadName={squadName}
-        onStart={startQuarter}
-        // Only before the first whistle. Once a period has been played the
-        // squad screen is not a place to return to, and offering it would
-        // suggest the match can be unwound.
-        onBack={
-          match.state.quarters.every((q) => q.status === 'pending')
-            ? () => {
-                setSquadReturn('match');
-                setStep('squad');
-              }
-            : null
-        }
-      />
-    );
-  }
-
-  return (
-    <ClockScreen
-      match={match}
-      players={players}
-      squadName={squadName}
-      subPlan={subPlan}
-      onMakeSub={makeSub}
-      onEndQuarter={endQuarter}
-      onStartOver={newMatch}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Resume
-// ---------------------------------------------------------------------------
-
-function ResumeScreen({
-  saved,
-  onResume,
-  onFresh,
-}: {
-  saved: SavedSession;
-  onResume: () => void;
-  onFresh: () => void;
-}) {
-  // Computed here and now from the saved anchors, never read from the file.
-  const engine = useMemo(() => new MatchEngine(), []);
-  const state = useMemo(() => toMatchState(saved), [saved]);
-  const elapsed = state ? engine.getMatchElapsedMs(state) : 0;
-  const played = state ? state.quarters.filter((q) => q.status === 'ended').length : 0;
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.inner}>
-        <Text style={styles.squad} numberOfLines={1}>
-          {saved.squadName || PLACEHOLDER_SQUAD_NAME}
-        </Text>
-        <Text style={styles.caption}>There is a match in progress.</Text>
-        <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
-          {formatClock(elapsed)}
-        </Text>
-        <Text style={styles.caption}>
-          {played} of {saved.periodCount}{' '}
-          {periodNounPlural(saved.periodCount).toLowerCase()} played
-        </Text>
-        <Text style={styles.hint}>
-          Time is worked out from the clock, so nothing was lost while the app
-          was closed.
-        </Text>
-
-        <View style={styles.actions}>
-          <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-            onPress={onResume}
-          >
-            <Text style={styles.buttonLabel}>Resume</Text>
-          </Pressable>
-        </View>
-        <Pressable onPress={onFresh} style={styles.linkHit}>
-          <Text style={styles.link}>Start a new match instead</Text>
-        </Pressable>
-      </View>
-      <BuildLabel />
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Step 1 — the shape of the match
-// ---------------------------------------------------------------------------
-
-function MatchSetupScreen({
-  squadName,
-  onSquadName,
-  totalMinutes,
-  periodCount,
-  onTotalMinutes,
-  onPeriodCount,
-  onNext,
-  onSettings,
-}: {
-  squadName: string;
-  onSquadName: (s: string) => void;
-  totalMinutes: number;
-  periodCount: number;
-  onTotalMinutes: (n: number) => void;
-  onPeriodCount: (n: number) => void;
-  onNext: () => void;
-  onSettings: () => void;
-}) {
-  const periodMs = (totalMinutes * 60_000) / periodCount;
-  return (
-    <SafeAreaView style={styles.container}>
-      {/*
-        SCROLLS. It did not, and the screen is centred with `justifyContent`,
-        so on a shorter phone everything below the fold was simply
-        unreachable — which is how build 42 shipped a Settings link and a
-        build label that the coach could not see or scroll to. The APK had the
-        features; the screen had no way to reach them.
-
-        The emulator smoke gate did not catch it because it asserts that two
-        strings are PRESENT, not that the whole screen is reachable. That is
-        the third distinct thing that gate has been blind to.
-      */}
-      <ScrollView
-        contentContainerStyle={styles.scrollInner}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.caption}>Set up the match</Text>
-
-        <Text style={styles.fieldLabel}>Team name</Text>
-        <TextInput
-          style={[styles.input, styles.nameInput]}
-          value={squadName}
-          onChangeText={onSquadName}
-          placeholder="Your team"
-          placeholderTextColor="#6e9787"
-          autoCapitalize="words"
-          autoCorrect={false}
-          maxLength={28}
-          returnKeyType="done"
-        />
-
-        <Text style={styles.fieldLabel}>Match length</Text>
-        <View style={styles.choiceRow}>
-          {TOTAL_MINUTES_CHOICES.map((m) => (
-            <Choice
-              key={m}
-              label={`${m}`}
-              selected={m === totalMinutes}
-              onPress={() => onTotalMinutes(m)}
-            />
-          ))}
-        </View>
-        <Text style={styles.hint}>minutes</Text>
-
-        <Text style={styles.fieldLabel}>Played in</Text>
-        <View style={styles.choiceRow}>
-          {PERIOD_COUNT_CHOICES.map((p) => (
-            <Choice
-              key={p}
-              label={periodNounPlural(p)}
-              selected={p === periodCount}
-              onPress={() => onPeriodCount(p)}
-              wide
-            />
-          ))}
-        </View>
-
-        <Text style={styles.summary}>
-          {periodCount} × {formatClock(periodMs)}{' '}
-          {periodNounPlural(periodCount).toLowerCase()}
-        </Text>
-
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={onNext}
-        >
-          <Text style={styles.buttonLabel}>Next: the squad</Text>
-        </Pressable>
-        <Pressable onPress={onSettings} style={styles.linkHit}>
-          <Text style={styles.link}>Settings</Text>
-        </Pressable>
-      </ScrollView>
-      <BuildLabel />
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Step 2 — who is in the squad
-// ---------------------------------------------------------------------------
-
-function SquadScreen({
-  squadId,
-  players,
-  onPlayers,
-  onFieldCount,
-  onBack,
-  onNext,
-  nextLabel = 'Pick the lineup',
-  requireReady = true,
-}: {
-  squadId: UUID;
-  players: Player[];
-  onPlayers: (p: Player[]) => void;
-  onFieldCount: number;
-  onBack: () => void;
-  onNext: () => void;
-  /** What the forward button says. The screen serves two errands. */
-  nextLabel?: string;
   /**
-   * Whether a full squad is required to go forward. True in the pre-match
-   * flow; false from settings, where tidying a squad between matches is the
-   * normal reason to be here.
+   * One frame: one safe area, one status bar, and the tab bar when the screen
+   * is a Tuesday one. Screens render their own content and none of the frame,
+   * so a screen cannot disagree with the shell about whether it has tabs.
    */
-  requireReady?: boolean;
-}) {
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState('');
-
-  const readiness = squadReadiness(players, onFieldCount);
-  const dupes = duplicatedNames(players);
-
-  const add = useCallback(() => {
-    const check = validateName(draft);
-    if (!check.ok) {
-      setError(check.message);
-      return;
-    }
-    onPlayers([...players, makePlayer(squadId, check.cleaned)]);
-    setDraft('');
-    setError('');
-  }, [draft, players, onPlayers, squadId]);
-
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.squadInner}>
-          <Text style={styles.squad}>The squad</Text>
-          <Text style={styles.hint}>First names only. Nothing leaves this phone.</Text>
-
-          <View style={styles.addRow}>
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={(t) => {
-                setDraft(t);
-                if (error) setError('');
-              }}
-              placeholder="First name"
-              placeholderTextColor="#6e9787"
-              autoCapitalize="words"
-              autoCorrect={false}
-              maxLength={MAX_NAME_LENGTH + 8}
-              returnKeyType="done"
-              onSubmitEditing={add}
-            />
-            <Pressable
-              style={({ pressed }) => [styles.addButton, pressed && styles.buttonPressed]}
-              onPress={add}
-            >
-              <Text style={styles.buttonLabel}>Add</Text>
-            </Pressable>
-          </View>
-
-          {error !== '' && <Text style={styles.error}>{error}</Text>}
-
-          <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-            {players.map((p) => (
-              <View key={p.id} style={styles.playerRow}>
-                <Text style={styles.playerName}>{displayName(p)}</Text>
-                <Pressable
-                  onPress={() => onPlayers(players.filter((x) => x.id !== p.id))}
-                  style={styles.removeHit}
-                >
-                  <Text style={styles.remove}>Remove</Text>
-                </Pressable>
-              </View>
-            ))}
-            {players.length === 0 && <Text style={styles.caption}>No players yet.</Text>}
-          </ScrollView>
-
-          {dupes.length > 0 && (
-            <Text style={styles.hint}>Two players called {dupes.join(', ')}.</Text>
-          )}
-          <Text style={[styles.caption, !readiness.ready && styles.overtime]}>
-            {readiness.message}
-          </Text>
-
-          <View style={styles.actions}>
-            <Pressable onPress={onBack} style={styles.linkHit}>
-              <Text style={styles.link}>Back</Text>
-            </Pressable>
-            <Pressable
-              disabled={requireReady && !readiness.ready}
-              style={({ pressed }) => [
-                styles.button,
-                requireReady && !readiness.ready && styles.buttonDisabled,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={onNext}
-            >
-              <Text style={styles.buttonLabel}>{nextLabel}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+    <SafeAreaView style={screen.safe}>
+      {body}
+      {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Step 3 — the lineup. This is the substitution reminder.
-// ---------------------------------------------------------------------------
-
-function LineupScreen({
-  match,
-  players,
-  format,
-  squadName,
-  onStart,
-  onBack,
-}: {
-  match: Match;
-  players: Player[];
-  format: Format;
-  squadName: string;
-  onStart: (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => void;
-  /**
-   * A way out. Before this there was none: the lineup screen had one exit and
-   * it was "Start quarter", so a coach who reached it with the wrong squad —
-   * or simply wanted to look at something else — was stuck until they started
-   * a period they did not mean to start.
-   *
-   * Null between periods, where there is genuinely nowhere to go back TO: the
-   * match is underway and the previous screen is a quarter that has ended.
-   */
-  onBack: (() => void) | null;
-}) {
-  const { engine, state } = match;
-  const quarter = currentQuarter(state);
-  const minutes = useMemo(
-    () => foldPlayerMinutes(engine, state, players),
-    [engine, state, players]
-  );
-  const suggestion = useMemo(
-    () => suggestLineup(players, minutes, format),
-    [players, minutes, format]
-  );
-
-  const [onPitch, setOnPitch] = useState<UUID[]>(suggestion.onPitch);
-  const [goalkeeper, setGoalkeeper] = useState<UUID | null>(suggestion.goalkeeper);
-  const suggestedFor = useRef(quarter?.id);
-
-  // How long this period will run, which is what a sub time is an offset into.
-  const periodMs = engine.getPlannedQuarterMs(state.match);
-  const [plan, setPlan] = useState<PlannedSub[]>(() =>
-    planSubs(suggestion.bench, periodMs)
-  );
-
-  // A new period means a new suggestion.
-  useEffect(() => {
-    if (suggestedFor.current !== quarter?.id) {
-      suggestedFor.current = quarter?.id;
-      setOnPitch(suggestion.onPitch);
-      setGoalkeeper(suggestion.goalkeeper);
-      setPlan(planSubs(suggestion.bench, periodMs));
-    }
-  }, [quarter?.id, suggestion, periodMs]);
-
-  // The bench changes as the coach taps names, so the plan follows it: a new
-  // bench player gets the default time, and one brought on loses their entry.
-  useEffect(() => {
-    const bench = players.map((p) => p.id).filter((id) => !onPitch.includes(id));
-    setPlan((current) => {
-      const kept = current.filter((entry) => bench.includes(entry.playerId));
-      const added = bench.filter((id) => !current.some((e) => e.playerId === id));
-      return [...kept, ...planSubs(added, periodMs)];
-    });
-  }, [onPitch, players, periodMs]);
-
-  const byId = useMemo(() => {
-    const m = new Map<UUID, PlayerMinutes>();
-    for (const row of minutes) m.set(row.playerId, row);
-    return m;
-  }, [minutes]);
-
-  const selected = new Set(onPitch);
-  const complete = lineupIsComplete(onPitch, format);
-  const noun = periodNoun(state.match.quarterCount);
-
-  const toggle = (id: UUID) => {
-    if (selected.has(id)) {
-      setOnPitch(onPitch.filter((x) => x !== id));
-      if (goalkeeper === id) setGoalkeeper(null);
-    } else if (onPitch.length < format.onFieldCount) {
-      setOnPitch([...onPitch, id]);
-    }
-  };
-
-  // Players owed the most time first — the answer to "who comes on".
-  const ordered = useMemo(
-    () =>
-      [...players].sort(
-        (a, b) => (byId.get(a.id)?.outfieldMs ?? 0) - (byId.get(b.id)?.outfieldMs ?? 0)
-      ),
-    [players, byId]
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.squadInner}>
-        <Text style={styles.squad} numberOfLines={1}>
-          {squadName || PLACEHOLDER_SQUAD_NAME}
-        </Text>
-        <Text style={styles.quarter}>
-          {noun} {quarter?.index ?? 1} of {state.match.quarterCount} — who is on?
-        </Text>
-        <Text style={styles.hint}>{suggestion.rationale}</Text>
-        <Text style={styles.hint}>
-          Tap a name to pick them. The time beside a substitute is when you
-          will be reminded to bring them on.
-        </Text>
-
-        <ScrollView style={styles.list}>
-          {ordered.map((p) => {
-            const m = byId.get(p.id);
-            const on = selected.has(p.id);
-            const isKeeper = goalkeeper === p.id;
-            return (
-              <Pressable
-                key={p.id}
-                onPress={() => toggle(p.id)}
-                style={({ pressed }) => [
-                  styles.pickRow,
-                  on && styles.pickRowOn,
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <View style={styles.pickMain}>
-                  <Text style={styles.playerName}>{displayName(p)}</Text>
-                  <Text style={styles.pickMinutes}>
-                    {formatClock(m?.outfieldMs ?? 0)} outfield
-                    {(m?.goalkeeperMs ?? 0) > 0
-                      ? ` · ${formatClock(m!.goalkeeperMs)} in goal`
-                      : ''}
-                  </Text>
-                </View>
-                {on ? (
-                  <Pressable
-                    onPress={() => setGoalkeeper(isKeeper ? null : p.id)}
-                    style={[styles.gkChip, isKeeper && styles.gkChipOn]}
-                  >
-                    <Text style={[styles.gkLabel, isKeeper && styles.gkLabelOn]}>GK</Text>
-                  </Pressable>
-                ) : (
-                  // A bench player carries the time they come on. The PO asked
-                  // for exactly this: "set that time for a sub next to their
-                  // name and that's the anchor for a reminder".
-                  <View style={styles.subTimeRow}>
-                    <Pressable
-                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, -30_000, periodMs))}
-                      style={styles.stepHit}
-                    >
-                      <Text style={styles.step}>−</Text>
-                    </Pressable>
-                    <Text
-                      style={[
-                        styles.subTime,
-                        (plan.find((e) => e.playerId === p.id)?.atMs ?? 0) ===
-                          NO_SUB_PLANNED && styles.subTimeOff,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {(plan.find((e) => e.playerId === p.id)?.atMs ?? 0) === NO_SUB_PLANNED
-                        ? 'No sub'
-                        : formatClock(plan.find((e) => e.playerId === p.id)?.atMs ?? 0)}
-                    </Text>
-                    <Pressable
-                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, 30_000, periodMs))}
-                      style={styles.stepHit}
-                    >
-                      <Text style={styles.step}>+</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        <Text style={[styles.caption, !complete && styles.overtime]}>
-          {onPitch.length} of {format.onFieldCount} picked
-          {goalkeeper === null ? ' · no goalkeeper chosen' : ''}
-        </Text>
-
-        <View style={styles.actions}>
-          {onBack && (
-            <Pressable onPress={onBack} style={styles.linkHit}>
-              <Text style={styles.link}>Back</Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => {
-              setOnPitch(suggestion.onPitch);
-              setGoalkeeper(suggestion.goalkeeper);
-            }}
-            style={styles.linkHit}
-          >
-            <Text style={styles.link}>Use suggestion</Text>
-          </Pressable>
-          <Pressable
-            disabled={!complete}
-            style={({ pressed }) => [
-              styles.button,
-              !complete && styles.buttonDisabled,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={() => onStart(onPitch, goalkeeper, plan)}
-          >
-            <Text style={styles.buttonLabel}>Start {noun.toLowerCase()}</Text>
-          </Pressable>
-        </View>
-      </View>
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Step 4 — the clock, and who is on
-// ---------------------------------------------------------------------------
-
-function ClockScreen({
-  match,
-  players,
-  squadName,
-  subPlan,
-  onMakeSub,
-  onEndQuarter,
-  onStartOver,
-}: {
-  match: Match;
-  players: Player[];
-  squadName: string;
-  subPlan: PlannedSub[];
-  onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
-  onEndQuarter: () => void;
-  onStartOver: () => void;
-}) {
-  const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
-  const { engine, state } = match;
-
-  useEffect(() => {
-    const id = setInterval(forceRepaint, 500);
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') forceRepaint();
-    });
-    return () => {
-      clearInterval(id);
-      sub.remove();
-    };
-  }, []);
-
-  const view = deriveClockView(engine, state);
-  const minutes = foldPlayerMinutes(engine, state, players);
-  const onPitch = minutes.filter((m) => m.onPitchNow);
-  const noun = periodNoun(state.match.quarterCount).toLowerCase();
-  const nameOf = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? '—';
-
-  // The reminder. `quarterElapsedMs` is capped at the planned length, so the
-  // raw period elapsed is used here — a sub due at 6:15 must still show when
-  // the coach is three minutes over.
-  const periodElapsedMs = view.isRunning
-    ? engine.getQuarterElapsedMs(currentQuarter(state)!)
-    : 0;
-  const due = view.isRunning ? dueSubs(subPlan, periodElapsedMs) : [];
-  const untilNext = view.isRunning ? msUntilNextSub(subPlan, periodElapsedMs) : null;
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.squadInner}>
-        <Text style={styles.squad} numberOfLines={1}>
-          {squadName || PLACEHOLDER_SQUAD_NAME}
-        </Text>
-        <Text style={styles.quarter}>{view.quarterLabel}</Text>
-
-        <Text style={styles.clock} numberOfLines={1} adjustsFontSizeToFit>
-          {formatClock(view.quarterElapsedMs)}
-        </Text>
-
-        {view.isMatchOver ? (
-          <Text style={styles.caption}>
-            Full time — {formatClock(view.matchElapsedMs)} played
-          </Text>
-        ) : (
-          <Text style={[styles.caption, view.isOvertime && styles.overtime]}>
-            {view.isOvertime
-              ? `${periodNoun(state.match.quarterCount)} over — end it when play stops`
-              : `${formatClock(view.quarterRemainingMs)} left in this ${noun}`}
-          </Text>
-        )}
-
-        <Text style={styles.hint}>
-          Match total {formatClock(view.matchElapsedMs)} of {state.match.totalMinutes}:00
-        </Text>
-
-        {due.map((sub) => {
-          const off = whoComesOff(sub, onPitch);
-          return (
-            <View key={sub.playerId} style={styles.subDue}>
-              <Text style={styles.subDueText} numberOfLines={2}>
-                Bring on {nameOf(sub.playerId)}
-                {off ? ` for ${nameOf(off)}` : ''}
-              </Text>
-              {off && (
-                <Pressable
-                  onPress={() => onMakeSub(off, sub.playerId)}
-                  style={({ pressed }) => [styles.subDueButton, pressed && styles.buttonPressed]}
-                >
-                  <Text style={styles.subDueButtonLabel}>Done</Text>
-                </Pressable>
-              )}
-            </View>
-          );
-        })}
-
-        {due.length === 0 && untilNext !== null && (
-          <Text style={styles.hint}>Next substitution in {formatClock(untilNext)}</Text>
-        )}
-
-        <ScrollView style={styles.list}>
-          {(view.isMatchOver ? minutes : onPitch).map((m) => (
-            <View key={m.playerId} style={styles.playerRow}>
-              <Text style={styles.playerName}>{nameOf(m.playerId)}</Text>
-              <Text style={styles.rowMinutes} numberOfLines={1}>
-                {formatClock(m.outfieldMs)}
-                {m.goalkeeperMs > 0 ? ` · GK ${formatClock(m.goalkeeperMs)}` : ''}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.actions}>
-          {view.canEnd && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                view.isOvertime && styles.buttonUrgent,
-                pressed && styles.buttonPressed,
-              ]}
-              onPress={onEndQuarter}
-            >
-              <Text style={styles.buttonLabel}>End {noun}</Text>
-            </Pressable>
-          )}
-          {view.isMatchOver && (
-            <Pressable onPress={onStartOver} style={styles.linkHit}>
-              <Text style={styles.link}>New match</Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-// ---------------------------------------------------------------------------
-
-function Choice({
-  label,
-  selected,
-  onPress,
-  wide,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  wide?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.choice,
-        wide && styles.choiceWide,
-        selected && styles.choiceSelected,
-        pressed && styles.buttonPressed,
-      ]}
-    >
-      <Text style={[styles.choiceLabel, selected && styles.choiceLabelSelected]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Settings — the things a coach sets once, not every Saturday
-// ---------------------------------------------------------------------------
-
-/**
- * Reachable without starting a match, which is the point. Before this, the
- * only door to the team name, the defaults and the squad was the pre-match
- * flow, so a coach who just wanted to add a player had to begin setting up a
- * game they were not about to play.
- *
- * The same state backs this screen and the setup screen, so the two cannot
- * disagree. That duplication is deliberate for now — the setup screen works,
- * is tested and is on the phone — and collapsing them belongs with the
- * structural design work, not with a change made on a match day.
- *
- * Nothing new is stored. `SavedSession` already carried all of it, so there is
- * no schema bump and every existing save still loads unchanged.
- */
-function SettingsScreen({
-  squadName,
-  onSquadName,
-  totalMinutes,
-  periodCount,
-  onTotalMinutes,
-  onPeriodCount,
-  players,
-  onEditSquad,
-  onForget,
-  onDone,
-}: {
-  squadName: string;
-  onSquadName: (s: string) => void;
-  totalMinutes: number;
-  periodCount: number;
-  onTotalMinutes: (n: number) => void;
-  onPeriodCount: (n: number) => void;
-  players: Player[];
-  onEditSquad: () => void;
-  onForget: () => void;
-  onDone: () => void;
-}) {
-  // Confirm before wiping, because the coach whose squad this deletes is the
-  // one who typed all ten names in. Two taps, in-screen, no dialog module.
-  const [confirmForget, setConfirmForget] = useState(false);
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.settingsInner}>
-          <Text style={styles.squad}>Settings</Text>
-          <Text style={styles.hint}>
-            Kept between matches. Nothing leaves this phone.
-          </Text>
-
-          <Text style={styles.fieldLabel}>Team name</Text>
-          <TextInput
-            style={[styles.input, styles.nameInput]}
-            value={squadName}
-            onChangeText={onSquadName}
-            // Cleaned when the coach leaves the field rather than as they
-            // type, so a space mid-word is not eaten under their thumb.
-            onBlur={() =>
-              onSquadName(normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME))
-            }
-            placeholder="Your team"
-            placeholderTextColor="#6e9787"
-            autoCapitalize="words"
-            autoCorrect={false}
-            maxLength={MAX_TEAM_NAME_LENGTH}
-            returnKeyType="done"
-          />
-
-          <Text style={styles.fieldLabel}>Match length</Text>
-          <View style={styles.choiceRow}>
-            {TOTAL_MINUTES_CHOICES.map((m) => (
-              <Choice
-                key={m}
-                label={`${m}`}
-                selected={m === totalMinutes}
-                onPress={() => onTotalMinutes(m)}
-              />
-            ))}
-          </View>
-          <Text style={styles.hint}>minutes</Text>
-
-          <Text style={styles.fieldLabel}>Played in</Text>
-          <View style={styles.choiceRow}>
-            {PERIOD_COUNT_CHOICES.map((pc) => (
-              <Choice
-                key={pc}
-                label={periodNounPlural(pc)}
-                selected={pc === periodCount}
-                onPress={() => onPeriodCount(pc)}
-                wide
-              />
-            ))}
-          </View>
-
-          {/* The arithmetic a coach should see before Saturday, not at kick-off. */}
-          <Text style={styles.summary}>{describeDefaults(totalMinutes, periodCount)}</Text>
-
-          <Text style={styles.fieldLabel}>Squad</Text>
-          <Text style={styles.caption}>
-            {players.length === 0
-              ? 'Nobody yet'
-              : `${players.length} ${players.length === 1 ? 'player' : 'players'}`}
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-            onPress={onEditSquad}
-          >
-            <Text style={styles.buttonLabel}>Edit the squad</Text>
-          </Pressable>
-
-          <Pressable onPress={onDone} style={styles.linkHit}>
-            <Text style={styles.link}>Done</Text>
-          </Pressable>
-
-          {confirmForget ? (
-            <>
-              <Text style={[styles.hint, styles.overtime]}>
-                This deletes the squad, the team name and any saved match.
-              </Text>
-              <Pressable onPress={onForget} style={styles.linkHit}>
-                <Text style={styles.dangerLink}>Yes, forget everything</Text>
-              </Pressable>
-              <Pressable onPress={() => setConfirmForget(false)} style={styles.linkHit}>
-                <Text style={styles.link}>Keep it</Text>
-              </Pressable>
-            </>
-          ) : (
-            <Pressable onPress={() => setConfirmForget(true)} style={styles.linkHit}>
-              <Text style={styles.dangerLink}>Forget everything</Text>
-            </Pressable>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-      <BuildLabel />
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Which build am I looking at? — #52
-// ---------------------------------------------------------------------------
-
-/**
- * A CI build shows its release tag verbatim, so the string on the phone can be
- * pasted into the releases page and find the exact artifact. A local run says
- * `local dev` in words and cannot be mistaken for one.
- *
- * Deliberately quiet: this is diagnostic information, not something a coach
- * reads at the touchline.
- *
- * `alignSelf: 'stretch'` and `includeFontPadding: false` are not decoration.
- * Text sized to its own measurement loses its last glyph on Android, which has
- * now happened three times on this app, and a build label missing its final
- * character is worse than no build label at all.
- */
-function BuildLabel() {
-  return (
-    <Text style={styles.buildLabel} numberOfLines={1}>
-      {currentBuildLabel()}
-    </Text>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b3d2e' },
-  buildLabel: {
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-    color: '#4e7a67',
-    fontSize: 11,
-    paddingBottom: 6,
-    paddingHorizontal: 12,
-  },
-  flex: { flex: 1 },
-  inner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  // flexGrow with justifyContent: 'center' keeps a short screen centred and
-  // lets a tall one scroll, rather than centring content off the top.
-  scrollInner: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  squadInner: { flex: 1, paddingHorizontal: 18, paddingVertical: 14 },
-  settingsInner: { paddingHorizontal: 18, paddingVertical: 14, paddingBottom: 28 },
-  dangerLink: {
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-    color: '#ffb4a2',
-    fontSize: 15,
-  },
-  squad: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '600',
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-  },
-  quarter: {
-    color: '#cfe3da',
-    fontSize: 16,
-    marginTop: 4,
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-  },
-  // No `fontVariant: ['tabular-nums']`. On a real phone it clipped the last
-  // glyph and the first release read "00:0".
-  clock: {
-    color: '#ffffff',
-    fontSize: 68,
-    fontWeight: '300',
-    letterSpacing: 2,
-    width: '100%',
-    textAlign: 'center',
-    paddingHorizontal: 8,
-    marginTop: 4,
-  },
-  caption: {
-    color: '#cfe3da',
-    fontSize: 15,
-    textAlign: 'center',
-    marginTop: 6,
-    alignSelf: 'stretch',
-    includeFontPadding: false,
-  },
-  overtime: { color: '#ffd166', fontWeight: '600' },
-  error: { color: '#ffb4a2', fontSize: 14, marginTop: 8 },
-  fieldLabel: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: 22,
-    marginBottom: 8,
-  },
-  choiceRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap' },
-  choice: {
-    width: 76,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2f6b55',
-    margin: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  choiceWide: { width: 124 },
-  choiceSelected: { backgroundColor: '#12855a', borderColor: '#12855a' },
-  // fontWeight is the SAME in both states: changing it forces an Android
-  // re-measure applied late, which clipped the last character until tapped.
-  choiceLabel: {
-    color: '#cfe3da',
-    fontSize: 17,
-    fontWeight: '600',
-    textAlign: 'center',
-    includeFontPadding: false,
-    alignSelf: 'stretch',
-  },
-  choiceLabelSelected: { color: '#ffffff' },
-  hint: {
-    color: '#8fb3a5',
-    fontSize: 12,
-    marginTop: 4,
-    alignSelf: 'stretch',
-    textAlign: 'center',
-  },
-  summary: {
-    color: '#ffffff',
-    fontSize: 17,
-    marginTop: 22,
-    marginBottom: 18,
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    includeFontPadding: false,
-  },
-  addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
-  input: {
-    flex: 1,
-    backgroundColor: '#0f4d3a',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2f6b55',
-    color: '#ffffff',
-    fontSize: 17,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginRight: 8,
-  },
-  nameInput: { alignSelf: 'stretch', marginRight: 0, textAlign: 'center' },
-  addButton: {
-    backgroundColor: '#12855a',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-  },
-  list: { flex: 1, marginTop: 10 },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: '#164f3c',
-  },
-  playerName: { color: '#ffffff', fontSize: 17, flex: 1, includeFontPadding: false },
-  removeHit: { padding: 6 },
-  remove: { color: '#8fb3a5', fontSize: 13, textDecorationLine: 'underline' },
-  pickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#164f3c',
-  },
-  pickRowOn: { backgroundColor: '#12855a', borderColor: '#12855a' },
-  pickMain: { flex: 1 },
-  // FIX: every right-hand character was missing from the per-player times.
-  // Android measures a Text once; sitting beside a `flex: 1` sibling it gets
-  // squeezed and the tail is cut. `flexShrink: 0` stops the squeeze,
-  // `includeFontPadding: false` makes the box match the glyphs, and the
-  // trailing pad absorbs the rounding that clipped the final digit.
-  pickMinutes: {
-    color: '#cfe3da',
-    fontSize: 12,
-    marginTop: 2,
-    includeFontPadding: false,
-    flexShrink: 0,
-    paddingRight: 4,
-  },
-  rowMinutes: {
-    color: '#cfe3da',
-    fontSize: 13,
-    includeFontPadding: false,
-    flexShrink: 0,
-    paddingRight: 4,
-    textAlign: 'right',
-    minWidth: 92,
-  },
-  subTimeRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
-  // Same metrics as styles.subTime — only the colour changes. Switching
-  // fontWeight between states is what clipped the last glyph off the choice
-  // boxes and the clock, three times.
-  subTimeOff: { color: '#6e9787' },
-  stepHit: { paddingHorizontal: 10, paddingVertical: 6 },
-  step: { color: '#ffffff', fontSize: 20, includeFontPadding: false },
-  subTime: {
-    color: '#ffd166',
-    fontSize: 15,
-    fontWeight: '600',
-    includeFontPadding: false,
-    flexShrink: 0,
-    paddingHorizontal: 2,
-    textAlign: 'center',
-    // A FIXED width, not minWidth. "No sub" is wider than "06:15", and a box
-    // that sizes itself to its own text is what clipped the last glyph off
-    // the clock and the choice boxes. Wide enough for both, so neither the
-    // text nor the row reflows when the coach toggles a sub off.
-    width: 68,
-  },
-  subDue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#c47f1a',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 10,
-  },
-  subDueText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-    flex: 1,
-    includeFontPadding: false,
-  },
-  subDueButton: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    flexShrink: 0,
-  },
-  subDueButtonLabel: {
-    color: '#8a5600',
-    fontSize: 15,
-    fontWeight: '700',
-    includeFontPadding: false,
-  },
-  gkChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#cfe3da',
-  },
-  gkChipOn: { backgroundColor: '#ffd166', borderColor: '#ffd166' },
-  gkLabel: { color: '#cfe3da', fontSize: 13, fontWeight: '600' },
-  gkLabelOn: { color: '#3a2a00', fontSize: 13, fontWeight: '600' },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-  },
-  button: {
-    backgroundColor: '#12855a',
-    paddingVertical: 15,
-    paddingHorizontal: 26,
-    borderRadius: 10,
-  },
-  buttonDisabled: { backgroundColor: '#2f6b55', opacity: 0.6 },
-  buttonUrgent: { backgroundColor: '#c47f1a' },
-  buttonPressed: { opacity: 0.7 },
-  buttonLabel: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
-  linkHit: { padding: 10, marginRight: 8 },
-  link: { color: '#8fb3a5', fontSize: 14, textDecorationLine: 'underline' },
-});

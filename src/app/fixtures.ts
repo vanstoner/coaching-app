@@ -24,6 +24,7 @@
  */
 
 import type { Competition, Match, MatchStatus, UUID } from '../types/index';
+import { periodNounPlural } from './matchClock';
 
 /** Where a match sits relative to now. */
 export type FixtureBucket = 'current' | 'future' | 'past';
@@ -201,4 +202,31 @@ export function openDestination(
 export function canDeleteFixture(quarters: QuarterLike[], status: MatchStatus): boolean {
   if (status === 'completed' || status === 'in_progress' || status === 'abandoned') return false;
   return quarters.every((q) => q.status === 'pending');
+}
+
+/**
+ * True when a match has been kicked off and not yet finished.
+ *
+ * What decides whether **Play now** is offered. A coach who has left a running
+ * match to look at Home must not be handed a button that starts a second one
+ * and orphans the first — the in-progress card at the top of the list is the
+ * way back in.
+ */
+export function matchIsUnderway(quarters: QuarterLike[]): boolean {
+  if (quarters.length === 0) return false;
+  const started = quarters.some((q) => q.status !== 'pending');
+  const finished = quarters.every((q) => q.status === 'ended');
+  return started && !finished;
+}
+
+/**
+ * This match's own length and period count, for the fixture card.
+ *
+ * On the card because they belong to the FIXTURE, not to settings (PO ruling,
+ * 2026-09-20): *"the match length and format are probably match specific"*. A
+ * coach who saved a cup game as halves needs to see that on the card, or the
+ * only way to know is to kick off and count.
+ */
+export function lengthLabel(match: Match): string {
+  return `${match.totalMinutes} min · ${periodNounPlural(match.quarterCount)}`;
 }

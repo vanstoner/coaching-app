@@ -473,6 +473,46 @@ describe('many matches', () => {
     expect(second.matches[0].match.status).toBe('in_progress');
   });
 
+  it('keeps the format the current match is played in', () => {
+    const x = setUp();
+    const played = makeSevenASideFormat();
+    const saved = toSavedSession(sessionOf(x, { matchFormat: played }));
+    expect(saved.matches[0].format?.id).toBe(played.id);
+    // And it survives the round trip, positions and all.
+    const back = parseSession(JSON.stringify(saved))!;
+    expect(back.matches[0].format?.positions.map((p) => p.label)).toEqual(
+      played.positions.map((p) => p.label)
+    );
+  });
+
+  it('does not drop a stored format when the save does not name one', () => {
+    // A caller that does not know which format the match is played in must not
+    // be able to erase one: its appearances reference position ids that only
+    // that snapshot still explains.
+    const x = setUp();
+    const played = makeSevenASideFormat();
+    const first = toSavedSession(sessionOf(x, { matchFormat: played }));
+    const second = toSavedSession(sessionOf(x, { matches: first.matches }));
+    expect(second.matches[0].format?.id).toBe(played.id);
+  });
+
+  it('leaves saved matches alone when the squad DEFAULT shape changes', () => {
+    // The PO ruling, in one test: "A cup game can be halves without changing
+    // next Saturday's league default." Same for the shape.
+    const x = setUp();
+    const cupShape = makeSevenASideFormat();
+    const stored = toSavedSession(sessionOf(x, { matchFormat: cupShape, state: x.state }));
+
+    const newDefault = makeSevenASideFormat();
+    expect(newDefault.id).not.toBe(cupShape.id);
+
+    const after = toSavedSession(
+      sessionOf(x, { format: newDefault, matches: stored.matches, state: null })
+    );
+    expect(after.format.id).toBe(newDefault.id);
+    expect(after.matches[0].format?.id).toBe(cupShape.id);
+  });
+
   it('drops a currentMatchId that names a match which is not there', () => {
     // It would otherwise send the app to a screen with nothing behind it.
     const saved = toSavedSession({

@@ -4,7 +4,7 @@ Status: **Approved** by the Product Owner, 2026-09-18.
 
 > Approved 2026-09-18 — 12 of its 13 entities exist in `src/types/index.ts` and match. Only `Vacancy` is unbuilt. Open questions below are carried as issues, not blockers.
 Owner: Rob (Product Owner)
-Last updated: 2026-09-17
+Last updated: 2026-09-20
 
 ## Purpose
 
@@ -43,7 +43,7 @@ A named group of players, typically a team for a season.
 |---|---|---|
 | `id` | UUID | |
 | `name` | string | e.g. "U9 Reds" |
-| `formatId` | UUID | FK → Format (the current default, e.g. 7-a-side) |
+| `formatId` | UUID | FK → Format — **default** for a new fixture ([ADR-012](../decisions/012-match-owns-its-format.md)) |
 | `marginMs` | int | Quarter-end margin setting. Default 60 000. Range 30 000–300 000 inclusive. Copied onto each match at start — see Spec 02 § Margin |
 | `createdAt` | ISO timestamp | |
 
@@ -113,7 +113,7 @@ players on the pitch and the position set are configurable.
 |---|---|---|
 | `id` | UUID | |
 | `squadId` | UUID | FK → Squad |
-| `formatId` | UUID | FK → Format — snapshotted at creation |
+| `formatId` | UUID | FK → Format. The format itself is **copied onto the stored match** ([ADR-012](../decisions/012-match-owns-its-format.md)). The squad format is only the default for a new fixture. |
 | `opponent` | string \| null | Free text, optional |
 | `kickoffAt` | ISO timestamp \| null | Planned start |
 | `totalMinutes` | int | Whole minutes, 20–120 — see [Match length](#match-length) |
@@ -454,3 +454,4 @@ migration, and provenance comes for free.
 | 2026-09-17 | Event log and provenance envelope added; `Quarter.elapsedMs` becomes derived, not stored. Design principles 3–4 restated, principle 5 (proportionality) added. | ADR-007, ADR-008, ADR-009 accepted, #19 |
 | 2026-09-17 | Squad recorded as the ownership boundary; formats become squad-owned copies of templates. Open question 1 ruled. | ADR-010 accepted, #19 |
 | 2026-09-17 | Quarter gains `effectiveEndElapsedMs`, `endChoiceRecordedAt`, `endChoice`. | Spec 02 § End-time choices, via #19 |
+| 2026-09-20 | A match copies length, period count and format at creation. Squad format is the default. Shapes: 2-3-1+GK and 2-2-2+GK. | ADR-012, #70 |
