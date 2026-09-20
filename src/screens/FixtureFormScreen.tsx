@@ -20,27 +20,37 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 
 import type { Competition } from '../types/index';
 import { COMPETITIONS, competitionLabel } from '../app/fixtures';
 import { nextSaturday, toDateInput, toIso, toTimeInput } from '../app/kickoff';
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
+import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
+import { Chip, ChipRow } from './Chip';
 import { colours, screen } from './theme';
 
 export interface FixtureDraft {
   opponent: string;
   competition: Competition | null;
   kickoffAt: string | null;
+  /**
+   * THIS match's length, periods and shape — PO ruling, 2026-09-20 (#70).
+   *
+   * > *"the match length and format are probably match specific - but happy
+   * > to have defaults in the settings."*
+   *
+   * Seeded from the defaults and owned by the fixture from then on. Saving a
+   * cup game as halves does not change next Saturday's league default.
+   */
   totalMinutes: number;
   periodCount: number;
+  shape: ShapeCode;
 }
 
 export function FixtureFormScreen({
@@ -56,10 +66,11 @@ export function FixtureFormScreen({
   const [competition, setCompetition] = useState<Competition | null>(initial.competition);
   const [totalMinutes, setTotalMinutes] = useState(initial.totalMinutes);
   const [periodCount, setPeriodCount] = useState(initial.periodCount);
+  const [shape, setShape] = useState<ShapeCode>(initial.shape);
   const [kickoffAt, setKickoffAt] = useState<string | null>(initial.kickoffAt);
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.flex}>
       <KeyboardAvoidingView
         style={screen.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -81,7 +92,7 @@ export function FixtureFormScreen({
           />
 
           <Text style={screen.fieldLabel}>Competition</Text>
-          <View style={local.chipRow}>
+          <ChipRow>
             {COMPETITIONS.map((c) => (
               <Chip
                 key={c}
@@ -92,13 +103,13 @@ export function FixtureFormScreen({
                 onPress={() => setCompetition(competition === c ? null : c)}
               />
             ))}
-          </View>
+          </ChipRow>
 
           <Text style={screen.fieldLabel}>Kick-off</Text>
           <KickoffField value={kickoffAt} onChange={setKickoffAt} />
 
-          <Text style={screen.fieldLabel}>Match length</Text>
-          <View style={local.chipRow}>
+          <Text style={screen.fieldLabel}>This match's length</Text>
+          <ChipRow>
             {TOTAL_MINUTES_CHOICES.map((m) => (
               <Chip
                 key={m}
@@ -108,11 +119,11 @@ export function FixtureFormScreen({
                 narrow
               />
             ))}
-          </View>
+          </ChipRow>
           <Text style={screen.hint}>minutes</Text>
 
           <Text style={screen.fieldLabel}>Played in</Text>
-          <View style={local.chipRow}>
+          <ChipRow>
             {PERIOD_COUNT_CHOICES.map((p) => (
               <Chip
                 key={p}
@@ -121,24 +132,40 @@ export function FixtureFormScreen({
                 onPress={() => setPeriodCount(p)}
               />
             ))}
-          </View>
+          </ChipRow>
+
+          <Text style={screen.fieldLabel}>Shape</Text>
+          <ChipRow>
+            {SHAPES.map((s) => (
+              <Chip
+                key={s.code}
+                label={shapeLabel(s.code)}
+                detail={s.description}
+                selected={s.code === shape}
+                onPress={() => setShape(s.code)}
+                wide
+              />
+            ))}
+          </ChipRow>
+          <Text style={screen.hint}>
+            Just for this match. Your default stays as it is.
+          </Text>
 
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
             onPress={() =>
-              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount })
+              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape })
             }
           >
             <Text style={screen.buttonLabel}>Save fixture</Text>
           </Pressable>
 
           <Pressable onPress={onCancel} style={screen.linkHit}>
-            <Text style={screen.link}>Cancel</Text>
+            <Text style={screen.link}>Cancel — nothing is saved</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
-      <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -226,56 +253,7 @@ function KickoffField({
   );
 }
 
-function Chip({
-  label,
-  selected,
-  onPress,
-  narrow,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  narrow?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        local.chip,
-        narrow && local.chipNarrow,
-        selected && local.chipSelected,
-        pressed && screen.buttonPressed,
-      ]}
-    >
-      {/* Colour changes on selection; metrics never do. */}
-      <Text style={[local.chipLabel, selected && local.chipLabelSelected]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 const local = StyleSheet.create({
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'stretch' },
-  chip: {
-    width: 108,
-    alignItems: 'center',
-    backgroundColor: colours.pitchRaised,
-    borderColor: colours.line,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  chipNarrow: { width: 66 },
-  chipSelected: { backgroundColor: colours.accent, borderColor: colours.accent },
-  chipLabel: {
-    color: colours.inkMuted,
-    fontSize: 15,
-    includeFontPadding: false,
-  },
-  chipLabelSelected: { color: colours.ink },
   kickoff: { alignSelf: 'stretch' },
   rejected: { color: colours.danger },
   kickoffRow: { flexDirection: 'row', alignSelf: 'stretch' },

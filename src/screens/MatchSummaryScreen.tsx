@@ -20,8 +20,7 @@
  */
 
 import { useMemo } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import type { Player } from '../types/index';
@@ -63,7 +62,7 @@ export function MatchSummaryScreen({
   const competition = competitionLabel(state.match.competition);
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
         <Text style={screen.title} numberOfLines={1}>
           {opponentLabel(state.match)}
@@ -123,11 +122,10 @@ export function MatchSummaryScreen({
           style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
           onPress={onBack}
         >
-          <Text style={screen.buttonLabel}>Back to fixtures</Text>
+          <Text style={screen.buttonLabel}>Back to Home</Text>
         </Pressable>
       </ScrollView>
-      <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 

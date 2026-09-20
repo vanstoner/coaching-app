@@ -31,6 +31,7 @@ import type {
   Format,
   Player,
   PlayerPositionAffinity,
+  PositionUnit,
   PreferenceLevel,
   UUID,
 } from '../types/index';
@@ -201,6 +202,53 @@ export function teamSheetFor(
 /** True when this set can actually start a quarter for this format. */
 export function lineupIsComplete(onPitch: UUID[], format: Format): boolean {
   return onPitch.length === format.onFieldCount;
+}
+
+export interface NamedSlot {
+  positionId: UUID;
+  /** What the coach reads: 'GK', 'LB', 'LF'. */
+  label: string;
+  /** The primitive underneath the label. Null only on a v1-migrated format. */
+  unit: PositionUnit | null;
+  playerId: UUID | null;
+  /** Null when the slot is not filled yet. */
+  firstName: string | null;
+}
+
+/**
+ * The team sheet as a list of NAMED POSITIONS — PO ruling, 2026-09-20 (#70).
+ *
+ * > *"Can live with lists and names of positions for the time being."*
+ *
+ * A pitch is the target (#2, #10) and this is not it. What this is, is the
+ * smallest thing that answers "what shape am I playing and who is where" from
+ * the data the app already holds: `teamSheetFor` decides the mapping, this
+ * names it.
+ *
+ * Which outfield slot a player takes is still **not** a fairness input
+ * (invariant 3). It is shown because the coach asked to read the positions,
+ * not because anything is measured against it.
+ */
+export function namedSlots(
+  onPitch: UUID[],
+  goalkeeper: UUID | null,
+  format: Format,
+  players: Player[]
+): NamedSlot[] {
+  const sheet = teamSheetFor(onPitch, goalkeeper, format);
+  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  return [...format.positions]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((position) => {
+      const playerId = sheet.get(position.id) ?? null;
+      return {
+        positionId: position.id,
+        label: position.label,
+        unit: position.unit,
+        playerId,
+        firstName: playerId ? (nameOf.get(playerId) ?? null) : null,
+      };
+    });
 }
 
 export interface FairnessRow {

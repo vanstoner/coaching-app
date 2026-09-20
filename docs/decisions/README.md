@@ -41,6 +41,8 @@ state management does.
 | [009](./009-single-clock-owner-per-match.md) | One device owns a match's clock | Accepted | 2026-09-17 |
 | [010](./010-tenancy-boundary.md) | Squad is the data-ownership boundary | Accepted | 2026-09-17 |
 | [011](./011-player-data-stays-on-device.md) | Player data stays on device until a hosting ADR is approved | Accepted | 2026-09-17 |
+| [012](./012-match-owns-its-format.md) | A match owns the format it is played in | Accepted | 2026-09-20 |
+| [012](./012-match-owns-its-format.md) | A match owns the format it is played in | Accepted | 2026-09-20 |
 
 ## Template
 

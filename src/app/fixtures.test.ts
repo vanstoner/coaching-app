@@ -12,6 +12,8 @@ import {
   fixtureList,
   inBucket,
   kickoffLabel,
+  lengthLabel,
+  matchIsUnderway,
   opponentLabel,
 } from './fixtures';
 
@@ -247,5 +249,38 @@ describe('canDeleteFixture', () => {
 
   it('refuses even one started quarter', () => {
     expect(canDeleteFixture([{ status: 'ended' }, { status: 'pending' }], 'planned')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Play now, and what a fixture says about itself — #70
+// ---------------------------------------------------------------------------
+
+describe('matchIsUnderway', () => {
+  it('is true while a quarter is running', () => {
+    expect(matchIsUnderway(running)).toBe(true);
+  });
+
+  it('is true between quarters, with nothing running', () => {
+    // The coach who left the clock at half time still has a match on. Offering
+    // Play now here would start a second one and orphan the first.
+    expect(matchIsUnderway([{ status: 'ended' }, { status: 'pending' }])).toBe(true);
+  });
+
+  it('is false before kick-off and false at full time', () => {
+    expect(matchIsUnderway(pending)).toBe(false);
+    expect(matchIsUnderway(finished)).toBe(false);
+    expect(matchIsUnderway([])).toBe(false);
+  });
+});
+
+describe('lengthLabel', () => {
+  it('says what THIS fixture is, because length belongs to the fixture', () => {
+    expect(lengthLabel(fixture())).toBe('50 min · Quarters');
+  });
+
+  it('shows a cup game saved as halves as halves', () => {
+    const cup = { ...fixture({ competition: 'cup' }), totalMinutes: 60, quarterCount: 2 };
+    expect(lengthLabel(cup)).toBe('60 min · Halves');
   });
 });

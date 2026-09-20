@@ -58,12 +58,16 @@ import { inferUnit, unitOfRole } from './positions';
  * v3 — matches are PLURAL (#62). One saved match becomes a list of them, with
  *      the one being played named separately. This is what makes fixtures,
  *      history and season fairness possible.
+ * v4 — each match carries its own FORMAT (#70). The session's format becomes
+ *      the squad's default; the shape a match is played in belongs to the
+ *      match, because a cup game in 2-2-2 must not change next Saturday's
+ *      league default. See ADR-012.
  *
  * An OLD save is migrated, never discarded (#61). The previous code returned
  * null on any mismatch, which meant the first version bump would have silently
  * emptied a coach's squad with no backup to recover from.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * The oldest build that can safely read what this one writes.
@@ -73,8 +77,14 @@ export const SCHEMA_VERSION = 3;
  * version only adds optional fields, this stays put and older builds keep
  * working, which is the entire point of tracking it separately from
  * `SCHEMA_VERSION`.
+ *
+ * **v4 moves it.** A v3 reader knows nothing of `SavedMatch.format`, so it
+ * would play a fixture saved as 2-2-2 using the squad's DEFAULT positions and
+ * write appearances against slots the coach never picked — a child's minutes
+ * filed under the wrong unit, in a record nobody could see was wrong. That is
+ * precisely the case this number exists to refuse.
  */
-export const MIN_READER_VERSION = 3;
+export const MIN_READER_VERSION = 4;
 
 /**
  * Every top-level field this build understands.
@@ -166,6 +176,24 @@ export const MIGRATIONS: Migration[] = [
       };
     },
   },
+  {
+    from: 3,
+    to: 4,
+    describe: 'v3 \u2192 v4: each match carries the format it is played in',
+    up: (doc) => {
+      // Up to v3 there was exactly ONE format and every match used it, so
+      // attaching it to each match states what was already true. Nothing is
+      // invented: a match whose positions came from this format keeps those
+      // same position ids, which is what its appearances already reference.
+      const format = doc.format as Format | undefined;
+      const matches = (doc.matches as SavedMatch[] | undefined) ?? [];
+      return {
+        ...doc,
+        minReaderVersion: MIN_READER_VERSION,
+        matches: matches.map((m) => ({ ...m, format: m.format ?? format })),
+      };
+    },
+  },
 ];
 
 export const STORAGE_KEY = 'coaching-app/session/v1';
@@ -184,6 +212,20 @@ export interface SavedMatch {
   appearances: Appearance[];
   benchStints: BenchStint[];
   availability: [UUID, AvailabilityStatus][];
+  /**
+   * The shape this match is played in — #70, ADR-012.
+   *
+   * A snapshot, not a reference. `Match.formatId` has always said "snapshotted
+   * at creation" (Spec 01); until v4 there was only one format so nothing had
+   * to be kept. Now that Settings holds a DEFAULT shape, a stored match that
+   * read the default back would change shape under the coach the moment they
+   * changed it — and its appearances reference position ids only this snapshot
+   * still knows.
+   *
+   * Optional so a v3 document that somehow arrives unmigrated is readable
+   * rather than corrupt; callers fall back to the squad default.
+   */
+  format?: Format;
 }
 
 /** Everything worth surviving a relaunch. */
@@ -216,6 +258,7 @@ export interface SessionInput {
   squadName: string;
   squadId: UUID;
   players: Player[];
+  /** The squad's DEFAULT shape. The one a match is played in is on the match. */
   format: Format;
   totalMinutes: number;
   periodCount: number;
@@ -224,6 +267,14 @@ export interface SessionInput {
   matches?: SavedMatch[];
   /** The match being played or set up, if there is one. */
   state: MatchState | null;
+  /**
+   * The format `state` is being played in (#70).
+   *
+   * Passed alongside rather than read off the session default, because those
+   * are now two different things. Omitted, the stored match keeps whatever
+   * format it already had — so a save that forgot it cannot erase one.
+   */
+  matchFormat?: Format | null;
   now?: Date;
 }
 
@@ -240,7 +291,7 @@ export function toSavedSession(input: SessionInput): SavedSession {
     totalMinutes: input.totalMinutes,
     periodCount: input.periodCount,
     plan: input.plan,
-    matches: mergeCurrentMatch(input.matches ?? [], input.state),
+    matches: mergeCurrentMatch(input.matches ?? [], input.state, input.matchFormat ?? null),
     currentMatchId: input.state?.match.id ?? null,
   };
 }
@@ -253,8 +304,13 @@ export function toSavedSession(input: SessionInput): SavedSession {
  * planned fixture and kicks off must end up with ONE match that changed
  * status, not a planned one and an in-progress one that disagree.
  */
-function mergeCurrentMatch(existing: SavedMatch[], state: MatchState | null): SavedMatch[] {
+function mergeCurrentMatch(
+  existing: SavedMatch[],
+  state: MatchState | null,
+  matchFormat: Format | null
+): SavedMatch[] {
   if (!state) return existing;
+  const at = existing.findIndex((m) => m.match.id === state.match.id);
   const current: SavedMatch = {
     match: state.match,
     // elapsedMs zeroed: see the note at the top. The anchors are
@@ -263,8 +319,11 @@ function mergeCurrentMatch(existing: SavedMatch[], state: MatchState | null): Sa
     appearances: state.appearances,
     benchStints: state.benchStints,
     availability: [...state.playerAvailability.entries()],
+    // A caller that does not know the format must not be able to drop one that
+    // is already stored: the appearances reference position ids that only this
+    // snapshot still explains.
+    format: matchFormat ?? (at === -1 ? undefined : existing[at].format),
   };
-  const at = existing.findIndex((m) => m.match.id === state.match.id);
   if (at === -1) return [...existing, current];
   return existing.map((m, i) => (i === at ? current : m));
 }
