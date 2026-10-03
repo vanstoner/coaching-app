@@ -25,6 +25,7 @@ import {
   liveBaseline,
   removeSwap,
   setSlot,
+  swapChoices,
   updateSwap,
   type MatchPlan,
 } from './matchPlan';
@@ -339,5 +340,51 @@ describe('re-planning during play (#88 AC3)', () => {
     );
     expect(b.get('a' as UUID)).toEqual({ outfieldMs: 12 * MIN, goalkeeperMs: 0 });
     expect(b.get('k' as UUID)).toEqual({ outfieldMs: 0, goalkeeperMs: 7 * MIN });
+  });
+});
+
+describe('who a planned sub can choose (match day 4)', () => {
+  const format = makeFormat('2-3-1');
+  const players = squad(9); // 7 start, P8 and P9 on the bench
+  const ids = (ps: Player[]) => ps.map((p) => p.firstName).sort();
+  const startingPeriod = () => {
+    let plan = emptyPlan(2);
+    const labels = ['GK', 'LB', 'RB', 'LW', 'CM', 'RW', 'ST'];
+    labels.forEach((l, i) => (plan = setSlot(plan, 0, pos(format, l), players[i].id)));
+    return plan;
+  };
+
+  it('brings on only the bench, and takes off only who is on the pitch', () => {
+    const plan = addSwap(startingPeriod(), 0, 12.5 * MIN);
+    const c = swapChoices(plan.periods[0], 0, players);
+    expect(ids(c.on)).toEqual(['P8', 'P9']);
+    expect(ids(c.off)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']);
+  });
+
+  it('offers a player subbed off earlier to come back on, and not the one who replaced them', () => {
+    let plan = addSwap(startingPeriod(), 0, 12.5 * MIN);
+    plan = updateSwap(plan, 0, 0, { onId: players[7].id, offId: players[6].id, atMs: 4 * MIN });
+    plan = addSwap(plan, 0, 12.5 * MIN);
+    plan = updateSwap(plan, 0, 1, { atMs: 8 * MIN });
+    const c = swapChoices(plan.periods[0], 1, players);
+    expect(ids(c.on)).toEqual(['P7', 'P9']); // P7 came off at 4:00
+    expect(ids(c.off)).toContain('P8'); // P8 came on at 4:00
+    expect(ids(c.off)).not.toContain('P7');
+  });
+
+  it('ignores swaps later in the period, and keeps this swap\'s own picks on offer', () => {
+    let plan = addSwap(startingPeriod(), 0, 12.5 * MIN);
+    plan = updateSwap(plan, 0, 0, { onId: players[7].id, offId: players[6].id, atMs: 10 * MIN });
+    plan = addSwap(plan, 0, 12.5 * MIN);
+    plan = updateSwap(plan, 0, 1, { onId: players[8].id, offId: players[5].id, atMs: 4 * MIN });
+    // The 4:00 swap is first in time, so the 10:00 one does not apply to it.
+    const first = swapChoices(plan.periods[0], 1, players);
+    expect(ids(first.on)).toEqual(['P8', 'P9']);
+    expect(ids(first.off)).toContain('P6');
+    // The 10:00 swap sees the 4:00 one; its own picks (P8 on, P7 off) remain.
+    const second = swapChoices(plan.periods[0], 0, players);
+    expect(ids(second.on)).toEqual(['P6', 'P8']);
+    expect(ids(second.off)).toContain('P7');
+    expect(ids(second.off)).toContain('P9');
   });
 });

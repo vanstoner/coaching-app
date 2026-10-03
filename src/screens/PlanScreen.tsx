@@ -37,6 +37,7 @@ import {
   planFor,
   projectPlan,
   removeSwap,
+  swapChoices,
   setPeriodSlots,
   setSlot,
   updateSwap,
@@ -60,10 +61,13 @@ export function PlanScreen({
   players,
   plan: stored,
   live,
+  squadName,
   onChange,
   onBack,
 }: {
   match: Match;
+  /** Our team's name, so the header reads "Us v Them" as the clock does. */
+  squadName: string;
   /** The shape THIS match is played in (ADR-012), not the squad default. */
   format: Format;
   players: Player[];
@@ -116,10 +120,17 @@ export function PlanScreen({
     setPitchPick(null);
   };
 
+  // A sub only offers who can come on or go off at that moment; a starting
+  // slot offers the whole squad (match day 4).
+  const choices =
+    picking && picking.kind !== 'slot'
+      ? swapChoices(period, picking.swapIndex, players)[picking.kind]
+      : players;
+
   const picker = (
     <View style={local.picker}>
       <ChipRow>
-        {players.map((p) => (
+        {choices.map((p) => (
           <Chip key={p.id} label={p.firstName} selected={false} onPress={() => pick(p.id)} />
         ))}
         <Chip label="Nobody" selected={false} onPress={() => pick(null)} />
@@ -134,7 +145,7 @@ export function PlanScreen({
           Plan
         </Text>
         <Text style={screen.caption} numberOfLines={1}>
-          v {opponentLabel(match)}
+          {squadName} v {opponentLabel(match)}
         </Text>
 
         <ChipRow>

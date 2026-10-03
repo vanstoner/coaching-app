@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import { makeFormat } from './shapes';
-import { PILL_WIDTH_FRACTION, dropTargetAt, slotSpots } from './pitchLayout';
+import { PILL_WIDTH_FRACTION, dropTargetAt, pillDetail, slotSpots } from './pitchLayout';
 
 describe('the pitch layout (#83 AC1)', () => {
   it('draws 2-3-1 attacking upwards, left on the left', () => {
@@ -68,5 +68,17 @@ describe('pills do not touch (#89 AC3)', () => {
         }
       }
     }
+  });
+});
+
+describe('the time under a pill (match day 4)', () => {
+  const m = { outfieldMs: 0, goalkeeperMs: 12 * 60_000 + 30_000 };
+  it('shows the keeper their time in goal, not 00:00 outfield', () => {
+    expect(pillDetail(m, true)).toBe('GK 12:30');
+  });
+  it('shows everyone else their outfield time', () => {
+    expect(pillDetail({ outfieldMs: 5 * 60_000, goalkeeperMs: 60_000 }, false)).toBe('05:00');
+    expect(pillDetail(undefined, false)).toBe('00:00');
+    expect(pillDetail(undefined, true)).toBe('GK 00:00');
   });
 });

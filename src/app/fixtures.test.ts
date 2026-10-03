@@ -16,6 +16,7 @@ import {
   kickoffLabel,
   lengthLabel,
   matchIsUnderway,
+  matchProgress,
   opponentLabel,
 } from './fixtures';
 
@@ -294,8 +295,9 @@ describe('archiving — #76', () => {
     // The defect: it sat under "Played" with no Remove, though nothing was
     // recorded for it. The rule never depended on the date; the screen did.
     const past = fixture({ kickoffAt: '2026-01-01T10:00:00Z', status: 'planned' });
-    expect(bucketOf(past, new Date('2026-10-03T12:00:00Z'))).toBe('past');
     expect(canDeleteFixture(pending, past.status)).toBe(true);
+    // And since match day 4 it is not filed under "Played" at all.
+    expect(bucketOf(past, new Date('2026-10-03T12:00:00Z'), 'not_started')).toBe('future');
   });
 
   it('AC2: a finished match can be archived; a live or unplayed one cannot', () => {
@@ -310,5 +312,42 @@ describe('archiving — #76', () => {
     const stored = [{ id: 'a' }, { id: 'b', archived: true }, { id: 'c', archived: false }];
     expect(listedFixtures(stored, false).map((m) => m.id)).toEqual(['a', 'c']);
     expect(listedFixtures(stored, true).map((m) => m.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('a fixture never kicked off is never "Played" (match day 4)', () => {
+  it('stays Coming up after its kick-off time has passed', () => {
+    const missed = fixture({ kickoffAt: '2026-09-12T10:00:00Z' });
+    expect(bucketOf(missed, NOW, 'not_started')).toBe('future');
+  });
+
+  it('files a finished match as Played and one under way as Now, whatever the date', () => {
+    const tomorrow = fixture({ kickoffAt: '2026-09-20T10:00:00Z' });
+    expect(bucketOf(tomorrow, NOW, 'finished')).toBe('past');
+    expect(bucketOf(fixture({ kickoffAt: null }), NOW, 'finished')).toBe('past');
+    expect(bucketOf(tomorrow, NOW, 'underway')).toBe('current');
+  });
+
+  it('reads progress from the periods', () => {
+    expect(matchProgress([])).toBe('not_started');
+    expect(matchProgress(pending)).toBe('not_started');
+    expect(matchProgress(running)).toBe('underway');
+    expect(matchProgress(finished)).toBe('finished');
+  });
+
+  it('sorts the not-yet-played fixture into Coming up in the list', () => {
+    const missed = fixture({ kickoffAt: '2026-09-12T10:00:00Z', opponent: 'missed' });
+    const played = fixture({ kickoffAt: '2026-09-05T10:00:00Z', opponent: 'played' });
+    const rows = fixtureList(
+      [missed, played],
+      NOW,
+      null,
+      new Map([
+        [missed.id, 'not_started' as const],
+        [played.id, 'finished' as const],
+      ])
+    );
+    expect(inBucket(rows, 'future').map((r) => r.match.opponent)).toEqual(['missed']);
+    expect(inBucket(rows, 'past').map((r) => r.match.opponent)).toEqual(['played']);
   });
 });

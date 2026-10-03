@@ -354,7 +354,7 @@ export function toSavedSession(input: SessionInput): SavedSession {
  * planned fixture and kicks off must end up with ONE match that changed
  * status, not a planned one and an in-progress one that disagree.
  */
-function mergeCurrentMatch(
+export function mergeCurrentMatch(
   existing: SavedMatch[],
   state: MatchState | null,
   matchFormat: Format | null
