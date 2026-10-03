@@ -61,6 +61,7 @@ export function ClockScreen({
   onEndQuarter,
   onFinish,
   onLeave,
+  onPlanRest,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -79,6 +80,8 @@ export function ClockScreen({
   onEndQuarter: () => void;
   onFinish: () => void;
   onLeave: () => void;
+  /** Re-plan the periods still to come (#88). The clock keeps running. */
+  onPlanRest?: () => void;
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -345,6 +348,11 @@ export function ClockScreen({
           </>
         )}
 
+        {onPlanRest && !view.isMatchOver && (
+          <Pressable onPress={onPlanRest} style={screen.linkHit}>
+            <Text style={screen.link}>Plan the rest of the match</Text>
+          </Pressable>
+        )}
         <Pressable onPress={onLeave} style={screen.linkHit}>
           <Text style={screen.link}>
             {view.isMatchOver ? 'Leave — go to Home' : 'Leave — the match keeps running'}

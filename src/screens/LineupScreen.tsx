@@ -85,6 +85,7 @@ export function LineupScreen({
   planned,
   onStart,
   onLeave,
+  onPlanRest,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -97,6 +98,8 @@ export function LineupScreen({
   onStart: (sheet: Sheet, plan: PlannedSub[]) => void;
   /** Back to Home. Does not kick off and does not end anything. */
   onLeave: () => void;
+  /** Re-plan the periods still to come (#88). The clock keeps running. */
+  onPlanRest?: () => void;
 }) {
   const quarter = currentQuarter(state);
   const minutes = useMemo(
@@ -394,6 +397,11 @@ export function LineupScreen({
           >
             <Text style={screen.link}>Use suggestion</Text>
           </Pressable>
+          {onPlanRest && (
+            <Pressable onPress={onPlanRest} style={screen.linkHit}>
+              <Text style={screen.link}>Plan</Text>
+            </Pressable>
+          )}
           {/* Always. Between periods too: the match stays exactly as it is. */}
           <Pressable onPress={onLeave} style={screen.linkHit}>
             <Text style={screen.link}>Leave</Text>

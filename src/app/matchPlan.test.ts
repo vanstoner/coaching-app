@@ -22,6 +22,7 @@ import {
   planFor,
   planHasContent,
   projectPlan,
+  liveBaseline,
   removeSwap,
   setSlot,
   updateSwap,
@@ -296,5 +297,47 @@ describe('editing a plan', () => {
       periodIndex: 0,
       message: 'A removed player is in two positions.',
     });
+  });
+});
+
+describe('re-planning during play (#88 AC3)', () => {
+  it('adds the plan for periods to come onto what has actually been played', () => {
+    const { plan, format, players } = matchDay4();
+    const [P1, P2, , , , , , P8] = players.map((p) => p.id);
+    // Half 1 has actually been played, but not as planned: P2 played 25:00.
+    const baseline = liveBaseline(
+      [
+        { playerId: P2, outfieldMs: 25 * MIN, goalkeeperMs: 0 },
+        { playerId: P1, outfieldMs: 0, goalkeeperMs: 25 * MIN },
+      ],
+      [],
+      0
+    );
+    const p = projectPlan(plan, format, 50, 2, players, { fromPeriod: 1, baseline });
+    const row = (id: UUID) => p.rows.find((r) => r.playerId === id)!;
+    // P2 = 25:00 actual + 12:30 planned in half 2.
+    expect(row(P2).outfieldMs).toBe(37.5 * MIN);
+    // P8's planned half-1 minutes are history and do not count; half 2 does.
+    expect(row(P8).outfieldMs).toBe(12.5 * MIN);
+    expect(row(P1).goalkeeperMs).toBe(50 * MIN);
+  });
+
+  it('ignores problems in periods already played', () => {
+    const { format, players } = matchDay4();
+    const p = projectPlan(emptyPlan(2), format, 50, 2, players, { fromPeriod: 1, baseline: new Map() });
+    expect(p.problems.every((x) => x.periodIndex === 1)).toBe(true);
+  });
+
+  it('counts the rest of the period in progress for the players on now', () => {
+    const b = liveBaseline(
+      [{ playerId: 'a' as UUID, outfieldMs: 5 * MIN, goalkeeperMs: 0 }],
+      [
+        { playerId: 'a' as UUID, positionKind: 'outfield' },
+        { playerId: 'k' as UUID, positionKind: 'goalkeeper' },
+      ],
+      7 * MIN
+    );
+    expect(b.get('a' as UUID)).toEqual({ outfieldMs: 12 * MIN, goalkeeperMs: 0 });
+    expect(b.get('k' as UUID)).toEqual({ outfieldMs: 0, goalkeeperMs: 7 * MIN });
   });
 });
