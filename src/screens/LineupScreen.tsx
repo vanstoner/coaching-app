@@ -55,6 +55,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import type { Format, Player, UUID } from '../types/index';
 import { currentQuarter, formatClock, periodNoun } from '../app/matchClock';
+import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes, type PlayerMinutes } from '../app/playerMinutes';
 import { suggestLineup } from '../app/lineup';
@@ -250,7 +251,7 @@ export function LineupScreen({
             sheet={sheet}
             bench={players.map((p) => p.id).filter((id) => !selected.has(id))}
             nameOf={(id) => nameOf.get(id) ?? ''}
-            detailOf={(id) => formatClock(byId.get(id)?.outfieldMs ?? 0)}
+            detailOf={(id) => pillDetail(byId.get(id), id === goalkeeper)}
             selected={pitchPick}
             onSelect={setPitchPick}
             onDragging={setDragging}

@@ -852,6 +852,7 @@ export default function App() {
           // The shape THIS fixture is played in (ADR-012).
           format={planning.format ?? format}
           players={squad}
+          squadName={squadName}
           plan={planning.plan}
           onChange={(plan) => savePlan(planning.match.id, plan)}
           onBack={() => setStep(planReturn)}

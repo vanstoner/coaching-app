@@ -36,6 +36,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import type { Format, MatchEvent, Player, UUID } from '../types/index';
 import { currentQuarter, deriveClockView, formatClock, periodNoun } from '../app/matchClock';
+import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
 import { dueSubs, msUntilNextSub, whoComesOff, type PlannedSub } from '../app/subPlan';
@@ -239,7 +240,7 @@ export function ClockScreen({
               sheet={sheet}
               bench={bench}
               nameOf={nameOf}
-              detailOf={(id) => formatClock(minutesOf.get(id)?.outfieldMs ?? 0)}
+              detailOf={(id) => pillDetail(minutesOf.get(id), id === keeper)}
               selected={selected}
               onSelect={setSelected}
               onTapPlayer={(id) => setSheetFor(id)}

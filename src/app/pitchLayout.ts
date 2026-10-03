@@ -10,6 +10,7 @@
  */
 
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
+import { formatClock } from './matchClock';
 
 /** Row heights as a fraction of the pitch, by unit. */
 const ROW_Y: Record<PositionUnit, number> = { ATT: 0.14, MID: 0.4, DEF: 0.65, GK: 0.88 };
@@ -110,4 +111,18 @@ export function dropTargetAt(
     if (d <= reach && (!best || d < best.d)) best = { id: s.positionId, d };
   }
   return best ? { kind: 'slot', positionId: best.id } : null;
+}
+
+/**
+ * The time under a pill on the pitch. A player in goal shows their time in
+ * goal; everyone else shows outfield time (PO, match day 4: the keeper's pill
+ * read 00:00, which was their outfield time, not the time they had played).
+ */
+export function pillDetail(
+  minutes: { outfieldMs: number; goalkeeperMs: number } | undefined,
+  inGoal: boolean
+): string {
+  return inGoal
+    ? `GK ${formatClock(minutes?.goalkeeperMs ?? 0)}`
+    : formatClock(minutes?.outfieldMs ?? 0);
 }

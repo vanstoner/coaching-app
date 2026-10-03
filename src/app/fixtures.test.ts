@@ -294,8 +294,9 @@ describe('archiving — #76', () => {
     // The defect: it sat under "Played" with no Remove, though nothing was
     // recorded for it. The rule never depended on the date; the screen did.
     const past = fixture({ kickoffAt: '2026-01-01T10:00:00Z', status: 'planned' });
-    expect(bucketOf(past, new Date('2026-10-03T12:00:00Z'))).toBe('past');
     expect(canDeleteFixture(pending, past.status)).toBe(true);
+    // And since match day 4 it is not filed under "Played" at all.
+    expect(bucketOf(past, new Date('2026-10-03T12:00:00Z'), true)).toBe('future');
   });
 
   it('AC2: a finished match can be archived; a live or unplayed one cannot', () => {
@@ -310,5 +311,25 @@ describe('archiving — #76', () => {
     const stored = [{ id: 'a' }, { id: 'b', archived: true }, { id: 'c', archived: false }];
     expect(listedFixtures(stored, false).map((m) => m.id)).toEqual(['a', 'c']);
     expect(listedFixtures(stored, true).map((m) => m.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('a fixture never kicked off is never "Played" (match day 4)', () => {
+  it('stays Coming up after its kick-off time has passed', () => {
+    const missed = fixture({ kickoffAt: '2026-09-12T10:00:00Z' });
+    expect(bucketOf(missed, NOW, true)).toBe('future');
+  });
+
+  it('still files a kicked-off match by its date', () => {
+    const played = fixture({ kickoffAt: '2026-09-12T10:00:00Z' });
+    expect(bucketOf(played, NOW, false)).toBe('past');
+  });
+
+  it('sorts the not-yet-played fixture into Coming up in the list', () => {
+    const missed = fixture({ kickoffAt: '2026-09-12T10:00:00Z', opponent: 'missed' });
+    const played = fixture({ kickoffAt: '2026-09-05T10:00:00Z', opponent: 'played' });
+    const rows = fixtureList([missed, played], NOW, null, new Set([missed.id]));
+    expect(inBucket(rows, 'future').map((r) => r.match.opponent)).toEqual(['missed']);
+    expect(inBucket(rows, 'past').map((r) => r.match.opponent)).toEqual(['played']);
   });
 });

@@ -77,10 +77,14 @@ export function opponentLabel(match: Match): string {
  * Only a planned match is placed by time, and only then does "no kick-off yet"
  * matter: a fixture with no date is still something to come, so it is future.
  */
-export function bucketOf(match: Match, now: Date): FixtureBucket {
+export function bucketOf(match: Match, now: Date, neverKickedOff = false): FixtureBucket {
   const status: MatchStatus = match.status;
   if (status === 'in_progress') return 'current';
   if (status === 'completed' || status === 'abandoned') return 'past';
+  // A fixture nobody has kicked off has not been played, whatever the date
+  // says (PO, match day 4: "it says it's played but doesn't seem to have a
+  // result"). It stays something to come until it is started or deleted.
+  if (neverKickedOff) return 'future';
 
   if (!match.kickoffAt) return 'future';
   const kickoff = Date.parse(match.kickoffAt);
@@ -99,11 +103,13 @@ export function bucketOf(match: Match, now: Date): FixtureBucket {
 export function fixtureList(
   matches: Match[],
   now: Date,
-  currentMatchId: UUID | null = null
+  currentMatchId: UUID | null = null,
+  /** Fixtures never kicked off: never filed under Played, whatever their date. */
+  neverKickedOff: ReadonlySet<UUID> = new Set()
 ): FixtureRow[] {
   const rows = matches.map((match) => ({
     match,
-    bucket: bucketOf(match, now),
+    bucket: bucketOf(match, now, neverKickedOff.has(match.id)),
     isCurrent: match.id === currentMatchId,
   }));
 

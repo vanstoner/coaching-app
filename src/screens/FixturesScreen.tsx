@@ -71,7 +71,7 @@ export function FixturesScreen({
   onPlayNow: (() => void) | null;
   buildLabel: string;
 }) {
-  const rows = fixtureList(matches, now, currentMatchId);
+  const rows = fixtureList(matches, now, currentMatchId, housekeeping.deletable);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
@@ -92,9 +92,9 @@ export function FixturesScreen({
           <>
             <Section title="Now" rows={current} {...cardProps} />
             <Section title="Coming up" rows={future} {...cardProps} />
-            {/* A fixture whose kick-off time has passed but which was never
-                started sits here, and can still be planned, played or
-                deleted (#76). */}
+            {/* Only matches that were kicked off. One never started stays in
+                Coming up whatever its date, and can still be planned, played
+                or deleted (#76, match day 4). */}
             <Section title="Played" rows={past} {...cardProps} />
           </>
         )}

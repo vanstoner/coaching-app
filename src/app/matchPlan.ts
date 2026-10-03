@@ -148,6 +148,45 @@ export function nudgeSwap(
   return updateSwap(plan, periodIndex, swapIndex, { atMs });
 }
 
+/**
+ * Who a planned sub can bring on, and who it can take off (PO, match day 4:
+ * "only allow selection from off-field players or earlier subbed players").
+ *
+ * Walks the period up to this swap, in the same order the projection does
+ * (time, then entry order): the starters, then each EARLIER complete swap.
+ * Coming on: anyone not on the pitch at that moment, so the bench and anyone
+ * subbed off earlier. Going off: anyone on the pitch at that moment. This
+ * swap's own current picks stay offered, so a choice can be re-made.
+ */
+export function swapChoices(
+  period: PlannedPeriod,
+  swapIndex: number,
+  players: Player[]
+): { on: Player[]; off: Player[] } {
+  const target = period.subs[swapIndex];
+  if (!target) return { on: [], off: [] };
+  const onPitch = new Set<UUID>();
+  for (const who of Object.values(period.slots)) if (who !== null) onPitch.add(who);
+  const earlier = period.subs
+    .map((swap, order) => ({ swap, order }))
+    .filter(
+      ({ swap, order }) =>
+        order !== swapIndex &&
+        (swap.atMs < target.atMs || (swap.atMs === target.atMs && order < swapIndex))
+    )
+    .sort((a, b) => a.swap.atMs - b.swap.atMs || a.order - b.order);
+  for (const { swap } of earlier) {
+    if (swap.onId === null || swap.offId === null) continue;
+    if (!onPitch.has(swap.offId) || onPitch.has(swap.onId)) continue;
+    onPitch.delete(swap.offId);
+    onPitch.add(swap.onId);
+  }
+  return {
+    on: players.filter((p) => !onPitch.has(p.id) || p.id === target.onId),
+    off: players.filter((p) => onPitch.has(p.id) || p.id === target.offId),
+  };
+}
+
 export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: number): MatchPlan {
   return withPeriod(plan, periodIndex, (period) => ({
     ...period,
