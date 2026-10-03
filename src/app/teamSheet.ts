@@ -110,3 +110,84 @@ export function toTeamSheet(sheet: Sheet): Map<UUID, UUID> {
   for (const [pos, who] of Object.entries(sheet)) if (who !== null) map.set(pos as UUID, who);
   return map;
 }
+
+// ---------------------------------------------------------------------------
+// During play — #83 AC4, #82
+// ---------------------------------------------------------------------------
+
+/** Who is in which position right now, from the open stints of a period. */
+export function liveSheet(
+  appearances: { quarterId: UUID; playerId: UUID; positionId: UUID; endElapsedMs: number | null }[],
+  quarterId: UUID
+): Sheet {
+  const sheet: Sheet = {};
+  for (const a of appearances) {
+    if (a.quarterId === quarterId && a.endElapsedMs === null) sheet[a.positionId] = a.playerId;
+  }
+  return sheet;
+}
+
+/** What a move during play means for the engine, or null when it means nothing. */
+export type LiveMove =
+  | { kind: 'swap'; a: UUID; b: UUID }
+  | { kind: 'sub'; out: UUID; in: UUID };
+
+/**
+ * Turn a drop (or a tap-tap) during play into an engine command.
+ *
+ * - on the pitch, onto another position: the two swap positions;
+ * - from the bench, onto a position: a substitution for whoever is there;
+ * - on the pitch, onto a bench player: a substitution the other way;
+ * - onto the bench itself, or onto yourself: nothing. A position cannot be
+ *   left empty while the clock runs, so taking a player off needs someone to
+ *   come on.
+ */
+export function liveMove(
+  sheet: Sheet,
+  playerId: UUID,
+  target: { kind: 'slot'; positionId: UUID } | { kind: 'player'; playerId: UUID } | { kind: 'bench' }
+): LiveMove | null {
+  const on = (id: UUID) => Object.values(sheet).includes(id);
+  if (target.kind === 'bench') return null;
+  if (target.kind === 'slot') {
+    const there = sheet[target.positionId] ?? null;
+    if (!there || there === playerId) return null;
+    return on(playerId) ? { kind: 'swap', a: playerId, b: there } : { kind: 'sub', out: there, in: playerId };
+  }
+  const other = target.playerId;
+  if (other === playerId) return null;
+  if (on(playerId) && !on(other)) return { kind: 'sub', out: playerId, in: other };
+  if (!on(playerId) && on(other)) return { kind: 'sub', out: other, in: playerId };
+  if (on(playerId) && on(other)) return { kind: 'swap', a: playerId, b: other };
+  return null;
+}
+
+/** The move that puts a live move back (the 10-second Undo, #83). */
+export function reverseOf(move: LiveMove): LiveMove {
+  return move.kind === 'swap' ? move : { kind: 'sub', out: move.in, in: move.out };
+}
+
+/**
+ * A move before kick-off (#83 AC5): it edits the sheet and records nothing.
+ *
+ * - onto a position: that player goes there (swapping with a player already
+ *   on, or sending the occupant to the bench);
+ * - a player on the pitch onto a bench player: the bench player takes their
+ *   place;
+ * - onto the bench: that player comes off, leaving the position empty.
+ */
+export function editSheet(
+  sheet: Sheet,
+  playerId: UUID,
+  target: { kind: 'slot'; positionId: UUID } | { kind: 'player'; playerId: UUID } | { kind: 'bench' }
+): Sheet {
+  if (target.kind === 'slot') return placeInSlot(sheet, target.positionId, playerId);
+  if (target.kind === 'bench') return removeFromSheet(sheet, playerId);
+  const slotOf = (id: UUID) => (Object.keys(sheet) as UUID[]).find((p) => sheet[p] === id);
+  const mine = slotOf(playerId);
+  const theirs = slotOf(target.playerId);
+  if (mine && !theirs) return placeInSlot(sheet, mine, target.playerId);
+  if (!mine && theirs) return placeInSlot(sheet, theirs, playerId);
+  if (mine && theirs) return placeInSlot(sheet, theirs, playerId);
+  return sheet;
+}

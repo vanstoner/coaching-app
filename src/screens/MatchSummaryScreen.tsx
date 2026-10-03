@@ -28,6 +28,7 @@ import { foldPlayerMinutes } from '../app/playerMinutes';
 import { formatClock } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
+import { scoreOf, talliesOf } from '../app/matchEvents';
 import { colours, screen } from './theme';
 
 export function MatchSummaryScreen({
@@ -60,6 +61,13 @@ export function MatchSummaryScreen({
   const played = rows.filter((r) => r.totalMs > 0);
   const missed = rows.filter((r) => r.totalMs === 0);
   const competition = competitionLabel(state.match.competition);
+  // Folded from the events, never stored (#84 AC3).
+  const score = scoreOf(state.events);
+  const tallies = talliesOf(state.events);
+  const nameOf = (id: string) => {
+    const p = players.find((x) => x.id === id);
+    return p ? displayName(p) : 'Unknown';
+  };
 
   return (
     <View style={screen.flex}>
@@ -112,11 +120,22 @@ export function MatchSummaryScreen({
           </>
         )}
 
-        {/* Said plainly rather than left as a blank space a coach has to
-            interpret. Goals, assists, tackles and saves are #6. */}
-        <Text style={screen.hint}>
-          Goals and other events are not recorded yet, so there is no score here.
+        {/* #84 AC6. Assists, tackles and fouls are still #6. */}
+        <Text style={screen.fieldLabel}>Score</Text>
+        <Text style={local.score}>
+          {score.us} – {score.them}
         </Text>
+        {tallies.map((t) => (
+          <Text key={t.playerId} style={local.tally} numberOfLines={1}>
+            {nameOf(t.playerId)}
+            {t.goals > 0 ? ` · ${t.goals} ${t.goals === 1 ? 'goal' : 'goals'}` : ''}
+            {t.saves > 0 ? ` · ${t.saves} ${t.saves === 1 ? 'save' : 'saves'}` : ''}
+            {t.conceded > 0 ? ` · ${t.conceded} conceded` : ''}
+          </Text>
+        ))}
+        {tallies.length === 0 && (
+          <Text style={screen.hint}>No goals or saves were recorded for this match.</Text>
+        )}
 
         <Pressable
           style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
@@ -130,6 +149,15 @@ export function MatchSummaryScreen({
 }
 
 const local = StyleSheet.create({
+  score: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    color: colours.ink,
+    fontSize: 34,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  tally: { alignSelf: 'stretch', color: colours.ink, fontSize: 15, paddingVertical: 4, includeFontPadding: false },
   head: { flexDirection: 'row', alignSelf: 'stretch', paddingBottom: 4 },
   headText: { color: colours.inkFaint, fontSize: 12 },
   row: {

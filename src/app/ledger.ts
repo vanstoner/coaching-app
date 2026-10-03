@@ -33,6 +33,8 @@
 
 import type {
   Appearance,
+  MatchEvent,
+  MatchEventKind,
   Competition,
   MatchStatus,
   Player,
@@ -68,6 +70,23 @@ export interface LedgerMatch {
   periodCount: number;
   status: MatchStatus;
   intervals: LedgerInterval[];
+  /**
+   * Goals, saves, goals conceded and withdrawals (#84, PO ruling 13).
+   * Optional and additive: a v1 ledger without it is still a v1 ledger.
+   */
+  events?: LedgerEvent[];
+}
+
+/** One entry on a match's time stream, as the ledger keeps it. */
+export interface LedgerEvent {
+  /** The MatchEvent id: what makes recording and import idempotent. */
+  id: UUID;
+  kind: MatchEventKind;
+  playerId: UUID | null;
+  period: number;
+  atMs: number;
+  refersTo: UUID | null;
+  note: string | null;
 }
 
 export interface LedgerPlayer {
@@ -119,7 +138,34 @@ export interface MatchRecord {
   };
   quarters: { id: UUID; index: number }[];
   appearances: Appearance[];
+  events?: MatchEvent[];
 }
+
+function ledgerEvents(record: MatchRecord): LedgerEvent[] {
+  const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
+  return (record.events ?? []).map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    playerId: e.playerId,
+    period: periodOf.get(e.quarterId) ?? 0,
+    atMs: e.atElapsedMs,
+    refersTo: e.refersTo,
+    note: e.note,
+  }));
+}
+
+function sameEvent(a: LedgerEvent, b: LedgerEvent): boolean {
+  return (
+    a.kind === b.kind &&
+    a.playerId === b.playerId &&
+    a.period === b.period &&
+    a.atMs === b.atMs &&
+    a.refersTo === b.refersTo &&
+    a.note === b.note
+  );
+}
+
+const byTime = (a: LedgerEvent, b: LedgerEvent) => a.atMs - b.atMs || a.id.localeCompare(b.id);
 
 /** Closed appearances only: a running one has no end yet (#75 design). */
 function closedIntervals(record: MatchRecord): LedgerInterval[] {
@@ -185,10 +231,16 @@ export function recordMatches(
   const matches = new Map(ledger.matches.map((m) => [m.id, m]));
   for (const record of records) {
     const fresh = closedIntervals(record);
-    if (fresh.length === 0) continue; // nothing played yet: nothing to keep
+    const freshEvents = ledgerEvents(record);
+    // Nothing played and nothing recorded yet: nothing to keep.
+    if (fresh.length === 0 && freshEvents.length === 0) continue;
     const existing = matches.get(record.match.id);
     const intervals = new Map((existing?.intervals ?? []).map((i) => [i.id, i]));
     for (const i of fresh) intervals.set(i.id, i);
+    // Events are append-only, so this phone's copy of one never changes;
+    // the union by id is the whole rule.
+    const events = new Map((existing?.events ?? []).map((e) => [e.id, e]));
+    for (const e of freshEvents) events.set(e.id, e);
     matches.set(record.match.id, {
       id: record.match.id,
       kickoffAt: record.match.kickoffAt,
@@ -200,6 +252,7 @@ export function recordMatches(
       intervals: [...intervals.values()].sort(
         (a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id)
       ),
+      ...(events.size > 0 ? { events: [...events.values()].sort(byTime) } : {}),
     });
   }
 
@@ -245,6 +298,27 @@ export type ParseResult =
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const EVENT_KINDS: readonly string[] = ['goal', 'save', 'conceded', 'withdrawn'];
+
+/** Readable events only; an unknown kind from a later version is skipped. */
+function parseEvents(raw: unknown[]): LedgerEvent[] {
+  const out: LedgerEvent[] = [];
+  for (const e of raw) {
+    if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string') continue;
+    if (!EVENT_KINDS.includes(e.kind) || typeof e.atMs !== 'number') continue;
+    out.push({
+      id: e.id as UUID,
+      kind: e.kind as MatchEventKind,
+      playerId: typeof e.playerId === 'string' ? (e.playerId as UUID) : null,
+      period: typeof e.period === 'number' ? e.period : 0,
+      atMs: e.atMs,
+      refersTo: typeof e.refersTo === 'string' ? (e.refersTo as UUID) : null,
+      note: typeof e.note === 'string' ? e.note : null,
+    });
+  }
+  return out;
+}
 
 /**
  * Read a ledger file. Unknown fields are ignored; a missing required one, or a
@@ -320,6 +394,7 @@ export function parseLedger(text: string): ParseResult {
       periodCount: typeof m.periodCount === 'number' ? m.periodCount : 0,
       status: typeof m.status === 'string' ? (m.status as MatchStatus) : 'completed',
       intervals,
+      ...(Array.isArray(m.events) ? { events: parseEvents(m.events) } : {}),
     });
   }
 
@@ -403,6 +478,21 @@ export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport 
     }
     const intervals = new Map(mine.intervals.map((i) => [i.id, i]));
     let changed = false;
+    const events = new Map((mine.events ?? []).map((e) => [e.id, e]));
+    for (const e of m.events ?? []) {
+      const have = events.get(e.id);
+      if (!have) {
+        events.set(e.id, e);
+        addedIntervals++;
+        changed = true;
+      } else if (sameEvent(have, e)) {
+        skipped++;
+      } else {
+        conflicts.push(
+          `A goal or save in the match against ${mine.opponent ?? 'an unnamed opponent'} differs from the file; kept this phone's.`
+        );
+      }
+    }
     for (const i of m.intervals) {
       const have = intervals.get(i.id);
       if (!have) {
@@ -423,6 +513,7 @@ export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport 
         intervals: [...intervals.values()].sort(
           (a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id)
         ),
+        ...(events.size > 0 ? { events: [...events.values()].sort(byTime) } : {}),
       });
     }
   }
@@ -458,11 +549,30 @@ export interface SeasonRow {
   outfieldMs: number;
   goalkeeperMs: number;
   retired: boolean;
+  /** Time per unit (#83 AC6): GK, DEF, MID, FWD. Unknown-unit time is left out. */
+  byUnit: Record<'GK' | 'DEF' | 'MID' | 'ATT', number>;
 }
+
+/** What the coach calls each unit. The stored code stays ATT; the screen says FWD. */
+export const UNIT_LABEL: Record<'GK' | 'DEF' | 'MID' | 'ATT', string> = {
+  GK: 'GK',
+  DEF: 'DEF',
+  MID: 'MID',
+  ATT: 'FWD',
+};
 
 /** Season minutes per player, from the ledger alone (AC6). Most outfield first. */
 export function seasonRows(ledger: Ledger): SeasonRow[] {
   const names = new Map(ledger.players.map((p) => [p.id, p]));
+  const units = new Map<UUID, Record<'GK' | 'DEF' | 'MID' | 'ATT', number>>();
+  for (const m of ledger.matches) {
+    for (const i of m.intervals) {
+      if (!i.unit) continue;
+      const row = units.get(i.playerId) ?? { GK: 0, DEF: 0, MID: 0, ATT: 0 };
+      row[i.unit] += Math.max(0, i.endMs - i.startMs);
+      units.set(i.playerId, row);
+    }
+  }
   return foldLedger(ledger)
     .map((t) => {
       const p = names.get(t.playerId);
@@ -472,6 +582,7 @@ export function seasonRows(ledger: Ledger): SeasonRow[] {
         outfieldMs: t.outfieldMs,
         goalkeeperMs: t.goalkeeperMs,
         retired: p ? !p.active : false,
+        byUnit: units.get(t.playerId) ?? { GK: 0, DEF: 0, MID: 0, ATT: 0 },
       };
     })
     .sort((a, b) => b.outfieldMs - a.outfieldMs || a.name.localeCompare(b.name));

@@ -198,6 +198,9 @@ describe('season minutes and import messages', () => {
     expect(rows[0].outfieldMs).toBe(25 * MIN);
     expect(rows.find((x) => x.playerId === 'p8')).toMatchObject({ name: 'Player8', retired: true });
     expect(rows.find((x) => x.playerId === 'p1')!.goalkeeperMs).toBe(25 * MIN);
+    // #83 AC6: time per unit, from the unit on every interval.
+    expect(rows.find((x) => x.playerId === 'p4')!.byUnit).toEqual({ GK: 0, DEF: 0, MID: 25 * MIN, ATT: 0 });
+    expect(rows.find((x) => x.playerId === 'p7')!.byUnit.ATT).toBe(7.5 * MIN);
   });
 
   it('says plainly what an import did', () => {
@@ -206,5 +209,35 @@ describe('season minutes and import messages', () => {
     expect(
       describeMerge({ ...none, addedMatches: 2, addedIntervals: 30, addedPlayers: 1, conflicts: ['x'] })
     ).toBe("Added 2 matches and 1 player. 1 entry differs from this phone; this phone's was kept.");
+  });
+});
+
+describe('events in the ledger (#84 AC7, PO ruling 13)', () => {
+  it('keeps goals and withdrawals, through a file and an import, idempotently', () => {
+    const { engine, state, players, squadId, ids, advance, format, sheet } = playedMatch();
+    engine.startQuarter(state, state.quarters[1], sheet, format);
+    advance(MIN);
+    const goal = engine.recordEvent(state, state.quarters[1], 'goal', ids[3]);
+    engine.withdrawEvent(state, goal.id, 'wrong scorer');
+    engine.recordEvent(state, state.quarters[1], 'goal', ids[4]);
+
+    const ledger = recordMatches(emptyLedger(squadId, ''), [state], players, '', NOW);
+    expect(ledger.matches[0].events).toHaveLength(3);
+    expect(ledger.matches[0].events!.every((e) => e.period === 2)).toBe(true);
+
+    const file = parseLedger(serialiseLedger(ledger));
+    if (!file.ok) throw new Error(file.reason);
+    expect(file.ledger.matches[0].events).toEqual(ledger.matches[0].events);
+
+    const fresh = mergeLedger(emptyLedger(uuid(), ''), file.ledger, NOW);
+    expect(fresh.ledger.matches[0].events).toHaveLength(3);
+    const twice = mergeLedger(fresh.ledger, file.ledger, NOW);
+    expect(twice.addedIntervals).toBe(0);
+    expect(twice.conflicts).toEqual([]);
+  });
+
+  it('a v1 file with no events still loads (the field is optional)', () => {
+    const r = parseLedger(readFileSync(join(__dirname, 'fixtures', 'ledger-v1.json'), 'utf-8'));
+    expect(r.ok && r.ledger.matches[0].events).toBeUndefined();
   });
 });

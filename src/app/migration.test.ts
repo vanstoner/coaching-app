@@ -74,6 +74,7 @@ describe('a v1 save written by the released app', () => {
       'v2 → v3: matches become plural',
       'v3 → v4: each match carries the format it is played in',
       'v4 → v5: a match may carry a plan',
+      'v5 → v6: a match may carry events',
     ]);
   });
 

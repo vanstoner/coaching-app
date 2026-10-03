@@ -12,7 +12,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatClock } from '../app/matchClock';
-import { seasonRows, type Ledger } from '../app/ledger';
+import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
 import { colours, screen } from './theme';
 
 export function MinutesSection({
@@ -51,10 +51,19 @@ export function MinutesSection({
       )}
       {rows.map((row) => (
         <View key={row.playerId} style={local.row}>
-          <Text style={[local.name, row.retired && local.faint]} numberOfLines={1}>
-            {row.name}
-            {row.retired ? ' (removed)' : ''}
-          </Text>
+          <View style={local.nameCol}>
+            <Text style={[local.name, row.retired && local.faint]} numberOfLines={1}>
+              {row.name}
+              {row.retired ? ' (removed)' : ''}
+            </Text>
+            {/* #83 AC6: where the time was played, at unit level. */}
+            <Text style={local.units} numberOfLines={1}>
+              {(['DEF', 'MID', 'ATT'] as const)
+                .filter((u) => row.byUnit[u] > 0)
+                .map((u) => `${UNIT_LABEL[u]} ${formatClock(row.byUnit[u])}`)
+                .join(' · ')}
+            </Text>
+          </View>
           <Text style={local.figure} numberOfLines={1}>
             {formatClock(row.outfieldMs)}
           </Text>
@@ -116,7 +125,9 @@ const local = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#164f3c',
   },
-  name: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
+  nameCol: { flex: 1, minWidth: 0 },
+  name: { color: colours.ink, fontSize: 15, includeFontPadding: false },
+  units: { color: colours.inkMuted, fontSize: 11, includeFontPadding: false, marginTop: 2 },
   // Fixed width and no shrink: a time beside a flex sibling loses its tail.
   figure: {
     width: 64,

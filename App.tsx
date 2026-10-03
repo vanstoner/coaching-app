@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine } from './src/engine/MatchEngine';
 import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
-import type { Format, Player, UUID } from './src/types/index';
+import type { Format, MatchEvent, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
   canArchiveFixture,
@@ -28,7 +28,7 @@ import {
   playersForMatch,
   squadReadiness,
 } from './src/app/squad';
-import { toTeamSheet, type Sheet } from './src/app/teamSheet';
+import { toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
 import { planHasContent, type MatchPlan } from './src/app/matchPlan';
 import {
@@ -507,6 +507,10 @@ export default function App() {
           appearances: stored.appearances,
           benchStints: stored.benchStints,
           playerAvailability: availability,
+          // The time stream comes with the match. Rebuilt without it, the
+          // first goal after reopening would start a fresh list and the next
+          // save would write it over every event already recorded (#84).
+          events: stored.events ?? [],
         },
       });
       setSubPlan([]);
@@ -677,6 +681,72 @@ export default function App() {
     [match, persist]
   );
 
+  /**
+   * A swap or a substitution during play (#83 AC4, #82). The engine records
+   * it at this moment; a sub also settles the planned reminder for whoever
+   * came on. An Undo of a sub puts the reminder of the player brought back
+   * off as it was, so a mis-drop does not silently cancel a planned change.
+   */
+  const liveMove = useCallback(
+    (m: LiveMove, isUndo = false): boolean => {
+      if (!match) return false;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return false;
+      try {
+        if (m.kind === 'swap') match.engine.swapPositions(match.state, quarter, m.a, m.b);
+        else match.engine.substitute(match.state, quarter, m.out, m.in);
+      } catch {
+        return false;
+      }
+      if (m.kind === 'sub') {
+        setSubPlan((plan) =>
+          plan.map((s) =>
+            s.playerId === m.in
+              ? { ...s, done: true }
+              : isUndo && s.playerId === m.out
+                ? { ...s, done: false }
+                : s
+          )
+        );
+      }
+      persist();
+      return true;
+    },
+    [match, persist]
+  );
+
+  /** A goal, save or goal conceded (#84). Null when the engine refuses it. */
+  const recordEvent = useCallback(
+    (kind: 'goal' | 'save' | 'conceded', playerId: UUID): MatchEvent | null => {
+      if (!match) return null;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return null;
+      try {
+        const event = match.engine.recordEvent(match.state, quarter, kind, playerId);
+        persist();
+        return event;
+      } catch {
+        return null;
+      }
+    },
+    [match, persist]
+  );
+
+  /** Take an event back with its note (invariant 5). */
+  const withdrawEvent = useCallback(
+    (eventId: UUID, note: string): boolean => {
+      if (!match) return false;
+      try {
+        match.engine.withdrawEvent(match.state, eventId, note);
+      } catch {
+        return false;
+      }
+      persist();
+      return true;
+    },
+    [match, persist]
+  );
+
   const endQuarter = useCallback(() => {
     if (!match) return;
     const quarter = currentQuarter(match.state);
@@ -819,8 +889,12 @@ export default function App() {
           state={match.state}
           players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
+          format={match.format}
           subPlan={subPlan}
           onMakeSub={makeSub}
+          onLiveMove={liveMove}
+          onRecord={recordEvent}
+          onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
           onLeave={goHome}

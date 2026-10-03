@@ -155,6 +155,15 @@ export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: numb
   }));
 }
 
+/** Replace a period's starting slots — what a pitch move produces (#83). */
+export function setPeriodSlots(
+  plan: MatchPlan,
+  periodIndex: number,
+  slots: Record<UUID, UUID | null>
+): MatchPlan {
+  return withPeriod(plan, periodIndex, (period) => ({ ...period, slots: { ...slots } }));
+}
+
 /** Start a period as a copy of another — most periods are a small change. */
 export function copyPeriod(plan: MatchPlan, from: number, to: number): MatchPlan {
   const source = plan.periods[from];

@@ -35,6 +35,7 @@ import type {
   BenchStint,
   Format,
   Match,
+  MatchEvent,
   Player,
   Quarter,
   UUID,
@@ -66,12 +67,14 @@ import type { MatchPlan } from './matchPlan';
  * v5 — a match may carry a PLAN (#72): who the coach intends to play where,
  *      period by period. Optional and additive, so `minReaderVersion` stays
  *      at 4 — see below.
+ * v6 — a match may carry EVENTS (#84): goals, saves, goals conceded and
+ *      withdrawals. These are records, so `minReaderVersion` moves to 6.
  *
  * An OLD save is migrated, never discarded (#61). The previous code returned
  * null on any mismatch, which meant the first version bump would have silently
  * emptied a coach's squad with no backup to recover from.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * The oldest build that can safely read what this one writes.
@@ -93,8 +96,14 @@ export const SCHEMA_VERSION = 5;
  * it is playing on write-back. That loses an intention, never a record —
  * minutes never come from a plan (#72, AC8) — which is not worth locking an
  * older build out of the squad.
+ *
+ * **v6 moves it.** A v5 reader rebuilds the match being played without
+ * `SavedMatch.events` and would write it back without them — the goals of the
+ * game in progress gone, with nothing to show they ever existed. Losing a
+ * plan was losing an intention; losing an event is losing a record, which is
+ * exactly the case this number exists to refuse (#84).
  */
-export const MIN_READER_VERSION = 4;
+export const MIN_READER_VERSION = 6;
 
 /**
  * Every top-level field this build understands.
@@ -212,6 +221,14 @@ export const MIGRATIONS: Migration[] = [
     // v5 says so. The step exists so the chain stays unbroken.
     up: (doc) => ({ ...doc, minReaderVersion: MIN_READER_VERSION }),
   },
+  {
+    from: 5,
+    to: 6,
+    describe: 'v5 \u2192 v6: a match may carry events',
+    // Nothing to change: no v5 match has events, and an absent list is how
+    // v6 says none were recorded.
+    up: (doc) => ({ ...doc, minReaderVersion: MIN_READER_VERSION }),
+  },
 ];
 
 export const STORAGE_KEY = 'coaching-app/session/v1';
@@ -254,6 +271,11 @@ export interface SavedMatch {
    * nothing about the match changes, and its minutes count as before.
    */
   archived?: boolean;
+  /**
+   * The time stream (#84): goals, saves, goals conceded, withdrawals.
+   * Append-only records. The score is folded from them, never stored.
+   */
+  events?: MatchEvent[];
 }
 
 /** Everything worth surviving a relaunch. */
@@ -355,6 +377,10 @@ function mergeCurrentMatch(
     // the match from engine state must not drop it on the first save.
     plan: at === -1 ? undefined : existing[at].plan,
     archived: at === -1 ? undefined : existing[at].archived,
+    // Records, merged by id: what is stored plus what the live state holds.
+    // Append-only, so the union is always right, and no save — one that
+    // carries no list, or a list rebuilt short — can drop an event.
+    events: unionEvents(at === -1 ? undefined : existing[at].events, state.events),
   };
   if (at === -1) return [...existing, current];
   return existing.map((m, i) => (i === at ? current : m));
@@ -384,6 +410,7 @@ export function toMatchState(saved: SavedSession, matchId?: UUID): MatchState | 
     appearances: stored.appearances,
     benchStints: stored.benchStints,
     playerAvailability: new Map(stored.availability ?? []),
+    events: stored.events ?? [],
   };
 }
 
@@ -491,6 +518,7 @@ function validate(doc: VersionedDocument): SavedSession | null {
       // A malformed plan is dropped, not the match: a plan is intent, and
       // losing it costs a re-plan, where losing the match loses its record.
       plan: isPlanShaped(m.plan) ? m.plan : undefined,
+      events: Array.isArray(m.events) ? m.events : [],
     })),
     // A currentMatchId naming a match that is not there is dropped rather
     // than trusted: it would send the app to a screen with nothing behind it.
@@ -500,6 +528,17 @@ function validate(doc: VersionedDocument): SavedSession | null {
         ? (s.currentMatchId as UUID)
         : null,
   };
+}
+
+function unionEvents(
+  stored: MatchEvent[] | undefined,
+  live: MatchEvent[] | undefined
+): MatchEvent[] | undefined {
+  if (!stored && !live) return undefined;
+  const byId = new Map<string, MatchEvent>();
+  for (const e of stored ?? []) byId.set(e.id, e);
+  for (const e of live ?? []) byId.set(e.id, e);
+  return [...byId.values()].sort((a, b) => a.atElapsedMs - b.atElapsedMs);
 }
 
 function isPlanShaped(plan: unknown): plan is MatchPlan {

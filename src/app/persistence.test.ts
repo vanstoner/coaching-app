@@ -583,11 +583,13 @@ describe('the match plan (#72, AC6)', () => {
     expect(back.matches[0].plan).toBeUndefined();
   });
 
-  it('writes v5 and still lets a v4 build read it', () => {
+  it('is still carried at v6, where events (#84) lock out older readers', () => {
+    // v5 let a v4 build read a plan. v6 adds events, which are records, so
+    // the oldest safe reader moves to 6 — see MIN_READER_VERSION.
     const x = setUp();
     const saved = toSavedSession(sessionOf(x));
-    expect(saved.schemaVersion).toBe(5);
-    expect(saved.minReaderVersion).toBe(4);
+    expect(saved.schemaVersion).toBe(6);
+    expect(saved.minReaderVersion).toBe(6);
   });
 });
 
@@ -611,5 +613,32 @@ describe('archiving (#76, AC4)', () => {
 
     const after = foldPlayerMinutes(x.engine, toMatchState(back)!, x.players);
     expect(after).toEqual(before);
+  });
+});
+
+describe('match events (#84)', () => {
+  it('survive a round trip and a live-match save, and are never dropped', () => {
+    const x = setUp();
+    x.engine.startQuarter(
+      x.state,
+      x.state.quarters[0],
+      teamSheetFor(x.players.slice(0, 7).map((p) => p.id), x.players[0].id, x.format),
+      x.format
+    );
+    x.clock.advance(60_000);
+    x.engine.recordEvent(x.state, x.state.quarters[0], 'goal', x.players[3].id);
+    const first = toSavedSession(sessionOf(x));
+    const back = parseSession(JSON.stringify(first))!;
+    expect(back.matches[0].events).toHaveLength(1);
+    expect(toMatchState(back)!.events).toHaveLength(1);
+    // A later save whose live state carries no list keeps the stored one.
+    const { events: _dropped, ...noEvents } = x.state;
+    const again = toSavedSession(sessionOf(x, { matches: first.matches, state: noEvents }));
+    expect(again.matches[0].events).toHaveLength(1);
+    // And a live list rebuilt SHORT (a reopened match missing its stream)
+    // adds to what is stored rather than replacing it.
+    const shortList = { ...x.state, events: [] };
+    const third = toSavedSession(sessionOf(x, { matches: first.matches, state: shortList }));
+    expect(third.matches[0].events).toHaveLength(1);
   });
 });
