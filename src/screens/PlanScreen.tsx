@@ -1,0 +1,361 @@
+/**
+ * Plan a match before kick-off — #72.
+ *
+ * > *"I feel we've not yet got to the point where we can plan the halfs or
+ * > quaters"* — PO, 2026-10-03.
+ *
+ * The coach's spreadsheet, on the phone: every period's lineup by named
+ * position, the subs inside each period, and what every player's minutes add
+ * up to — recomputed on every tap, so the fair-share question is answered on
+ * Tuesday rather than at the touchline.
+ *
+ * Every edit is handed straight up and saved; there is no Save button to
+ * forget. A plan that does not add up says so and is kept anyway (AC5),
+ * because a Tuesday plan is usually a draft.
+ *
+ * All the rules live in `src/app/matchPlan.ts` and are tested there. This
+ * file draws them.
+ */
+
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import type { Format, Match, Player, UUID } from '../types/index';
+import { formatClock, periodNoun } from '../app/matchClock';
+import {
+  addSwap,
+  copyPeriod,
+  formatDelta,
+  nudgeSwap,
+  periodLengthMs,
+  planFor,
+  projectPlan,
+  removeSwap,
+  setSlot,
+  updateSwap,
+  type MatchPlan,
+} from '../app/matchPlan';
+import { opponentLabel } from '../app/fixtures';
+import { Chip, ChipRow } from './Chip';
+import { colours, screen, TOUCH_TARGET } from './theme';
+
+/** What the picker is choosing for, when it is open. */
+type Picking =
+  | { kind: 'slot'; positionId: UUID }
+  | { kind: 'on' | 'off'; swapIndex: number }
+  | null;
+
+export function PlanScreen({
+  match,
+  format,
+  players,
+  plan: stored,
+  onChange,
+  onBack,
+}: {
+  match: Match;
+  /** The shape THIS match is played in (ADR-012), not the squad default. */
+  format: Format;
+  players: Player[];
+  plan: MatchPlan | undefined;
+  onChange: (plan: MatchPlan) => void;
+  onBack: () => void;
+}) {
+  const periodCount = match.quarterCount;
+  const plan = planFor(stored, periodCount);
+  const periodMs = periodLengthMs(match.totalMinutes, periodCount);
+  const noun = periodNoun(periodCount);
+  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players);
+
+  const [periodIndex, setPeriodIndex] = useState(0);
+  const [picking, setPicking] = useState<Picking>(null);
+
+  const period = plan.periods[periodIndex];
+  const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
+  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const name = (id: UUID | null) =>
+    id === null ? 'Pick' : (nameOf.get(id) ?? 'Removed player');
+  const problemsHere = projection.problems.filter((p) => p.periodIndex === periodIndex);
+
+  const change = onChange;
+
+  const pick = (playerId: UUID | null) => {
+    if (!picking) return;
+    if (picking.kind === 'slot') {
+      change(setSlot(plan, periodIndex, picking.positionId, playerId));
+    } else {
+      const field = picking.kind === 'on' ? 'onId' : 'offId';
+      change(updateSwap(plan, periodIndex, picking.swapIndex, { [field]: playerId }));
+    }
+    setPicking(null);
+  };
+
+  const choosePeriod = (i: number) => {
+    setPeriodIndex(i);
+    setPicking(null);
+  };
+
+  const picker = (
+    <View style={local.picker}>
+      <ChipRow>
+        {players.map((p) => (
+          <Chip key={p.id} label={p.firstName} selected={false} onPress={() => pick(p.id)} />
+        ))}
+        <Chip label="Nobody" selected={false} onPress={() => pick(null)} />
+      </ChipRow>
+    </View>
+  );
+
+  return (
+    <View style={screen.flex}>
+      <ScrollView contentContainerStyle={screen.scroll}>
+        <Text style={screen.title} numberOfLines={1}>
+          Plan
+        </Text>
+        <Text style={screen.caption} numberOfLines={1}>
+          v {opponentLabel(match)}
+        </Text>
+
+        <ChipRow>
+          {plan.periods.map((_, i) => {
+            const flagged = projection.problems.some((p) => p.periodIndex === i);
+            return (
+              <Chip
+                key={i}
+                label={`${noun} ${i + 1}`}
+                detail={flagged ? 'needs a look' : 'ok'}
+                selected={i === periodIndex}
+                onPress={() => choosePeriod(i)}
+              />
+            );
+          })}
+        </ChipRow>
+
+        {periodIndex > 0 && (
+          <Pressable
+            style={screen.linkHit}
+            onPress={() => change(copyPeriod(plan, periodIndex - 1, periodIndex))}
+          >
+            <Text style={screen.link}>
+              Same as {noun.toLowerCase()} {periodIndex}
+            </Text>
+          </Pressable>
+        )}
+
+        <Text style={screen.fieldLabel}>Starting</Text>
+        {positions.map((position) => {
+          const who = period.slots[position.id] ?? null;
+          const open = picking?.kind === 'slot' && picking.positionId === position.id;
+          return (
+            <View key={position.id}>
+              <Pressable
+                style={({ pressed }) => [screen.playerRow, pressed && screen.buttonPressed]}
+                onPress={() => setPicking(open ? null : { kind: 'slot', positionId: position.id })}
+              >
+                <Text style={local.slotLabel} numberOfLines={1}>
+                  {position.label}
+                </Text>
+                <Text style={[screen.playerName, who === null && local.unset]} numberOfLines={1}>
+                  {name(who)}
+                </Text>
+              </Pressable>
+              {open && picker}
+            </View>
+          );
+        })}
+
+        <Text style={screen.fieldLabel}>Subs this {noun.toLowerCase()}</Text>
+        {period.subs.length === 0 && (
+          <Text style={local.note}>None planned.</Text>
+        )}
+        {period.subs.map((swap, swapIndex) => {
+          const openOn = picking?.kind === 'on' && picking.swapIndex === swapIndex;
+          const openOff = picking?.kind === 'off' && picking.swapIndex === swapIndex;
+          return (
+            <View key={swapIndex} style={local.swap}>
+              <View style={local.swapTime}>
+                <Pressable
+                  style={local.nudge}
+                  onPress={() => change(nudgeSwap(plan, periodIndex, swapIndex, -1, periodMs))}
+                  accessibilityLabel="15 seconds earlier"
+                >
+                  <Text style={local.nudgeLabel}>-</Text>
+                </Pressable>
+                <Text style={local.time}>{formatClock(swap.atMs)}</Text>
+                <Pressable
+                  style={local.nudge}
+                  onPress={() => change(nudgeSwap(plan, periodIndex, swapIndex, 1, periodMs))}
+                  accessibilityLabel="15 seconds later"
+                >
+                  <Text style={local.nudgeLabel}>+</Text>
+                </Pressable>
+                <Pressable
+                  style={local.removeHit}
+                  onPress={() => {
+                    setPicking(null);
+                    change(removeSwap(plan, periodIndex, swapIndex));
+                  }}
+                >
+                  <Text style={local.remove}>Remove</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                style={screen.playerRow}
+                onPress={() => setPicking(openOn ? null : { kind: 'on', swapIndex })}
+              >
+                <Text style={local.slotLabel}>On</Text>
+                <Text
+                  style={[screen.playerName, swap.onId === null && local.unset]}
+                  numberOfLines={1}
+                >
+                  {name(swap.onId)}
+                </Text>
+              </Pressable>
+              {openOn && picker}
+              <Pressable
+                style={screen.playerRow}
+                onPress={() => setPicking(openOff ? null : { kind: 'off', swapIndex })}
+              >
+                <Text style={local.slotLabel}>Off</Text>
+                <Text
+                  style={[screen.playerName, swap.offId === null && local.unset]}
+                  numberOfLines={1}
+                >
+                  {name(swap.offId)}
+                </Text>
+              </Pressable>
+              {openOff && picker}
+            </View>
+          );
+        })}
+        <Pressable
+          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+          onPress={() => change(addSwap(plan, periodIndex, periodMs))}
+        >
+          <Text style={screen.buttonLabel}>Add a sub</Text>
+        </Pressable>
+
+        {problemsHere.map((p, i) => (
+          <Text key={i} style={local.problem}>
+            {p.message}
+          </Text>
+        ))}
+
+        <Text style={screen.fieldLabel}>Minutes if played to plan</Text>
+        <Text style={local.summary}>
+          Fair share {formatClock(projection.fairShareMs)} · spread{' '}
+          {formatClock(projection.spreadMs)}
+        </Text>
+        {projection.rows.map((row) => (
+          <View key={row.playerId} style={screen.playerRow}>
+            <Text style={screen.playerName} numberOfLines={1}>
+              {row.firstName}
+            </Text>
+            <Text style={local.minutes} numberOfLines={1}>
+              {formatClock(row.outfieldMs)}
+              {row.goalkeeperMs > 0 ? ` · GK ${formatClock(row.goalkeeperMs)}` : ''}
+            </Text>
+            <Text
+              style={[local.delta, row.deltaMs !== null && row.deltaMs < 0 && local.owed]}
+              numberOfLines={1}
+            >
+              {row.deltaMs === null ? 'in goal' : formatDelta(row.deltaMs)}
+            </Text>
+          </View>
+        ))}
+        <Text style={screen.hint}>
+          A plan, not a record. Minutes played always come from the match itself.
+        </Text>
+
+        <Pressable
+          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+          onPress={onBack}
+        >
+          <Text style={screen.buttonLabel}>Done</Text>
+        </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+const local = StyleSheet.create({
+  slotLabel: {
+    color: colours.inkMuted,
+    fontSize: 15,
+    includeFontPadding: false,
+    width: 56,
+    flexShrink: 0,
+  },
+  // Colour only: a weight change re-measures and clips (theme.ts).
+  unset: { color: colours.inkFaint },
+  note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false },
+  picker: { paddingVertical: 8 },
+  swap: {
+    alignSelf: 'stretch',
+    borderColor: colours.line,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  swapTime: { flexDirection: 'row', alignItems: 'center' },
+  nudge: {
+    width: TOUCH_TARGET,
+    height: TOUCH_TARGET,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nudgeLabel: {
+    color: colours.ink,
+    fontSize: 22,
+    includeFontPadding: false,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+  },
+  time: {
+    color: colours.ink,
+    fontSize: 20,
+    includeFontPadding: false,
+    width: 72,
+    flexShrink: 0,
+    textAlign: 'center',
+  },
+  removeHit: {
+    marginLeft: 'auto',
+    minHeight: TOUCH_TARGET,
+    justifyContent: 'center',
+    paddingLeft: 12,
+  },
+  remove: { color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
+  problem: {
+    alignSelf: 'stretch',
+    color: colours.warn,
+    fontSize: 14,
+    includeFontPadding: false,
+    marginTop: 6,
+  },
+  summary: {
+    alignSelf: 'stretch',
+    color: colours.ink,
+    fontSize: 15,
+    includeFontPadding: false,
+    marginBottom: 4,
+  },
+  minutes: {
+    color: colours.inkMuted,
+    fontSize: 13,
+    includeFontPadding: false,
+    flexShrink: 0,
+    width: 112,
+    textAlign: 'right',
+  },
+  delta: {
+    color: colours.inkMuted,
+    fontSize: 13,
+    includeFontPadding: false,
+    flexShrink: 0,
+    width: 64,
+    textAlign: 'right',
+  },
+  owed: { color: colours.warn },
+});

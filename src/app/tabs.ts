@@ -34,6 +34,8 @@ export type Step =
   | 'resume'
   | 'fixtures'
   | 'fixtureForm'
+  /** Planning a fixture's periods before kick-off (#72). Full screen, Done exits. */
+  | 'plan'
   | 'summary'
   | 'settings'
   | 'squad'

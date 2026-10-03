@@ -48,6 +48,7 @@ import {
   type VersionedDocument,
 } from './schema';
 import { inferUnit, unitOfRole } from './positions';
+import type { MatchPlan } from './matchPlan';
 
 /**
  * The shape this build writes.
@@ -62,12 +63,15 @@ import { inferUnit, unitOfRole } from './positions';
  *      the squad's default; the shape a match is played in belongs to the
  *      match, because a cup game in 2-2-2 must not change next Saturday's
  *      league default. See ADR-012.
+ * v5 — a match may carry a PLAN (#72): who the coach intends to play where,
+ *      period by period. Optional and additive, so `minReaderVersion` stays
+ *      at 4 — see below.
  *
  * An OLD save is migrated, never discarded (#61). The previous code returned
  * null on any mismatch, which meant the first version bump would have silently
  * emptied a coach's squad with no backup to recover from.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * The oldest build that can safely read what this one writes.
@@ -83,6 +87,12 @@ export const SCHEMA_VERSION = 4;
  * write appearances against slots the coach never picked — a child's minutes
  * filed under the wrong unit, in a record nobody could see was wrong. That is
  * precisely the case this number exists to refuse.
+ *
+ * **v5 does not move it.** A v4 reader keeps `SavedMatch.plan` on every match
+ * it does not rebuild, and the worst it can do is drop the plan of the match
+ * it is playing on write-back. That loses an intention, never a record —
+ * minutes never come from a plan (#72, AC8) — which is not worth locking an
+ * older build out of the squad.
  */
 export const MIN_READER_VERSION = 4;
 
@@ -194,6 +204,14 @@ export const MIGRATIONS: Migration[] = [
       };
     },
   },
+  {
+    from: 4,
+    to: 5,
+    describe: 'v4 \u2192 v5: a match may carry a plan',
+    // Nothing to change: no v4 match has a plan, and an absent plan is how
+    // v5 says so. The step exists so the chain stays unbroken.
+    up: (doc) => ({ ...doc, minReaderVersion: MIN_READER_VERSION }),
+  },
 ];
 
 export const STORAGE_KEY = 'coaching-app/session/v1';
@@ -226,6 +244,11 @@ export interface SavedMatch {
    * rather than corrupt; callers fall back to the squad default.
    */
   format?: Format;
+  /**
+   * What the coach intends — #72. Intent, never a record: no minute is ever
+   * folded from it (invariant 1). Absent when nothing has been planned.
+   */
+  plan?: MatchPlan;
 }
 
 /** Everything worth surviving a relaunch. */
@@ -323,6 +346,9 @@ function mergeCurrentMatch(
     // is already stored: the appearances reference position ids that only this
     // snapshot still explains.
     format: matchFormat ?? (at === -1 ? undefined : existing[at].format),
+    // The plan is edited on Tuesday and played from on Saturday. Rebuilding
+    // the match from engine state must not drop it on the first save.
+    plan: at === -1 ? undefined : existing[at].plan,
   };
   if (at === -1) return [...existing, current];
   return existing.map((m, i) => (i === at ? current : m));
@@ -456,6 +482,9 @@ function validate(doc: VersionedDocument): SavedSession | null {
     matches: s.matches.map((m) => ({
       ...m,
       availability: Array.isArray(m.availability) ? m.availability : [],
+      // A malformed plan is dropped, not the match: a plan is intent, and
+      // losing it costs a re-plan, where losing the match loses its record.
+      plan: isPlanShaped(m.plan) ? m.plan : undefined,
     })),
     // A currentMatchId naming a match that is not there is dropped rather
     // than trusted: it would send the app to a screen with nothing behind it.
@@ -465,6 +494,20 @@ function validate(doc: VersionedDocument): SavedSession | null {
         ? (s.currentMatchId as UUID)
         : null,
   };
+}
+
+function isPlanShaped(plan: unknown): plan is MatchPlan {
+  if (typeof plan !== 'object' || plan === null) return false;
+  const periods = (plan as { periods?: unknown }).periods;
+  if (!Array.isArray(periods)) return false;
+  return periods.every(
+    (p) =>
+      typeof p === 'object' &&
+      p !== null &&
+      typeof (p as { slots?: unknown }).slots === 'object' &&
+      (p as { slots?: unknown }).slots !== null &&
+      Array.isArray((p as { subs?: unknown }).subs)
+  );
 }
 
 /**

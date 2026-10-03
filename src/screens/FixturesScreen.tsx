@@ -34,6 +34,8 @@ export function FixturesScreen({
   onOpen,
   onDelete,
   onAdd,
+  onPlan,
+  plannedIds,
   onPlayNow,
   buildLabel,
 }: {
@@ -46,6 +48,10 @@ export function FixturesScreen({
   /** Only offered on a fixture that has never been played. */
   onDelete: (matchId: UUID) => void;
   onAdd: () => void;
+  /** Plan a fixture's periods before kick-off (#72). Offered only before it. */
+  onPlan: (matchId: UUID) => void;
+  /** Fixtures that already have something planned, so the link says so. */
+  plannedIds: ReadonlySet<UUID>;
   /**
    * Kick off now, from the defaults, with no fixture form — PO ruling,
    * 2026-09-20: *Play now: **yes.***
@@ -79,8 +85,19 @@ export function FixturesScreen({
               now={now}
               onOpen={onOpen}
               onDelete={onDelete}
+              onPlan={onPlan}
+              plannedIds={plannedIds}
             />
-            <Section title="Played" rows={past} now={now} onOpen={onOpen} />
+            {/* A fixture whose kick-off time has passed but which was never
+                started sits here, and can still be planned and played. */}
+            <Section
+              title="Played"
+              rows={past}
+              now={now}
+              onOpen={onOpen}
+              onPlan={onPlan}
+              plannedIds={plannedIds}
+            />
           </>
         )}
 
@@ -120,6 +137,8 @@ function Section({
   now,
   onOpen,
   onDelete,
+  onPlan,
+  plannedIds,
 }: {
   title: string;
   rows: FixtureRow[];
@@ -127,6 +146,8 @@ function Section({
   onOpen: (matchId: UUID) => void;
   /** Absent on buckets where deleting would destroy a played record. */
   onDelete?: (matchId: UUID) => void;
+  onPlan?: (matchId: UUID) => void;
+  plannedIds?: ReadonlySet<UUID>;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -139,6 +160,8 @@ function Section({
           now={now}
           onOpen={onOpen}
           onDelete={onDelete}
+          onPlan={onPlan}
+          planned={plannedIds?.has(row.match.id) ?? false}
         />
       ))}
     </View>
@@ -150,11 +173,15 @@ function FixtureCard({
   now,
   onOpen,
   onDelete,
+  onPlan,
+  planned,
 }: {
   row: FixtureRow;
   now: Date;
   onOpen: (matchId: UUID) => void;
   onDelete?: (matchId: UUID) => void;
+  onPlan?: (matchId: UUID) => void;
+  planned: boolean;
 }) {
   const { match } = row;
   const competition = competitionLabel(match.competition);
@@ -182,6 +209,13 @@ function FixtureCard({
         {lengthLabel(match)}
       </Text>
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
+
+      {/* Only before kick-off: once a match is played its plan is history. */}
+      {onPlan && match.status === 'planned' && (
+        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit}>
+          <Text style={local.plan}>{planned ? 'Edit the plan' : 'Plan this match'}</Text>
+        </Pressable>
+      )}
 
       {onDelete &&
         (confirming ? (
@@ -245,6 +279,12 @@ const local = StyleSheet.create({
   deleteConfirm: {
     color: colours.danger,
     fontSize: 13,
+    includeFontPadding: false,
+  },
+  plan: {
+    color: colours.ink,
+    fontSize: 15,
+    textDecorationLine: 'underline',
     includeFontPadding: false,
   },
   keep: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },

@@ -7,6 +7,7 @@ const EVERY_STEP: Step[] = [
   'resume',
   'fixtures',
   'fixtureForm',
+  'plan',
   'summary',
   'settings',
   'squad',
@@ -37,6 +38,7 @@ describe('Saturday is full-screen', () => {
     // The ruling, and the reason: a tab bar under a running match is three
     // ways to lose the game you are keeping time for.
     expect(tabForStep('playing')).toBeNull();
+    expect(tabForStep('plan')).toBeNull();
     expect(showsTabs('playing')).toBe(false);
   });
 
