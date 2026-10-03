@@ -1,0 +1,49 @@
+/**
+ * Where the minutes ledger lives on the device — #75.
+ *
+ * Its OWN key, never the session's. Resetting, migrating or corrupting the
+ * working document (`coaching-app/session/v1`) cannot reach it, which is the
+ * whole point of having it. Takes a `KeyValueStore`, so it is testable in
+ * Node like persistence is.
+ */
+
+import type { KeyValueStore } from './persistence';
+import { parseLedger, serialiseLedger, type Ledger } from './ledger';
+
+export const LEDGER_STORAGE_KEY = 'coaching-app/ledger/v1';
+
+/** The stored ledger, or null if there is none or it cannot be read. */
+export async function loadLedger(store: KeyValueStore): Promise<Ledger | null> {
+  try {
+    const raw = await store.getItem(LEDGER_STORAGE_KEY);
+    if (raw === null) return null;
+    const parsed = parseLedger(raw);
+    return parsed.ok ? parsed.ledger : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fire and forget, like the session: a full disk loses the save, not the match. */
+export async function saveLedger(store: KeyValueStore, ledger: Ledger): Promise<boolean> {
+  try {
+    await store.setItem(LEDGER_STORAGE_KEY, serialiseLedger(ledger));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function clearLedger(store: KeyValueStore): Promise<void> {
+  try {
+    await store.removeItem(LEDGER_STORAGE_KEY);
+  } catch {
+    // Nothing to do: a store that cannot delete cannot have saved much.
+  }
+}
+
+/** True when two ledgers hold the same records — `writtenAt` aside. */
+export function sameRecords(a: Ledger, b: Ledger): boolean {
+  const strip = (l: Ledger) => JSON.stringify({ ...l, writtenAt: '', summary: undefined });
+  return strip(a) === strip(b);
+}

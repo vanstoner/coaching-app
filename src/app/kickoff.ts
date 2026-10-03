@@ -1,5 +1,5 @@
 /**
- * Typing a kick-off date and time — #62.
+ * Picking a kick-off date and time — #62, #80.
  *
  * Pure TypeScript, deliberately separate from the screen that uses it. Logic
  * living inside a component that imports `react-native` cannot be tested in
@@ -7,46 +7,17 @@
  * line is held.
  *
  * NOT a native date picker: that is a dependency, and the proportionality
- * ruling says prefer the least machinery that satisfies the criterion. Two
- * plain fields plus a "next Saturday" shortcut fit a squad that plays one
- * match a week, nearly always on a Saturday morning.
+ * ruling says prefer the least machinery that satisfies the criterion.
+ *
+ * The typed DD/MM/YYYY fields this file used to parse are gone (#80): the
+ * PO found typing a date at all the pain, so the screen now picks from chips
+ * and nothing here needs to refuse half-typed input any more.
  */
-
-/** `DD/MM/YYYY`, zero-padded so the field never changes width. */
-export function toDateInput(d: Date): string {
-  const pad = (n: number) => `${n}`.padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}
 
 /** `HH:MM`, zero-padded. */
 export function toTimeInput(d: Date): string {
   const pad = (n: number) => `${n}`.padStart(2, '0');
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/**
- * An ISO timestamp from what was typed, or null when it is not yet a whole
- * date and time.
- *
- * Returning null for a half-typed date is the point: a coach mid-keystroke
- * must not have `03/0` quietly stored as some other day. And a date that
- * would roll over — 31 February becoming 3 March — is refused rather than
- * accepted, because a fixture landing on a day nobody picked is worse than
- * a field that will not accept it.
- */
-export function toIso(date: string, time: string): string | null {
-  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(date.trim());
-  const tm = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
-  if (!dm || !tm) return null;
-
-  const [, dd, mm, yyyy] = dm;
-  const [, hh, min] = tm;
-  if (Number(hh) > 23 || Number(min) > 59) return null;
-
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), 0, 0);
-  if (Number.isNaN(d.getTime())) return null;
-  if (d.getDate() !== Number(dd) || d.getMonth() !== Number(mm) - 1) return null;
-  return d.toISOString();
 }
 
 /**
@@ -59,4 +30,72 @@ export function nextSaturday(from: Date): Date {
   const d = new Date(from.getTime());
   d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
   return d;
+}
+
+// ---------------------------------------------------------------------------
+// Pick, don't type — #80 (PO ruling 2026-10-03: option A)
+// ---------------------------------------------------------------------------
+//
+// > *"entering fixture date pain, needs a picker or restricted dropdowns"*
+//
+// Chips, no dependency. The answer is nearly always one of the next few
+// Saturdays, which is one tap; "Other date" reaches any day as a month then a
+// day, still without a keyboard.
+
+const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Midnight local time on the same day. */
+export function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** The next `count` Saturdays, nearest first; today counts if it is one (AC1). */
+export function upcomingSaturdays(from: Date, count = 8): Date[] {
+  const first = startOfDay(nextSaturday(from));
+  return Array.from(
+    { length: count },
+    (_, i) => new Date(first.getFullYear(), first.getMonth(), first.getDate() + 7 * i)
+  );
+}
+
+/** Kick-off times 08:00 to 14:00 in 15-minute steps (AC2). */
+export const KICKOFF_TIMES: readonly string[] = Array.from({ length: 25 }, (_, i) => {
+  const minutes = 8 * 60 + 15 * i;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+});
+
+/** "Sat 10 Oct". */
+export function dayLabel(d: Date): string {
+  return `${DAY[d.getDay()]} ${d.getDate()} ${MONTH[d.getMonth()]}`;
+}
+
+/** "Oct 2026". */
+export function monthLabel(year: number, month: number): string {
+  return `${MONTH[month]} ${year}`;
+}
+
+/** The next `count` months as [year, month], starting with this one. */
+export function upcomingMonths(from: Date, count = 6): [number, number][] {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(from.getFullYear(), from.getMonth() + i, 1);
+    return [d.getFullYear(), d.getMonth()] as [number, number];
+  });
+}
+
+export function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+/** True when two dates fall on the same calendar day. */
+export function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+}
+
+/** A kick-off ISO timestamp from a picked day and an `HH:MM` time. */
+export function kickoffIso(day: Date, time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0).toISOString();
 }

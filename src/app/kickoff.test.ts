@@ -1,74 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { nextSaturday, toDateInput, toIso, toTimeInput } from './kickoff';
-
-describe('toIso', () => {
-  it('builds a timestamp from a whole date and time', () => {
-    const iso = toIso('26/09/2026', '10:30');
-    expect(iso).not.toBeNull();
-    const d = new Date(iso!);
-    expect(d.getFullYear()).toBe(2026);
-    expect(d.getMonth()).toBe(8); // September
-    expect(d.getDate()).toBe(26);
-    expect(d.getHours()).toBe(10);
-    expect(d.getMinutes()).toBe(30);
-  });
-
-  it('accepts a single-digit day and month', () => {
-    expect(toIso('3/9/2026', '9:05')).not.toBeNull();
-  });
-
-  it('returns null for a half-typed date, rather than guessing a day', () => {
-    // A coach mid-keystroke must not have "03/0" quietly stored as some other
-    // date they never chose.
-    for (const partial of ['', '0', '03', '03/', '03/0', '03/09', '03/09/20']) {
-      expect(toIso(partial, '10:00')).toBeNull();
-    }
-  });
-
-  it('returns null for a half-typed time', () => {
-    for (const partial of ['', '1', '10', '10:', '10:0']) {
-      expect(toIso('26/09/2026', partial)).toBeNull();
-    }
-  });
-
-  it('refuses a date that would roll over into another month', () => {
-    // 31 February is not 3 March. Silently accepting it would put a fixture on
-    // a day the coach never picked.
-    expect(toIso('31/02/2026', '10:00')).toBeNull();
-    expect(toIso('31/04/2026', '10:00')).toBeNull();
-    expect(toIso('32/01/2026', '10:00')).toBeNull();
-  });
-
-  it('accepts 29 February in a leap year and refuses it otherwise', () => {
-    expect(toIso('29/02/2028', '10:00')).not.toBeNull();
-    expect(toIso('29/02/2027', '10:00')).toBeNull();
-  });
-
-  it('refuses an impossible time', () => {
-    expect(toIso('26/09/2026', '24:00')).toBeNull();
-    expect(toIso('26/09/2026', '10:60')).toBeNull();
-  });
-
-  it('ignores surrounding whitespace', () => {
-    expect(toIso(' 26/09/2026 ', ' 10:30 ')).not.toBeNull();
-  });
-});
-
-describe('round trip through the inputs', () => {
-  it('formats and re-parses to the same instant', () => {
-    const original = new Date(2026, 8, 26, 10, 30, 0, 0);
-    const iso = toIso(toDateInput(original), toTimeInput(original));
-    expect(iso).not.toBeNull();
-    expect(new Date(iso!).getTime()).toBe(original.getTime());
-  });
-
-  it('zero-pads, so the field is always the same width', () => {
-    const d = new Date(2026, 0, 3, 9, 5, 0, 0);
-    expect(toDateInput(d)).toBe('03/01/2026');
-    expect(toTimeInput(d)).toBe('09:05');
-  });
-});
+import {
+  KICKOFF_TIMES,
+  dayLabel,
+  daysInMonth,
+  kickoffIso,
+  nextSaturday,
+  sameDay,
+  upcomingMonths,
+  upcomingSaturdays,
+} from './kickoff';
 
 describe('nextSaturday', () => {
   it('finds the coming Saturday from midweek', () => {
@@ -101,5 +42,50 @@ describe('nextSaturday', () => {
       const from = new Date(2026, 8, 14 + i);
       expect(nextSaturday(from).getTime()).toBeGreaterThanOrEqual(from.getTime());
     }
+  });
+});
+
+describe('pick, do not type — #80', () => {
+  // Thursday 1 October 2026.
+  const THU = new Date(2026, 9, 1, 19, 30);
+
+  it('AC1: offers the next 8 Saturdays, nearest first', () => {
+    const sats = upcomingSaturdays(THU);
+    expect(sats).toHaveLength(8);
+    expect(sats.every((d) => d.getDay() === 6)).toBe(true);
+    expect(dayLabel(sats[0])).toBe('Sat 3 Oct');
+    expect(dayLabel(sats[7])).toBe('Sat 21 Nov');
+  });
+
+  it('AC1: on a Saturday, today is the first choice', () => {
+    expect(sameDay(upcomingSaturdays(new Date(2026, 9, 3, 8, 0))[0], new Date(2026, 9, 3))).toBe(true);
+  });
+
+  it('crosses a month and a clock change without drifting off Saturday', () => {
+    // Late October: the clocks go back on the 25th in the UK.
+    const sats = upcomingSaturdays(new Date(2026, 9, 20), 3);
+    expect(sats.map(dayLabel)).toEqual(['Sat 24 Oct', 'Sat 31 Oct', 'Sat 7 Nov']);
+  });
+
+  it('AC2: times from 08:00 to 14:00 in 15-minute steps', () => {
+    expect(KICKOFF_TIMES[0]).toBe('08:00');
+    expect(KICKOFF_TIMES[1]).toBe('08:15');
+    expect(KICKOFF_TIMES[KICKOFF_TIMES.length - 1]).toBe('14:00');
+    expect(KICKOFF_TIMES).toHaveLength(25);
+  });
+
+  it('AC3: any other date — months ahead, and the right number of days', () => {
+    expect(upcomingMonths(new Date(2026, 10, 15), 3)).toEqual([
+      [2026, 10],
+      [2026, 11],
+      [2027, 0],
+    ]);
+    expect(daysInMonth(2028, 1)).toBe(29);
+    expect(daysInMonth(2026, 1)).toBe(28);
+  });
+
+  it('builds the kick-off from a day and a time, in local time', () => {
+    const d = new Date(kickoffIso(new Date(2026, 9, 10), '10:30'));
+    expect([d.getDate(), d.getHours(), d.getMinutes()]).toEqual([10, 10, 30]);
   });
 });

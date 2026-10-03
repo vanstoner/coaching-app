@@ -197,6 +197,41 @@ export interface Format {
 }
 
 // ============================================================================
+// MatchEvent (what happens on the time stream) — #84, ADR-007
+// ============================================================================
+
+/**
+ * What a coach records with a tap during play. Goals, saves and goals
+ * conceded for now (#84); assists, tackles and fouls are #6.
+ *
+ * `withdrawn` is not something that happened on the pitch: it takes back an
+ * earlier event, which stays in the log (invariant 5).
+ */
+export type MatchEventKind = 'goal' | 'save' | 'conceded' | 'withdrawn';
+
+/**
+ * One entry on the match's time stream. Append-only: never edited, never
+ * deleted (ADR-007). The score is folded from these and never stored
+ * (invariant 1).
+ */
+export interface MatchEvent {
+  id: UUID;
+  matchId: UUID;
+  quarterId: UUID;
+  kind: MatchEventKind;
+  /** Who it is credited to. For `conceded`, the keeper in goal at the time. */
+  playerId: UUID | null;
+  /** Match-elapsed ms when it happened, from the wall-clock anchors (invariant 2). */
+  atElapsedMs: number;
+  /** Wall-clock ISO timestamp of the tap. */
+  recordedAt: string;
+  /** For `withdrawn`: the event it takes back. Null otherwise. */
+  refersTo: UUID | null;
+  /** Mandatory on `withdrawn` (invariant 5). Null otherwise. */
+  note: string | null;
+}
+
+// ============================================================================
 // Appearance (the audit unit)
 // ============================================================================
 

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine } from './src/engine/MatchEngine';
 import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
-import type { Format, Player, UUID } from './src/types/index';
+import type { Format, MatchEvent, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
   canArchiveFixture,
@@ -28,7 +28,7 @@ import {
   playersForMatch,
   squadReadiness,
 } from './src/app/squad';
-import { toTeamSheet, type Sheet } from './src/app/teamSheet';
+import { toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
 import { planHasContent, type MatchPlan } from './src/app/matchPlan';
 import {
@@ -48,6 +48,18 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
+import {
+  describeMerge,
+  emptyLedger,
+  mergeLedger,
+  parseLedger,
+  recordMatches,
+  type Ledger,
+  type MatchRecord,
+} from './src/app/ledger';
+import { clearLedger, loadLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
+import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -143,13 +155,50 @@ export default function App() {
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
 
+  // --- the minutes ledger (#75, ADR-013) ------------------------------------
+  //
+  // Player time, kept under its own key and written alongside every save. The
+  // ref is the value; the state is only so Settings repaints.
+  const ledgerRef = useRef<Ledger | null>(null);
+  const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [ledgerMessage, setLedgerMessage] = useState('');
+  const [ledgerBusy, setLedgerBusy] = useState(false);
+
+  const commitLedger = useCallback(
+    (next: Ledger) => {
+      const current = ledgerRef.current;
+      ledgerRef.current = next;
+      setLedger(next);
+      // Skip the write when nothing a coach cares about changed.
+      if (current && sameRecords(current, next)) return;
+      void saveLedger(store, next);
+    },
+    [store]
+  );
+
   // --- load once at launch --------------------------------------------------
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Read once, before any save can run: launch must never write over
+      // the ledger with an empty one.
       const saved = await loadSession(store);
+      const storedLedger = await loadLedger(store);
       if (cancelled) return;
+
+      // AC7: back-fill. Every match already played is copied in from its
+      // recorded appearances — measured values, never estimated ones. On
+      // every later launch this is a no-op: recording is idempotent by id.
+      const base =
+        storedLedger ??
+        emptyLedger(saved?.squadId ?? squadId, saved?.squadName ?? PLACEHOLDER_SQUAD_NAME);
+      commitLedger(
+        saved
+          ? recordMatches(base, saved.matches, saved.players, saved.squadName, new Date())
+          : base
+      );
+
       if (!saved) {
         setStep('fixtures');
         return;
@@ -174,6 +223,8 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+    // Launch only. squadId is read for a brand-new install's empty ledger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store]);
 
   // --- save on every change that matters ------------------------------------
@@ -198,9 +249,81 @@ export default function App() {
         matchFormat: match?.format ?? null,
         ...overrides,
       });
+
+      // The ledger, from the same records. Only closed intervals reach it, so
+      // a period ending is what puts minutes in; nothing is ever removed.
+      if (ledgerRef.current) {
+        const live = 'state' in overrides ? overrides.state : (match?.state ?? null);
+        const records: MatchRecord[] = [...(overrides.matches ?? matches)];
+        if (live) records.push(live);
+        commitLedger(
+          recordMatches(
+            ledgerRef.current,
+            records,
+            overrides.players ?? players,
+            overrides.squadName ?? squadName,
+            new Date()
+          )
+        );
+      }
     },
-    [store, squadName, squadId, players, format, totalMinutes, periodCount, match, matches]
+    [store, squadName, squadId, players, format, totalMinutes, periodCount, match, matches, commitLedger]
   );
+
+  /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
+  const exportMinutes = useCallback(async () => {
+    if (!ledgerRef.current) return;
+    setLedgerBusy(true);
+    const result = await exportLedgerFile(ledgerRef.current, new Date());
+    setLedgerBusy(false);
+    setLedgerMessage(result.ok ? '' : result.reason);
+  }, []);
+
+  /**
+   * Import a minutes file (AC5, AC6). Merged by id: new things are added,
+   * nothing is overwritten or deleted. Players the squad does not have come
+   * back with the same ids, so later matches line up with the imported ones.
+   */
+  const importMinutes = useCallback(async () => {
+    setLedgerBusy(true);
+    const picked = await pickLedgerFile();
+    setLedgerBusy(false);
+    if (!picked.ok) {
+      setLedgerMessage(picked.reason);
+      return;
+    }
+    if (picked.text === null) return; // cancelled
+    const parsed = parseLedger(picked.text);
+    if (!parsed.ok) {
+      setLedgerMessage(parsed.reason);
+      return;
+    }
+    const current = ledgerRef.current ?? emptyLedger(squadId, squadName);
+    const report = mergeLedger(current, parsed.ledger, new Date());
+    commitLedger(report.ledger);
+
+    const fresh = players.length === 0 && matches.length === 0;
+    const known = new Set(players.map((p) => p.id));
+    const restored: Player[] = report.ledger.players
+      .filter((p) => !known.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        squadId: fresh ? report.ledger.squad.id : squadId,
+        firstName: p.firstName,
+        displaySuffix: p.displaySuffix,
+        squadNumber: null,
+        active: p.active,
+        createdAt: new Date().toISOString(),
+      }));
+    const nextPlayers = [...players, ...restored];
+    const nextSquadId = fresh && report.ledger.squad.id ? report.ledger.squad.id : squadId;
+    const nextName = fresh && report.ledger.squad.name ? report.ledger.squad.name : squadName;
+    setPlayers(nextPlayers);
+    setSquadId(nextSquadId);
+    setSquadName(nextName);
+    persist({ players: nextPlayers, squadId: nextSquadId, squadName: nextName });
+    setLedgerMessage(describeMerge(report));
+  }, [squadId, squadName, players, matches, persist, commitLedger]);
 
   useEffect(() => {
     if (step === 'loading' || step === 'resume') return;
@@ -384,6 +507,10 @@ export default function App() {
           appearances: stored.appearances,
           benchStints: stored.benchStints,
           playerAvailability: availability,
+          // The time stream comes with the match. Rebuilt without it, the
+          // first goal after reopening would start a fresh list and the next
+          // save would write it over every event already recorded (#84).
+          events: stored.events ?? [],
         },
       });
       setSubPlan([]);
@@ -490,12 +617,21 @@ export default function App() {
    */
   const forgetEverything = useCallback(() => {
     void clearSession(store);
+    // The minutes go too: this is how a phone is handed on, and children's
+    // data must not stay behind. The confirm text says to export first.
+    void clearLedger(store);
+    const nextSquadId = uuid();
+    // A fresh, empty ledger rather than none, so the next match is recorded.
+    const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME);
+    ledgerRef.current = fresh;
+    setLedger(fresh);
+    setLedgerMessage('');
     setMatch(null);
     setPending(null);
     setSubPlan([]);
     setPlayers([]);
     setMatches([]);
-    setSquadId(uuid());
+    setSquadId(nextSquadId);
     setFormat(makeSevenASideFormat());
     setSquadName(PLACEHOLDER_SQUAD_NAME);
     setSquadErrand('home');
@@ -541,6 +677,72 @@ export default function App() {
       }
       setSubPlan((plan) => markDone(plan, inPlayerId));
       persist();
+    },
+    [match, persist]
+  );
+
+  /**
+   * A swap or a substitution during play (#83 AC4, #82). The engine records
+   * it at this moment; a sub also settles the planned reminder for whoever
+   * came on. An Undo of a sub puts the reminder of the player brought back
+   * off as it was, so a mis-drop does not silently cancel a planned change.
+   */
+  const liveMove = useCallback(
+    (m: LiveMove, isUndo = false): boolean => {
+      if (!match) return false;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return false;
+      try {
+        if (m.kind === 'swap') match.engine.swapPositions(match.state, quarter, m.a, m.b);
+        else match.engine.substitute(match.state, quarter, m.out, m.in);
+      } catch {
+        return false;
+      }
+      if (m.kind === 'sub') {
+        setSubPlan((plan) =>
+          plan.map((s) =>
+            s.playerId === m.in
+              ? { ...s, done: true }
+              : isUndo && s.playerId === m.out
+                ? { ...s, done: false }
+                : s
+          )
+        );
+      }
+      persist();
+      return true;
+    },
+    [match, persist]
+  );
+
+  /** A goal, save or goal conceded (#84). Null when the engine refuses it. */
+  const recordEvent = useCallback(
+    (kind: 'goal' | 'save' | 'conceded', playerId: UUID): MatchEvent | null => {
+      if (!match) return null;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return null;
+      try {
+        const event = match.engine.recordEvent(match.state, quarter, kind, playerId);
+        persist();
+        return event;
+      } catch {
+        return null;
+      }
+    },
+    [match, persist]
+  );
+
+  /** Take an event back with its note (invariant 5). */
+  const withdrawEvent = useCallback(
+    (eventId: UUID, note: string): boolean => {
+      if (!match) return false;
+      try {
+        match.engine.withdrawEvent(match.state, eventId, note);
+      } catch {
+        return false;
+      }
+      persist();
+      return true;
     },
     [match, persist]
   );
@@ -631,6 +833,15 @@ export default function App() {
           onTotalMinutes={setTotalMinutes}
           onPeriodCount={setPeriodCount}
           onShape={setDefaultShape}
+          minutes={
+            <MinutesSection
+              ledger={ledger}
+              message={ledgerMessage}
+              busy={ledgerBusy}
+              onExport={() => void exportMinutes()}
+              onImport={() => void importMinutes()}
+            />
+          }
           onForget={forgetEverything}
         />
       );
@@ -678,8 +889,12 @@ export default function App() {
           state={match.state}
           players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
+          format={match.format}
           subPlan={subPlan}
           onMakeSub={makeSub}
+          onLiveMove={liveMove}
+          onRecord={recordEvent}
+          onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
           onLeave={goHome}

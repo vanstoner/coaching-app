@@ -29,6 +29,10 @@ import {
   sheetFromSelection,
   sheetIsComplete,
   toTeamSheet,
+  editSheet,
+  liveMove,
+  liveSheet,
+  reverseOf,
   type Sheet,
 } from './teamSheet';
 
@@ -207,5 +211,69 @@ describe('AC8 — the plan is never the record', () => {
     // And the appearance knows the position it was actually played in.
     const appearance = state.appearances.find((a) => a.playerId === ids[7])!;
     expect(appearance.positionId).toBe(pos(format, 'ST'));
+  });
+});
+
+describe('moves during play (#83 AC4, #82)', () => {
+  const format = makeFormat('2-3-1');
+  const ids = squad(9).map((p) => p.id);
+  const sheet = sheetFromSelection(ids.slice(0, 7), ids[0], format);
+  const posOf = (id: UUID) => (Object.keys(sheet) as UUID[]).find((p) => sheet[p] === id)!;
+
+  it('pitch to another position is a swap', () => {
+    expect(liveMove(sheet, ids[1], { kind: 'slot', positionId: posOf(ids[0]) })).toEqual({ kind: 'swap', a: ids[1], b: ids[0] });
+  });
+
+  it('bench to a position is a sub for whoever is there', () => {
+    expect(liveMove(sheet, ids[8], { kind: 'slot', positionId: posOf(ids[3]) })).toEqual({ kind: 'sub', out: ids[3], in: ids[8] });
+  });
+
+  it('pitch onto a bench player is a sub the other way', () => {
+    expect(liveMove(sheet, ids[3], { kind: 'player', playerId: ids[8] })).toEqual({ kind: 'sub', out: ids[3], in: ids[8] });
+  });
+
+  it('onto the bench itself, or onto yourself, is nothing: no position is left empty', () => {
+    expect(liveMove(sheet, ids[3], { kind: 'bench' })).toBeNull();
+    expect(liveMove(sheet, ids[3], { kind: 'slot', positionId: posOf(ids[3]) })).toBeNull();
+  });
+
+  it('Undo of a sub brings the player back; of a swap, swaps back', () => {
+    expect(reverseOf({ kind: 'sub', out: ids[3], in: ids[8] })).toEqual({ kind: 'sub', out: ids[8], in: ids[3] });
+    expect(reverseOf({ kind: 'swap', a: ids[1], b: ids[2] })).toEqual({ kind: 'swap', a: ids[1], b: ids[2] });
+  });
+
+  it('reads the live sheet from the open stints', () => {
+    const live = liveSheet(
+      [
+        { quarterId: 'q' as UUID, playerId: ids[0], positionId: 'gk' as UUID, endElapsedMs: null },
+        { quarterId: 'q' as UUID, playerId: ids[1], positionId: 'lb' as UUID, endElapsedMs: 600 },
+      ],
+      'q' as UUID
+    );
+    expect(live).toEqual({ gk: ids[0] });
+  });
+});
+
+describe('moves before kick-off edit the sheet (#83 AC5)', () => {
+  const format = makeFormat('2-3-1');
+  const ids = squad(9).map((p) => p.id);
+  const sheet = sheetFromSelection(ids.slice(0, 7), ids[0], format);
+  const posOf = (s: Sheet, id: UUID) => (Object.keys(s) as UUID[]).find((p) => s[p] === id);
+
+  it('onto a position: goes there, swapping with whoever was there', () => {
+    const next = editSheet(sheet, ids[1], { kind: 'slot', positionId: posOf(sheet, ids[2])! });
+    expect(posOf(next, ids[1])).toBe(posOf(sheet, ids[2]));
+    expect(posOf(next, ids[2])).toBe(posOf(sheet, ids[1]));
+  });
+
+  it('a pitch player onto a bench player: the bench player takes the place', () => {
+    const next = editSheet(sheet, ids[3], { kind: 'player', playerId: ids[8] });
+    expect(posOf(next, ids[8])).toBe(posOf(sheet, ids[3]));
+    expect(playersOn(next)).not.toContain(ids[3]);
+  });
+
+  it('onto the bench: comes off and leaves the position empty', () => {
+    const next = editSheet(sheet, ids[3], { kind: 'bench' });
+    expect(playersOn(next)).toHaveLength(6);
   });
 });

@@ -29,7 +29,18 @@ import {
 
 import type { Competition } from '../types/index';
 import { COMPETITIONS, competitionLabel } from '../app/fixtures';
-import { nextSaturday, toDateInput, toIso, toTimeInput } from '../app/kickoff';
+import {
+  KICKOFF_TIMES,
+  dayLabel,
+  daysInMonth,
+  kickoffIso,
+  monthLabel,
+  sameDay,
+  startOfDay,
+  toTimeInput,
+  upcomingMonths,
+  upcomingSaturdays,
+} from '../app/kickoff';
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
 import { Chip, ChipRow } from './Chip';
@@ -170,13 +181,13 @@ export function FixtureFormScreen({
 }
 
 /**
- * Kick-off, entered as a date and a time.
+ * Kick-off, picked — #80 (PO ruling 2026-10-03: option A).
  *
- * Deliberately NOT a native date picker: that means a dependency, and this
- * project's proportionality ruling says prefer the least machinery that
- * satisfies the criterion. Two plain fields with a "next Saturday" shortcut
- * fit how this squad actually works — one match a week, nearly always a
- * Saturday morning.
+ * > *"entering fixture date pain, needs a picker or restricted dropdowns"*
+ *
+ * The next 8 Saturdays and the usual kick-off times, one tap each. "Other
+ * date" opens a month and a day, still without a keyboard. No dependency: the
+ * rules are tested in `src/app/kickoff.ts`.
  */
 function KickoffField({
   value,
@@ -188,66 +199,87 @@ function KickoffField({
   const parsed = value ? new Date(value) : null;
   const valid = parsed !== null && !Number.isNaN(parsed.getTime());
 
-  const [date, setDate] = useState(valid ? toDateInput(parsed!) : '');
+  const [day, setDay] = useState<Date | null>(valid ? startOfDay(parsed!) : null);
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
-  /** True once the coach has typed something, so an empty field stays quiet. */
-  const typed = date.trim() !== '';
+  const [other, setOther] = useState(false);
+  const [now] = useState(() => new Date());
+  const saturdays = upcomingSaturdays(now);
+  // AC4: a saved day that is not one of the coming Saturdays still shows,
+  // selected, rather than as a blank.
+  const offList = day !== null && !saturdays.some((s) => sameDay(s, day));
+  const [month, setMonth] = useState<[number, number]>(() =>
+    day ? [day.getFullYear(), day.getMonth()] : [now.getFullYear(), now.getMonth()]
+  );
+  const times = KICKOFF_TIMES.includes(time) ? KICKOFF_TIMES : [...KICKOFF_TIMES, time].sort();
 
-  const push = (d: string, t: string) => {
-    const iso = toIso(d, t);
-    onChange(iso);
+  const pick = (d: Date | null, t: string) => {
+    setDay(d);
+    setTime(t);
+    onChange(d ? kickoffIso(d, t) : null);
   };
 
   return (
     <View style={local.kickoff}>
-      <View style={local.kickoffRow}>
-        <TextInput
-          style={[screen.input, local.dateInput]}
-          value={date}
-          onChangeText={(t) => {
-            setDate(t);
-            push(t, time);
-          }}
-          placeholder="DD/MM/YYYY"
-          placeholderTextColor={colours.inkFaint}
-          keyboardType="numbers-and-punctuation"
-          maxLength={10}
-        />
-        <TextInput
-          style={[screen.input, local.timeInput]}
-          value={time}
-          onChangeText={(t) => {
-            setTime(t);
-            push(date, t);
-          }}
-          placeholder="HH:MM"
-          placeholderTextColor={colours.inkFaint}
-          keyboardType="numbers-and-punctuation"
-          maxLength={5}
-        />
-      </View>
-      <Pressable
-        onPress={() => {
-          const sat = nextSaturday(new Date());
-          const d = toDateInput(sat);
-          setDate(d);
-          push(d, time);
-        }}
-        style={screen.linkHit}
-      >
-        <Text style={screen.link}>Next Saturday</Text>
-      </Pressable>
-      {/*
-        Say WHY a date was not accepted. It used to fail silently: typing
-        31/02/2026 left the fixture with no kick-off and no explanation, so a
-        coach would save it believing the date had taken.
-      */}
-      <Text style={[screen.hint, typed && !value && local.rejected]}>
-        {value
-          ? ''
-          : typed
-            ? 'That is not a real date and time — check the day and the month.'
-            : 'Leave blank if you do not know yet — you can add it later.'}
+      <ChipRow>
+        {saturdays.map((s) => (
+          <Chip
+            key={s.toISOString()}
+            label={dayLabel(s)}
+            selected={day !== null && sameDay(s, day)}
+            onPress={() => {
+              setOther(false);
+              pick(day !== null && sameDay(s, day) ? null : s, time);
+            }}
+          />
+        ))}
+        {offList && <Chip label={dayLabel(day!)} selected onPress={() => setOther(true)} />}
+        <Chip label="Other date" selected={other} onPress={() => setOther(!other)} />
+      </ChipRow>
+
+      {other && (
+        <>
+          <Text style={screen.hint}>Month, then day.</Text>
+          <ChipRow>
+            {upcomingMonths(now).map(([y, m]) => (
+              <Chip
+                key={`${y}-${m}`}
+                label={monthLabel(y, m)}
+                selected={month[0] === y && month[1] === m}
+                onPress={() => setMonth([y, m])}
+              />
+            ))}
+          </ChipRow>
+          <ChipRow>
+            {Array.from({ length: daysInMonth(month[0], month[1]) }, (_, i) => {
+              const d = new Date(month[0], month[1], i + 1);
+              return (
+                <Chip
+                  key={i}
+                  label={`${i + 1}`}
+                  selected={day !== null && sameDay(d, day)}
+                  onPress={() => {
+                    pick(d, time);
+                    setOther(false);
+                  }}
+                  narrow
+                />
+              );
+            })}
+          </ChipRow>
+        </>
+      )}
+
+      <Text style={screen.hint}>Kick-off time</Text>
+      <ChipRow>
+        {times.map((t) => (
+          <Chip key={t} label={t} selected={t === time} onPress={() => pick(day, t)} narrow />
+        ))}
+      </ChipRow>
+
+      <Text style={screen.hint}>
+        {day
+          ? `${dayLabel(day)} at ${time}`
+          : 'No date yet — you can add it later.'}
       </Text>
     </View>
   );
@@ -255,8 +287,4 @@ function KickoffField({
 
 const local = StyleSheet.create({
   kickoff: { alignSelf: 'stretch' },
-  rejected: { color: colours.danger },
-  kickoffRow: { flexDirection: 'row', alignSelf: 'stretch' },
-  dateInput: { flex: 1, marginRight: 8 },
-  timeInput: { width: 104 },
 });

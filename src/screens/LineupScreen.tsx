@@ -61,6 +61,7 @@ import {
 } from '../app/subPlan';
 import {
   addToSheet,
+  editSheet,
   keeperOf,
   makeKeeper,
   placeInSlot,
@@ -71,6 +72,7 @@ import {
   type Sheet,
 } from '../app/teamSheet';
 import { Chip, ChipRow } from './Chip';
+import { PitchView } from './PitchView';
 import { shapeOfFormat } from '../app/shapes';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -123,7 +125,10 @@ export function LineupScreen({
   const [plan, setPlan] = useState<PlannedSub[]>(start.subs);
   const suggestedFor = useRef(quarter?.id);
 
-  /** Which position, or which sub's "comes off", the picker is open for. */
+  /** The pitch's first tap, waiting for where that player goes (#83). */
+  const [pitchPick, setPitchPick] = useState<UUID | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** Which sub's "comes off" the picker is open for. */
   const [picking, setPicking] = useState<
     { kind: 'slot'; positionId: UUID } | { kind: 'off'; playerId: UUID } | null
   >(null);
@@ -218,45 +223,27 @@ export function LineupScreen({
           {shape ? ` · ${shape}` : ''}
         </Text>
 
-        <ScrollView style={screen.list}>
-          {/* The shape, named. A pitch is #2/#10; this is the list the PO said
-              he can live with, and it makes 2-2-2 visibly different. */}
+        <ScrollView style={screen.list} scrollEnabled={!dragging}>
+          {/* #83: the shape drawn as a pitch. Drag a player, or tap one and
+              then where they go. Before kick-off this edits the sheet only. */}
           <Text style={screen.fieldLabel}>On the pitch</Text>
           {hasPlan && <Text style={local.fromPlan}>From your plan. Change anything.</Text>}
-          {positions.map((position) => {
-            const who = sheet[position.id] ?? null;
-            const open = picking?.kind === 'slot' && picking.positionId === position.id;
-            return (
-              <View key={position.id}>
-                <Pressable
-                  onPress={() => setPicking(open ? null : { kind: 'slot', positionId: position.id })}
-                  style={({ pressed }) => [local.slotRow, pressed && screen.buttonPressed]}
-                >
-                  <Text style={local.slotLabel} numberOfLines={1}>
-                    {position.label}
-                  </Text>
-                  <Text style={[local.slotName, who === null && local.slotEmpty]} numberOfLines={1}>
-                    {who === null ? 'not picked yet' : (nameOf.get(who) ?? '')}
-                  </Text>
-                </Pressable>
-                {open && (
-                  <View style={local.picker}>
-                    <ChipRow>
-                      {players.map((p) => (
-                        <Chip
-                          key={p.id}
-                          label={p.firstName}
-                          selected={p.id === who}
-                          onPress={() => pickFor(p.id)}
-                        />
-                      ))}
-                      <Chip label="Nobody" selected={false} onPress={() => pickFor(null)} />
-                    </ChipRow>
-                  </View>
-                )}
-              </View>
-            );
-          })}
+          <Text style={screen.hint}>
+            {pitchPick
+              ? `Now tap where ${nameOf.get(pitchPick) ?? ''} goes, or tap them again to cancel.`
+              : 'Drag a player into place, or tap one and then where they go.'}
+          </Text>
+          <PitchView
+            format={format}
+            sheet={sheet}
+            bench={players.map((p) => p.id).filter((id) => !selected.has(id))}
+            nameOf={(id) => nameOf.get(id) ?? ''}
+            detailOf={(id) => formatClock(byId.get(id)?.outfieldMs ?? 0)}
+            selected={pitchPick}
+            onSelect={setPitchPick}
+            onDragging={setDragging}
+            onMove={(id, target) => setSheet(editSheet(sheet, id, target))}
+          />
 
           <Text style={screen.fieldLabel}>Who is on?</Text>
           <Text style={screen.hint}>

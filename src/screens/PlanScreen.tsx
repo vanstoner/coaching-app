@@ -31,12 +31,15 @@ import {
   planFor,
   projectPlan,
   removeSwap,
+  setPeriodSlots,
   setSlot,
   updateSwap,
   type MatchPlan,
 } from '../app/matchPlan';
 import { opponentLabel } from '../app/fixtures';
 import { Chip, ChipRow } from './Chip';
+import { PitchView } from './PitchView';
+import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** What the picker is choosing for, when it is open. */
@@ -69,6 +72,9 @@ export function PlanScreen({
 
   const [periodIndex, setPeriodIndex] = useState(0);
   const [picking, setPicking] = useState<Picking>(null);
+  /** The pitch's first tap, waiting for where that player goes (#83). */
+  const [pitchPick, setPitchPick] = useState<UUID | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const period = plan.periods[periodIndex];
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -93,6 +99,7 @@ export function PlanScreen({
   const choosePeriod = (i: number) => {
     setPeriodIndex(i);
     setPicking(null);
+    setPitchPick(null);
   };
 
   const picker = (
@@ -108,7 +115,7 @@ export function PlanScreen({
 
   return (
     <View style={screen.flex}>
-      <ScrollView contentContainerStyle={screen.scroll}>
+      <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
         <Text style={screen.title} numberOfLines={1}>
           Plan
         </Text>
@@ -143,26 +150,25 @@ export function PlanScreen({
         )}
 
         <Text style={screen.fieldLabel}>Starting</Text>
-        {positions.map((position) => {
-          const who = period.slots[position.id] ?? null;
-          const open = picking?.kind === 'slot' && picking.positionId === position.id;
-          return (
-            <View key={position.id}>
-              <Pressable
-                style={({ pressed }) => [screen.playerRow, pressed && screen.buttonPressed]}
-                onPress={() => setPicking(open ? null : { kind: 'slot', positionId: position.id })}
-              >
-                <Text style={local.slotLabel} numberOfLines={1}>
-                  {position.label}
-                </Text>
-                <Text style={[screen.playerName, who === null && local.unset]} numberOfLines={1}>
-                  {name(who)}
-                </Text>
-              </Pressable>
-              {open && picker}
-            </View>
-          );
-        })}
+        <Text style={screen.hint}>
+          {pitchPick
+            ? `Now tap where ${name(pitchPick)} goes, or tap them again to cancel.`
+            : 'Drag a player into place, or tap one and then where they go.'}
+        </Text>
+        <PitchView
+          format={format}
+          sheet={period.slots}
+          bench={players
+            .map((p) => p.id)
+            .filter((id) => !Object.values(period.slots).includes(id))}
+          nameOf={name}
+          selected={pitchPick}
+          onSelect={setPitchPick}
+          onDragging={setDragging}
+          onMove={(id, target) =>
+            change(setPeriodSlots(plan, periodIndex, editSheet(period.slots, id, target)))
+          }
+        />
 
         <Text style={screen.fieldLabel}>Subs this {noun.toLowerCase()}</Text>
         {period.subs.length === 0 && (

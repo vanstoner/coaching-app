@@ -22,6 +22,8 @@ import {
   PositionKind,
   PositionUnit,
   AvailabilityStatus,
+  MatchEvent,
+  MatchEventKind,
 } from '../types/index';
 
 // ============================================================================
@@ -55,6 +57,12 @@ export interface MatchState {
   appearances: Appearance[];
   benchStints: BenchStint[];
   playerAvailability: Map<UUID, AvailabilityStatus>; // playerId → status
+  /**
+   * The time stream: goals, saves, goals conceded and withdrawals (#84).
+   * Optional so every state built before events existed is still valid; an
+   * absent list means nothing has been recorded.
+   */
+  events?: MatchEvent[];
 }
 
 // ============================================================================
@@ -495,6 +503,131 @@ export class MatchEngine {
         stint.endElapsedMs = endElapsedMs;
       }
     }
+  }
+
+  // ========================================================================
+  // In play: position swaps and the time stream — #82, #83, #84
+  // ========================================================================
+
+  /**
+   * Swap two players' positions while the clock runs (#83 AC4, #82 AC3).
+   *
+   * Both open stints end now with `position_change`, and two new ones begin
+   * in the swapped positions, each taking the position's snapshotted kind and
+   * unit from the stint it replaces. Minutes carry on without a gap, and a
+   * keeper swap moves goalkeeping and outfield time at this exact moment
+   * (invariant 3, #82 AC4).
+   */
+  swapPositions(state: MatchState, quarter: Quarter, playerA: UUID, playerB: UUID): void {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(
+        `Cannot swap positions in quarter ${quarter.index}; status is ${quarter.status} (expected running)`
+      );
+    }
+    if (playerA === playerB) throw new MatchEngineError('Cannot swap a player with themselves');
+    const open = (id: UUID) =>
+      state.appearances.find(
+        (a) => a.quarterId === quarter.id && a.playerId === id && a.endElapsedMs === null
+      );
+    const a = open(playerA);
+    const b = open(playerB);
+    if (!a || !b) {
+      throw new MatchEngineError('Both players must be on the pitch to swap positions');
+    }
+
+    // Validation complete. Nothing above writes to state.
+    const at = this.getMatchElapsedMs(state);
+    for (const [from, to] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      from.endElapsedMs = at;
+      from.endReason = 'position_change';
+      state.appearances.push({
+        id: uuid(),
+        matchId: state.match.id,
+        quarterId: quarter.id,
+        playerId: from.playerId,
+        positionId: to.positionId,
+        positionKind: to.positionKind,
+        positionUnit: to.positionUnit,
+        startElapsedMs: at,
+        endElapsedMs: null,
+        endReason: null,
+        corrected: false,
+        correctionNote: null,
+      });
+    }
+  }
+
+  /**
+   * Record a goal, a save or a goal conceded at this moment (#84).
+   *
+   * Only while a period runs, and only for a player on the pitch: a goal
+   * credited to someone on the bench is a wrong tap, not a record. `save`
+   * and `conceded` belong to whoever is in goal.
+   */
+  recordEvent(
+    state: MatchState,
+    quarter: Quarter,
+    kind: Exclude<MatchEventKind, 'withdrawn'>,
+    playerId: UUID
+  ): MatchEvent {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(
+        `Cannot record a ${kind} in quarter ${quarter.index}; status is ${quarter.status} (expected running)`
+      );
+    }
+    const stint = state.appearances.find(
+      (a) => a.quarterId === quarter.id && a.playerId === playerId && a.endElapsedMs === null
+    );
+    if (!stint) throw new MatchEngineError(`Cannot record a ${kind}; that player is not on the pitch`);
+    if ((kind === 'save' || kind === 'conceded') && stint.positionKind !== 'goalkeeper') {
+      throw new MatchEngineError(`Only the goalkeeper can be credited with a ${kind}`);
+    }
+    const event: MatchEvent = {
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      kind,
+      playerId,
+      atElapsedMs: this.getMatchElapsedMs(state),
+      recordedAt: this.now().toISOString(),
+      refersTo: null,
+      note: null,
+    };
+    (state.events ??= []).push(event);
+    return event;
+  }
+
+  /**
+   * Take an event back (invariant 5): a new `withdrawn` event that refers to
+   * it, with a mandatory note. The original stays in the log. Allowed at any
+   * time, including after the match, because a wrong tap is found when it is
+   * found.
+   */
+  withdrawEvent(state: MatchState, eventId: UUID, note: string): MatchEvent {
+    const events = state.events ?? [];
+    const target = events.find((e) => e.id === eventId);
+    if (!target) throw new MatchEngineError('No such event to withdraw');
+    if (target.kind === 'withdrawn') throw new MatchEngineError('A withdrawal cannot itself be withdrawn');
+    if (events.some((e) => e.kind === 'withdrawn' && e.refersTo === eventId)) {
+      throw new MatchEngineError('That event has already been withdrawn');
+    }
+    if (note.trim() === '') throw new MatchEngineError('A withdrawal needs a note (invariant 5)');
+    const event: MatchEvent = {
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: target.quarterId,
+      kind: 'withdrawn',
+      playerId: target.playerId,
+      atElapsedMs: this.getMatchElapsedMs(state),
+      recordedAt: this.now().toISOString(),
+      refersTo: eventId,
+      note: note.trim(),
+    };
+    (state.events ??= []).push(event);
+    return event;
   }
 
   // ========================================================================
