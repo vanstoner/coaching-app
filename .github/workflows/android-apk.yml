@@ -467,9 +467,15 @@ jobs:
   # itself via `gh release create --target`.
   #
   # Why not a draft. A draft release's assets are not downloadable without an
-  # authenticated session, which makes them useless on a phone. A main build
-  # publishes a PRERELEASE: public, installable, clearly marked as not yet
-  # signed off. Promotion to a full release stays the Product Owner's call.
+  # authenticated session, which makes them useless on a phone.
+  #
+  # Why a full release (#79, PO ruling "approve 1 2", 2026-10-03). Betas are
+  # the try-it step: every PR publishes Coaching Beta. Rob's approval merges
+  # the PR, so a build of main is an approved beta and publishes the FULL
+  # release, marked Latest, and deletes the `beta` prerelease. It used to
+  # publish a prerelease of the real app that then needed promoting, which
+  # looked like a beta on the phone but installed over the real app.
+  # promote-release.yml remains for retitling or re-pointing Latest only.
   #
   # The repository is public, so a published asset is world-readable. That is
   # acceptable for this artifact and only this artifact: the APK contains no
@@ -520,15 +526,13 @@ jobs:
           eval "$LABEL_ENV"
           echo "computed by build-label.sh: TAG=$TAG BUILD_LABEL=$BUILD_LABEL"
 
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            PRERELEASE=""
-          else
-            # One immutable prerelease per green build of main: the audit trail.
-            PRERELEASE="--prerelease"
-          fi
-          echo "tag: $TAG   version: $VERSION"
+          # #79, PO ruling "approve 1 2": a merge to main IS the approval, so
+          # its build is the full release, marked Latest. Betas come from pull
+          # requests only. There is no in-between prerelease of the real app.
+          TITLE="Coaching App — build ${GITHUB_RUN_NUMBER} (${VERSION})"
+          echo "tag: $TAG   version: $VERSION   title: $TITLE"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+          echo "TITLE=$TITLE" >> "$GITHUB_ENV"
 
           # -print -quit rather than `| head -n 1`: a pipeline that exits 141
           # on SIGPIPE under pipefail has already cost this project three runs.
@@ -595,9 +599,9 @@ jobs:
           # nothing outside CI has to be able to push a tag.
           if gh release create "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "$TAG" \
+              --title "$TITLE" \
               --notes-file notes.md \
-              $PRERELEASE \
+              --latest \
               "$ASSET" "$ASSET.sha256" 2>/tmp/gh-err.txt; then
             echo "release created"
           else
@@ -606,7 +610,23 @@ jobs:
             # A re-run of the same build should update, not fail.
             echo "attempting to update an existing release of the same tag"
             gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber || exit 1
+            gh release edit "$TAG" --prerelease=false --latest --title "$TITLE" || exit 1
           fi
+
+          # The beta has been approved and merged: this release supersedes it.
+          if gh release view beta >/dev/null 2>&1; then
+            gh release delete beta --cleanup-tag --yes || exit 1
+            echo "beta release and tag removed"
+          fi
+
+          # Read the outcome back from GitHub rather than trusting the flags.
+          gh release view "$TAG" --json tagName,isPrerelease,isDraft,assets > /tmp/release.json || exit 1
+          LATEST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          if gh release view beta >/dev/null 2>&1; then BETA=yes; else BETA=no; fi
+          python3 .github/scripts/check_release.py --self-test || {
+            echo "WHY THIS JOB FAILED: the release check failed its own self-test"; exit 1; }
+          python3 .github/scripts/check_release.py /tmp/release.json "$LATEST" "$BETA" "$TAG" || {
+            echo "WHY THIS JOB FAILED: main's build did not end up as the Latest full release (above)"; exit 1; }
 
           URL="$(gh release view "$TAG" --json url --jq .url)"
           IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
@@ -629,7 +649,7 @@ jobs:
   # PR builds only. The latest one replaces a single prerelease named `beta`,
   # so the PO can install it from a phone as a plain .apk, next to the released
   # app (its own application ID). Never marked latest: the newest main release
-  # stays the default download.
+  # stays the default download. The release job deletes it when the PR merges.
   #
   # The `beta` tag points at the PR's head commit, which a squash merge never
   # puts in main's history, so the release job's `git describe` cannot reach
