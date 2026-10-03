@@ -36,6 +36,7 @@ export function FixturesScreen({
   onAdd,
   onPlan,
   plannedIds,
+  housekeeping,
   onPlayNow,
   buildLabel,
 }: {
@@ -45,13 +46,15 @@ export function FixturesScreen({
   /** Injected so the list is testable and never reads the clock itself. */
   now: Date;
   onOpen: (matchId: UUID) => void;
-  /** Only offered on a fixture that has never been played. */
+  /** Only offered on a fixture that has never been kicked off. */
   onDelete: (matchId: UUID) => void;
   onAdd: () => void;
   /** Plan a fixture's periods before kick-off (#72). Offered only before it. */
   onPlan: (matchId: UUID) => void;
   /** Fixtures that already have something planned, so the link says so. */
   plannedIds: ReadonlySet<UUID>;
+  /** Deleting and archiving — #76. The rules are in fixtures.ts. */
+  housekeeping: Housekeeping;
   /**
    * Kick off now, from the defaults, with no fixture form — PO ruling,
    * 2026-09-20: *Play now: **yes.***
@@ -63,6 +66,7 @@ export function FixturesScreen({
   buildLabel: string;
 }) {
   const rows = fixtureList(matches, now, currentMatchId);
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -75,32 +79,29 @@ export function FixturesScreen({
         </Text>
 
         {rows.length === 0 ? (
-          <Text style={screen.caption}>{NO_FIXTURES_YET}</Text>
+          <Text style={screen.caption}>
+            {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
+          </Text>
         ) : (
           <>
-            <Section title="Now" rows={current} now={now} onOpen={onOpen} />
-            <Section
-              title="Coming up"
-              rows={future}
-              now={now}
-              onOpen={onOpen}
-              onDelete={onDelete}
-              onPlan={onPlan}
-              plannedIds={plannedIds}
-            />
+            <Section title="Now" rows={current} {...cardProps} />
+            <Section title="Coming up" rows={future} {...cardProps} />
             {/* A fixture whose kick-off time has passed but which was never
-                started sits here, and can still be planned and played. */}
-            <Section
-              title="Played"
-              rows={past}
-              now={now}
-              onOpen={onOpen}
-              onPlan={onPlan}
-              plannedIds={plannedIds}
-            />
+                started sits here, and can still be planned, played or
+                deleted (#76). */}
+            <Section title="Played" rows={past} {...cardProps} />
           </>
         )}
 
+        {(housekeeping.archivedCount > 0 || housekeeping.showingArchived) && (
+          <Pressable onPress={housekeeping.onToggleArchived} style={screen.linkHit}>
+            <Text style={screen.link}>
+              {housekeeping.showingArchived
+                ? 'Hide archived'
+                : `Show archived (${housekeeping.archivedCount})`}
+            </Text>
+          </Pressable>
+        )}
         {onPlayNow && (
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
@@ -130,39 +131,35 @@ export function FixturesScreen({
   );
 }
 
-/** A bucket, omitted entirely when empty rather than shown as a bare heading. */
-function Section({
-  title,
-  rows,
-  now,
-  onOpen,
-  onDelete,
-  onPlan,
-  plannedIds,
-}: {
-  title: string;
-  rows: FixtureRow[];
+export interface Housekeeping {
+  /** Never kicked off: safe to delete wherever it is listed. */
+  deletable: ReadonlySet<UUID>;
+  /** Finished: can leave the list without anything being deleted. */
+  archivable: ReadonlySet<UUID>;
+  archived: ReadonlySet<UUID>;
+  onArchive: (matchId: UUID, archived: boolean) => void;
+  archivedCount: number;
+  showingArchived: boolean;
+  onToggleArchived: () => void;
+}
+
+interface CardActions {
   now: Date;
   onOpen: (matchId: UUID) => void;
-  /** Absent on buckets where deleting would destroy a played record. */
-  onDelete?: (matchId: UUID) => void;
-  onPlan?: (matchId: UUID) => void;
-  plannedIds?: ReadonlySet<UUID>;
-}) {
+  onDelete: (matchId: UUID) => void;
+  onPlan: (matchId: UUID) => void;
+  plannedIds: ReadonlySet<UUID>;
+  housekeeping: Housekeeping;
+}
+
+/** A bucket, omitted entirely when empty rather than shown as a bare heading. */
+function Section({ title, rows, ...actions }: { title: string; rows: FixtureRow[] } & CardActions) {
   if (rows.length === 0) return null;
   return (
     <View style={local.section}>
       <Text style={screen.fieldLabel}>{title}</Text>
       {rows.map((row) => (
-        <FixtureCard
-          key={row.match.id}
-          row={row}
-          now={now}
-          onOpen={onOpen}
-          onDelete={onDelete}
-          onPlan={onPlan}
-          planned={plannedIds?.has(row.match.id) ?? false}
-        />
+        <FixtureCard key={row.match.id} row={row} {...actions} />
       ))}
     </View>
   );
@@ -174,16 +171,14 @@ function FixtureCard({
   onOpen,
   onDelete,
   onPlan,
-  planned,
-}: {
-  row: FixtureRow;
-  now: Date;
-  onOpen: (matchId: UUID) => void;
-  onDelete?: (matchId: UUID) => void;
-  onPlan?: (matchId: UUID) => void;
-  planned: boolean;
-}) {
+  plannedIds,
+  housekeeping,
+}: { row: FixtureRow } & CardActions) {
   const { match } = row;
+  const planned = plannedIds.has(match.id);
+  const canDelete = housekeeping.deletable.has(match.id);
+  const canArchive = housekeeping.archivable.has(match.id);
+  const isArchived = housekeeping.archived.has(match.id);
   const competition = competitionLabel(match.competition);
   // Two taps, in place, no dialog module. A fixture is cheap to re-add, but
   // deleting one the coach meant to keep is not cheap to undo.
@@ -209,15 +204,25 @@ function FixtureCard({
         {lengthLabel(match)}
       </Text>
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
+      {isArchived && <Text style={local.meta}>Archived</Text>}
 
       {/* Only before kick-off: once a match is played its plan is history. */}
-      {onPlan && match.status === 'planned' && (
+      {match.status === 'planned' && (
         <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit}>
           <Text style={local.plan}>{planned ? 'Edit the plan' : 'Plan this match'}</Text>
         </Pressable>
       )}
 
-      {onDelete &&
+      {canArchive && (
+        <Pressable
+          onPress={() => housekeeping.onArchive(match.id, !isArchived)}
+          style={local.confirmHit}
+        >
+          <Text style={local.remove}>{isArchived ? 'Unarchive' : 'Archive'}</Text>
+        </Pressable>
+      )}
+
+      {canDelete &&
         (confirming ? (
           <View style={local.confirmRow}>
             <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit}>

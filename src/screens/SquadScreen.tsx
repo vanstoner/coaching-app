@@ -32,9 +32,12 @@ import {
 import type { Player, UUID } from '../types/index';
 import {
   MAX_NAME_LENGTH,
+  activePlayers,
   displayName,
   duplicatedNames,
   makePlayer,
+  removePlayer,
+  restorePlayer,
   squadReadiness,
   validateName,
 } from '../app/squad';
@@ -42,7 +45,8 @@ import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadScreen({
   squadId,
-  players,
+  players: everyone,
+  played,
   onPlayers,
   onFieldCount,
   /** Offered only on the way to a match; the tab has tabs instead. */
@@ -51,12 +55,17 @@ export function SquadScreen({
   onLeave,
 }: {
   squadId: UUID;
+  /** Everyone ever in the squad, retired players included (#77). */
   players: Player[];
+  /** Players with recorded time: removing one retires rather than deletes. */
+  played: ReadonlySet<UUID>;
   onPlayers: (p: Player[]) => void;
   onFieldCount: number;
   onStartMatch: (() => void) | null;
   onLeave: (() => void) | null;
 }) {
+  const players = activePlayers(everyone);
+  const retired = everyone.filter((p) => !players.includes(p));
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
 
@@ -69,10 +78,10 @@ export function SquadScreen({
       setError(check.message);
       return;
     }
-    onPlayers([...players, makePlayer(squadId, check.cleaned)]);
+    onPlayers([...everyone, makePlayer(squadId, check.cleaned)]);
     setDraft('');
     setError('');
-  }, [draft, players, onPlayers, squadId]);
+  }, [draft, everyone, onPlayers, squadId]);
 
   return (
     <View style={screen.flex}>
@@ -115,7 +124,7 @@ export function SquadScreen({
               <View key={p.id} style={screen.playerRow}>
                 <Text style={screen.playerName}>{displayName(p)}</Text>
                 <Pressable
-                  onPress={() => onPlayers(players.filter((x) => x.id !== p.id))}
+                  onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
                   style={local.removeHit}
                 >
                   <Text style={local.remove}>Remove</Text>
@@ -123,6 +132,23 @@ export function SquadScreen({
               </View>
             ))}
             {players.length === 0 && <Text style={screen.caption}>No players yet.</Text>}
+
+            {retired.length > 0 && (
+              <>
+                <Text style={screen.fieldLabel}>Removed, still in past matches</Text>
+                {retired.map((p) => (
+                  <View key={p.id} style={screen.playerRow}>
+                    <Text style={[screen.playerName, local.retired]}>{displayName(p)}</Text>
+                    <Pressable
+                      onPress={() => onPlayers(restorePlayer(everyone, p.id))}
+                      style={local.removeHit}
+                    >
+                      <Text style={local.remove}>Bring back</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </>
+            )}
           </ScrollView>
 
           {dupes.length > 0 && (
@@ -176,6 +202,8 @@ const local = StyleSheet.create({
     minHeight: TOUCH_TARGET,
     minWidth: TOUCH_TARGET + 24,
   },
+  // Colour only: a weight change re-measures and clips (theme.ts).
+  retired: { color: colours.inkFaint },
   remove: {
     color: colours.inkMuted,
     fontSize: 13,

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { uuid } from '../types/index';
 import type { Competition, Match, MatchStatus, UUID } from '../types/index';
 import {
+  canArchiveFixture,
   canDeleteFixture,
+  listedFixtures,
   openDestination,
   COMPETITIONS,
   NO_FIXTURES_YET,
@@ -282,5 +284,31 @@ describe('lengthLabel', () => {
   it('shows a cup game saved as halves as halves', () => {
     const cup = { ...fixture({ competition: 'cup' }), totalMinutes: 60, quarterCount: 2 };
     expect(lengthLabel(cup)).toBe('60 min · Halves');
+  });
+});
+
+describe('archiving — #76', () => {
+  const ended = [{ status: 'ended' as const }, { status: 'ended' as const }];
+
+  it('AC1: a fixture never kicked off is deletable even after its date has passed', () => {
+    // The defect: it sat under "Played" with no Remove, though nothing was
+    // recorded for it. The rule never depended on the date; the screen did.
+    const past = fixture({ kickoffAt: '2026-01-01T10:00:00Z', status: 'planned' });
+    expect(bucketOf(past, new Date('2026-10-03T12:00:00Z'))).toBe('past');
+    expect(canDeleteFixture(pending, past.status)).toBe(true);
+  });
+
+  it('AC2: a finished match can be archived; a live or unplayed one cannot', () => {
+    expect(canArchiveFixture(ended, 'completed')).toBe(true);
+    expect(canArchiveFixture(ended, 'in_progress')).toBe(true);
+    expect(canArchiveFixture([], 'abandoned')).toBe(true);
+    expect(canArchiveFixture([{ status: 'ended' }, { status: 'running' }], 'in_progress')).toBe(false);
+    expect(canArchiveFixture(pending, 'planned')).toBe(false);
+  });
+
+  it('AC2/AC3: archived fixtures leave the list, and come back when asked', () => {
+    const stored = [{ id: 'a' }, { id: 'b', archived: true }, { id: 'c', archived: false }];
+    expect(listedFixtures(stored, false).map((m) => m.id)).toEqual(['a', 'c']);
+    expect(listedFixtures(stored, true).map((m) => m.id)).toEqual(['a', 'b', 'c']);
   });
 });

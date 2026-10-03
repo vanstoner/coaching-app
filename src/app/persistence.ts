@@ -249,6 +249,11 @@ export interface SavedMatch {
    * folded from it (invariant 1). Absent when nothing has been planned.
    */
   plan?: MatchPlan;
+  /**
+   * Hidden from the fixtures list — #76. A listing choice, never a record:
+   * nothing about the match changes, and its minutes count as before.
+   */
+  archived?: boolean;
 }
 
 /** Everything worth surviving a relaunch. */
@@ -349,6 +354,7 @@ function mergeCurrentMatch(
     // The plan is edited on Tuesday and played from on Saturday. Rebuilding
     // the match from engine state must not drop it on the first save.
     plan: at === -1 ? undefined : existing[at].plan,
+    archived: at === -1 ? undefined : existing[at].archived,
   };
   if (at === -1) return [...existing, current];
   return existing.map((m, i) => (i === at ? current : m));
