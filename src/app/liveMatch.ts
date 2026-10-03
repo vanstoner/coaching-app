@@ -14,6 +14,7 @@
 import type { MatchState } from '../engine/MatchEngine';
 import type { Format, UUID } from '../types/index';
 import { matchProgress, type MatchProgress } from './fixtures';
+import { scoreOf, type Score } from './matchEvents';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
 
 export interface HeldMatch {
@@ -32,4 +33,19 @@ export function progressById(
   live: HeldMatch | null
 ): Map<UUID, MatchProgress> {
   return new Map(withLiveMatch(matches, live).map((m) => [m.match.id, matchProgress(m.quarters)]));
+}
+
+/**
+ * The score of every match that has been kicked off, the live one read from
+ * its live state, for the fixture cards (PO, match day 4: a played match
+ * "doesn't seem to have a result"; "scores are not being retained"). Folded
+ * from the events, never stored (invariant 1). A match not yet kicked off has
+ * no score to show.
+ */
+export function scoresById(matches: SavedMatch[], live: HeldMatch | null): Map<UUID, Score> {
+  return new Map(
+    withLiveMatch(matches, live)
+      .filter((m) => matchProgress(m.quarters) !== 'not_started')
+      .map((m) => [m.match.id, scoreOf(m.events)])
+  );
 }

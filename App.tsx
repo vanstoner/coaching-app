@@ -49,7 +49,7 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
-import { progressById, withLiveMatch } from './src/app/liveMatch';
+import { progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import {
   describeMerge,
   emptyLedger,
@@ -1005,6 +1005,7 @@ export default function App() {
         now={new Date()}
         onOpen={openFixture}
         progress={progressById(matches, match)}
+        scores={scoresById(matches, match)}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
         onPlan={(id) => {

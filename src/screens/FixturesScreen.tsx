@@ -20,6 +20,7 @@ import {
 import { Text } from './Text';
 
 import type { Match, UUID } from '../types/index';
+import type { Score } from '../app/matchEvents';
 import {
   NO_FIXTURES_YET,
   competitionLabel,
@@ -47,6 +48,7 @@ export function FixturesScreen({
   onPlayNow,
   buildLabel,
   progress,
+  scores,
 }: {
   squadName: string;
   matches: Match[];
@@ -74,9 +76,11 @@ export function FixturesScreen({
   buildLabel: string;
   /** Each match's progress, live match included: what files it as Played. */
   progress: ReadonlyMap<UUID, MatchProgress>;
+  /** The score of each match kicked off, folded from its events. */
+  scores: ReadonlyMap<UUID, Score>;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -160,6 +164,7 @@ interface CardActions {
   onPlan: (matchId: UUID) => void;
   plannedIds: ReadonlySet<UUID>;
   housekeeping: Housekeeping;
+  scores: ReadonlyMap<UUID, Score>;
 }
 
 /** A bucket, omitted entirely when empty rather than shown as a bare heading. */
@@ -183,8 +188,10 @@ function FixtureCard({
   onPlan,
   plannedIds,
   housekeeping,
+  scores,
 }: { row: FixtureRow } & CardActions) {
   const { match } = row;
+  const score = scores.get(match.id);
   const planned = plannedIds.has(match.id);
   const canDelete = housekeeping.deletable.has(match.id);
   const canArchive = housekeeping.archivable.has(match.id);
@@ -213,6 +220,11 @@ function FixtureCard({
       <Text style={local.meta} numberOfLines={1}>
         {lengthLabel(match)}
       </Text>
+      {score && (
+        <Text style={local.score} numberOfLines={1}>
+          {score.us} – {score.them}
+        </Text>
+      )}
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
       {isArchived && <Text style={local.meta}>Archived</Text>}
 
@@ -303,6 +315,7 @@ const local = StyleSheet.create({
     includeFontPadding: false,
   },
   keep: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
+  score: { color: colours.ink, fontSize: 22, fontWeight: '700', marginTop: 4, includeFontPadding: false },
   nowTag: {
     color: colours.warn,
     fontSize: 13,

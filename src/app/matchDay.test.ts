@@ -20,7 +20,8 @@ import { teamSheetFor } from './lineup';
 import { currentQuarter } from './matchClock';
 import { foldPlayerMinutes } from './playerMinutes';
 import { fixtureList, inBucket } from './fixtures';
-import { progressById, withLiveMatch } from './liveMatch';
+import { progressById, scoresById, withLiveMatch } from './liveMatch';
+import { scoreOf } from './matchEvents';
 import {
   createMemoryStore,
   loadSession,
@@ -95,6 +96,11 @@ async function playFourQuarters(day: ReturnType<typeof matchDay>, matches: Saved
       engine.recordEvent(state, quarter, 'goal', ids[5]);
       await saveSession(day.store, day.session(matches, state));
     }
+    if (q === 2) {
+      engine.recordEvent(state, quarter, 'goal', ids[4]);
+      engine.recordEvent(state, quarter, 'conceded', ids[0]);
+      await saveSession(day.store, day.session(matches, state));
+    }
     day.advance(QUARTER - 6 * MIN);
     engine.endQuarter(state, quarter);
     await saveSession(day.store, day.session(matches, state));
@@ -120,7 +126,10 @@ describe('a mock match, kick-off to Played (match day 4)', () => {
     expect(played.quarters.every((q) => q.status === 'ended')).toBe(true);
     // 7 starters + 1 sub each quarter = 8 appearances a quarter.
     expect(played.appearances).toHaveLength(32);
-    expect(played.events?.filter((e) => e.kind === 'goal')).toHaveLength(1);
+    // The score, 2 – 1, folded from the events read back (PO: "scores are
+    // not being retained").
+    expect(scoreOf(played.events)).toEqual({ us: 2, them: 1 });
+    expect(scoresById(saved.matches, null).get(played.match.id)).toEqual({ us: 2, them: 1 });
 
     // The minutes read back are the minutes that were played.
     const reloaded = toMatchState(saved, played.match.id)!;
@@ -157,6 +166,7 @@ describe('a mock match, kick-off to Played (match day 4)', () => {
     const saved = (await loadSession(day.store))!;
     expect(saved.matches).toHaveLength(1);
     expect(saved.matches[0].appearances).toHaveLength(32);
+    expect(scoreOf(saved.matches[0].events)).toEqual({ us: 2, them: 1 });
   });
 
   it('does not leave a finished match listed as Now, though its status still says in progress', async () => {
@@ -196,5 +206,21 @@ describe('a mock match, kick-off to Played (match day 4)', () => {
       progressById([day.fixture], { state, format: day.format })
     );
     expect(inBucket(rows, 'current')).toHaveLength(1);
+  });
+});
+
+describe('the score on a fixture card (match day 4)', () => {
+  it('is shown for a match kicked off, live score included, and not for one to come', async () => {
+    const day = matchDay('2026-10-03T10:00:00Z');
+    const engine = new MatchEngine({ nowFn: day.nowFn });
+    const state = day.planned;
+    const ids = day.players.map((p) => p.id);
+    const quarter = currentQuarter(state)!;
+    engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], day.format), day.format);
+    engine.recordEvent(state, quarter, 'conceded', ids[0]);
+    const other = matchDay('2026-10-10T10:00:00Z').fixture;
+    const scores = scoresById([day.fixture, other], { state, format: day.format });
+    expect(scores.get(state.match.id)).toEqual({ us: 0, them: 1 });
+    expect(scores.has(other.match.id)).toBe(false);
   });
 });
