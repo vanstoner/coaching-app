@@ -25,7 +25,30 @@
 // disagree. With the variable unset — any local prebuild — app.json's value
 // applies unchanged.
 
-module.exports = ({ config }) => {
+// #79 — Coaching Beta. With APP_VARIANT=beta (set by CI on pull-request
+// builds only) the app gets its own application ID and name, so a PR build
+// installs NEXT TO the released app instead of replacing it. Android keys
+// everything on the application ID, including the app's private storage, so
+// the beta also starts empty and never sees the real squad. Unset — every
+// build of main, and any local prebuild — the identity is exactly app.json's.
+const BETA_SUFFIX = '.beta';
+const BETA_NAME = 'Coaching Beta';
+
+function withVariant(config) {
+  const variant = process.env.APP_VARIANT;
+  if (variant === undefined || variant === '') return config;
+  if (variant !== 'beta') {
+    throw new Error(`APP_VARIANT must be 'beta' or unset, got ${JSON.stringify(variant)}`);
+  }
+  return {
+    ...config,
+    name: BETA_NAME,
+    android: { ...config.android, package: `${config.android.package}${BETA_SUFFIX}` },
+  };
+}
+
+module.exports = ({ config: base }) => {
+  const config = withVariant(base);
   const raw = process.env.ANDROID_VERSION_CODE;
   if (raw === undefined || raw === '') {
     return config;

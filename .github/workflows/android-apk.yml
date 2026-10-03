@@ -35,6 +35,10 @@ jobs:
       APK: android/app/build/outputs/apk/release/app-release.apk
       # D2 (#47): versionCode is the Actions run number. app.config.js reads it.
       ANDROID_VERSION_CODE: ${{ github.run_number }}
+      # #79: a PR build is Coaching Beta, with its own application ID, so it
+      # installs NEXT TO the released app. Empty on main: app.json applies
+      # unchanged. Set at job level so prebuild and the assertions agree.
+      APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -202,6 +206,15 @@ jobs:
           done
           echo "::endgroup::"
 
+          echo "::group::#79 — the identity matches the build (beta on a PR, unchanged on main)"
+          # Self-test first: the check is dry-run against BOTH healthy cases
+          # before it is trusted with this artifact.
+          python3 .github/scripts/check_identity.py --self-test \
+            || note "the identity check failed its own self-test"
+          python3 .github/scripts/check_identity.py /tmp/badging.txt "$APP_VARIANT" \
+            || note "the APK's identity does not match this build (APP_VARIANT='$APP_VARIANT')"
+          echo "::endgroup::"
+
           echo "::group::AC-A4 — debug-signed, therefore sideloadable"
           if ! "$BT/apksigner" verify --print-certs "$APK" > /tmp/apksigner.txt 2>&1; then
             note "apksigner verify failed — the APK is not properly signed"
@@ -318,7 +331,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      SMOKE_PACKAGE: com.example.coachingapp
+      # #79: the beta package on a PR build, the released one on main.
+      SMOKE_PACKAGE: ${{ github.event_name == 'pull_request' && 'com.example.coachingapp.beta' || 'com.example.coachingapp' }}
       SMOKE_APK: apk-under-test/app-release.apk
       # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
       # Data protection. If the screen changes, this moves with it.
@@ -606,4 +620,93 @@ jobs:
             echo "**[Open the release]($URL)** — draft=\`$IS_DRAFT\` prerelease=\`$IS_PRE\`"
             echo
             gh release view "$TAG" --json assets --jq '.assets[] | "- \(.name)"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Publish Coaching Beta — #79
+  # ---------------------------------------------------------------------------
+  #
+  # PR builds only. The latest one replaces a single prerelease named `beta`,
+  # so the PO can install it from a phone as a plain .apk, next to the released
+  # app (its own application ID). Never marked latest: the newest main release
+  # stays the default download.
+  #
+  # The `beta` tag points at the PR's head commit, which a squash merge never
+  # puts in main's history, so the release job's `git describe` cannot reach
+  # it and main's changelog is unaffected.
+  #
+  # Same data-protection footing as the main release: the APK contains no
+  # player data (ADR-011). Nothing captured from a phone is ever attached.
+  beta:
+    name: Publish Coaching Beta
+    needs: [apk, smoke]           # never publish a build whose smoke test failed
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: coaching-beta        # one writer to the `beta` release at a time
+      cancel-in-progress: false
+    permissions:
+      contents: write             # least privilege: this job only
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coaching-app-apk
+          path: beta-apk
+
+      - name: Replace the beta release with this build
+        run: |
+          set -uo pipefail
+          SRC="$(find beta-apk -name '*.apk' -print -quit)"
+          test -n "$SRC" || { echo "no APK in the artifact"; exit 1; }
+          NAME="coaching-beta_pr-${PR_NUMBER}_${HEAD_SHA:0:7}.apk"
+          cp "$SRC" "$NAME"
+          sha256sum "$NAME" > "$NAME.sha256"
+          cat "$NAME.sha256"
+
+          {
+            echo "## Coaching Beta — PR #${PR_NUMBER}"
+            echo
+            echo "**${PR_TITLE}**"
+            echo
+            echo "Installs NEXT TO Coaching App, not over it, and keeps its own data:"
+            echo "it starts empty and never sees the real squad. Use made-up names."
+            echo
+            echo "Built by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo "from PR #${PR_NUMBER} at \`${HEAD_SHA}\`, merged with main for the build."
+            echo "The emulator smoke test passed on this exact artifact."
+            echo
+            echo '```'
+            cat "$NAME.sha256"
+            echo '```'
+          } > notes.md
+
+          # Replace, not append: `beta` is always the newest PR build. A
+          # missing release on the first run is fine.
+          gh release delete beta --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null \
+            && echo "previous beta removed" || echo "no previous beta"
+
+          if ! gh release create beta \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$HEAD_SHA" \
+              --title "Coaching Beta (PR #${PR_NUMBER})" \
+              --notes-file notes.md \
+              --prerelease \
+              --latest=false \
+              "$NAME" "$NAME.sha256" 2>/tmp/gh-err.txt; then
+            echo "WHY THIS JOB FAILED: gh release create beta was refused:"
+            cat /tmp/gh-err.txt
+            exit 1
+          fi
+
+          URL="$(gh release view beta --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          echo "beta: $URL"
+          {
+            echo "### Coaching Beta"
+            echo
+            echo "**[Install from the beta release]($URL)** — PR #${PR_NUMBER}"
           } >> "$GITHUB_STEP_SUMMARY"
