@@ -530,3 +530,63 @@ describe('many matches', () => {
     expect(back.currentMatchId).toBeNull();
   });
 });
+
+describe('the match plan (#72, AC6)', () => {
+  const planOf = (playerId: UUID, positionId: UUID) => ({
+    periods: [
+      { slots: { [positionId]: playerId }, subs: [{ onId: null, offId: null, atMs: 375_000 }] },
+      { slots: {}, subs: [] },
+      { slots: {}, subs: [] },
+      { slots: {}, subs: [] },
+    ],
+  });
+
+  it('survives a round trip', () => {
+    const x = setUp();
+    const first = toSavedSession(sessionOf(x, { matchFormat: x.format }));
+    const plan = planOf(x.players[0].id, x.format.positions[0].id);
+    const withPlan = [{ ...first.matches[0], plan }];
+    const saved = toSavedSession(sessionOf(x, { state: null, matches: withPlan }));
+    const back = parseSession(JSON.stringify(saved))!;
+    expect(back.matches[0].plan).toEqual(plan);
+  });
+
+  it('is not dropped when the live match is saved over it', () => {
+    // The plan is written on Tuesday and played from on Saturday. The live
+    // match is rebuilt from engine state on every save, and that rebuild must
+    // carry the plan or kick-off would erase it.
+    const x = setUp();
+    const first = toSavedSession(sessionOf(x, { matchFormat: x.format }));
+    const plan = planOf(x.players[0].id, x.format.positions[0].id);
+    const second = toSavedSession(
+      sessionOf(x, { matches: [{ ...first.matches[0], plan }] })
+    );
+    expect(second.matches[0].plan).toEqual(plan);
+  });
+
+  it('a save with no plan loads with no plan', () => {
+    const x = setUp();
+    const saved = toSavedSession(sessionOf(x));
+    const back = parseSession(JSON.stringify(saved))!;
+    expect(back.matches[0].plan).toBeUndefined();
+  });
+
+  it('a malformed plan is dropped, and the match it was on is kept', () => {
+    const x = setUp();
+    const saved = toSavedSession(sessionOf(x));
+    const tampered = {
+      ...saved,
+      matches: [{ ...saved.matches[0], plan: { periods: 'rubbish' } }],
+    };
+    const back = parseSession(JSON.stringify(tampered))!;
+    expect(back.matches).toHaveLength(1);
+    expect(back.matches[0].plan).toBeUndefined();
+  });
+
+  it('writes v5 and still lets a v4 build read it', () => {
+    const x = setUp();
+    const saved = toSavedSession(sessionOf(x));
+    expect(saved.schemaVersion).toBe(5);
+    expect(saved.minReaderVersion).toBe(4);
+  });
+});

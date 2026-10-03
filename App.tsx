@@ -19,6 +19,7 @@ import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './
 import { squadReadiness } from './src/app/squad';
 import { teamSheetFor } from './src/app/lineup';
 import { markDone, type PlannedSub } from './src/app/subPlan';
+import { planHasContent, type MatchPlan } from './src/app/matchPlan';
 import {
   stepForTab,
   tabForStep,
@@ -41,6 +42,7 @@ import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormS
 import { FixturesScreen } from './src/screens/FixturesScreen';
 import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
+import { PlanScreen } from './src/screens/PlanScreen';
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SquadScreen } from './src/screens/SquadScreen';
@@ -121,6 +123,9 @@ export default function App() {
    */
   const [matches, setMatches] = useState<SavedMatch[]>([]);
 
+  /** The fixture whose plan is open (#72). */
+  const [planningId, setPlanningId] = useState<UUID | null>(null);
+
   // --- load once at launch --------------------------------------------------
 
   useEffect(() => {
@@ -195,8 +200,10 @@ export default function App() {
    * the tab bar and the body end up disagreeing. Collapsing it here keeps one
    * answer for both.
    */
+  const planning = matches.find((m) => m.match.id === planningId);
   const effectiveStep: Step =
-    !match && (step === 'lineup' || step === 'playing' || step === 'summary')
+    (!match && (step === 'lineup' || step === 'playing' || step === 'summary')) ||
+    (step === 'plan' && !planning)
       ? 'fixtures'
       : step;
 
@@ -286,6 +293,19 @@ export default function App() {
       if (!stored) return;
       if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
       const next = matches.filter((m) => m.match.id !== matchId);
+      setMatches(next);
+      persist({ matches: next });
+    },
+    [matches, persist]
+  );
+
+  /**
+   * Save a fixture's plan — #72. Called on every edit, so there is no Save
+   * button to forget. A plan is intent: nothing here touches a minute.
+   */
+  const savePlan = useCallback(
+    (matchId: UUID, plan: MatchPlan) => {
+      const next = matches.map((m) => (m.match.id === matchId ? { ...m, plan } : m));
       setMatches(next);
       persist({ matches: next });
     },
@@ -534,6 +554,20 @@ export default function App() {
       );
     }
 
+    if (effectiveStep === 'plan' && planning) {
+      return (
+        <PlanScreen
+          match={planning.match}
+          // The shape THIS fixture is played in (ADR-012).
+          format={planning.format ?? format}
+          players={players}
+          plan={planning.plan}
+          onChange={(plan) => savePlan(planning.match.id, plan)}
+          onBack={() => setStep('fixtures')}
+        />
+      );
+    }
+
     if (effectiveStep === 'summary' && match) {
       return (
         <MatchSummaryScreen
@@ -621,6 +655,11 @@ export default function App() {
         onOpen={openFixture}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
+        onPlan={(id) => {
+          setPlanningId(id);
+          setStep('plan');
+        }}
+        plannedIds={new Set(matches.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
       />
