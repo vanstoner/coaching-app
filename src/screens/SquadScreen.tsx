@@ -24,10 +24,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
+import { Text } from './Text';
 
 import type { Player, UUID } from '../types/index';
 import {

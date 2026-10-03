@@ -13,7 +13,12 @@
  * note in `tabs.ts` for why.
  */
 
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 
 import { TABS, type Tab } from '../app/tabs';
 import { colours, TOUCH_TARGET } from './theme';

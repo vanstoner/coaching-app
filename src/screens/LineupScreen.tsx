@@ -42,7 +42,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';

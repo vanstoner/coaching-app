@@ -22,10 +22,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
+import { Text } from './Text';
 
 import type { Competition } from '../types/index';
 import { COMPETITIONS, competitionLabel } from '../app/fixtures';

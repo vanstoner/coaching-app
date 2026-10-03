@@ -26,18 +26,23 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   StyleSheet,
-  Text,
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
+import { Text } from './Text';
 
 import type { Format, UUID } from '../types/index';
-import { dropTargetAt, slotSpots, type DropTarget, type Rect } from '../app/pitchLayout';
+import {
+  PILL_WIDTH_FRACTION,
+  dropTargetAt,
+  slotSpots,
+  type DropTarget,
+  type Rect,
+} from '../app/pitchLayout';
 import type { Sheet } from '../app/teamSheet';
 import { colours, TOUCH_TARGET } from './theme';
 
-const PILL_WIDTH_FRACTION = 0.28;
 const PILL_HEIGHT = 46;
 
 export interface PitchViewProps {
@@ -300,7 +305,7 @@ const s = StyleSheet.create({
   root: { alignSelf: 'stretch' },
   pitch: {
     alignSelf: 'stretch',
-    aspectRatio: 3 / 3.4,
+    aspectRatio: 3 / 3.8,
     backgroundColor: '#13573f',
     borderColor: colours.line,
     borderWidth: 2,

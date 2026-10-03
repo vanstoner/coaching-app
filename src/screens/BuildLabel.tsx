@@ -14,7 +14,7 @@
  * character is worse than no build label at all.
  */
 
-import { Text } from 'react-native';
+import { Text } from './Text';
 
 import { currentBuildLabel } from '../app/buildLabel';
 import { screen } from './theme';

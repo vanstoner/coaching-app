@@ -20,9 +20,9 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  Text,
   TextInput,
 } from 'react-native';
+import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';

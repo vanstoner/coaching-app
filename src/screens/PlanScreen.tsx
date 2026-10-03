@@ -18,7 +18,13 @@
  */
 
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 
 import type { Format, Match, Player, UUID } from '../types/index';
 import { formatClock, periodNoun } from '../app/matchClock';

@@ -13,6 +13,18 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
-    }
+    },
+    "plugins": [
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Barlow-Regular.ttf",
+            "./assets/fonts/Barlow-SemiBold.ttf",
+            "./assets/fonts/Barlow-Bold.ttf"
+          ]
+        }
+      ]
+    ]
   }
 }

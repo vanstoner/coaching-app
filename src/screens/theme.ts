@@ -94,6 +94,8 @@ export const screen = StyleSheet.create({
   },
   input: {
     alignSelf: 'stretch',
+    // TextInput does not go through ./Text; it takes the bundled face here (#89).
+    fontFamily: 'Barlow-Regular',
     backgroundColor: colours.pitchRaised,
     borderColor: colours.line,
     borderWidth: 1,
