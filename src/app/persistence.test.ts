@@ -590,3 +590,26 @@ describe('the match plan (#72, AC6)', () => {
     expect(saved.minReaderVersion).toBe(4);
   });
 });
+
+describe('archiving (#76, AC4)', () => {
+  it('survives a round trip and a live-match save, and changes no minute', () => {
+    const x = setUp();
+    x.engine.startQuarter(
+      x.state,
+      x.state.quarters[0],
+      teamSheetFor(x.players.slice(0, 7).map((p) => p.id), x.players[0].id, x.format),
+      x.format
+    );
+    x.clock.advance(5 * 60_000);
+    const first = toSavedSession(sessionOf(x));
+    const before = foldPlayerMinutes(x.engine, toMatchState(first)!, x.players);
+
+    const archived = [{ ...first.matches[0], archived: true }];
+    const second = toSavedSession(sessionOf(x, { matches: archived }));
+    const back = parseSession(JSON.stringify(second))!;
+    expect(back.matches[0].archived).toBe(true);
+
+    const after = foldPlayerMinutes(x.engine, toMatchState(back)!, x.players);
+    expect(after).toEqual(before);
+  });
+});

@@ -205,6 +205,34 @@ export function canDeleteFixture(quarters: QuarterLike[], status: MatchStatus): 
 }
 
 /**
+ * Whether a fixture can be archived — #76.
+ *
+ * > *"There's no way to delete (or archive) old or useless fixtures"*
+ *
+ * Only a finished one. A played match cannot be deleted — its minutes come
+ * from it (invariant 5) — so archiving is how it leaves the list. One still
+ * being played is never archived: it would vanish from the front door with
+ * the clock running. One never played is deleted instead.
+ */
+export function canArchiveFixture(quarters: QuarterLike[], status: MatchStatus): boolean {
+  if (status === 'completed' || status === 'abandoned') return true;
+  return quarters.length > 0 && quarters.every((q) => q.status === 'ended');
+}
+
+/**
+ * The fixtures to list. Archived ones are left out unless asked for.
+ *
+ * Archiving changes ONLY this. It writes no event and touches no record, so
+ * an archived match's minutes are exactly what they were (#76, AC4).
+ */
+export function listedFixtures<T extends { archived?: boolean }>(
+  stored: T[],
+  showArchived: boolean
+): T[] {
+  return showArchived ? stored : stored.filter((m) => !m.archived);
+}
+
+/**
  * True when a match has been kicked off and not yet finished.
  *
  * What decides whether **Play now** is offered. A coach who has left a running

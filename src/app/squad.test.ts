@@ -18,6 +18,11 @@ import {
   squadReadiness,
   buildTeamSheet,
   MAX_NAME_LENGTH,
+  activePlayers,
+  playedPlayerIds,
+  playersForMatch,
+  removePlayer,
+  restorePlayer,
 } from './squad';
 
 const squadId = uuid();
@@ -165,5 +170,43 @@ describe('buildTeamSheet', () => {
     // The screen must not let this happen, but the function must not lie if it does.
     const sheet = buildTeamSheet([P('Alex'), P('Sam')], positions);
     expect(sheet.size).toBe(2);
+  });
+});
+
+describe('retire, do not delete — #77', () => {
+  const squadId = uuid();
+  const a = makePlayer(squadId, 'Ann');
+  const b = makePlayer(squadId, 'Bob');
+  const c = makePlayer(squadId, 'Cal');
+  const everyone = [a, b, c];
+  const played = playedPlayerIds([{ appearances: [{ playerId: a.id }] }]);
+
+  it('AC1/AC2: a player who has played is retired, kept for history, gone from today', () => {
+    const after = removePlayer(everyone, a.id, played);
+    expect(after).toHaveLength(3);
+    expect(after.find((p) => p.id === a.id)!.firstName).toBe('Ann');
+    expect(activePlayers(after).map((p) => p.firstName)).toEqual(['Bob', 'Cal']);
+  });
+
+  it('AC3: a player who never played is removed outright', () => {
+    const after = removePlayer(everyone, b.id, played);
+    expect(after.map((p) => p.firstName)).toEqual(['Ann', 'Cal']);
+  });
+
+  it('AC4: a retired player can be brought back, same id', () => {
+    const back = restorePlayer(removePlayer(everyone, a.id, played), a.id);
+    expect(activePlayers(back).map((p) => p.id)).toContain(a.id);
+  });
+
+  it('a save from before `active` was used reads as active', () => {
+    const legacy = { ...a, active: undefined as unknown as boolean };
+    expect(activePlayers([legacy])).toHaveLength(1);
+  });
+
+  it('a match shows its own retired players, and nobody else retired', () => {
+    const after = removePlayer(removePlayer(everyone, a.id, played), c.id, new Set([c.id]));
+    // Ann played in this match; Cal was retired after playing in another one.
+    const here = playersForMatch(after, [{ playerId: a.id }]);
+    expect(here.map((p) => p.firstName)).toEqual(['Ann', 'Bob']);
   });
 });

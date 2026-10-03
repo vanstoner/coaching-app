@@ -150,6 +150,69 @@ export function duplicatedNames(players: Player[]): string[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Retire, don't delete — #77 (PO ruling 2026-10-03: option A)
+// ---------------------------------------------------------------------------
+//
+// > *"if squad is deleted or changed fixtures lose info from that match"*
+//
+// Removing a player used to delete them, and every match they had played then
+// named them "Unknown": the minutes survived, who they belonged to did not.
+// A player who has played is now RETIRED — `active: false`, the field the
+// model has carried since the start — and stays the one source of their name.
+
+/** In the squad today. A save from before `active` was used reads as active. */
+export function isActive(player: Player): boolean {
+  return player.active !== false;
+}
+
+export function activePlayers(players: Player[]): Player[] {
+  return players.filter(isActive);
+}
+
+/** Everyone with at least one recorded appearance, in any match given. */
+export function playedPlayerIds(
+  matches: { appearances: { playerId: UUID }[] }[]
+): Set<UUID> {
+  const ids = new Set<UUID>();
+  for (const m of matches) for (const a of m.appearances) ids.add(a.playerId);
+  return ids;
+}
+
+/**
+ * Take a player out of the squad.
+ *
+ * Retired if they have played, so history keeps their name (AC1). Removed
+ * outright if they never have: there is no history to keep (AC3).
+ */
+export function removePlayer(
+  players: Player[],
+  playerId: UUID,
+  played: ReadonlySet<UUID>
+): Player[] {
+  if (!played.has(playerId)) return players.filter((p) => p.id !== playerId);
+  return players.map((p) => (p.id === playerId ? { ...p, active: false } : p));
+}
+
+/** Bring a retired player back, history intact (AC4). */
+export function restorePlayer(players: Player[], playerId: UUID): Player[] {
+  return players.map((p) => (p.id === playerId ? { ...p, active: true } : p));
+}
+
+/**
+ * The players a match screen should show: today's squad, plus anyone who has
+ * played in THIS match even if they have since been retired. A retired player
+ * must not appear as "did not play" in next week's game, and must not vanish
+ * from the game they did play in.
+ */
+export function playersForMatch(
+  players: Player[],
+  appearances: { playerId: UUID }[]
+): Player[] {
+  const here = new Set(appearances.map((a) => a.playerId));
+  return players.filter((p) => isActive(p) || here.has(p.id));
+}
+
 export interface SquadReadiness {
   ready: boolean;
   /** How many more players are needed before a match can start. */

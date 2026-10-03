@@ -7,7 +7,13 @@ import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
 import type { Format, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
-import { canDeleteFixture, matchIsUnderway, openDestination } from './src/app/fixtures';
+import {
+  canArchiveFixture,
+  canDeleteFixture,
+  listedFixtures,
+  matchIsUnderway,
+  openDestination,
+} from './src/app/fixtures';
 import { currentQuarter } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
@@ -16,7 +22,12 @@ import {
   makeSevenASideFormat,
 } from './src/app/placeholderSquad';
 import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './src/app/shapes';
-import { squadReadiness } from './src/app/squad';
+import {
+  activePlayers,
+  playedPlayerIds,
+  playersForMatch,
+  squadReadiness,
+} from './src/app/squad';
 import { toTeamSheet, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
 import { planHasContent, type MatchPlan } from './src/app/matchPlan';
@@ -96,7 +107,10 @@ export default function App() {
 
   const [step, setStep] = useState<Step>('loading');
   const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
+  /** Everyone ever in the squad, retired players included (#77). */
   const [players, setPlayers] = useState<Player[]>([]);
+  /** Today's squad: who can be picked, planned and counted for new matches. */
+  const squad = useMemo(() => activePlayers(players), [players]);
   const [squadId, setSquadId] = useState<UUID>(() => uuid());
   const [match, setMatch] = useState<LiveMatch | null>(null);
   const [pending, setPending] = useState<SavedSession | null>(null);
@@ -122,6 +136,9 @@ export default function App() {
    * silently delete the season it was meant to be keeping.
    */
   const [matches, setMatches] = useState<SavedMatch[]>([]);
+
+  /** Whether archived fixtures are listed (#76). A view choice, not saved. */
+  const [showArchived, setShowArchived] = useState(false);
 
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
@@ -247,7 +264,7 @@ export default function App() {
       const state = engine.createMatch(squadId, matchFormat.id, {
         totalMinutes: draft.totalMinutes,
         quarterCount: draft.periodCount,
-        availablePlayerIds: players.map((p) => p.id),
+        availablePlayerIds: squad.map((p) => p.id),
         opponent: draft.opponent.trim() === '' ? null : draft.opponent.trim(),
         competition: draft.competition,
         kickoffAt: draft.kickoffAt,
@@ -276,7 +293,7 @@ export default function App() {
       persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
     },
-    [squadId, format, matches, persist, match, players]
+    [squadId, format, matches, persist, match, squad]
   );
 
   /**
@@ -294,9 +311,17 @@ export default function App() {
       if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
       const next = matches.filter((m) => m.match.id !== matchId);
       setMatches(next);
-      persist({ matches: next });
+      // A fixture opened and left without kicking off is still held as the
+      // live match. Saving with it would write the deleted fixture straight
+      // back (mergeCurrentMatch), so it is let go of first.
+      const holding = match?.state.match.id === matchId;
+      if (holding) setMatch(null);
+      persist({
+        matches: next,
+        ...(holding ? { state: null, matchFormat: null } : {}),
+      });
     },
-    [matches, persist]
+    [matches, persist, match]
   );
 
   /**
@@ -306,6 +331,19 @@ export default function App() {
   const savePlan = useCallback(
     (matchId: UUID, plan: MatchPlan) => {
       const next = matches.map((m) => (m.match.id === matchId ? { ...m, plan } : m));
+      setMatches(next);
+      persist({ matches: next });
+    },
+    [matches, persist]
+  );
+
+  /**
+   * Archive or unarchive a played fixture — #76. A listing choice only: no
+   * event is written and its minutes are untouched.
+   */
+  const archiveFixture = useCallback(
+    (matchId: UUID, archived: boolean) => {
+      const next = matches.map((m) => (m.match.id === matchId ? { ...m, archived } : m));
       setMatches(next);
       persist({ matches: next });
     },
@@ -329,7 +367,7 @@ export default function App() {
         // played would invent a bench for children who may not have been
         // there, and a fabricated figure is indistinguishable from a measured
         // one once it is stored.
-        for (const player of players) availability.set(player.id, 'available');
+        for (const player of squad) availability.set(player.id, 'available');
       }
 
       // The shape THIS match is played in. A v3 save that somehow arrives
@@ -355,12 +393,12 @@ export default function App() {
       const to = openDestination(
         stored.quarters,
         stored.match.status,
-        squadReadiness(players, matchFormat.onFieldCount).ready
+        squadReadiness(squad, matchFormat.onFieldCount).ready
       );
       if (to === 'squad') setSquadErrand('match');
       setStep(to);
     },
-    [matches, players, format]
+    [matches, squad, format]
   );
 
   /**
@@ -380,15 +418,15 @@ export default function App() {
       totalMinutes,
       quarterCount: periodCount,
       // #64: without this the bench ledger is never written at all.
-      availablePlayerIds: players.map((p) => p.id),
+      availablePlayerIds: squad.map((p) => p.id),
     });
     setMatch({ engine, state, format: matchFormat });
     setSubPlan([]);
     setStep('lineup');
-  }, [squadId, format, totalMinutes, periodCount, players]);
+  }, [squadId, format, totalMinutes, periodCount, squad]);
 
   const playNow = useCallback(() => {
-    if (squadReadiness(players, format.onFieldCount).ready) {
+    if (squadReadiness(squad, format.onFieldCount).ready) {
       beginMatch();
       return;
     }
@@ -396,7 +434,7 @@ export default function App() {
     // fixture form, which is the thing Play now exists to skip.
     setSquadErrand('match');
     setStep('squad');
-  }, [players, format, beginMatch]);
+  }, [squad, format, beginMatch]);
 
   const resume = useCallback(() => {
     if (!pending) return;
@@ -557,7 +595,7 @@ export default function App() {
           match={planning.match}
           // The shape THIS fixture is played in (ADR-012).
           format={planning.format ?? format}
-          players={players}
+          players={squad}
           plan={planning.plan}
           onChange={(plan) => savePlan(planning.match.id, plan)}
           onBack={() => setStep('fixtures')}
@@ -570,7 +608,7 @@ export default function App() {
         <MatchSummaryScreen
           engine={match.engine}
           state={match.state}
-          players={players}
+          players={playersForMatch(players, match.state.appearances)}
           now={new Date()}
           onBack={() => {
             // A finished match is history: it is safe to let go of, and
@@ -604,6 +642,7 @@ export default function App() {
         <SquadScreen
           squadId={squadId}
           players={players}
+          played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
           onPlayers={setPlayers}
           onFieldCount={format.onFieldCount}
           onStartMatch={forMatch ? beginMatch : null}
@@ -618,7 +657,7 @@ export default function App() {
           engine={match.engine}
           state={match.state}
           format={match.format}
-          players={players}
+          players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
           // This period of the fixture's plan, if one was made (#72, AC7).
           planned={
@@ -637,7 +676,7 @@ export default function App() {
         <ClockScreen
           engine={match.engine}
           state={match.state}
-          players={players}
+          players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
           subPlan={subPlan}
           onMakeSub={makeSub}
@@ -652,7 +691,7 @@ export default function App() {
     return (
       <FixturesScreen
         squadName={squadName}
-        matches={matches.map((m) => m.match)}
+        matches={listedFixtures(matches, showArchived).map((m) => m.match)}
         currentMatchId={match?.state.match.id ?? null}
         now={new Date()}
         onOpen={openFixture}
@@ -663,6 +702,31 @@ export default function App() {
           setStep('plan');
         }}
         plannedIds={new Set(matches.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
+        housekeeping={{
+          // The live match's quarters, not the stored copy's: a fixture kicked
+          // off a moment ago must not still be offered for deletion.
+          deletable: new Set(
+            matches
+              .filter((m) => {
+                const live = match?.state.match.id === m.match.id ? match.state : m;
+                return canDeleteFixture(live.quarters, live.match.status);
+              })
+              .map((m) => m.match.id)
+          ),
+          archivable: new Set(
+            matches
+              .filter((m) => {
+                const live = match?.state.match.id === m.match.id ? match.state : m;
+                return canArchiveFixture(live.quarters, live.match.status);
+              })
+              .map((m) => m.match.id)
+          ),
+          archived: new Set(matches.filter((m) => m.archived).map((m) => m.match.id)),
+          onArchive: archiveFixture,
+          archivedCount: matches.filter((m) => m.archived).length,
+          showingArchived: showArchived,
+          onToggleArchived: () => setShowArchived((v) => !v),
+        }}
         onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
       />
