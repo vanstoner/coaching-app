@@ -497,3 +497,35 @@ describe('goalkeeper affinity', () => {
     expect(withAffinity.goalkeeper).toBe(without.goalkeeper);
   });
 });
+
+describe('goalkeeping preference set on the squad screen (#86 AC2)', () => {
+  it('keeps the main keeper in goal every period, with no affinity records at all', () => {
+    const { players: base, engine, state, format, clock } = setUp();
+    const players = base.map((p, i) => (i === 4 ? { ...p, keeper: 'main' as const } : p));
+    for (let q = 1; q <= 4; q++) {
+      const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
+      expect(s.goalkeeper).toBe(players[4].id);
+      engine.startQuarter(state, state.quarters[q - 1], teamSheetFor(s.onPitch, s.goalkeeper, format), format);
+      clock.advance(750_000);
+      engine.endQuarter(state, state.quarters[q - 1]);
+    }
+  });
+
+  it('falls back to the back-up when the main keeper is unavailable', () => {
+    const { players: base, engine, state, format } = setUp();
+    const players = base.map((p, i) =>
+      i === 4 ? { ...p, keeper: 'main' as const } : i === 6 ? { ...p, keeper: 'backup' as const } : p
+    );
+    const available = new Set(players.filter((_, i) => i !== 4).map((p) => p.id));
+    const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format, { available });
+    expect(s.goalkeeper).toBe(players[6].id);
+  });
+
+  it('never suggests a "Not in goal" player while anyone else is available', () => {
+    const { players: base, engine, state, format } = setUp();
+    // Player 0 would be first in squad order with no goalkeeping time.
+    const players = base.map((p, i) => (i === 0 ? { ...p, keeper: 'never' as const } : p));
+    const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
+    expect(s.goalkeeper).not.toBe(players[0].id);
+  });
+});

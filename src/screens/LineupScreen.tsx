@@ -113,8 +113,10 @@ export function LineupScreen({
   const hasPlan = periodHasContent(planned);
 
   /** Where the screen starts: the plan if there is one, else the suggestion. */
+  const prefersOf = (id: UUID) => players.find((p) => p.id === id)?.prefers ?? null;
   const fromSuggestion = () => ({
-    sheet: sheetFromSelection(suggestion.onPitch, suggestion.goalkeeper, format),
+    // #86: preferred units first, then back to front.
+    sheet: sheetFromSelection(suggestion.onPitch, suggestion.goalkeeper, format, prefersOf),
     subs: planSubs(suggestion.bench, periodMs),
   });
   const fromPlan = () => (planned ? lineupFromPlan(planned, format, players) : fromSuggestion());
@@ -180,7 +182,7 @@ export function LineupScreen({
 
   const toggle = (id: UUID) => {
     setPicking(null);
-    setSheet(selected.has(id) ? removeFromSheet(sheet, id) : addToSheet(sheet, format, id));
+    setSheet(selected.has(id) ? removeFromSheet(sheet, id) : addToSheet(sheet, format, id, prefersOf(id) ?? null));
   };
 
   const pickFor = (playerId: UUID | null) => {

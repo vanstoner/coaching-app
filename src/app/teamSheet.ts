@@ -17,7 +17,7 @@
  * recorded on the appearance, and is never a fairness input.
  */
 
-import type { Format, Position, UUID } from '../types/index';
+import type { Format, OutfieldUnit, Position, UUID } from '../types/index';
 import { teamSheetFor } from './lineup';
 
 /** Position id → the player in it, or null when empty. */
@@ -31,8 +31,33 @@ function keeperPosition(format: Format): Position | undefined {
   return ordered(format).find((p) => p.kind === 'goalkeeper');
 }
 
-/** The sheet the old list-and-keeper model would have produced. */
-export function sheetFromSelection(onPitch: UUID[], goalkeeper: UUID | null, format: Format): Sheet {
+/** A player's preferred outfield unit (#86), or nothing. */
+export type PrefersOf = (playerId: UUID) => OutfieldUnit | null | undefined;
+
+/**
+ * The sheet for a chosen set of players and a keeper.
+ *
+ * With `prefersOf` (#86 AC3), players who prefer a unit are placed in an
+ * empty position of that unit first; everyone else then fills back to front
+ * exactly as before. Without it, the old list-and-keeper behaviour stands.
+ */
+export function sheetFromSelection(
+  onPitch: UUID[],
+  goalkeeper: UUID | null,
+  format: Format,
+  prefersOf?: PrefersOf
+): Sheet {
+  if (prefersOf) {
+    let sheet: Sheet = {};
+    for (const p of format.positions) sheet[p.id] = null;
+    const keeper = keeperPosition(format);
+    if (keeper && goalkeeper && onPitch.includes(goalkeeper)) sheet[keeper.id] = goalkeeper;
+    const rest = onPitch.filter((id) => id !== goalkeeper);
+    // Those with a preference first, so they get first pick of their unit.
+    const ordered = [...rest.filter((id) => prefersOf(id)), ...rest.filter((id) => !prefersOf(id))];
+    for (const id of ordered) sheet = addToSheet(sheet, format, id, prefersOf(id) ?? null);
+    return sheet;
+  }
   const sheet: Sheet = {};
   for (const p of format.positions) sheet[p.id] = null;
   const dealt = teamSheetFor(onPitch, goalkeeper, {
@@ -64,13 +89,20 @@ export function sheetIsComplete(sheet: Sheet, format: Format): boolean {
 }
 
 /**
- * Bring a player on: the first empty outfield slot, back to front, then goal.
+ * Bring a player on: an empty position in their preferred unit if they have
+ * one (#86), else the first empty outfield slot back to front, then goal.
  * Unchanged if they are already on or there is no room.
  */
-export function addToSheet(sheet: Sheet, format: Format, playerId: UUID): Sheet {
+export function addToSheet(
+  sheet: Sheet,
+  format: Format,
+  playerId: UUID,
+  prefers: OutfieldUnit | null = null
+): Sheet {
   if (playersOn(sheet).includes(playerId)) return sheet;
   const slots = ordered(format);
   const free =
+    (prefers ? slots.find((p) => p.unit === prefers && (sheet[p.id] ?? null) === null) : undefined) ??
     slots.find((p) => p.kind !== 'goalkeeper' && (sheet[p.id] ?? null) === null) ??
     slots.find((p) => (sheet[p.id] ?? null) === null);
   if (!free) return sheet;

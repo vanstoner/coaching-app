@@ -277,3 +277,23 @@ describe('moves before kick-off edit the sheet (#83 AC5)', () => {
     expect(playersOn(next)).toHaveLength(6);
   });
 });
+
+describe('preferred units (#86 AC3)', () => {
+  const format = makeFormat('2-3-1');
+  const ids = squad(7).map((p) => p.id);
+  const unitOf = (s: Sheet, id: UUID) => format.positions.find((p) => s[p.id] === id)?.unit;
+
+  it('puts a player who prefers FWD up front, others back to front', () => {
+    const prefers = (id: UUID) => (id === ids[1] ? ('ATT' as const) : null);
+    const sheet = sheetFromSelection(ids, ids[0], format, prefers);
+    expect(unitOf(sheet, ids[1])).toBe('ATT');
+    expect(playersOn(sheet)).toHaveLength(7);
+    expect(keeperOf(sheet, format)).toBe(ids[0]);
+  });
+
+  it('tapping a player on fills their preferred unit first, if it has room', () => {
+    let sheet = sheetFromSelection([], null, format);
+    sheet = addToSheet(sheet, format, ids[0], 'MID');
+    expect(unitOf(sheet, ids[0])).toBe('MID');
+  });
+});

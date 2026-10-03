@@ -23,6 +23,9 @@ import {
   playersForMatch,
   removePlayer,
   restorePlayer,
+  setKeeperPreference,
+  setUnitPreference,
+  preferenceSummary,
 } from './squad';
 
 const squadId = uuid();
@@ -208,5 +211,27 @@ describe('retire, do not delete — #77', () => {
     // Ann played in this match; Cal was retired after playing in another one.
     const here = playersForMatch(after, [{ playerId: a.id }]);
     expect(here.map((p) => p.firstName)).toEqual(['Ann', 'Bob']);
+  });
+});
+
+describe('position preference — #86', () => {
+  const squadId = uuid();
+  const a = makePlayer(squadId, 'Ann');
+  const b = makePlayer(squadId, 'Bob');
+
+  it('sets and clears a keeper and a unit preference, touching only that player', () => {
+    let players = setKeeperPreference([a, b], a.id, 'main');
+    players = setUnitPreference(players, b.id, 'ATT');
+    expect(preferenceSummary(players[0])).toBe('Main keeper');
+    expect(preferenceSummary(players[1])).toBe('FWD');
+    players = setKeeperPreference(players, a.id, null);
+    expect(preferenceSummary(players[0])).toBe('');
+  });
+
+  it('survives retire and bring back (#77, #86 AC4)', () => {
+    const played = playedPlayerIds([{ appearances: [{ playerId: a.id }] }]);
+    let players = setKeeperPreference([a, b], a.id, 'backup');
+    players = restorePlayer(removePlayer(players, a.id, played), a.id);
+    expect(players[0].keeper).toBe('backup');
   });
 });

@@ -131,12 +131,22 @@ export function suggestLineup(
         // shortlist is honoured and fairness still decides within it.
         .sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b));
 
+    // #86: the player's own goalkeeping preference, set on the squad screen.
+    // It sits alongside the older per-position affinity and means the same:
+    // main keeper is primary, back-up is secondary.
+    const byLeastKept = (ids: UUID[]) =>
+      [...ids].sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b));
+    const marked = (pref: 'main' | 'backup') =>
+      byLeastKept(pool.filter((p) => p.keeper === pref).map((p) => p.id));
+    const primary = byLeastKept([...new Set([...withAffinity('primary'), ...marked('main')])]);
+    const secondary = byLeastKept([...new Set([...withAffinity('secondary'), ...marked('backup')])]);
+    // "Not in goal" is honoured unless nobody else is available.
+    const willing = pool.filter((p) => p.keeper !== 'never').map((p) => p.id);
+
     goalkeeper =
-      withAffinity('primary')[0] ??
-      withAffinity('secondary')[0] ??
-      [...pool]
-        .map((p) => p.id)
-        .sort((a, b) => goalkeeperMs(a) - goalkeeperMs(b) || squadOrder(a, b))[0];
+      primary[0] ??
+      secondary[0] ??
+      byLeastKept(willing.length > 0 ? willing : pool.map((p) => p.id))[0];
   }
 
   // Then the outfielders, least outfield time first.

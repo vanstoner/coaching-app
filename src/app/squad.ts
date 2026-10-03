@@ -24,7 +24,7 @@
  */
 
 import { uuid } from '../types/index';
-import type { Player, UUID } from '../types/index';
+import type { KeeperPreference, OutfieldUnit, Player, UUID } from '../types/index';
 
 /** A squad cannot take the field with fewer players than the format needs. */
 export const MIN_SQUAD_SIZE = 7;
@@ -269,4 +269,49 @@ export function buildTeamSheet(
     if (player) sheet.set(position.id, player.id);
   });
   return sheet;
+}
+
+// ---------------------------------------------------------------------------
+// Position preference — #86
+// ---------------------------------------------------------------------------
+//
+// > *"for the squad screen allow a position preference most important for the
+// > GK"* — PO, 2026-10-03
+//
+// On the player, by unit. A suggestion only: never a fairness input.
+
+export const KEEPER_LABEL: Record<KeeperPreference, string> = {
+  main: 'Main keeper',
+  backup: 'Back-up',
+  never: 'Not in goal',
+};
+
+export const UNIT_PREF_LABEL: Record<OutfieldUnit, string> = { DEF: 'DEF', MID: 'MID', ATT: 'FWD' };
+
+/** Set, or with null clear, a player's goalkeeping preference. */
+export function setKeeperPreference(
+  players: Player[],
+  playerId: UUID,
+  keeper: KeeperPreference | null
+): Player[] {
+  return players.map((p) => (p.id === playerId ? { ...p, keeper } : p));
+}
+
+/** Set, or with null clear, a player's preferred outfield unit. */
+export function setUnitPreference(
+  players: Player[],
+  playerId: UUID,
+  prefers: OutfieldUnit | null
+): Player[] {
+  return players.map((p) => (p.id === playerId ? { ...p, prefers } : p));
+}
+
+/** "Main keeper · MID", or '' with no preference. For the squad list. */
+export function preferenceSummary(player: Player): string {
+  return [
+    player.keeper ? KEEPER_LABEL[player.keeper] : null,
+    player.prefers ? UNIT_PREF_LABEL[player.prefers] : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

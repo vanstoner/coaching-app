@@ -127,7 +127,22 @@ export interface Player {
   squadNumber: number | null;
   active: boolean;
   createdAt: string;
+  /**
+   * Goalkeeping preference (#86). Optional: absent on players saved before
+   * it existed, which reads as "no preference". Decides who is SUGGESTED in
+   * goal; never a fairness input (invariant 3).
+   */
+  keeper?: KeeperPreference | null;
+  /**
+   * Preferred outfield unit (#86). By unit, not position id: every fixture
+   * snapshots its own positions (ADR-012), so only the unit means the same
+   * thing from one match to the next.
+   */
+  prefers?: OutfieldUnit | null;
 }
+
+export type KeeperPreference = 'main' | 'backup' | 'never';
+export type OutfieldUnit = 'DEF' | 'MID' | 'ATT';
 
 export interface Squad {
   id: UUID;
