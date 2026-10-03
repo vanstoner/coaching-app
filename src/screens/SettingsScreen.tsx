@@ -13,7 +13,7 @@
  * The squad moved out: it is a tab now, not a button here.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -42,6 +42,7 @@ export function SettingsScreen({
   onTotalMinutes,
   onPeriodCount,
   onShape,
+  minutes,
   onForget,
 }: {
   squadName: string;
@@ -53,6 +54,8 @@ export function SettingsScreen({
   onTotalMinutes: (n: number) => void;
   onPeriodCount: (n: number) => void;
   onShape: (shape: ShapeCode) => void;
+  /** Player minutes: season, export, import (#75). Drawn by the caller. */
+  minutes?: ReactNode;
   onForget: () => void;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
@@ -134,10 +137,14 @@ export function SettingsScreen({
             You can still name the positions whatever you want on the day.
           </Text>
 
+          {minutes}
+
           {confirmForget ? (
             <>
               <Text style={[screen.hint, screen.overtime]}>
-                This deletes the squad, the team name and every saved match.
+                This deletes the squad, the team name, every saved match and
+                every player's minutes. Export the minutes file first if you
+                want to keep them.
               </Text>
               <Pressable onPress={onForget} style={screen.linkHit}>
                 <Text style={screen.dangerLink}>Yes, forget everything</Text>

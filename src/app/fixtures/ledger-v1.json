@@ -1,0 +1,202 @@
+{
+  "ledger": "coaching-app/minutes",
+  "ledgerVersion": 1,
+  "writtenAt": "2026-10-03T12:00:00.000Z",
+  "squad": {
+    "id": "squad-1",
+    "name": "Example FC"
+  },
+  "players": [
+    {
+      "id": "p1",
+      "firstName": "Player1",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p2",
+      "firstName": "Player2",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p3",
+      "firstName": "Player3",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p4",
+      "firstName": "Player4",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p5",
+      "firstName": "Player5",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p6",
+      "firstName": "Player6",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p7",
+      "firstName": "Player7",
+      "displaySuffix": null,
+      "active": true
+    },
+    {
+      "id": "p8",
+      "firstName": "Player8",
+      "displaySuffix": null,
+      "active": false
+    }
+  ],
+  "matches": [
+    {
+      "id": "m1",
+      "kickoffAt": "2026-10-03T09:30:00.000Z",
+      "opponent": "Example Opponents",
+      "competition": "league",
+      "totalMinutes": 50,
+      "periodCount": 2,
+      "status": "in_progress",
+      "intervals": [
+        {
+          "id": "a1",
+          "playerId": "p1",
+          "period": 1,
+          "kind": "goalkeeper",
+          "unit": "GK",
+          "startMs": 0,
+          "endMs": 1500000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a2",
+          "playerId": "p2",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "DEF",
+          "startMs": 0,
+          "endMs": 1500000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a3",
+          "playerId": "p3",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "DEF",
+          "startMs": 0,
+          "endMs": 1500000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a4",
+          "playerId": "p4",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "MID",
+          "startMs": 0,
+          "endMs": 1500000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a5",
+          "playerId": "p5",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "MID",
+          "startMs": 0,
+          "endMs": 450000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a6",
+          "playerId": "p6",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "MID",
+          "startMs": 0,
+          "endMs": 450000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a7",
+          "playerId": "p7",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "ATT",
+          "startMs": 0,
+          "endMs": 450000,
+          "corrected": false,
+          "note": null
+        },
+        {
+          "id": "a8",
+          "playerId": "p8",
+          "period": 1,
+          "kind": "outfield",
+          "unit": "MID",
+          "startMs": 450000,
+          "endMs": 1500000,
+          "corrected": false,
+          "note": null
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "playerId": "p1",
+      "outfieldMs": 0,
+      "goalkeeperMs": 1500000
+    },
+    {
+      "playerId": "p2",
+      "outfieldMs": 1500000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p3",
+      "outfieldMs": 1500000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p4",
+      "outfieldMs": 1500000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p5",
+      "outfieldMs": 450000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p6",
+      "outfieldMs": 450000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p7",
+      "outfieldMs": 450000,
+      "goalkeeperMs": 0
+    },
+    {
+      "playerId": "p8",
+      "outfieldMs": 1050000,
+      "goalkeeperMs": 0
+    }
+  ]
+}
