@@ -1,0 +1,84 @@
+name: Promote release
+
+# #79, decision 10 (PO, 2026-10-03). Every green build of main publishes a
+# PRERELEASE. Promotion to a full release is the Product Owner's call, and a
+# Claude Code session cannot push the tag that would otherwise cut one
+# (the proxy refuses tag refs), so this workflow does it on dispatch:
+#
+#   1. turns the named main build's prerelease into a full release, marked
+#      Latest, with the given title — the asset and notes are untouched;
+#   2. deletes the stale `beta` prerelease and its tag, if present (the
+#      Coaching Beta experiment, #81, was closed unmerged).
+#
+# Dispatch only (AC-P4). Never on push or pull request.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The main build to promote, e.g. v2026.10.03-build.64'
+        required: true
+        type: string
+      title:
+        description: 'The release title, e.g. "1.0 — Match day 4"'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote a main build to a full release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      TITLE: ${{ inputs.title }}
+    steps:
+      - name: Check the build exists and carries an APK
+        run: |
+          set -uo pipefail
+          why() { echo "WHY THIS JOB FAILED: $*"; exit 1; }
+          case "$TAG" in
+            v*-build.*) ;;
+            *) why "'$TAG' is not a main build tag (expected v<date>-build.<n>)" ;;
+          esac
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,assets \
+            > /tmp/release.json 2>/tmp/err.txt || why "no release with tag '$TAG': $(cat /tmp/err.txt)"
+          cat /tmp/release.json
+          APKS="$(jq '[.assets[].name | select(endswith(".apk"))] | length' /tmp/release.json)"
+          [ "$APKS" -ge 1 ] || why "release '$TAG' has no .apk asset; refusing to promote it"
+          echo "found $APKS apk asset(s) on $TAG"
+
+      - name: Promote it
+        run: |
+          set -uo pipefail
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --prerelease=false --latest --title "$TITLE" 2>/tmp/err.txt \
+            || { echo "WHY THIS JOB FAILED: gh release edit refused:"; cat /tmp/err.txt; exit 1; }
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name,isPrerelease,url \
+            --jq '"promoted: \(.name)  prerelease=\(.isPrerelease)  \(.url)"'
+
+      - name: Remove the stale beta prerelease, if any
+        run: |
+          set -uo pipefail
+          if gh release view beta --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete beta --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            echo "beta release and tag removed"
+          else
+            echo "no beta release; nothing to remove"
+          fi
+
+      - name: Summary
+        run: |
+          URL="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          {
+            echo "### Promoted \`$TAG\`"
+            echo
+            echo "**[$TITLE]($URL)**: full release, marked Latest."
+          } >> "$GITHUB_STEP_SUMMARY"
