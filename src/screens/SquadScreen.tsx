@@ -36,11 +36,17 @@ import {
   displayName,
   duplicatedNames,
   makePlayer,
+  KEEPER_LABEL,
+  UNIT_PREF_LABEL,
+  preferenceSummary,
+  setKeeperPreference,
+  setUnitPreference,
   removePlayer,
   restorePlayer,
   squadReadiness,
   validateName,
 } from '../app/squad';
+import { Chip, ChipRow } from './Chip';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadScreen({
@@ -67,6 +73,8 @@ export function SquadScreen({
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
   const [draft, setDraft] = useState('');
+  /** Whose position preference is open (#86). */
+  const [openPrefs, setOpenPrefs] = useState<UUID | null>(null);
   const [error, setError] = useState('');
 
   const readiness = squadReadiness(players, onFieldCount);
@@ -120,17 +128,69 @@ export function SquadScreen({
           {error !== '' && <Text style={screen.error}>{error}</Text>}
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
-            {players.map((p) => (
-              <View key={p.id} style={screen.playerRow}>
-                <Text style={screen.playerName}>{displayName(p)}</Text>
-                <Pressable
-                  onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
-                  style={local.removeHit}
-                >
-                  <Text style={local.remove}>Remove</Text>
-                </Pressable>
-              </View>
-            ))}
+            {players.map((p) => {
+              const open = openPrefs === p.id;
+              const summary = preferenceSummary(p);
+              return (
+                <View key={p.id}>
+                  <View style={screen.playerRow}>
+                    {/* #86: tap a name for their position preference. */}
+                    <Pressable
+                      onPress={() => setOpenPrefs(open ? null : p.id)}
+                      style={local.nameHit}
+                    >
+                      <Text style={screen.playerName} numberOfLines={1}>
+                        {displayName(p)}
+                      </Text>
+                      <Text style={local.prefSummary} numberOfLines={1}>
+                        {summary === '' ? 'Tap to set a position preference' : summary}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
+                      style={local.removeHit}
+                    >
+                      <Text style={local.remove}>Remove</Text>
+                    </Pressable>
+                  </View>
+                  {open && (
+                    <View style={local.prefs}>
+                      <Text style={screen.hint}>In goal</Text>
+                      <ChipRow>
+                        {(['main', 'backup', 'never'] as const).map((k) => (
+                          <Chip
+                            key={k}
+                            label={KEEPER_LABEL[k]}
+                            selected={p.keeper === k}
+                            // Tapping the chosen one clears it.
+                            onPress={() =>
+                              onPlayers(setKeeperPreference(everyone, p.id, p.keeper === k ? null : k))
+                            }
+                          />
+                        ))}
+                      </ChipRow>
+                      <Text style={screen.hint}>Prefers, outfield</Text>
+                      <ChipRow>
+                        {(['DEF', 'MID', 'ATT'] as const).map((u) => (
+                          <Chip
+                            key={u}
+                            label={UNIT_PREF_LABEL[u]}
+                            selected={p.prefers === u}
+                            onPress={() =>
+                              onPlayers(setUnitPreference(everyone, p.id, p.prefers === u ? null : u))
+                            }
+                            narrow
+                          />
+                        ))}
+                      </ChipRow>
+                      <Text style={screen.hint}>
+                        Only decides who is suggested where. Minutes and fairness are not affected.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
             {players.length === 0 && <Text style={screen.caption}>No players yet.</Text>}
 
             {retired.length > 0 && (
@@ -194,6 +254,9 @@ const local = StyleSheet.create({
     minWidth: 72,
     paddingHorizontal: 18,
   },
+  nameHit: { flex: 1, minHeight: TOUCH_TARGET, justifyContent: 'center' },
+  prefSummary: { color: colours.inkMuted, fontSize: 12, marginTop: 2, includeFontPadding: false },
+  prefs: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#164f3c' },
   // 44dp even though the word is small: a mis-hit here deletes a child from
   // the squad, and the row it sits in is 44 high anyway.
   removeHit: {

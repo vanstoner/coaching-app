@@ -30,7 +30,8 @@ import {
 } from './src/app/squad';
 import { toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
-import { planHasContent, type MatchPlan } from './src/app/matchPlan';
+import { liveBaseline, planHasContent, type MatchPlan } from './src/app/matchPlan';
+import { foldPlayerMinutes } from './src/app/playerMinutes';
 import {
   stepForTab,
   tabForStep,
@@ -340,7 +341,20 @@ export default function App() {
    * the tab bar and the body end up disagreeing. Collapsing it here keeps one
    * answer for both.
    */
-  const planning = matches.find((m) => m.match.id === planningId);
+  // The live match may not be in `matches` yet (Play now writes it on the
+  // next save), so planning it during play (#88) builds the entry from state.
+  const planning: SavedMatch | undefined =
+    matches.find((m) => m.match.id === planningId) ??
+    (match && match.state.match.id === planningId
+      ? {
+          match: match.state.match,
+          quarters: match.state.quarters,
+          appearances: match.state.appearances,
+          benchStints: match.state.benchStints,
+          availability: [...match.state.playerAvailability.entries()],
+          format: match.format,
+        }
+      : undefined);
   const effectiveStep: Step =
     (!match && (step === 'lineup' || step === 'playing' || step === 'summary')) ||
     (step === 'plan' && !planning)
@@ -453,12 +467,28 @@ export default function App() {
    */
   const savePlan = useCallback(
     (matchId: UUID, plan: MatchPlan) => {
-      const next = matches.map((m) => (m.match.id === matchId ? { ...m, plan } : m));
+      const stored = matches.some((m) => m.match.id === matchId);
+      const next = stored
+        ? matches.map((m) => (m.match.id === matchId ? { ...m, plan } : m))
+        : planning && planning.match.id === matchId
+          ? [...matches, { ...planning, plan }]
+          : matches;
       setMatches(next);
       persist({ matches: next });
     },
-    [matches, persist]
+    [matches, persist, planning]
   );
+
+  /** Where Done on the plan goes back to: Home, or the match in play (#88). */
+  const [planReturn, setPlanReturn] = useState<Step>('fixtures');
+
+  /** Re-plan the rest of the match in progress (#88). The clock keeps running. */
+  const planTheRest = useCallback(() => {
+    if (!match) return;
+    setPlanningId(match.state.match.id);
+    setPlanReturn(step);
+    setStep('plan');
+  }, [match, step]);
 
   /**
    * Archive or unarchive a played fixture — #76. A listing choice only: no
@@ -758,6 +788,30 @@ export default function App() {
     setStep(currentQuarter(match.state) ? 'lineup' : 'playing');
   }, [match, persist]);
 
+  /**
+   * For a match under way (#88): the first period still to come, and what
+   * each player already has — minutes played, plus the rest of the period in
+   * progress with the players on now. Recomputed on each render, never stored.
+   */
+  const liveForPlan = (planned: SavedMatch) => {
+    if (!match || match.state.match.id !== planned.match.id) return undefined;
+    const started = match.state.quarters.filter((q) => q.status !== 'pending').length;
+    if (started === 0) return undefined;
+    const running = match.state.quarters.find((q) => q.status === 'running');
+    const remaining = running
+      ? match.engine.getPlannedQuarterMs(match.state.match) - match.engine.getQuarterElapsedMs(running)
+      : 0;
+    const onNow = running
+      ? match.state.appearances
+          .filter((a) => a.quarterId === running.id && a.endElapsedMs === null)
+          .map((a) => ({ playerId: a.playerId, positionKind: a.positionKind }))
+      : [];
+    return {
+      fromPeriod: started,
+      baseline: liveBaseline(foldPlayerMinutes(match.engine, match.state, players), onNow, remaining),
+    };
+  };
+
   // --- routing --------------------------------------------------------------
 
   const body = (() => {
@@ -800,7 +854,8 @@ export default function App() {
           players={squad}
           plan={planning.plan}
           onChange={(plan) => savePlan(planning.match.id, plan)}
-          onBack={() => setStep('fixtures')}
+          onBack={() => setStep(planReturn)}
+          live={liveForPlan(planning)}
         />
       );
     }
@@ -878,6 +933,7 @@ export default function App() {
           }
           onStart={startQuarter}
           onLeave={goHome}
+          onPlanRest={planTheRest}
         />
       );
     }
@@ -898,6 +954,7 @@ export default function App() {
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
           onLeave={goHome}
+          onPlanRest={planTheRest}
         />
       );
     }

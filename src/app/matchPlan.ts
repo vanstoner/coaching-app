@@ -225,7 +225,17 @@ export function projectPlan(
   format: Format,
   totalMinutes: number,
   periodCount: number,
-  players: Player[]
+  players: Player[],
+  /**
+   * Re-planning during play (#88). `fromPeriod` is the first period still to
+   * come (0-based); earlier ones are history and are neither walked nor
+   * checked. `baseline` is what each player already has — actual minutes so
+   * far plus the rest of the period in progress — which the plan adds to.
+   */
+  live: {
+    fromPeriod: number;
+    baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }>;
+  } | null = null
 ): Projection {
   const periodMs = periodLengthMs(totalMinutes, periodCount);
   const matchMs = totalMinutes * 60_000;
@@ -238,7 +248,13 @@ export function projectPlan(
   const keeping = new Map<UUID, number>();
   const problems: PlanProblem[] = [];
 
+  for (const [id, b] of live?.baseline ?? []) {
+    if (b.outfieldMs > 0) outfield.set(id, b.outfieldMs);
+    if (b.goalkeeperMs > 0) keeping.set(id, b.goalkeeperMs);
+  }
+
   planFor(plan, periodCount).periods.forEach((period, periodIndex) => {
+    if (live && periodIndex < live.fromPeriod) return; // already played
     const problem = (message: string) => problems.push({ periodIndex, message });
 
     // Who is where at the whistle. A player in two places counts once, in
@@ -403,4 +419,27 @@ export function lineupFromPlan(
     };
   });
   return { sheet, subs };
+}
+
+/**
+ * What each player already has during a live match (#88 AC3): minutes
+ * actually played so far, plus the rest of the period in progress with the
+ * players on now, by the kind of position they hold. Recomputed on every
+ * call from the record, never stored (invariant 1).
+ */
+export function liveBaseline(
+  played: { playerId: UUID; outfieldMs: number; goalkeeperMs: number }[],
+  onNow: { playerId: UUID; positionKind: 'goalkeeper' | 'outfield' }[],
+  remainingMs: number
+): Map<UUID, { outfieldMs: number; goalkeeperMs: number }> {
+  const out = new Map<UUID, { outfieldMs: number; goalkeeperMs: number }>();
+  for (const m of played) out.set(m.playerId, { outfieldMs: m.outfieldMs, goalkeeperMs: m.goalkeeperMs });
+  const rest = Math.max(0, remainingMs);
+  for (const o of onNow) {
+    const row = out.get(o.playerId) ?? { outfieldMs: 0, goalkeeperMs: 0 };
+    if (o.positionKind === 'goalkeeper') row.goalkeeperMs += rest;
+    else row.outfieldMs += rest;
+    out.set(o.playerId, row);
+  }
+  return out;
 }

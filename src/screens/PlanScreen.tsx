@@ -53,6 +53,7 @@ export function PlanScreen({
   format,
   players,
   plan: stored,
+  live,
   onChange,
   onBack,
 }: {
@@ -63,14 +64,21 @@ export function PlanScreen({
   plan: MatchPlan | undefined;
   onChange: (plan: MatchPlan) => void;
   onBack: () => void;
+  /**
+   * Re-planning during play (#88): the first period still to come, and what
+   * each player already has. Earlier periods are locked.
+   */
+  live?: { fromPeriod: number; baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }> };
 }) {
   const periodCount = match.quarterCount;
   const plan = planFor(stored, periodCount);
   const periodMs = periodLengthMs(match.totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
-  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players);
+  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players, live ?? null);
+  const firstOpen = Math.min(live?.fromPeriod ?? 0, periodCount - 1);
+  const allPlayed = (live?.fromPeriod ?? 0) >= periodCount;
 
-  const [periodIndex, setPeriodIndex] = useState(0);
+  const [periodIndex, setPeriodIndex] = useState(firstOpen);
   const [picking, setPicking] = useState<Picking>(null);
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
@@ -130,7 +138,9 @@ export function PlanScreen({
               <Chip
                 key={i}
                 label={`${noun} ${i + 1}`}
-                detail={flagged ? 'needs a look' : 'ok'}
+                detail={
+                  live && i < live.fromPeriod ? 'played' : flagged ? 'needs a look' : 'ok'
+                }
                 selected={i === periodIndex}
                 onPress={() => choosePeriod(i)}
               />
@@ -138,6 +148,13 @@ export function PlanScreen({
           })}
         </ChipRow>
 
+        {live && periodIndex < live.fromPeriod ? (
+          <Text style={screen.hint}>
+            {noun} {periodIndex + 1} has started, so it is the match record now and
+            cannot be planned. {allPlayed ? '' : `Plan from ${noun.toLowerCase()} ${live.fromPeriod + 1}.`}
+          </Text>
+        ) : (
+          <>
         {periodIndex > 0 && (
           <Pressable
             style={screen.linkHit}
@@ -247,7 +264,12 @@ export function PlanScreen({
           </Text>
         ))}
 
-        <Text style={screen.fieldLabel}>Minutes if played to plan</Text>
+          </>
+        )}
+
+        <Text style={screen.fieldLabel}>
+          {live ? 'Minutes so far, plus the plan' : 'Minutes if played to plan'}
+        </Text>
         <Text style={local.summary}>
           Fair share {formatClock(projection.fairShareMs)} · spread{' '}
           {formatClock(projection.spreadMs)}
