@@ -20,7 +20,13 @@
  */
 
 import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import type { Player } from '../types/index';

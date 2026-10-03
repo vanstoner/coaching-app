@@ -12,7 +12,12 @@
  */
 
 import { useMemo } from 'react';
-import { Pressable, SafeAreaView, Text, View } from 'react-native';
+import {
+  Pressable,
+  SafeAreaView,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine } from '../engine/MatchEngine';

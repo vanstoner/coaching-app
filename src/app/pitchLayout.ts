@@ -31,6 +31,20 @@ function side(label: string): number {
   return first === 'L' ? 0 : first === 'R' ? 2 : 1;
 }
 
+/**
+ * Across-the-pitch centres for a row of n (#89). Spread wider than even
+ * spacing so three pills of PILL_WIDTH_FRACTION never touch: at 0.18 / 0.5 /
+ * 0.82 the gap between pills is 0.32 - 0.28 = 0.04 of the pitch, about 13dp
+ * on a 360dp phone, where even spacing (0.25 apart) overlapped them.
+ */
+function rowX(n: number, i: number): number {
+  const table: Record<number, number[]> = { 1: [0.5], 2: [0.3, 0.7], 3: [0.18, 0.5, 0.82] };
+  return table[n]?.[i] ?? (i + 1) / (n + 1);
+}
+
+/** The width of a pill, as a fraction of the pitch's width. */
+export const PILL_WIDTH_FRACTION = 0.28;
+
 /** Every position's spot on the pitch. */
 export function slotSpots(format: Format): SlotSpot[] {
   const rows = new Map<number, Position[]>();
@@ -48,7 +62,7 @@ export function slotSpots(format: Format): SlotSpot[] {
         positionId: p.id,
         label: p.label,
         unit: p.unit,
-        x: (i + 1) / (ordered.length + 1),
+        x: rowX(ordered.length, i),
         y,
       });
     });

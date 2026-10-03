@@ -9,7 +9,12 @@
  * moment it matters: the file carries children's first names.
  */
 
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';

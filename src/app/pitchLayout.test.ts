@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import { makeFormat } from './shapes';
-import { dropTargetAt, slotSpots } from './pitchLayout';
+import { PILL_WIDTH_FRACTION, dropTargetAt, slotSpots } from './pitchLayout';
 
 describe('the pitch layout (#83 AC1)', () => {
   it('draws 2-3-1 attacking upwards, left on the left', () => {
@@ -52,5 +52,21 @@ describe('what a drop lands on', () => {
 
   it('lands on nothing outside the pitch and the bench', () => {
     expect(dropTargetAt(150, 470, pitch, spots, pills, benchRect)).toBeNull();
+  });
+});
+
+describe('pills do not touch (#89 AC3)', () => {
+  it('leaves a gap between neighbours in every row, for both shapes', () => {
+    for (const shape of ['2-3-1', '2-2-2'] as const) {
+      const spots = slotSpots(makeFormat(shape));
+      const rows = new Map<number, number[]>();
+      for (const s of spots) rows.set(s.y, [...(rows.get(s.y) ?? []), s.x]);
+      for (const xs of rows.values()) {
+        const sorted = [...xs].sort((a, b) => a - b);
+        for (let i = 1; i < sorted.length; i++) {
+          expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(PILL_WIDTH_FRACTION + 0.03);
+        }
+      }
+    }
   });
 });
