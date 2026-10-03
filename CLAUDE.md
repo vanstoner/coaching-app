@@ -3,8 +3,10 @@
 Junior football coaching app for one under-10s squad. Android first. Rob is
 Product Owner and the only approver.
 
-**Every session ends with a releasable artifact.** A green build of `main`
-publishes a prerelease APK automatically. If a session produces no installable
+**Every session ends with a releasable artifact.** Every pull request
+publishes **Coaching Beta** (its own app id; one rolling `beta` release). A
+merge is Rob's approval, so a green build of `main` publishes the full
+**Coaching App** release, marked Latest, and clears the beta. If a session produces no installable
 APK, it produced nothing.
 
 ## What we are building

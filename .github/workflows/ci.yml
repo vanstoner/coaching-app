@@ -68,6 +68,11 @@ jobs:
       - name: Prove the trailer check gates before trusting it
         run: python3 .github/scripts/check_refs_trailer.py --self-test
 
+      # #79: the release job's read-back gate only runs on main, after merge,
+      # so its self-test runs here, on every PR, before it is ever trusted.
+      - name: Prove the release check gates before trusting it
+        run: python3 .github/scripts/check_release.py --self-test
+
       - name: Every commit references its issue
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}

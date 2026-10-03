@@ -1,14 +1,15 @@
 name: Promote release
 
-# #79, decision 10 (PO, 2026-10-03). Every green build of main publishes a
-# PRERELEASE. Promotion to a full release is the Product Owner's call, and a
-# Claude Code session cannot push the tag that would otherwise cut one
-# (the proxy refuses tag refs), so this workflow does it on dispatch:
+# #79. Since the PO ruling "approve 1 2" (2026-10-03) a green build of main
+# publishes the full release itself, marked Latest, and clears the beta; this
+# workflow is no longer a step in shipping. It remains, on dispatch, to
+# retitle a release (e.g. "1.0 — Match day 4") or to re-point Latest at an
+# earlier build, because a Claude Code session cannot push tags or edit
+# releases through the proxy:
 #
-#   1. turns the named main build's prerelease into a full release, marked
-#      Latest, with the given title — the asset and notes are untouched;
-#   2. deletes the stale `beta` prerelease and its tag, if present (the
-#      Coaching Beta experiment, #81, was closed unmerged).
+#   1. makes the named main build a full release, marked Latest, with the
+#      given title; the asset and notes are untouched;
+#   2. deletes the `beta` prerelease and its tag, if present.
 #
 # Dispatch only (AC-P4). Never on push or pull request.
 

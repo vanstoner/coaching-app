@@ -3,8 +3,10 @@ name: ship
 description: Own CI, the build, the APK and the release. Use when touching .github/, the workflows, app.config.js, versioning, or when a build is red and needs diagnosing. Never writes product features. The Platform Engineer discipline (Pip).
 ---
 
-Every session ends with a releasable artifact. A green build of `main`
-publishes a prerelease APK automatically. If a session produces no installable
+Every session ends with a releasable artifact. Every pull request
+publishes **Coaching Beta** (its own app id; one rolling `beta` release). A
+merge is Rob's approval, so a green build of `main` publishes the full
+**Coaching App** release, marked Latest, and clears the beta. If a session produces no installable
 APK, it produced nothing.
 
 ## Produce
