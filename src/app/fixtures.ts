@@ -77,14 +77,31 @@ export function opponentLabel(match: Match): string {
  * Only a planned match is placed by time, and only then does "no kick-off yet"
  * matter: a fixture with no date is still something to come, so it is future.
  */
-export function bucketOf(match: Match, now: Date, neverKickedOff = false): FixtureBucket {
+/**
+ * How far a match has got, read from its periods. The app never rewrites
+ * `Match.status` as a match is played, so this, not the status, is what says
+ * whether it has been played (PO, match day 4).
+ */
+export type MatchProgress = 'not_started' | 'underway' | 'finished';
+
+export function matchProgress(quarters: QuarterLike[]): MatchProgress {
+  if (quarters.length === 0 || quarters.every((q) => q.status === 'pending')) return 'not_started';
+  return quarters.every((q) => q.status === 'ended') ? 'finished' : 'underway';
+}
+
+export function bucketOf(match: Match, now: Date, progress?: MatchProgress): FixtureBucket {
   const status: MatchStatus = match.status;
-  if (status === 'in_progress') return 'current';
   if (status === 'completed' || status === 'abandoned') return 'past';
-  // A fixture nobody has kicked off has not been played, whatever the date
-  // says (PO, match day 4: "it says it's played but doesn't seem to have a
-  // result"). It stays something to come until it is started or deleted.
-  if (neverKickedOff) return 'future';
+  // Progress decides before the status and the clock (PO, match day 4). The
+  // engine sets `in_progress` at kick-off and nothing ever sets `completed`,
+  // so by status alone a finished match was "Now" for ever and never Played.
+  // A finished match is Played even with no date ("Play now" has none). One
+  // nobody has kicked off has not been played, whatever the date says: "it
+  // says it's played but doesn't seem to have a result".
+  if (progress === 'finished') return 'past';
+  if (progress === 'underway') return 'current';
+  if (progress === 'not_started') return 'future';
+  if (status === 'in_progress') return 'current';
 
   if (!match.kickoffAt) return 'future';
   const kickoff = Date.parse(match.kickoffAt);
@@ -104,12 +121,12 @@ export function fixtureList(
   matches: Match[],
   now: Date,
   currentMatchId: UUID | null = null,
-  /** Fixtures never kicked off: never filed under Played, whatever their date. */
-  neverKickedOff: ReadonlySet<UUID> = new Set()
+  /** Each match's progress, from its periods; see `matchProgress`. */
+  progress: ReadonlyMap<UUID, MatchProgress> = new Map()
 ): FixtureRow[] {
   const rows = matches.map((match) => ({
     match,
-    bucket: bucketOf(match, now, neverKickedOff.has(match.id)),
+    bucket: bucketOf(match, now, progress.get(match.id)),
     isCurrent: match.id === currentMatchId,
   }));
 

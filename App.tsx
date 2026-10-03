@@ -49,6 +49,7 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
+import { progressById, withLiveMatch } from './src/app/liveMatch';
 import {
   describeMerge,
   emptyLedger,
@@ -385,6 +386,25 @@ export default function App() {
     setStep('fixtures');
   }, [persist]);
 
+  /**
+   * Hold a different live match, or none, without losing the one held now.
+   *
+   * The engine changes the live match in place and `matches` keeps the copy
+   * from before kick-off, so the held match is folded in FIRST. Without this,
+   * leaving a finished match's summary saved that stale copy over the played
+   * match: no periods, no appearances, no subs (PO, match day 4).
+   */
+  const releaseMatch = useCallback(
+    (next: LiveMatch | null) => {
+      if (match && match !== next) {
+        const held = match;
+        setMatches((prev) => withLiveMatch(prev, held));
+      }
+      setMatch(next);
+    },
+    [match]
+  );
+
   // --- actions --------------------------------------------------------------
 
   /**
@@ -443,7 +463,9 @@ export default function App() {
    */
   const deleteFixture = useCallback(
     (matchId: UUID) => {
-      const stored = matches.find((m) => m.match.id === matchId);
+      // Judged on the live state when it is the match being held: the stored
+      // copy of a match kicked off a moment ago still looks unplayed.
+      const stored = withLiveMatch(matches, match).find((m) => m.match.id === matchId);
       if (!stored) return;
       if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
       const next = matches.filter((m) => m.match.id !== matchId);
@@ -506,6 +528,18 @@ export default function App() {
   /** Open a fixture: play it if it is today's, otherwise look at it. */
   const openFixture = useCallback(
     (matchId: UUID) => {
+      // Already the live match: go back to it as it is. Rebuilding it from
+      // the stored list would drop everything since it was last folded in.
+      if (match && match.state.match.id === matchId) {
+        const to = openDestination(
+          match.state.quarters,
+          match.state.match.status,
+          squadReadiness(squad, match.format.onFieldCount).ready
+        );
+        if (to === 'squad') setSquadErrand('match');
+        setStep(to);
+        return;
+      }
       const stored = matches.find((m) => m.match.id === matchId);
       if (!stored) return;
       const engine = new MatchEngine();
@@ -528,7 +562,7 @@ export default function App() {
       // fallback — it is the format that match was created against.
       const matchFormat = stored.format ?? format;
 
-      setMatch({
+      releaseMatch({
         engine,
         format: matchFormat,
         state: {
@@ -555,7 +589,7 @@ export default function App() {
       if (to === 'squad') setSquadErrand('match');
       setStep(to);
     },
-    [matches, squad, format]
+    [matches, squad, format, match, releaseMatch]
   );
 
   /**
@@ -577,10 +611,10 @@ export default function App() {
       // #64: without this the bench ledger is never written at all.
       availablePlayerIds: squad.map((p) => p.id),
     });
-    setMatch({ engine, state, format: matchFormat });
+    releaseMatch({ engine, state, format: matchFormat });
     setSubPlan([]);
     setStep('lineup');
-  }, [squadId, format, totalMinutes, periodCount, squad]);
+  }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch]);
 
   const playNow = useCallback(() => {
     if (squadReadiness(squad, format.onFieldCount).ready) {
@@ -870,8 +904,10 @@ export default function App() {
           now={new Date()}
           onBack={() => {
             // A finished match is history: it is safe to let go of, and
-            // holding it would make Home think one is still current.
-            setMatch(null);
+            // holding it would make Home think one is still current. Folded
+            // into the list first, or the save that follows writes the copy
+            // from before kick-off over it (match day 4).
+            releaseMatch(null);
             setStep('fixtures');
           }}
         />
@@ -968,6 +1004,7 @@ export default function App() {
         currentMatchId={match?.state.match.id ?? null}
         now={new Date()}
         onOpen={openFixture}
+        progress={progressById(matches, match)}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
         onPlan={(id) => {

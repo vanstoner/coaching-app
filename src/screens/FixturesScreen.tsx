@@ -28,6 +28,7 @@ import {
   kickoffLabel,
   lengthLabel,
   opponentLabel,
+  type MatchProgress,
   type FixtureRow,
 } from '../app/fixtures';
 import { colours, screen, TOUCH_TARGET } from './theme';
@@ -45,6 +46,7 @@ export function FixturesScreen({
   housekeeping,
   onPlayNow,
   buildLabel,
+  progress,
 }: {
   squadName: string;
   matches: Match[];
@@ -70,8 +72,10 @@ export function FixturesScreen({
    */
   onPlayNow: (() => void) | null;
   buildLabel: string;
+  /** Each match's progress, live match included: what files it as Played. */
+  progress: ReadonlyMap<UUID, MatchProgress>;
 }) {
-  const rows = fixtureList(matches, now, currentMatchId, housekeeping.deletable);
+  const rows = fixtureList(matches, now, currentMatchId, progress);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
@@ -92,9 +96,9 @@ export function FixturesScreen({
           <>
             <Section title="Now" rows={current} {...cardProps} />
             <Section title="Coming up" rows={future} {...cardProps} />
-            {/* Only matches that were kicked off. One never started stays in
-                Coming up whatever its date, and can still be planned, played
-                or deleted (#76, match day 4). */}
+            {/* Finished matches. One never started stays in Coming up
+                whatever its date, and can still be planned, played or
+                deleted (#76, match day 4). */}
             <Section title="Played" rows={past} {...cardProps} />
           </>
         )}
