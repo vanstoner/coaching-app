@@ -33,6 +33,12 @@
 // build of main, and any local prebuild — the identity is exactly app.json's.
 const BETA_SUFFIX = '.beta';
 const BETA_NAME = 'Coaching Beta';
+// Its own launcher icon too, so the two apps are told apart at a glance on
+// the home screen and in the installer (Rob, match day 4). The released app
+// keeps whatever app.json gives it.
+const BETA_ICON = './assets/images/beta-icon.png';
+const BETA_ADAPTIVE_ICON = './assets/images/beta-adaptive-icon.png';
+const BETA_ICON_BACKGROUND = '#E86A17';
 
 function withVariant(config) {
   const variant = process.env.APP_VARIANT;
@@ -43,7 +49,12 @@ function withVariant(config) {
   return {
     ...config,
     name: BETA_NAME,
-    android: { ...config.android, package: `${config.android.package}${BETA_SUFFIX}` },
+    icon: BETA_ICON,
+    android: {
+      ...config.android,
+      package: `${config.android.package}${BETA_SUFFIX}`,
+      adaptiveIcon: { foregroundImage: BETA_ADAPTIVE_ICON, backgroundColor: BETA_ICON_BACKGROUND },
+    },
   };
 }
 
