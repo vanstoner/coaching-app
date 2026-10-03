@@ -156,6 +156,22 @@ export function clearSubTime(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
   return plan.map((s) => (s.playerId === playerId ? { ...s, atMs: NO_SUB_PLANNED } : s));
 }
 
+/**
+ * Name who a substitute replaces — #72, AC10.
+ *
+ * > *"can't allocate the sub planned suboff, i.e. set a time for a sub and
+ * > indicate which outfield player is to come off"* — PO, match day 4.
+ *
+ * Null puts it back to the suggestion: whoever has been on longest.
+ */
+export function setSubFor(
+  plan: PlannedSub[],
+  playerId: UUID,
+  forPlayerId: UUID | null
+): PlannedSub[] {
+  return plan.map((s) => (s.playerId === playerId ? { ...s, forPlayerId } : s));
+}
+
 export function markDone(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
   return plan.map((s) => (s.playerId === playerId ? { ...s, done: true } : s));
 }

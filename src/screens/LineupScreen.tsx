@@ -22,6 +22,20 @@
  * fairness input. The fairness column is OUTFIELD minutes and goalkeeping is
  * shown separately, never added to it.
  *
+ * ---------------------------------------------------------------------------
+ * The plan, explicit positions, and who comes off — #72
+ * ---------------------------------------------------------------------------
+ *
+ * When the fixture has a plan for this period the screen starts from it
+ * (AC7): its players in their positions, its subs with their times and who
+ * each replaces. The coach can change any of it, and what they start with is
+ * what the engine records — the plan is never the record (AC8).
+ *
+ * Any named position can be given to any player (AC9), and a planned sub can
+ * name who comes off (AC10). With neither, the old behaviour stands: players
+ * fill the outfield back to front, and the sub replaces whoever has been on
+ * longest.
+ *
  * **There is a way out that does not commit.** This screen used to have one
  * exit and it was "Start quarter", so a coach who arrived with the wrong squad
  * was stuck until they started a period they did not mean to start.
@@ -36,13 +50,27 @@ import type { Format, Player, UUID } from '../types/index';
 import { currentQuarter, formatClock, periodNoun } from '../app/matchClock';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes, type PlayerMinutes } from '../app/playerMinutes';
-import { lineupIsComplete, namedSlots, suggestLineup } from '../app/lineup';
+import { suggestLineup } from '../app/lineup';
+import { lineupFromPlan, periodHasContent, type PlannedPeriod } from '../app/matchPlan';
 import {
   NO_SUB_PLANNED,
   nudgeSubTime,
   planSubs,
+  setSubFor,
   type PlannedSub,
 } from '../app/subPlan';
+import {
+  addToSheet,
+  keeperOf,
+  makeKeeper,
+  placeInSlot,
+  playersOn,
+  removeFromSheet,
+  sheetFromSelection,
+  sheetIsComplete,
+  type Sheet,
+} from '../app/teamSheet';
+import { Chip, ChipRow } from './Chip';
 import { shapeOfFormat } from '../app/shapes';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -52,6 +80,7 @@ export function LineupScreen({
   format,
   players,
   squadName,
+  planned,
   onStart,
   onLeave,
 }: {
@@ -61,7 +90,9 @@ export function LineupScreen({
   format: Format;
   players: Player[];
   squadName: string;
-  onStart: (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => void;
+  /** This period of the fixture's plan, if one was made (#72). */
+  planned?: PlannedPeriod;
+  onStart: (sheet: Sheet, plan: PlannedSub[]) => void;
   /** Back to Home. Does not kick off and does not end anything. */
   onLeave: () => void;
 }) {
@@ -75,23 +106,48 @@ export function LineupScreen({
     [players, minutes, format]
   );
 
-  const [onPitch, setOnPitch] = useState<UUID[]>(suggestion.onPitch);
-  const [goalkeeper, setGoalkeeper] = useState<UUID | null>(suggestion.goalkeeper);
-  const suggestedFor = useRef(quarter?.id);
-
   // How long this period will run, which is what a sub time is an offset into.
   const periodMs = engine.getPlannedQuarterMs(state.match);
-  const [plan, setPlan] = useState<PlannedSub[]>(() => planSubs(suggestion.bench, periodMs));
+  const hasPlan = periodHasContent(planned);
 
-  // A new period means a new suggestion.
+  /** Where the screen starts: the plan if there is one, else the suggestion. */
+  const fromSuggestion = () => ({
+    sheet: sheetFromSelection(suggestion.onPitch, suggestion.goalkeeper, format),
+    subs: planSubs(suggestion.bench, periodMs),
+  });
+  const fromPlan = () => (planned ? lineupFromPlan(planned, format, players) : fromSuggestion());
+  const initial = () => (hasPlan ? fromPlan() : fromSuggestion());
+
+  const [start] = useState(initial);
+  const [sheet, setSheet] = useState<Sheet>(start.sheet);
+  const [plan, setPlan] = useState<PlannedSub[]>(start.subs);
+  const suggestedFor = useRef(quarter?.id);
+
+  /** Which position, or which sub's "comes off", the picker is open for. */
+  const [picking, setPicking] = useState<
+    { kind: 'slot'; positionId: UUID } | { kind: 'off'; playerId: UUID } | null
+  >(null);
+
+  const apply = (next: { sheet: Sheet; subs: PlannedSub[] }) => {
+    setSheet(next.sheet);
+    setPlan(next.subs);
+    setPicking(null);
+  };
+
+  // A new period means starting again: from its plan, or a fresh suggestion.
   useEffect(() => {
     if (suggestedFor.current !== quarter?.id) {
       suggestedFor.current = quarter?.id;
-      setOnPitch(suggestion.onPitch);
-      setGoalkeeper(suggestion.goalkeeper);
-      setPlan(planSubs(suggestion.bench, periodMs));
+      apply(initial());
     }
-  }, [quarter?.id, suggestion, periodMs]);
+    // `initial` reads only the values listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quarter?.id, suggestion, periodMs, planned]);
+
+  // Memoised: the bench-follow effect below depends on it, and a fresh array
+  // every render would re-run that effect every render.
+  const onPitch = useMemo(() => playersOn(sheet), [sheet]);
+  const goalkeeper = keeperOf(sheet, format);
 
   // The bench changes as the coach taps names, so the plan follows it: a new
   // bench player gets the default time, and one brought on loses their entry.
@@ -111,19 +167,33 @@ export function LineupScreen({
   }, [minutes]);
 
   const selected = new Set(onPitch);
-  const complete = lineupIsComplete(onPitch, format);
+  const complete = sheetIsComplete(sheet, format);
   const noun = periodNoun(state.match.quarterCount);
   const shape = shapeOfFormat(format);
-  const slots = namedSlots(onPitch, goalkeeper, format, players);
+  const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
+  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
 
   const toggle = (id: UUID) => {
-    if (selected.has(id)) {
-      setOnPitch(onPitch.filter((x) => x !== id));
-      if (goalkeeper === id) setGoalkeeper(null);
-    } else if (onPitch.length < format.onFieldCount) {
-      setOnPitch([...onPitch, id]);
-    }
+    setPicking(null);
+    setSheet(selected.has(id) ? removeFromSheet(sheet, id) : addToSheet(sheet, format, id));
   };
+
+  const pickFor = (playerId: UUID | null) => {
+    if (!picking) return;
+    if (picking.kind === 'slot') {
+      if (playerId !== null) setSheet(placeInSlot(sheet, picking.positionId, playerId));
+      else setSheet({ ...sheet, [picking.positionId]: null });
+    } else {
+      setPlan((c) => setSubFor(c, picking.playerId, playerId));
+    }
+    setPicking(null);
+  };
+
+  /** Outfield players on now: who a sub can replace. */
+  const outfieldOn = positions
+    .filter((p) => p.kind !== 'goalkeeper')
+    .map((p) => sheet[p.id] ?? null)
+    .filter((id): id is UUID => id !== null);
 
   // Players owed the most time first — the answer to "who comes on".
   const ordered = useMemo(
@@ -135,6 +205,7 @@ export function LineupScreen({
   );
 
   const timeOf = (id: UUID) => plan.find((e) => e.playerId === id)?.atMs ?? 0;
+  const forOf = (id: UUID) => plan.find((e) => e.playerId === id)?.forPlayerId ?? null;
 
   return (
     <SafeAreaView style={screen.safe}>
@@ -151,34 +222,57 @@ export function LineupScreen({
           {/* The shape, named. A pitch is #2/#10; this is the list the PO said
               he can live with, and it makes 2-2-2 visibly different. */}
           <Text style={screen.fieldLabel}>On the pitch</Text>
-          {slots.map((slot) => (
-            <View key={slot.positionId} style={local.slotRow}>
-              <Text style={local.slotLabel} numberOfLines={1}>
-                {slot.label}
-              </Text>
-              <Text
-                style={[local.slotName, slot.firstName === null && local.slotEmpty]}
-                numberOfLines={1}
-              >
-                {slot.firstName ?? 'not picked yet'}
-              </Text>
-            </View>
-          ))}
+          {hasPlan && <Text style={local.fromPlan}>From your plan. Change anything.</Text>}
+          {positions.map((position) => {
+            const who = sheet[position.id] ?? null;
+            const open = picking?.kind === 'slot' && picking.positionId === position.id;
+            return (
+              <View key={position.id}>
+                <Pressable
+                  onPress={() => setPicking(open ? null : { kind: 'slot', positionId: position.id })}
+                  style={({ pressed }) => [local.slotRow, pressed && screen.buttonPressed]}
+                >
+                  <Text style={local.slotLabel} numberOfLines={1}>
+                    {position.label}
+                  </Text>
+                  <Text style={[local.slotName, who === null && local.slotEmpty]} numberOfLines={1}>
+                    {who === null ? 'not picked yet' : (nameOf.get(who) ?? '')}
+                  </Text>
+                </Pressable>
+                {open && (
+                  <View style={local.picker}>
+                    <ChipRow>
+                      {players.map((p) => (
+                        <Chip
+                          key={p.id}
+                          label={p.firstName}
+                          selected={p.id === who}
+                          onPress={() => pickFor(p.id)}
+                        />
+                      ))}
+                      <Chip label="Nobody" selected={false} onPress={() => pickFor(null)} />
+                    </ChipRow>
+                  </View>
+                )}
+              </View>
+            );
+          })}
 
           <Text style={screen.fieldLabel}>Who is on?</Text>
-          <Text style={screen.hint}>{suggestion.rationale}</Text>
           <Text style={screen.hint}>
-            Tap a name to pick them. The time beside a substitute is when you
-            will be reminded to bring them on.
+            Tap a name to bring them on or off; tap a position above to put
+            someone there. The time beside a substitute is when you will be
+            reminded to bring them on.
           </Text>
 
           {ordered.map((p) => {
             const m = byId.get(p.id);
             const on = selected.has(p.id);
             const isKeeper = goalkeeper === p.id;
+            const pickingOff = picking?.kind === 'off' && picking.playerId === p.id;
             return (
+              <View key={p.id}>
               <Pressable
-                key={p.id}
                 onPress={() => toggle(p.id)}
                 style={({ pressed }) => [
                   local.pickRow,
@@ -196,10 +290,30 @@ export function LineupScreen({
                       ? ` · ${formatClock(m!.goalkeeperMs)} in goal`
                       : ''}
                   </Text>
+                  {/* AC10: who this sub replaces. Only once a time is set. */}
+                  {!on && timeOf(p.id) !== NO_SUB_PLANNED && (
+                    <Pressable
+                      onPress={() =>
+                        setPicking(
+                          picking?.kind === 'off' && picking.playerId === p.id
+                            ? null
+                            : { kind: 'off', playerId: p.id }
+                        )
+                      }
+                      style={local.offHit}
+                    >
+                      <Text style={local.off} numberOfLines={1}>
+                        For:{' '}
+                        {forOf(p.id) === null
+                          ? 'whoever is on longest'
+                          : (nameOf.get(forOf(p.id)!) ?? 'whoever is on longest')}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
                 {on ? (
                   <Pressable
-                    onPress={() => setGoalkeeper(isKeeper ? null : p.id)}
+                    onPress={() => setSheet(makeKeeper(sheet, format, p.id))}
                     style={[local.gkChip, isKeeper && local.gkChipOn]}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isKeeper }}
@@ -235,6 +349,26 @@ export function LineupScreen({
                   </View>
                 )}
               </Pressable>
+              {pickingOff && (
+                <View style={local.picker}>
+                  <ChipRow>
+                    {outfieldOn.map((id) => (
+                      <Chip
+                        key={id}
+                        label={nameOf.get(id) ?? ''}
+                        selected={forOf(p.id) === id}
+                        onPress={() => pickFor(id)}
+                      />
+                    ))}
+                    <Chip
+                      label="Longest on"
+                      selected={forOf(p.id) === null}
+                      onPress={() => pickFor(null)}
+                    />
+                  </ChipRow>
+                </View>
+              )}
+              </View>
             );
           })}
         </ScrollView>
@@ -251,16 +385,21 @@ export function LineupScreen({
             !complete && screen.buttonDisabled,
             pressed && screen.buttonPressed,
           ]}
-          onPress={() => onStart(onPitch, goalkeeper, plan)}
+          onPress={() => onStart(sheet, plan)}
         >
           <Text style={screen.buttonLabel}>Start {noun.toLowerCase()}</Text>
         </Pressable>
 
         <View style={screen.actions}>
+          {hasPlan && (
+            <Pressable onPress={() => apply(fromPlan())} style={screen.linkHit}>
+              <Text style={screen.link}>Use plan</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => {
-              setOnPitch(suggestion.onPitch);
-              setGoalkeeper(suggestion.goalkeeper);
+              setPicking(null);
+              setSheet(fromSuggestion().sheet);
             }}
             style={screen.linkHit}
           >
@@ -297,6 +436,21 @@ const local = StyleSheet.create({
   },
   slotName: { color: colours.ink, fontSize: 16, flex: 1, includeFontPadding: false },
   slotEmpty: { color: colours.inkFaint },
+  picker: { paddingVertical: 8 },
+  fromPlan: {
+    alignSelf: 'stretch',
+    color: colours.warn,
+    fontSize: 13,
+    includeFontPadding: false,
+    marginBottom: 4,
+  },
+  offHit: { minHeight: TOUCH_TARGET, justifyContent: 'center' },
+  off: {
+    color: colours.ink,
+    fontSize: 13,
+    textDecorationLine: 'underline',
+    includeFontPadding: false,
+  },
   pickRow: {
     flexDirection: 'row',
     alignItems: 'center',

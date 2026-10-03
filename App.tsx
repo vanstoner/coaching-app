@@ -17,7 +17,7 @@ import {
 } from './src/app/placeholderSquad';
 import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './src/app/shapes';
 import { squadReadiness } from './src/app/squad';
-import { teamSheetFor } from './src/app/lineup';
+import { toTeamSheet, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
 import { planHasContent, type MatchPlan } from './src/app/matchPlan';
 import {
@@ -470,16 +470,13 @@ export default function App() {
   }, []);
 
   const startQuarter = useCallback(
-    (onPitch: UUID[], goalkeeper: UUID | null, plan: PlannedSub[]) => {
+    (sheet: Sheet, plan: PlannedSub[]) => {
       if (!match) return;
       const quarter = currentQuarter(match.state);
       if (!quarter) return;
-      match.engine.startQuarter(
-        match.state,
-        quarter,
-        teamSheetFor(onPitch, goalkeeper, match.format),
-        match.format
-      );
+      // What the coach started with, position by position (#72, AC9). Never
+      // the plan: the plan only filled the screen in (AC8).
+      match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
       setSubPlan(plan);
       setStep('playing');
       persist();
@@ -623,6 +620,12 @@ export default function App() {
           format={match.format}
           players={players}
           squadName={squadName}
+          // This period of the fixture's plan, if one was made (#72, AC7).
+          planned={
+            matches.find((m) => m.match.id === match.state.match.id)?.plan?.periods[
+              (currentQuarter(match.state)?.index ?? 1) - 1
+            ]
+          }
           onStart={startQuarter}
           onLeave={goHome}
         />

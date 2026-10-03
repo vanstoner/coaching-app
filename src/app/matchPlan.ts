@@ -29,6 +29,8 @@
 
 import type { Format, Player, Position, UUID } from '../types/index';
 import { formatClock, periodNoun } from './matchClock';
+import { NO_SUB_PLANNED, type PlannedSub } from './subPlan';
+import type { Sheet } from './teamSheet';
 
 /** One planned swap inside a period. */
 export interface PlannedSwap {
@@ -330,4 +332,66 @@ export function planHasContent(plan: MatchPlan | undefined): boolean {
   return (plan?.periods ?? []).some(
     (p) => Object.values(p.slots).some((v) => v !== null) || p.subs.length > 0
   );
+}
+
+// ---------------------------------------------------------------------------
+// The whistle reads the plan — AC7
+// ---------------------------------------------------------------------------
+
+/** True when a period has anything planned in it. */
+export function periodHasContent(period: PlannedPeriod | undefined): boolean {
+  if (!period) return false;
+  return Object.values(period.slots).some((v) => v !== null) || period.subs.length > 0;
+}
+
+/**
+ * One planned period, as the lineup screen holds it: the team sheet, and a
+ * sub entry for every bench player.
+ *
+ * Only what is sound is carried across. A player no longer in the squad, or
+ * already placed in an earlier position, is left out, so the screen never
+ * starts with a slot it cannot name. A bench player with a valid planned swap
+ * gets its time and who it replaces; every other bench player starts as "no
+ * sub", exactly as an unplanned period does. The live screen holds ONE entry
+ * per bench player, so a second swap bringing the same player on is dropped.
+ *
+ * The coach can change all of it; what they start with is what is recorded
+ * (AC8). This is a starting point, never a record.
+ */
+export function lineupFromPlan(
+  period: PlannedPeriod,
+  format: Format,
+  players: Player[]
+): { sheet: Sheet; subs: PlannedSub[] } {
+  const known = new Set(players.map((p) => p.id));
+  const sheet: Sheet = {};
+  const placed = new Set<UUID>();
+  for (const position of sortedPositions(format)) {
+    const who = period.slots[position.id] ?? null;
+    if (who !== null && known.has(who) && !placed.has(who)) {
+      sheet[position.id] = who;
+      placed.add(who);
+    } else {
+      sheet[position.id] = null;
+    }
+  }
+
+  const bench = players.map((p) => p.id).filter((id) => !placed.has(id));
+  const planned = new Map<UUID, PlannedSwap>();
+  for (const swap of [...period.subs].sort((a, b) => a.atMs - b.atMs)) {
+    if (swap.onId === null || swap.atMs <= 0) continue;
+    if (!bench.includes(swap.onId) || planned.has(swap.onId)) continue;
+    planned.set(swap.onId, swap);
+  }
+
+  const subs: PlannedSub[] = bench.map((playerId) => {
+    const swap = planned.get(playerId);
+    return {
+      playerId,
+      atMs: swap ? swap.atMs : NO_SUB_PLANNED,
+      forPlayerId: swap && swap.offId !== null && known.has(swap.offId) ? swap.offId : null,
+      done: false,
+    };
+  });
+  return { sheet, subs };
 }
