@@ -19,7 +19,7 @@
  * Invariant 3: the figure under each name is OUTFIELD minutes.
  */
 
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import {
   AppState,
   Modal,
@@ -35,7 +35,14 @@ import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import type { Format, MatchEvent, Player, UUID } from '../types/index';
-import { currentQuarter, deriveClockView, formatClock, periodNoun } from '../app/matchClock';
+import {
+  currentQuarter,
+  deriveClockView,
+  formatClock,
+  msUntilNextSecond,
+  periodNoun,
+} from '../app/matchClock';
+import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
@@ -85,13 +92,30 @@ export function ClockScreen({
   onPlanRest?: () => void;
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
+  // Repaint just after each displayed second changes (#96), not on a free
+  // interval a late timer can carry across two seconds. Only a repaint: the
+  // value is recomputed from anchors every time (invariant 2).
+  const latest = useRef({ engine, state });
+  latest.current = { engine, state };
   useEffect(() => {
-    const id = setInterval(forceRepaint, 500);
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const { engine: e, state: s } = latest.current;
+      const running = s.quarters.find((q) => q.status === 'running');
+      const wait = running
+        ? msUntilNextSecond(e.getQuarterElapsedMs(running), appClockSetting().speed)
+        : 1000;
+      id = setTimeout(() => {
+        forceRepaint();
+        schedule();
+      }, wait);
+    };
+    schedule();
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') forceRepaint();
     });
     return () => {
-      clearInterval(id);
+      clearTimeout(id);
       sub.remove();
     };
   }, []);
@@ -127,10 +151,10 @@ export function ClockScreen({
   const untilNext = running ? msUntilNextSub(subPlan, periodElapsedMs) : null;
 
   // The Undo toast goes away on its own once its ten seconds are up.
-  const undoLive = undo !== null && Date.now() < undo.until;
+  const undoLive = undo !== null && appNow().getTime() < undo.until;
 
   const offerUndo = (label: string, run: () => void) =>
-    setUndo({ label, until: Date.now() + UNDO_WINDOW_MS, run });
+    setUndo({ label, until: appNow().getTime() + UNDO_WINDOW_MS, run });
 
   const describe = (m: LiveMove) =>
     m.kind === 'swap' ? `Swapped ${nameOf(m.a)} and ${nameOf(m.b)}` : `${nameOf(m.in)} on for ${nameOf(m.out)}`;

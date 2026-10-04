@@ -1,0 +1,101 @@
+/**
+ * The Test kit — Coaching Beta only (#95, PO ruling "approve 1").
+ *
+ * A fast clock (appClock.ts) and one-tap test data, so a whole match can be
+ * played through the real screens in minutes before a beta is approved. Only
+ * ever in a pull-request build, which is Coaching Beta: its own app id and its
+ * own storage (#79), so test data and fast-clock matches cannot reach the
+ * real squad. Synthetic first names only.
+ */
+
+import { MatchEngine } from '../engine/MatchEngine';
+import type { Format, Player, UUID } from '../types/index';
+import { makePlayer } from './squad';
+import { kickoffIso, nextSaturday } from './kickoff';
+import { mergeCurrentMatch, type SavedMatch } from './persistence';
+import { addSwap, emptyPlan, periodLengthMs, setSlot, updateSwap } from './matchPlan';
+
+/**
+ * True for a Coaching Beta build. CI bakes the build label into the bundle,
+ * and only a pull-request build — the only build that is Coaching Beta
+ * (APP_VARIANT=beta is set on exactly that event) — labels itself "(pr N)".
+ * A build of main, or a local run, never shows the kit.
+ */
+export function isBetaBuild(buildLabel: string): boolean {
+  return /\(pr \d+\)$/.test(buildLabel.trim());
+}
+
+/** Made-up first names, so nothing in a beta looks like the real squad. */
+export const TEST_NAMES = ['Ava', 'Ben', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo'];
+export const TEST_OPPONENTS = ['Test Rovers', 'Sample Town'];
+
+export interface TestData {
+  players: Player[];
+  matches: SavedMatch[];
+  /** What was added, for the message on screen. */
+  summary: string;
+}
+
+/**
+ * Add the test squad and two fixtures. Additive and repeatable: a name
+ * already in the squad is not added twice, and nothing existing is changed.
+ *
+ * - "Test Rovers", kicking off in 30 minutes, planned: everyone placed for
+ *   every period and one sub due halfway through each, so sub reminders fire.
+ * - "Sample Town", next Saturday at 10:00, unplanned.
+ */
+export function addTestData(
+  players: Player[],
+  matches: SavedMatch[],
+  squadId: UUID,
+  format: Format,
+  totalMinutes: number,
+  periodCount: number,
+  now: Date
+): TestData {
+  const have = new Set(players.filter((p) => p.active).map((p) => p.firstName));
+  const added = TEST_NAMES.filter((n) => !have.has(n)).map((n) => makePlayer(squadId, n));
+  const squad = [...players, ...added];
+  const testPlayers = squad.filter((p) => p.active && TEST_NAMES.includes(p.firstName));
+
+  const fixture = (opponent: string, kickoffAt: string) => {
+    const state = new MatchEngine({ nowFn: () => now }).createMatch(squadId, format.id, {
+      opponent,
+      kickoffAt,
+      totalMinutes,
+      quarterCount: periodCount,
+      availablePlayerIds: squad.filter((p) => p.active).map((p) => p.id),
+    });
+    return mergeCurrentMatch([], state, format)[0];
+  };
+
+  const soon = fixture(TEST_OPPONENTS[0], new Date(now.getTime() + 30 * 60_000).toISOString());
+  const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
+  const periodMs = periodLengthMs(totalMinutes, periodCount);
+  let plan = emptyPlan(periodCount);
+  for (let period = 0; period < periodCount; period++) {
+    // Rotate who starts, so the projection has something to balance.
+    const shift = period * 2;
+    positions.forEach((pos, i) => {
+      const who = testPlayers[(i + shift) % testPlayers.length];
+      plan = setSlot(plan, period, pos.id, who?.id ?? null);
+    });
+    const onPitch = new Set(positions.map((_, i) => testPlayers[(i + shift) % testPlayers.length]?.id));
+    const bench = testPlayers.find((p) => !onPitch.has(p.id));
+    const off = testPlayers[(positions.length - 1 + shift) % testPlayers.length];
+    if (bench && off) {
+      plan = addSwap(plan, period, periodMs);
+      plan = updateSwap(plan, period, 0, { onId: bench.id, offId: off.id });
+    }
+  }
+  const later = fixture(TEST_OPPONENTS[1], kickoffIso(nextSaturday(new Date(now.getTime() + 86_400_000)), '10:00'));
+
+  return {
+    players: squad,
+    matches: [...matches, { ...soon, plan }, later],
+    summary: `Added ${added.length} test player${added.length === 1 ? '' : 's'} and 2 fixtures.`,
+  };
+}
+
+/** Where the beta's clock setting is kept (beta storage only). */
+export const TEST_CLOCK_KEY = 'coaching-app/test-clock/v1';

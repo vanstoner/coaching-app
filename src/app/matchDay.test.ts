@@ -224,3 +224,83 @@ describe('the score on a fixture card (match day 4)', () => {
     expect(scores.has(other.match.id)).toBe(false);
   });
 });
+
+// --- #95 AC6: more of a Saturday, simulated ---------------------------------
+
+describe('simulated match scenarios (#95 AC6)', () => {
+  it('carries a planned period, subs included, into the lineup', async () => {
+    const { addTestData } = await import('./testKit');
+    const { lineupFromPlan } = await import('./matchPlan');
+    const day = matchDay(null);
+    const data = addTestData([], [], uuid(), day.format, 50, 4, day.nowFn());
+    const planned = data.matches[0];
+    const lineup = lineupFromPlan(planned.plan!.periods[0], planned.format!, data.players);
+    expect(Object.values(lineup.sheet).every((id) => id !== null)).toBe(true);
+    // Everyone on the bench is listed; exactly one has a planned time and
+    // who they replace, as the plan said.
+    const timed = lineup.subs.filter((sub) => sub.atMs > 0);
+    expect(timed).toHaveLength(1);
+    expect(timed[0].forPlayerId).not.toBeNull();
+    expect(timed[0].atMs).toBe(planned.plan!.periods[0].subs[0].atMs);
+  });
+
+  it('splits a keeper change mid-quarter between goal and outfield, minutes exact', () => {
+    const day = matchDay(null);
+    const engine = new MatchEngine({ nowFn: day.nowFn });
+    const state = day.planned;
+    const ids = day.players.map((p) => p.id);
+    const quarter = currentQuarter(state)!;
+    engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], day.format), day.format);
+    day.advance(5 * MIN);
+    engine.swapPositions(state, quarter, ids[0], ids[3]); // keeper and an outfielder change places
+    day.advance(QUARTER - 5 * MIN);
+    engine.endQuarter(state, quarter);
+    const m = new Map(foldPlayerMinutes(engine, state, day.players).map((x) => [x.playerId, x]));
+    expect(m.get(ids[0])).toMatchObject({ goalkeeperMs: 5 * MIN, outfieldMs: QUARTER - 5 * MIN });
+    expect(m.get(ids[3])).toMatchObject({ goalkeeperMs: QUARTER - 5 * MIN, outfieldMs: 5 * MIN });
+  });
+
+  it('keeps an undone goal on the record, off the score, through a reload', async () => {
+    const { UNDO_NOTE } = await import('./matchEvents');
+    const day = matchDay('2026-10-03T10:00:00Z');
+    const engine = new MatchEngine({ nowFn: day.nowFn });
+    const state = day.planned;
+    const ids = day.players.map((p) => p.id);
+    const quarter = currentQuarter(state)!;
+    engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], day.format), day.format);
+    const goal = engine.recordEvent(state, quarter, 'goal', ids[5]);
+    engine.withdrawEvent(state, goal.id, UNDO_NOTE);
+    engine.recordEvent(state, quarter, 'goal', ids[4]);
+    await saveSession(day.store, day.session([day.fixture], state));
+    const saved = (await loadSession(day.store))!;
+    const events = saved.matches[0].events!;
+    expect(events.some((e) => e.id === goal.id)).toBe(true); // never deleted (invariant 5)
+    expect(scoreOf(events)).toEqual({ us: 1, them: 0 });
+  });
+
+  it('resumes a quarter after the app was closed mid-way, counting the time it was closed', async () => {
+    const day = matchDay('2026-10-03T10:00:00Z');
+    const engine = new MatchEngine({ nowFn: day.nowFn });
+    const state = day.planned;
+    const ids = day.players.map((p) => p.id);
+    const quarter = currentQuarter(state)!;
+    engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], day.format), day.format);
+    day.advance(4 * MIN);
+    await saveSession(day.store, day.session([day.fixture], state));
+
+    // The phone kills the app; three minutes pass; the coach reopens it.
+    day.advance(3 * MIN);
+    const saved = (await loadSession(day.store))!;
+    const resumed = toMatchState(saved)!;
+    const after = new MatchEngine({ nowFn: day.nowFn });
+    expect(after.getQuarterElapsedMs(currentQuarter(resumed)!)).toBe(7 * MIN);
+
+    day.advance(QUARTER - 7 * MIN);
+    after.endQuarter(resumed, currentQuarter(resumed)!);
+    const total = foldPlayerMinutes(after, resumed, day.players).reduce(
+      (t, p) => t + p.outfieldMs + p.goalkeeperMs,
+      0
+    );
+    expect(total).toBe(7 * QUARTER);
+  });
+});

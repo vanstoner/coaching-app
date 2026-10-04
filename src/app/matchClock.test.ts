@@ -18,6 +18,8 @@ import {
   periodNounPlural,
   TOTAL_MINUTES_CHOICES,
   PERIOD_COUNT_CHOICES,
+  REPAINT_SLACK_MS,
+  msUntilNextSecond,
 } from './matchClock';
 
 // --- fixtures ---------------------------------------------------------------
@@ -308,5 +310,25 @@ describe('every offered match configuration is playable', () => {
         expect(deriveClockView(engine, state).isMatchOver).toBe(true);
       }
     }
+  });
+});
+
+describe('the clock repaints on each second (#96)', () => {
+  it('waits until just after the displayed second changes', () => {
+    expect(msUntilNextSecond(12_000)).toBe(1_000 + REPAINT_SLACK_MS);
+    expect(msUntilNextSecond(12_400)).toBe(600 + REPAINT_SLACK_MS);
+    expect(msUntilNextSecond(12_999)).toBe(1 + REPAINT_SLACK_MS);
+  });
+
+  it('tolerates a late timer of nearly a second before any second is skipped', () => {
+    // Repainting at boundary + slack, the next boundary is a full second
+    // away: a timer may run up to ~980 ms late before a second is missed.
+    // The old free-running 500 ms interval skipped one at ~500 ms late.
+    const repaintAt = 12_000 + REPAINT_SLACK_MS;
+    expect(msUntilNextSecond(repaintAt)).toBe(1_000);
+  });
+
+  it('repaints ten times as often at ×10 (#95)', () => {
+    expect(msUntilNextSecond(12_000, 10)).toBe(100 + REPAINT_SLACK_MS);
   });
 });

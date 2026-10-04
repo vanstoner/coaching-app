@@ -8,6 +8,15 @@ import { uuid } from './src/types/index';
 import type { Format, MatchEvent, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
+  appClockSetting,
+  appNow,
+  parseClockSetting,
+  setAppClock,
+  setAppClockSpeed,
+  type ClockSpeed,
+} from './src/app/appClock';
+import { TEST_CLOCK_KEY, addTestData, isBetaBuild } from './src/app/testKit';
+import {
   canArchiveFixture,
   canDeleteFixture,
   listedFixtures,
@@ -70,6 +79,7 @@ import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { TestKitSection } from './src/screens/TestKitSection';
 import { SquadScreen } from './src/screens/SquadScreen';
 import { TabBar } from './src/screens/TabBar';
 import { screen } from './src/screens/theme';
@@ -161,6 +171,11 @@ export default function App() {
   //
   // Player time, kept under its own key and written alongside every save. The
   // ref is the value; the state is only so Settings repaints.
+  // --- the Test kit (#95): Coaching Beta only ---------------------------------
+  const isBeta = useMemo(() => isBetaBuild(currentBuildLabel()), []);
+  const [clockSpeed, setClockSpeed] = useState<ClockSpeed>(1);
+  const [testKitMessage, setTestKitMessage] = useState('');
+
   const ledgerRef = useRef<Ledger | null>(null);
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [ledgerMessage, setLedgerMessage] = useState('');
@@ -183,6 +198,13 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // The beta's clock first (#95), before anything reads the time: its
+      // stored offset keeps the clock from running backwards across a relaunch.
+      if (isBeta) {
+        setAppClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
+        setClockSpeed(appClockSetting().speed);
+      }
+
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
       const saved = await loadSession(store);
@@ -197,7 +219,7 @@ export default function App() {
         emptyLedger(saved?.squadId ?? squadId, saved?.squadName ?? PLACEHOLDER_SQUAD_NAME);
       commitLedger(
         saved
-          ? recordMatches(base, saved.matches, saved.players, saved.squadName, new Date())
+          ? recordMatches(base, saved.matches, saved.players, saved.squadName, appNow())
           : base
       );
 
@@ -264,7 +286,7 @@ export default function App() {
             records,
             overrides.players ?? players,
             overrides.squadName ?? squadName,
-            new Date()
+            appNow()
           )
         );
       }
@@ -276,7 +298,7 @@ export default function App() {
   const exportMinutes = useCallback(async () => {
     if (!ledgerRef.current) return;
     setLedgerBusy(true);
-    const result = await exportLedgerFile(ledgerRef.current, new Date());
+    const result = await exportLedgerFile(ledgerRef.current, appNow());
     setLedgerBusy(false);
     setLedgerMessage(result.ok ? '' : result.reason);
   }, []);
@@ -301,7 +323,7 @@ export default function App() {
       return;
     }
     const current = ledgerRef.current ?? emptyLedger(squadId, squadName);
-    const report = mergeLedger(current, parsed.ledger, new Date());
+    const report = mergeLedger(current, parsed.ledger, appNow());
     commitLedger(report.ledger);
 
     const fresh = players.length === 0 && matches.length === 0;
@@ -315,7 +337,7 @@ export default function App() {
         displaySuffix: p.displaySuffix,
         squadNumber: null,
         active: p.active,
-        createdAt: new Date().toISOString(),
+        createdAt: appNow().toISOString(),
       }));
     const nextPlayers = [...players, ...restored];
     const nextSquadId = fresh && report.ledger.squad.id ? report.ledger.squad.id : squadId;
@@ -416,7 +438,7 @@ export default function App() {
    */
   const saveFixture = useCallback(
     (draft: FixtureDraft) => {
-      const engine = new MatchEngine();
+      const engine = new MatchEngine({ nowFn: appNow });
       const matchFormat = formatForShape(draft.shape, format);
       const state = engine.createMatch(squadId, matchFormat.id, {
         totalMinutes: draft.totalMinutes,
@@ -542,7 +564,7 @@ export default function App() {
       }
       const stored = matches.find((m) => m.match.id === matchId);
       if (!stored) return;
-      const engine = new MatchEngine();
+      const engine = new MatchEngine({ nowFn: appNow });
 
       const availability = new Map(stored.availability);
       const notStarted = stored.quarters.every((q) => q.status === 'pending');
@@ -603,7 +625,7 @@ export default function App() {
    * does not touch it.
    */
   const beginMatch = useCallback(() => {
-    const engine = new MatchEngine();
+    const engine = new MatchEngine({ nowFn: appNow });
     const matchFormat = formatForShape(shapeOfFormat(format) ?? DEFAULT_SHAPE, format);
     const state = engine.createMatch(squadId, matchFormat.id, {
       totalMinutes,
@@ -639,7 +661,7 @@ export default function App() {
     }
     const stored = pending.matches.find((m) => m.match.id === state.match.id);
     setMatch({
-      engine: new MatchEngine(),
+      engine: new MatchEngine({ nowFn: appNow }),
       state,
       format: stored?.format ?? pending.format,
     });
@@ -665,7 +687,7 @@ export default function App() {
     if (state) {
       const stored = pending.matches.find((m) => m.match.id === state.match.id);
       setMatch({
-        engine: new MatchEngine(),
+        engine: new MatchEngine({ nowFn: appNow }),
         state,
         format: stored?.format ?? pending.format,
       });
@@ -901,7 +923,7 @@ export default function App() {
           engine={match.engine}
           state={match.state}
           players={playersForMatch(players, match.state.appearances)}
-          now={new Date()}
+          now={appNow()}
           onBack={() => {
             // A finished match is history: it is safe to let go of, and
             // holding it would make Home think one is still current. Folded
@@ -933,6 +955,34 @@ export default function App() {
               onExport={() => void exportMinutes()}
               onImport={() => void importMinutes()}
             />
+          }
+          testKit={
+            isBeta ? (
+              <TestKitSection
+                speed={clockSpeed}
+                onSpeed={(speed) => {
+                  const setting = setAppClockSpeed(speed);
+                  void store.setItem(TEST_CLOCK_KEY, JSON.stringify(setting)).catch(() => undefined);
+                  setClockSpeed(speed);
+                }}
+                onAddTestData={() => {
+                  const data = addTestData(
+                    players,
+                    matches,
+                    squadId,
+                    format,
+                    totalMinutes,
+                    periodCount,
+                    appNow()
+                  );
+                  setPlayers(data.players);
+                  setMatches(data.matches);
+                  persist({ players: data.players, matches: data.matches });
+                  setTestKitMessage(data.summary);
+                }}
+                message={testKitMessage}
+              />
+            ) : undefined
           }
           onForget={forgetEverything}
         />
@@ -1002,7 +1052,7 @@ export default function App() {
         squadName={squadName}
         matches={listedFixtures(matches, showArchived).map((m) => m.match)}
         currentMatchId={match?.state.match.id ?? null}
-        now={new Date()}
+        now={appNow()}
         onOpen={openFixture}
         progress={progressById(matches, match)}
         scores={scoresById(matches, match)}

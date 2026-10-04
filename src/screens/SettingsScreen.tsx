@@ -43,6 +43,7 @@ export function SettingsScreen({
   onPeriodCount,
   onShape,
   minutes,
+  testKit,
   onForget,
 }: {
   squadName: string;
@@ -56,6 +57,8 @@ export function SettingsScreen({
   onShape: (shape: ShapeCode) => void;
   /** Player minutes: season, export, import (#75). Drawn by the caller. */
   minutes?: ReactNode;
+  /** The Test kit (#95). Passed only in a Coaching Beta build. */
+  testKit?: ReactNode;
   onForget: () => void;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
@@ -138,6 +141,7 @@ export function SettingsScreen({
           </Text>
 
           {minutes}
+          {testKit}
 
           {confirmForget ? (
             <>
