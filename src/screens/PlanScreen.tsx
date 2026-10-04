@@ -30,13 +30,13 @@ import type { Format, Match, Player, UUID } from '../types/index';
 import { formatClock, periodNoun } from '../app/matchClock';
 import {
   addSwap,
-  copyPeriod,
   formatDelta,
   nudgeSwap,
   periodLengthMs,
   planFor,
   projectPlan,
   removeSwap,
+  sameAsPrevious,
   swapChoices,
   setPeriodSlots,
   setSlot,
@@ -78,7 +78,12 @@ export function PlanScreen({
    * Re-planning during play (#88): the first period still to come, and what
    * each player already has. Earlier periods are locked.
    */
-  live?: { fromPeriod: number; baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }> };
+  live?: {
+    fromPeriod: number;
+    baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }>;
+    /** Who finished each period already played or under way (#111); null for those to come. */
+    recordedEnd?: (Record<UUID, UUID | null> | null)[];
+  };
 }) {
   const periodCount = match.quarterCount;
   const plan = planFor(stored, periodCount);
@@ -102,6 +107,12 @@ export function PlanScreen({
   const problemsHere = projection.problems.filter((p) => p.periodIndex === periodIndex);
 
   const change = onChange;
+  // "Same as" the previous period (#111): what was on the pitch at its end if
+  // it has been played, else its plan. Null means there is nothing to copy.
+  const sameAs =
+    periodIndex > 0
+      ? sameAsPrevious(plan, periodIndex, live?.recordedEnd?.[periodIndex - 1] ?? null)
+      : null;
 
   const pick = (playerId: UUID | null) => {
     if (!picking) return;
@@ -172,16 +183,18 @@ export function PlanScreen({
           </Text>
         ) : (
           <>
-        {periodIndex > 0 && (
-          <Pressable
-            style={screen.linkHit}
-            onPress={() => change(copyPeriod(plan, periodIndex - 1, periodIndex))}
-          >
-            <Text style={screen.link}>
-              Same as {noun.toLowerCase()} {periodIndex}
+        {periodIndex > 0 &&
+          (sameAs ? (
+            <Pressable style={screen.linkHit} onPress={() => change(sameAs)}>
+              <Text style={screen.link}>
+                Same as {noun.toLowerCase()} {periodIndex}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={screen.hint}>
+              {noun} {periodIndex} has no lineup to copy yet.
             </Text>
-          </Pressable>
-        )}
+          ))}
 
         <Text style={screen.fieldLabel}>Starting</Text>
         <Text style={screen.hint}>

@@ -159,6 +159,31 @@ export function liveSheet(
   return sheet;
 }
 
+/**
+ * Who finished a period, position by position (#111): the stints still open
+ * (the period is under way, so "now") plus those the whistle closed. Not who
+ * started it — a sub or a swap during the period is reflected.
+ */
+export function lineupAtPeriodEnd(
+  appearances: {
+    quarterId: UUID;
+    playerId: UUID;
+    positionId: UUID;
+    endElapsedMs: number | null;
+    endReason?: string | null;
+  }[],
+  quarterId: UUID
+): Sheet {
+  const sheet: Sheet = {};
+  for (const a of appearances) {
+    if (a.quarterId !== quarterId) continue;
+    const onAtTheEnd =
+      a.endElapsedMs === null || a.endReason === 'quarter_end' || a.endReason === 'match_end';
+    if (onAtTheEnd) sheet[a.positionId] = a.playerId;
+  }
+  return sheet;
+}
+
 /** What a move during play means for the engine, or null when it means nothing. */
 export type LiveMove =
   | { kind: 'swap'; a: UUID; b: UUID }
