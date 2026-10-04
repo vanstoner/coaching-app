@@ -738,7 +738,7 @@ jobs:
   # player data (ADR-011). Nothing captured from a phone is ever attached.
   beta:
     name: Publish Coaching Beta
-    needs: [apk, smoke]           # never publish a build whose smoke test failed
+    needs: [checks, apk, smoke]   # never publish a beta whose tests or smoke test failed (#99)
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     concurrency:

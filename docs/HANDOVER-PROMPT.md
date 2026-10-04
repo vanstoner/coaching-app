@@ -39,8 +39,10 @@ contradicts them:
 - A **pure-TypeScript match engine** in `src/engine/` with 66 passing tests. No
   React or platform imports; runs without a device. This is the best asset in
   the repository.
-- **CI on GitHub Actions**, two workflows: `ci.yml` (vitest, tsc, docs
-  validator) and `android-apk.yml` (build, emulator smoke test, release).
+- **CI on GitHub Actions**, two workflows: `ci.yml` (bundle check, commit
+  trailers, docs validator) and `android-apk.yml` (the `checks` job — vitest,
+  tsc, test typecheck, lint, coverage — then build, emulator smoke test, beta
+  and release, both gated on `checks` since #99).
 - **A release APK that genuinely runs.** `assembleRelease` embeds the JS bundle;
   an emulator smoke test installs that exact artifact on a clean Android 14
   device with every `adb reverse` tunnel torn down, and asserts the app launches,
