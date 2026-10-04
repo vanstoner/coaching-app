@@ -5,6 +5,13 @@
     "version": "2026.09.19",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.vanstoner.coachingapp",
+      "supportsTablet": false,
+      "infoPlist": {
+        "RCTAsyncStorageExcludeFromBackup": true
+      }
+    },
     "android": {
       "package": "com.example.coachingapp",
       "allowBackup": false,

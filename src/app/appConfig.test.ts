@@ -46,3 +46,78 @@ describe('app identity per variant (#79)', () => {
     }
   });
 });
+
+// #107 — iOS. Ruling (PO, 2026-10-04): com.vanstoner.coachingapp, and the
+// beta with the same `.beta` suffix as Android. Android ids stay unchanged.
+describe('iOS identity, build number and backup exclusion (#107)', () => {
+  const keys = ['APP_VARIANT', 'IOS_BUILD_NUMBER', 'ANDROID_VERSION_CODE', 'APP_VERSION_NAME'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  afterEach(() => {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+  const clean = () => keys.forEach((k) => delete process.env[k]);
+
+  it('gives the released app the ruled bundle id, phone only', () => {
+    clean();
+    const c = appConfig({ config: base() });
+    expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
+    expect(c.ios.supportsTablet).toBe(false);
+    expect(c.ios.buildNumber).toBeUndefined();
+    expect(c.android.package).toBe('com.example.coachingapp');
+  });
+
+  it('gives the beta the .beta bundle id and the orange icon, on iOS too', () => {
+    clean();
+    process.env.APP_VARIANT = 'beta';
+    const c = appConfig({ config: base() });
+    expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp.beta');
+    expect(c.android.package).toBe('com.example.coachingapp.beta');
+    // No ios.icon anywhere, so Expo uses the top-level icon for iOS.
+    expect(c.ios.icon).toBeUndefined();
+    expect(c.icon).toBe('./assets/images/beta-icon.png');
+  });
+
+  it('excludes AsyncStorage from iCloud/iTunes backup in BOTH variants (ADR-011)', () => {
+    for (const variant of [undefined, 'beta']) {
+      clean();
+      if (variant) process.env.APP_VARIANT = variant;
+      const c = appConfig({ config: base() });
+      // The exact key RNCAsyncStorage.mm reads (async-storage 3.1.1,
+      // apple/legacy_storage/RNCAsyncStorage.mm:529). Absent also means
+      // excluded today; it is explicit so a library default change cannot
+      // silently flip it.
+      expect(c.ios.infoPlist.RCTAsyncStorageExcludeFromBackup).toBe(true);
+    }
+  });
+
+  it('injects the iOS build number from IOS_BUILD_NUMBER, as a string', () => {
+    clean();
+    process.env.IOS_BUILD_NUMBER = '42';
+    process.env.APP_VERSION_NAME = '2026.10.04';
+    const c = appConfig({ config: base() });
+    expect(c.ios.buildNumber).toBe('42');
+    expect(c.version).toBe('2026.10.04');
+    // The iOS counter does not leak into Android's.
+    expect(c.android.versionCode).toBeUndefined();
+    expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
+  });
+
+  it('keeps injecting Android versionCode and versionName as before', () => {
+    clean();
+    process.env.ANDROID_VERSION_CODE = '61';
+    process.env.APP_VERSION_NAME = '2026.10.03';
+    const c = appConfig({ config: base() });
+    expect(c.android.versionCode).toBe(61);
+    expect(c.version).toBe('2026.10.03');
+    expect(c.ios.buildNumber).toBeUndefined();
+  });
+
+  it.each(['0', '-1', '1.5', 'abc'])('refuses IOS_BUILD_NUMBER=%s', (bad) => {
+    clean();
+    process.env.IOS_BUILD_NUMBER = bad;
+    expect(() => appConfig({ config: base() })).toThrow(/IOS_BUILD_NUMBER/);
+  });
+});

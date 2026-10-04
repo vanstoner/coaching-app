@@ -55,3 +55,29 @@ children's data to a third party with no decision recorded.
 
 **Decide hosting approach now.** Rejected: premature; the scenario (ADR-010
 open question) and appetite for controller duties are not yet known.
+
+## Addendum (2026-10-04, #107): how iOS meets decision 2
+
+iOS has no `allowBackup`; the equivalent is excluding the stored data from
+iCloud and iTunes/Finder backup. Established from the installed
+`@react-native-async-storage/async-storage` 3.1.1, not assumed:
+
+- The app's `import AsyncStorage from ...` default export is the legacy store
+  (`src/index.tsx:9`, `getLegacyStorage()`), implemented on iOS by
+  `apple/legacy_storage/RNCAsyncStorage.mm`.
+- It stores under `Application Support/<bundle id>/RCTAsyncLocalStorage_V1`
+  (`RNCAsyncStorage.mm:17`, `:137-148`).
+- On first use each launch it reads the Info.plist key
+  `RCTAsyncStorageExcludeFromBackup`, defaulting to YES when absent
+  (`:528-533`), and sets `NSURLIsExcludedFromBackupKey` on that directory
+  (`:534`, `:37-57`).
+
+So the library already excludes by default. `app.json` sets
+`ios.infoPlist.RCTAsyncStorageExcludeFromBackup: true` explicitly anyway, so a
+change of library default cannot silently move children's data to iCloud. It
+is asserted twice: on the config (`src/app/appConfig.test.ts`) and on the
+built `.app`'s Info.plist in CI (`.github/workflows/ios.yml`,
+`.github/scripts/check_ios_app.py`).
+
+Not covered: data written by any other store. A new storage library, or the
+`createAsyncStorage()` API (a different native path), needs this re-checked.

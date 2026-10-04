@@ -12,7 +12,10 @@
 // read back out of the built APK equals the run number, so a silently missing
 // injection fails the build rather than shipping versionCode 1.
 //
-// `versionName` IS injected here, from APP_VERSION_NAME.
+// `versionName` IS injected here, from APP_VERSION_NAME — on its own, so the
+// iOS job (#107), which sets no ANDROID_VERSION_CODE, gets the same
+// commit-date version as CFBundleShortVersionString. iOS's build number comes
+// from IOS_BUILD_NUMBER, below.
 //
 // D2 originally put the version of record in app.json. Nobody bumped it, so
 // every build for two days reported 2026.09.18-4 — including build 42, cut on
@@ -50,6 +53,15 @@ function withVariant(config) {
     ...config,
     name: BETA_NAME,
     icon: BETA_ICON,
+    // The top-level `icon` above is the iOS app icon too (ios.icon is unset),
+    // so the beta's orange icon applies on iPhone with no iOS-specific line.
+    // #107: the beta's bundle id gets the same `.beta` suffix as Android's
+    // package, for the same reason — installs next to the released app, with
+    // its own (empty) storage. iOS keys the app sandbox on the bundle id.
+    ios: {
+      ...config.ios,
+      bundleIdentifier: `${config.ios.bundleIdentifier}${BETA_SUFFIX}`,
+    },
     android: {
       ...config.android,
       package: `${config.android.package}${BETA_SUFFIX}`,
@@ -58,17 +70,20 @@ function withVariant(config) {
   };
 }
 
-module.exports = ({ config: base }) => {
-  const config = withVariant(base);
-  const raw = process.env.ANDROID_VERSION_CODE;
-  if (raw === undefined || raw === '') {
-    return config;
-  }
+// A build number read from the environment: unset or empty means "not a CI
+// build" and returns undefined; anything else must be a positive integer.
+function buildNumberFrom(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return undefined;
   if (!/^[0-9]+$/.test(raw) || Number(raw) < 1) {
-    throw new Error(
-      `ANDROID_VERSION_CODE must be a positive integer, got ${JSON.stringify(raw)}`
-    );
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
   }
+  return raw;
+}
+
+module.exports = ({ config: base }) => {
+  let config = withVariant(base);
+
   const versionName = process.env.APP_VERSION_NAME;
   if (versionName !== undefined && versionName !== '') {
     if (!/^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$/.test(versionName)) {
@@ -76,11 +91,22 @@ module.exports = ({ config: base }) => {
         `APP_VERSION_NAME must look like YYYY.MM.DD, got ${JSON.stringify(versionName)}`
       );
     }
+    config = { ...config, version: versionName };
   }
 
-  return {
-    ...config,
-    ...(versionName ? { version: versionName } : {}),
-    android: { ...config.android, versionCode: Number(raw) },
-  };
+  const versionCode = buildNumberFrom('ANDROID_VERSION_CODE');
+  if (versionCode !== undefined) {
+    config = { ...config, android: { ...config.android, versionCode: Number(versionCode) } };
+  }
+
+  // #107: iOS's CFBundleVersion, the counterpart of versionCode — the ios.yml
+  // run number, set by CI and unknowable until the build runs. It is a STRING
+  // in Expo's schema. Its own variable rather than ANDROID_VERSION_CODE,
+  // because run numbers are per workflow and the two counters differ.
+  const iosBuildNumber = buildNumberFrom('IOS_BUILD_NUMBER');
+  if (iosBuildNumber !== undefined) {
+    config = { ...config, ios: { ...config.ios, buildNumber: iosBuildNumber } };
+  }
+
+  return config;
 };
