@@ -262,13 +262,16 @@ export function PitchView(props: PitchViewProps) {
       </View>
 
       {!props.hideBench && (
+        <Text style={s.benchLabel}>Subs bench</Text>
+      )}
+      {!props.hideBench && (
         <View
           style={s.bench}
           onLayout={(e) => {
             benchRect.current = e.nativeEvent.layout;
           }}
         >
-          {bench.length === 0 && <Text style={s.benchEmpty}>Nobody on the bench.</Text>}
+          {bench.length === 0 && <Text style={s.benchEmpty}>Nobody on the subs bench.</Text>}
           {bench.map((id) => (
             <View
               key={id}
@@ -393,8 +396,18 @@ const s = StyleSheet.create({
     borderColor: colours.line,
     borderRadius: 12,
     padding: 6,
-    marginTop: 10,
     minHeight: PILL_HEIGHT + 14,
+  },
+  // Rob, 4 October: "make it clear the subs bench is a subs bench".
+  benchLabel: {
+    alignSelf: 'stretch',
+    includeFontPadding: false,
+    color: colours.inkMuted,
+    fontSize: 13,
+    marginTop: 12,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   benchSlot: { width: '33.33%', padding: 4 },
   benchPill: { backgroundColor: colours.pitchRaised, borderWidth: 1, borderColor: colours.line },
