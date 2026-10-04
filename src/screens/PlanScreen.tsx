@@ -30,8 +30,14 @@ import type { Format, Match, Player, UUID } from '../types/index';
 import { formatClock, periodNoun } from '../app/matchClock';
 import {
   addSwap,
+  benchSubIndex,
+  benchSubOffChoices,
+  clampSwapTime,
   formatDelta,
+  nextFreeSwapTimeMs,
   nudgeSwap,
+  planBenchSub,
+  SUB_STEP_MS,
   periodLengthMs,
   planFor,
   projectPlan,
@@ -46,6 +52,7 @@ import {
 import { opponentLabel } from '../app/fixtures';
 import { Chip, ChipRow } from './Chip';
 import { PitchView } from './PitchView';
+import { ActionSheet, SheetButton } from './Sheet';
 import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -98,6 +105,14 @@ export function PlanScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+  /**
+   * The bench player's menu (#120): who, the time it offers, and whether it
+   * is asking for a time and who comes off (`editing`) or showing the sub
+   * they already have.
+   */
+  const [benchMenu, setBenchMenu] = useState<
+    { playerId: UUID; atMs: number; editing: boolean } | null
+  >(null);
 
   const period = plan.periods[periodIndex];
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -129,7 +144,40 @@ export function PlanScreen({
     setPeriodIndex(i);
     setPicking(null);
     setPitchPick(null);
+    setBenchMenu(null);
   };
+
+  const benchIds = players
+    .map((p) => p.id)
+    .filter((id) => !Object.values(period.slots).includes(id));
+
+  // #120: a tap on a bench player opens their menu; a tap on a player in a
+  // position selects them for tap-then-place, as before. Placing a bench
+  // player by tap is one button in the menu; dragging is unchanged.
+  const tapPlayer = (id: UUID) => {
+    if (!benchIds.includes(id)) {
+      setPitchPick(id);
+      return;
+    }
+    setPicking(null);
+    const existing = benchSubIndex(period, id);
+    setBenchMenu(
+      existing === -1
+        ? { playerId: id, atMs: nextFreeSwapTimeMs(period, periodMs), editing: true }
+        : { playerId: id, atMs: period.subs[existing].atMs, editing: false }
+    );
+  };
+  const menuSubIndex = benchMenu ? benchSubIndex(period, benchMenu.playerId) : -1;
+  const menuSub = menuSubIndex === -1 ? null : period.subs[menuSubIndex];
+  const offChoices = benchMenu?.editing
+    ? benchSubOffChoices(period, benchMenu.playerId, benchMenu.atMs, players)
+    : [];
+  const nudgeMenu = (steps: number) =>
+    benchMenu &&
+    setBenchMenu({
+      ...benchMenu,
+      atMs: clampSwapTime(benchMenu.atMs + steps * SUB_STEP_MS, periodMs),
+    });
 
   // A sub only offers who can come on or go off at that moment; a starting
   // slot offers the whole squad (match day 4).
@@ -200,17 +248,16 @@ export function PlanScreen({
         <Text style={screen.hint}>
           {pitchPick
             ? `Now tap where ${name(pitchPick)} goes, or tap them again to cancel.`
-            : 'Drag a player into place, or tap one and then where they go.'}
+            : 'Drag a player into place, or tap one and then where they go. Tap a bench player to plan their sub.'}
         </Text>
         <PitchView
           format={format}
           sheet={period.slots}
-          bench={players
-            .map((p) => p.id)
-            .filter((id) => !Object.values(period.slots).includes(id))}
+          bench={benchIds}
           nameOf={name}
           selected={pitchPick}
           onSelect={setPitchPick}
+          onTapPlayer={tapPlayer}
           onDragging={setDragging}
           onMove={(id, target) =>
             change(setPeriodSlots(plan, periodIndex, editSheet(period.slots, id, target)))
@@ -331,6 +378,97 @@ export function PlanScreen({
           <Text style={screen.buttonLabel}>Done</Text>
         </Pressable>
       </ScrollView>
+
+      {/* The bench player's menu (#120): plan their sub without Add a sub. */}
+      <ActionSheet
+        visible={benchMenu !== null}
+        title={benchMenu ? name(benchMenu.playerId) : ''}
+        onClose={() => setBenchMenu(null)}
+      >
+        {benchMenu && !benchMenu.editing && menuSub && (
+          <>
+            <Text style={local.menuLine} numberOfLines={1}>
+              On at {formatClock(menuSub.atMs)}
+              {menuSub.offId === null ? ', nobody picked to come off' : ` for ${name(menuSub.offId)}`}
+            </Text>
+            <SheetButton
+              label="Change"
+              strong
+              onPress={() =>
+                setBenchMenu({
+                  ...benchMenu,
+                  atMs: menuSub.atMs,
+                  editing: true,
+                })
+              }
+            />
+            <SheetButton
+              label="Remove"
+              against
+              onPress={() => {
+                change(removeSwap(plan, periodIndex, menuSubIndex));
+                setBenchMenu(null);
+              }}
+            />
+          </>
+        )}
+        {benchMenu && benchMenu.editing && (
+          <>
+            <View style={local.swapTime}>
+              <Pressable
+                style={local.nudge}
+                onPress={() => nudgeMenu(-1)}
+                accessibilityLabel="15 seconds earlier"
+              >
+                <Text style={local.nudgeLabel}>-</Text>
+              </Pressable>
+              <Text style={local.menuTime} numberOfLines={1}>
+                Bring on at {formatClock(benchMenu.atMs)}
+              </Text>
+              <Pressable
+                style={local.nudge}
+                onPress={() => nudgeMenu(1)}
+                accessibilityLabel="15 seconds later"
+              >
+                <Text style={local.nudgeLabel}>+</Text>
+              </Pressable>
+            </View>
+            <Text style={local.menuLine}>Who comes off?</Text>
+            {offChoices.length === 0 ? (
+              <Text style={local.note}>
+                Nobody is on the pitch yet this {noun.toLowerCase()}. Pick the starters first.
+              </Text>
+            ) : (
+              <View style={local.picker}>
+                <ChipRow>
+                  {offChoices.map((p) => (
+                    <Chip
+                      key={p.id}
+                      label={p.firstName}
+                      selected={false}
+                      onPress={() => {
+                        change(
+                          planBenchSub(plan, periodIndex, benchMenu.playerId, p.id, benchMenu.atMs, periodMs)
+                        );
+                        setBenchMenu(null);
+                      }}
+                    />
+                  ))}
+                </ChipRow>
+              </View>
+            )}
+          </>
+        )}
+        {benchMenu && (
+          <SheetButton
+            label="Put in the starting lineup…"
+            onPress={() => {
+              setPitchPick(benchMenu.playerId);
+              setBenchMenu(null);
+            }}
+          />
+        )}
+      </ActionSheet>
     </View>
   );
 }
@@ -415,4 +553,18 @@ const local = StyleSheet.create({
     textAlign: 'right',
   },
   owed: { color: colours.warn },
+  menuLine: {
+    alignSelf: 'stretch',
+    color: colours.inkMuted,
+    fontSize: 15,
+    includeFontPadding: false,
+    marginVertical: 8,
+  },
+  menuTime: {
+    flex: 1,
+    color: colours.ink,
+    fontSize: 20,
+    includeFontPadding: false,
+    textAlign: 'center',
+  },
 });

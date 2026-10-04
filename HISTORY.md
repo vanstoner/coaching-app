@@ -131,3 +131,7 @@ analysis, iOS". Entries are added as each release ships.
   a friendly — with goals, saves, subs, absences and a dedicated keeper.
   Each is played through the real match engine and ledger, so the charts,
   the season columns and the match report show real-shaped history.
+- **4 October — plan a sub by tapping the bench (#120).** In the Plan, tapping
+  a bench player opens a menu: bring them on at a time (the midpoint, or the
+  next free 15 seconds after it) and pick who comes off. A player with a sub
+  already sees it, with Change and Remove. Add a sub still works as before.

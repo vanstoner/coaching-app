@@ -11,14 +11,19 @@ import { uuid } from '../types/index';
 import type { Format, Player, UUID } from '../types/index';
 import { makePlayer } from './squad';
 import { makeFormat } from './shapes';
+import { formatClock } from './matchClock';
 import {
   addSwap,
+  benchSubIndex,
+  benchSubOffChoices,
   copyPeriod,
   defaultSwapTimeMs,
   emptyPlan,
   formatDelta,
+  nextFreeSwapTimeMs,
   nudgeSwap,
   periodLengthMs,
+  planBenchSub,
   planFor,
   planHasContent,
   projectPlan,
@@ -399,5 +404,97 @@ describe('who a planned sub can choose (match day 4)', () => {
     expect(ids(second.on)).toEqual(['P6', 'P8']);
     expect(ids(second.off)).toContain('P7');
     expect(ids(second.off)).toContain('P9');
+  });
+});
+
+describe('tap a bench player to plan their sub (#120)', () => {
+  const format = makeFormat('2-3-1');
+  const players = squad(9); // 7 start, P8 and P9 on the bench
+  const [P1, , , , , P6, P7, P8, P9] = players.map((p) => p.id);
+  const QUARTER = 12.5 * MIN;
+  const names = (ps: Player[]) => ps.map((p) => p.firstName).sort();
+  const startingPeriod = () => {
+    let plan = emptyPlan(4);
+    const labels = ['GK', 'LB', 'RB', 'LW', 'CM', 'RW', 'ST'];
+    labels.forEach((l, i) => (plan = setSlot(plan, 0, pos(format, l), players[i].id)));
+    return plan;
+  };
+
+  it('AC2: defaults to the midpoint when no sub has it', () => {
+    const t = nextFreeSwapTimeMs(startingPeriod().periods[0], QUARTER);
+    expect(t).toBe(defaultSwapTimeMs(QUARTER));
+    expect(formatClock(t)).toBe('06:15');
+  });
+
+  it('AC2: skips a time already taken this period, to the next 15-second step', () => {
+    let plan = planBenchSub(startingPeriod(), 0, P8, P7, 6.25 * MIN, QUARTER);
+    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER)).toBe(6.5 * MIN);
+    plan = planBenchSub(plan, 0, P9, P6, 6.5 * MIN, QUARTER);
+    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER)).toBe(6.75 * MIN);
+    // A sub being changed does not block its own time.
+    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER, 0)).toBe(6.25 * MIN);
+  });
+
+  it('AC2: steps back before the midpoint once every later step is taken', () => {
+    const periodMs = MIN; // midpoint 00:30; the only later step is 00:45
+    const period = {
+      slots: {},
+      subs: [30_000, 45_000].map((atMs) => ({ onId: null, offId: null, atMs })),
+    };
+    expect(nextFreeSwapTimeMs(period, periodMs)).toBe(15_000);
+  });
+
+  it('AC3: offers only players on the pitch at that moment to come off', () => {
+    const plan = planBenchSub(startingPeriod(), 0, P8, P7, 4 * MIN, QUARTER);
+    // Before 4:00, P7 is still on; after it, P8 is on and P7 is not.
+    expect(names(benchSubOffChoices(plan.periods[0], P9, 3 * MIN, players))).toEqual([
+      'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7',
+    ]);
+    const later = names(benchSubOffChoices(plan.periods[0], P9, 8 * MIN, players));
+    expect(later).toContain('P8');
+    expect(later).not.toContain('P7');
+    expect(later).not.toContain('P9');
+  });
+
+  it('AC3: offers nobody when the period has no lineup yet', () => {
+    expect(benchSubOffChoices(emptyPlan(4).periods[0], P8, 6.25 * MIN, players)).toEqual([]);
+  });
+
+  it('AC6: a menu-created sub equals the Add-a-sub equivalent', () => {
+    const base = planBenchSub(startingPeriod(), 0, P9, P6, 3 * MIN, QUARTER); // one sub already
+    const fromMenu = planBenchSub(base, 0, P8, P7, 6.5 * MIN, QUARTER);
+    let byHand = addSwap(base, 0, QUARTER);
+    byHand = nudgeSwap(byHand, 0, 1, 1, QUARTER); // 06:15 -> 06:30
+    byHand = updateSwap(byHand, 0, 1, { onId: P8 });
+    byHand = updateSwap(byHand, 0, 1, { offId: P7 });
+    expect(fromMenu).toEqual(byHand);
+    const projected = (plan: MatchPlan) => projectPlan(plan, format, 50, 4, players);
+    expect(projected(fromMenu)).toEqual(projected(byHand));
+  });
+
+  it('AC4/AC6: a player with a sub already is changed in place, never duplicated', () => {
+    let plan = planBenchSub(startingPeriod(), 0, P8, P7, 6.25 * MIN, QUARTER);
+    plan = planBenchSub(plan, 0, P8, P1, 9 * MIN, QUARTER);
+    expect(plan.periods[0].subs).toEqual([{ onId: P8, offId: P1, atMs: 9 * MIN }]);
+    expect(benchSubIndex(plan.periods[0], P8)).toBe(0);
+    expect(benchSubIndex(plan.periods[0], P9)).toBe(-1);
+    // A sub begun with Add a sub is found too, so the menu shows it.
+    let added = updateSwap(addSwap(startingPeriod(), 0, QUARTER), 0, 0, { onId: P9 });
+    expect(benchSubIndex(added.periods[0], P9)).toBe(0);
+    added = planBenchSub(added, 0, P9, P6, 7 * MIN, QUARTER);
+    expect(added.periods[0].subs).toEqual([{ onId: P9, offId: P6, atMs: 7 * MIN }]);
+  });
+
+  it('AC4: finds the earliest when a player is on two subs', () => {
+    let plan = updateSwap(addSwap(startingPeriod(), 0, QUARTER), 0, 0, { onId: P8, atMs: 9 * MIN });
+    plan = updateSwap(addSwap(plan, 0, QUARTER), 0, 1, { onId: P8, atMs: 2 * MIN });
+    expect(benchSubIndex(plan.periods[0], P8)).toBe(1);
+  });
+
+  it('holds a menu time inside the period, and leaves other periods alone', () => {
+    const plan = planBenchSub(startingPeriod(), 0, P8, P7, 99 * MIN, QUARTER);
+    expect(plan.periods[0].subs[0].atMs).toBe(12.25 * MIN);
+    expect(plan.periods.slice(1)).toEqual(startingPeriod().periods.slice(1));
+    expect(planBenchSub(plan, 9, P8, P7, MIN, QUARTER)).toBe(plan);
   });
 });

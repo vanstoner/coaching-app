@@ -145,9 +145,14 @@ export function nudgeSwap(
 ): MatchPlan {
   const swap = plan.periods[periodIndex]?.subs[swapIndex];
   if (!swap) return plan;
-  const max = Math.floor((periodMs - 1) / SUB_STEP_MS) * SUB_STEP_MS;
-  const atMs = Math.min(max, Math.max(SUB_STEP_MS, swap.atMs + steps * SUB_STEP_MS));
+  const atMs = clampSwapTime(swap.atMs + steps * SUB_STEP_MS, periodMs);
   return updateSwap(plan, periodIndex, swapIndex, { atMs });
+}
+
+/** A sub time held strictly inside the period: from 00:15 to the last step before the whistle. */
+export function clampSwapTime(atMs: number, periodMs: number): number {
+  const max = Math.floor((periodMs - 1) / SUB_STEP_MS) * SUB_STEP_MS;
+  return Math.min(max, Math.max(SUB_STEP_MS, atMs));
 }
 
 /**
@@ -193,6 +198,87 @@ export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: numb
   return withPeriod(plan, periodIndex, (period) => ({
     ...period,
     subs: period.subs.filter((_, i) => i !== swapIndex),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Tap a bench player to plan their sub — #120
+// ---------------------------------------------------------------------------
+
+/**
+ * The first time for a new sub that no other sub this period already has:
+ * the midpoint, then each 15-second step after it, then each step before it.
+ * The midpoint again if every step is taken. `ignoreIndex` is a swap being
+ * changed, whose own time does not count as taken.
+ */
+export function nextFreeSwapTimeMs(
+  period: PlannedPeriod,
+  periodMs: number,
+  ignoreIndex = -1
+): number {
+  const taken = new Set(period.subs.filter((_, i) => i !== ignoreIndex).map((s) => s.atMs));
+  const start = clampSwapTime(defaultSwapTimeMs(periodMs), periodMs);
+  const max = clampSwapTime(Infinity, periodMs);
+  for (let t = start; t <= max; t += SUB_STEP_MS) if (!taken.has(t)) return t;
+  for (let t = start - SUB_STEP_MS; t >= SUB_STEP_MS; t -= SUB_STEP_MS) if (!taken.has(t)) return t;
+  return start;
+}
+
+/**
+ * The index of the sub bringing this player on this period — the earliest,
+ * if somehow there are two — or -1. One per player is what the menu keeps.
+ */
+export function benchSubIndex(period: PlannedPeriod, playerId: UUID): number {
+  let found = -1;
+  period.subs.forEach((s, i) => {
+    if (s.onId !== playerId) return;
+    if (found === -1 || s.atMs < period.subs[found].atMs) found = i;
+  });
+  return found;
+}
+
+/**
+ * Who can come off for this player at this time: exactly who `swapChoices`
+ * would offer the same sub, but only those on the pitch at that moment — the
+ * sub's own previous pick is not kept on offer, since the menu asks afresh.
+ */
+export function benchSubOffChoices(
+  period: PlannedPeriod,
+  playerId: UUID,
+  atMs: number,
+  players: Player[]
+): Player[] {
+  const existing = benchSubIndex(period, playerId);
+  const probe: PlannedSwap = { onId: playerId, offId: null, atMs };
+  const subs =
+    existing === -1
+      ? [...period.subs, probe]
+      : period.subs.map((s, i) => (i === existing ? probe : s));
+  const index = existing === -1 ? subs.length - 1 : existing;
+  return swapChoices({ ...period, subs }, index, players).off.filter((p) => p.id !== playerId);
+}
+
+/**
+ * Plan a sub from the bench player's menu. Creates the same swap "Add a sub"
+ * then picking on, off and time would, at the end of the list; if the player
+ * already has a sub this period it is changed in place, never duplicated.
+ */
+export function planBenchSub(
+  plan: MatchPlan,
+  periodIndex: number,
+  playerId: UUID,
+  offId: UUID,
+  atMs: number,
+  periodMs: number
+): MatchPlan {
+  const period = plan.periods[periodIndex];
+  if (!period) return plan;
+  const at = clampSwapTime(atMs, periodMs);
+  const existing = benchSubIndex(period, playerId);
+  if (existing !== -1) return updateSwap(plan, periodIndex, existing, { offId, atMs: at });
+  return withPeriod(plan, periodIndex, (p) => ({
+    ...p,
+    subs: [...p.subs, { onId: playerId, offId, atMs: at }],
   }));
 }
 

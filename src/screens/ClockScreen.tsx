@@ -24,7 +24,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import {
   AppState,
-  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -53,6 +52,7 @@ import { UNDO_NOTE, UNDO_WINDOW_MS, scoreOf, timeStream } from '../app/matchEven
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
 import { opponentLabel } from '../app/fixtures';
 import { PitchView } from './PitchView';
+import { ActionSheet, SheetButton } from './Sheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 type RecordKind = 'goal' | 'save' | 'conceded';
@@ -396,44 +396,32 @@ export function ClockScreen({
       </ScrollView>
 
       {/* The tap sheet (#84): what can be recorded for this player. */}
-      <Modal
+      <ActionSheet
         visible={sheetFor !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSheetFor(null)}
+        title={sheetFor ? `${nameOf(sheetFor)}${sheetFor === keeper ? ' (in goal)' : ''}` : ''}
+        onClose={() => setSheetFor(null)}
       >
-        <Pressable style={local.scrim} onPress={() => setSheetFor(null)}>
-          <Pressable style={local.sheet} onPress={() => {}}>
-            {sheetFor && (
+        {sheetFor && (
+          <>
+            {onIds.has(sheetFor) && (
+              <SheetButton label="Goal" strong onPress={() => record('goal', sheetFor)} />
+            )}
+            {sheetFor === keeper && (
               <>
-                <Text style={local.sheetTitle} numberOfLines={1}>
-                  {nameOf(sheetFor)}
-                  {sheetFor === keeper ? ' (in goal)' : ''}
-                </Text>
-                {onIds.has(sheetFor) && (
-                  <SheetButton label="Goal" strong onPress={() => record('goal', sheetFor)} />
-                )}
-                {sheetFor === keeper && (
-                  <>
-                    <SheetButton label="Save" strong onPress={() => record('save', sheetFor)} />
-                    <SheetButton label="Conceded" against onPress={() => record('conceded', sheetFor)} />
-                  </>
-                )}
-                <SheetButton
-                  label="Move or swap…"
-                  onPress={() => {
-                    setSelected(sheetFor);
-                    setSheetFor(null);
-                  }}
-                />
-                <Pressable onPress={() => setSheetFor(null)} style={screen.linkHit}>
-                  <Text style={screen.link}>Cancel</Text>
-                </Pressable>
+                <SheetButton label="Save" strong onPress={() => record('save', sheetFor)} />
+                <SheetButton label="Conceded" against onPress={() => record('conceded', sheetFor)} />
               </>
             )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+            <SheetButton
+              label="Move or swap…"
+              onPress={() => {
+                setSelected(sheetFor);
+                setSheetFor(null);
+              }}
+            />
+          </>
+        )}
+      </ActionSheet>
 
       {undoLive && (
         <View style={local.toast}>
@@ -453,32 +441,6 @@ export function ClockScreen({
       )}
       <StatusBar style="light" />
     </SafeAreaView>
-  );
-}
-
-function SheetButton({
-  label,
-  onPress,
-  strong,
-  against,
-}: {
-  label: string;
-  onPress: () => void;
-  strong?: boolean;
-  against?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        local.sheetButton,
-        strong && local.sheetButtonStrong,
-        against && local.sheetButtonAgainst,
-        pressed && screen.buttonPressed,
-      ]}
-    >
-      <Text style={[local.sheetButtonText, against && local.againstText]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -551,28 +513,6 @@ const local = StyleSheet.create({
   withdrawLink: { color: colours.inkMuted, fontSize: 13, textDecorationLine: 'underline', includeFontPadding: false },
   withdrawBox: { paddingVertical: 8 },
   faint: { color: colours.inkFaint },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colours.pitchRaised,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 28,
-  },
-  sheetTitle: { color: colours.ink, fontSize: 22, fontWeight: '700', marginBottom: 8, includeFontPadding: false },
-  sheetButton: {
-    minHeight: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colours.line,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  sheetButtonStrong: { backgroundColor: colours.accent, borderColor: colours.accent },
-  sheetButtonAgainst: { borderColor: colours.danger },
-  sheetButtonText: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
-  againstText: { color: colours.danger },
   toast: {
     position: 'absolute',
     left: 16,
