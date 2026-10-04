@@ -209,7 +209,14 @@ export function verifyChain(entries: unknown): Verification {
       return { ok: false, detail: 'its start is missing or has been changed' };
     }
     if (before && e.prev !== before.hash) {
-      return { ok: false, detail: `an entry is missing ${after}` };
+      // The link to the entry before is broken. Either that entry was edited
+      // and re-hashed (or swapped for another), or one between them was
+      // removed and the rest renumbered: from the chain alone the two look
+      // the same, so the message names both, the change first (QA on #100).
+      return {
+        ok: false,
+        detail: `the entry recorded on ${whenOf(before.at)} has been changed or replaced, or an entry is missing after it`,
+      };
     }
     if (!e.records.every((r) => isObj(r) && typeof r.type === 'string')) {
       return { ok: false, detail: `the entry recorded on ${whenOf(e.at)} is damaged` };

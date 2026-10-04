@@ -244,6 +244,21 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     expect(gus.averageMs).toBe(24 * MIN);
     expect(competitionBucket(null)).toBe('league');
   });
+
+  it("a competition this build doesn't know goes to Other, never a crash (QA on #103)", () => {
+    const sq = squad();
+    const a = play(sq).state;
+    const ledger = ledgerOf(sq, [a]);
+    // A later version's competition, carried through the ledger (#99 AC2).
+    (ledger.matches[0] as { competition: string }).competition = 'futsal';
+    expect(competitionBucket('futsal' as Competition)).toBe('friendly');
+    const gus = seasonStats(ledger, sq.players).players.find((p) => p.playerId === sq.players[6].id)!;
+    expect(gus.attended).toBe(1);
+    expect(gus.byCompetition.league.attended).toBe(0);
+    const chart = seasonChart(ledger, sq.players);
+    const row = chart.rows.find((r) => r.playerId === sq.players[6].id)!;
+    expect(row.bars.find((b) => b.column === 'other')!.matches).toBe(1);
+  });
 });
 
 describe('matchChart (#105 AC1)', () => {

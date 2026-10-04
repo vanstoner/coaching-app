@@ -212,9 +212,17 @@ export function isCounted(match: Pick<LedgerMatch, 'status'>): boolean {
   return match.status === 'completed';
 }
 
-/** The column a match sits in. Null counts as league (#103 AC3). */
+const KNOWN_COMPETITIONS: readonly string[] = ['league', 'cup', 'friendly', 'tournament'];
+
+/**
+ * The bucket a match sits in. Null counts as league (#103 AC3). A competition
+ * this build does not know — a later version's, carried in the ledger
+ * (#99 AC2) — goes to friendly, which the screens show as "Other" with
+ * tournament: never league or cup, and never a crash (QA on #103).
+ */
 export function competitionBucket(c: Competition | null): Competition {
-  return c ?? 'league';
+  if (c === null) return 'league';
+  return KNOWN_COMPETITIONS.includes(c) ? c : 'friendly';
 }
 
 export interface Bucket {

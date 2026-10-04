@@ -110,11 +110,17 @@ export function LineupScreen({
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
   /**
-   * Who is here today (#102 AC1). Given only before kick-off; `players` above
-   * is already only those not marked absent, so an absent player can't be
-   * picked.
+   * Who is here today (#102 AC1). Given between periods, never while one
+   * runs; `players` above is already only those not marked absent, so an
+   * absent player can't be picked.
    */
   attendance?: {
+    /**
+     * After kick-off: only the absent are listed, and a tap marks them
+     * arrived — a late-arrival correction (ruling F). Nobody is marked
+     * absent here once the match has kicked off.
+     */
+    arrivalsOnly?: boolean;
     squad: Player[];
     isAbsent: (id: UUID) => boolean;
     onToggle: (id: UUID, absent: boolean) => void;
@@ -384,7 +390,32 @@ export function LineupScreen({
             );
           })}
 
-          {attendance && (
+          {attendance && attendance.arrivalsOnly && (() => {
+            const away = attendance.squad.filter((p) => attendance.isAbsent(p.id));
+            if (away.length === 0) return null;
+            return (
+              <>
+                <Text style={screen.fieldLabel}>Arrived late?</Text>
+                <Text style={screen.hint}>
+                  Tap a name to mark them here. They can then be picked, and the
+                  record notes they arrived after kick-off.
+                </Text>
+                <ChipRow>
+                  {away.map((p) => (
+                    <Chip
+                      key={p.id}
+                      label={p.firstName}
+                      detail="Absent"
+                      selected={false}
+                      onPress={() => attendance.onToggle(p.id, false)}
+                    />
+                  ))}
+                </ChipRow>
+              </>
+            );
+          })()}
+
+          {attendance && !attendance.arrivalsOnly && (
             <>
               <Text style={screen.fieldLabel}>Here today?</Text>
               <Text style={screen.hint}>

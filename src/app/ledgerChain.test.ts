@@ -123,7 +123,10 @@ describe('AC1, AC5: any hand edit to the file is detected and refused', () => {
       e[1].records.find((r) => r.type === 'attendance' && r.playerId === 'p9')!.status = 'available';
       e[1].hash = hashOf(e[1]);
     });
-    expect(reasonOf(text)).toMatch(/cannot be trusted/);
+    // QA on #100: this said "an entry is missing", which was not what happened.
+    expect(reasonOf(text)).toMatch(
+      /cannot be trusted: the entry recorded on \d+ \w+ at \d\d:\d\d has been changed or replaced/
+    );
   });
 
   it('a whole chain re-hashed after an edit verifies alone, but a phone holding the original refuses it', () => {

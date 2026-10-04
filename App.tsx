@@ -66,6 +66,7 @@ import {
   endMatch,
   notClosedIds,
   recordLateArrival,
+  setHereToday,
 } from './src/app/matchClosing';
 import {
   deleteMatch,
@@ -85,7 +86,7 @@ import {
 } from './src/app/ledger';
 import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
-import { beforeKickoff, markAbsent, pickablePlayers } from './src/app/absence';
+import { beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -734,11 +735,17 @@ export default function App() {
    */
   const toggleAbsent = useCallback(
     (playerId: UUID, absent: boolean) => {
-      if (!match || !markAbsent(match.engine, match.state, playerId, absent)) return;
+      if (!match) return;
+      // Before kick-off a plain mark; between periods, marking an absent
+      // child arrived is a late-arrival correction (ruling F, QA).
+      const ledgerNow = ledgerBlockedRef.current ? null : ledgerRef.current;
+      const result = setHereToday(match.engine, match.state, ledgerNow, playerId, absent, appNow());
+      if (!result.changed) return;
+      if (result.ledger) commitLedger(result.ledger);
       repaint();
       persist();
     },
-    [match, persist]
+    [match, persist, commitLedger]
   );
 
   /**
@@ -792,12 +799,14 @@ export default function App() {
       if (!quarter) return;
       // What the coach started with, position by position (#72, AC9). Never
       // the plan: the plan only filled the screen in (AC8).
+      // Everyone in today's squad is in the kick-off snapshot (QA on #102).
+      fillSquadAtKickoff(match.engine, match.state, squad);
       match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
       setSubPlan(plan);
       setStep('playing');
       persist();
     },
-    [match, persist]
+    [match, persist, squad]
   );
 
   /**
@@ -1116,10 +1125,12 @@ export default function App() {
           format={match.format}
           // An absent player cannot be picked (#102 AC1).
           players={pickablePlayers(playersForMatch(players, match.state.appearances), match.state)}
-          // Before kick-off only: after it, a change is a noted correction.
+          // Before kick-off: mark absent or here. Between periods: mark an
+          // absent child arrived (a noted correction, ruling F).
           attendance={
-            beforeKickoff(match.state)
+            !match.state.quarters.some((q) => q.status === 'running')
               ? {
+                  arrivalsOnly: !beforeKickoff(match.state),
                   squad: playersForMatch(players, match.state.appearances),
                   isAbsent: (id) =>
                     (match.state.playerAvailability.get(id) ?? 'available') !== 'available',

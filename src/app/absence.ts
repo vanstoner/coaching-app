@@ -12,6 +12,7 @@
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { Player, UUID } from '../types/index';
+import { isActive } from './squad';
 
 /** True until the first period has kicked off. */
 export function beforeKickoff(state: Pick<MatchState, 'quarters'>): boolean {
@@ -52,4 +53,23 @@ export function markAbsent(
   if (!beforeKickoff(state)) return false;
   engine.setAvailability(state, playerId, absent ? 'absent' : 'available');
   return true;
+}
+
+/**
+ * At kick-off, everyone in today's squad has an entry (QA on #102, ruling B).
+ *
+ * A fixture records the squad as it was when it was saved (#64). A child
+ * added afterwards had no entry, though the lineup showed them "Here"
+ * (missing reads as available): the engine wrote them no bench stint, the
+ * ledger's kick-off snapshot left them out, and a match they sat through on
+ * the bench counted for nothing. So, the moment before the first period
+ * starts, every active squad player without an entry is recorded available
+ * — the default the lineup showed. An entry already there (an absence) is
+ * never changed. After kick-off this does nothing.
+ */
+export function fillSquadAtKickoff(engine: MatchEngine, state: MatchState, players: Player[]): void {
+  if (!beforeKickoff(state)) return;
+  for (const p of players) {
+    if (isActive(p) && !state.playerAvailability.has(p.id)) engine.setAvailability(state, p.id, 'available');
+  }
 }

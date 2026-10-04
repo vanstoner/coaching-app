@@ -21,7 +21,7 @@ import type { Player, UUID } from '../types/index';
 import { makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { sheetFromSelection, toTeamSheet } from './teamSheet';
-import { markAbsent } from './absence';
+import { fillSquadAtKickoff, markAbsent, pickablePlayers } from './absence';
 import { emptyLedger, parseLedger, recordMatches, type Ledger } from './ledger';
 import { latestRecords } from './ledgerChain';
 import { attendanceOf, kickoffTimes, seasonAttendance } from './attendance';
@@ -37,6 +37,7 @@ import {
   endMatch,
   notClosedIds,
   recordLateArrival,
+  setHereToday,
 } from './matchClosing';
 
 const MIN = 60_000;
@@ -473,5 +474,81 @@ describe('Correct attendance on the report (ruling F, invariant 5)', () => {
     expect(rows.get(hal)).toMatchObject({ attended: 1, missed: 0 });
     expect(rows.get(ivy)).toMatchObject({ attended: 0, missed: 1 });
     expect(rows.get(d.ids[0])).toMatchObject({ attended: 1, missed: 0 });
+  });
+});
+
+// ============================================================================
+// QA on f156753
+// ============================================================================
+
+describe('a child added to the squad after the fixture was saved is in the kick-off snapshot (QA D1)', () => {
+  it('benched all match, they attended at zero, and the report lists them', () => {
+    const d = day();
+    const { held } = newMatch(
+      { squadId: d.squadId, format: d.format, totalMinutes: 50, periodCount: 2, players: d.players },
+      d.nowFn
+    );
+    const state = held.state;
+    const joe: Player = { ...makePlayer(d.squadId, 'Joe'), createdAt: '2026-09-02T00:00:00.000Z' };
+    const squad = [...d.players, joe];
+    d.engine.setAvailability(state, d.ids[8], 'absent'); // an absence already marked stays
+    expect(state.playerAvailability.has(joe.id)).toBe(false);
+
+    fillSquadAtKickoff(d.engine, state, squad);
+    expect(state.playerAvailability.get(joe.id)).toBe('available');
+    expect(state.playerAvailability.get(d.ids[8])).toBe('absent');
+
+    let ledger = emptyLedger(d.squadId, 'Test FC', NOW);
+    const sheet = toTeamSheet(sheetFromSelection(d.ids.slice(0, 7), d.ids[0], d.format));
+    for (const q of state.quarters) {
+      d.engine.startQuarter(state, q, sheet, d.format);
+      ledger = recordMatches(ledger, [state], squad, 'Test FC', NOW);
+      d.advance(25 * MIN);
+      d.engine.endQuarter(state, q);
+      ledger = recordMatches(ledger, [state], squad, 'Test FC', NOW);
+    }
+    // After kick-off it does nothing.
+    const extra = { ...makePlayer(d.squadId, 'Kim'), createdAt: '2026-09-02T00:00:00.000Z' };
+    fillSquadAtKickoff(d.engine, state, [...squad, extra]);
+    expect(state.playerAvailability.has(extra.id)).toBe(false);
+
+    endMatch(d.engine, state);
+    ledger = recordMatches(ledger, [state], squad, 'Test FC', NOW);
+    expect(ledger.matches[0].attendance!.find((a) => a.playerId === joe.id)?.status).toBe('available');
+    expect(state.benchStints.some((b) => b.playerId === joe.id)).toBe(true);
+    const row = seasonStats(ledger, squad).players.find((p) => p.playerId === joe.id)!;
+    expect(row).toMatchObject({ attended: 1, missed: 0, averageMs: 0 });
+    expect(matchReport(d.engine, state, squad).players.some((p) => p.playerId === joe.id)).toBe(true);
+  });
+});
+
+describe('a child who arrives at half-time can be marked here for the next period (QA D2)', () => {
+  it('a late-arrival correction, and they become pickable', () => {
+    const d = day();
+    const ivy = d.ids[8];
+    const state = d.create();
+    d.kickOff(state, [ivy]);
+    // While the period runs: nothing.
+    expect(setHereToday(d.engine, state, d.ledger(), ivy, false, NOW)).toEqual({ changed: false });
+    d.advance(25 * MIN);
+    d.engine.endQuarter(state, state.quarters[0]);
+    d.record(state);
+    expect(pickablePlayers(d.players, state).some((p) => p.id === ivy)).toBe(false);
+
+    // Marking someone absent after kick-off is not done here.
+    expect(setHereToday(d.engine, state, d.ledger(), d.ids[7], true, NOW)).toEqual({ changed: false });
+    expect(state.playerAvailability.get(d.ids[7])).toBe('available');
+
+    const result = setHereToday(d.engine, state, d.ledger(), ivy, false, NOW);
+    if (!result.changed || !result.ledger) throw new Error('not recorded');
+    expect(pickablePlayers(d.players, state).some((p) => p.id === ivy)).toBe(true);
+    expect(latestRecords(result.ledger.entries).get(`attendance:${state.match.id}:${ivy}`)).toMatchObject({
+      status: 'available',
+      note: LATE_ARRIVAL_NOTE,
+    });
+    // Before kick-off it is still a plain mark, with no ledger entry.
+    const fresh = d.create();
+    expect(setHereToday(d.engine, fresh, d.ledger(), ivy, true, NOW)).toEqual({ changed: true, ledger: null });
+    expect(fresh.playerAvailability.get(ivy)).toBe('absent');
   });
 });

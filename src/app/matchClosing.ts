@@ -25,6 +25,7 @@ import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, UUID } from '../types/index';
 import { matchProgress, type QuarterLike } from './fixtures';
 import { correctAttendance, type CorrectionResult, type Ledger } from './ledger';
+import { markAbsent } from './absence';
 
 // --- D: End match -------------------------------------------------------------
 
@@ -111,4 +112,33 @@ export function recordLateArrival(
 ): CorrectionResult | null {
   if (!isMarkedAbsent(state, playerId)) return null;
   return correctMatchAttendance(engine, state, ledger, playerId, 'available', LATE_ARRIVAL_NOTE, now);
+}
+
+export type HereTodayResult = { changed: false } | { changed: true; ledger: Ledger | null };
+
+/**
+ * "Here today?" on the lineup (#102 AC1; QA on ruling F).
+ *
+ * - **Before kick-off:** mark absent or here again, freely (`markAbsent`).
+ * - **Between periods:** a child marked absent can be marked arrived. That
+ *   is the same late arrival as bringing them on: a noted correction,
+ *   "arrived after kick-off", and they become pickable for the next period.
+ *   Marking someone absent after kick-off is a correction with the coach's
+ *   own note, on the report — not here.
+ * - **While a period runs:** nothing; the clock screen's bench is the way on.
+ */
+export function setHereToday(
+  engine: MatchEngine,
+  state: MatchState,
+  ledger: Ledger | null,
+  playerId: UUID,
+  absent: boolean,
+  now: Date
+): HereTodayResult {
+  if (state.quarters.every((q) => q.status === 'pending')) {
+    return markAbsent(engine, state, playerId, absent) ? { changed: true, ledger: null } : { changed: false };
+  }
+  if (absent || state.quarters.some((q) => q.status === 'running')) return { changed: false };
+  const result = recordLateArrival(engine, state, ledger, playerId, now);
+  return result?.ok ? { changed: true, ledger: result.ledger } : { changed: false };
 }
