@@ -29,7 +29,7 @@ export function MatchAnalysisScreen({
   format,
   players,
   ledger,
-  finishedIds,
+  kickoffs,
   backLabel,
   onBack,
 }: {
@@ -38,7 +38,8 @@ export function MatchAnalysisScreen({
   format: Format | null;
   players: Player[];
   ledger: Ledger | null;
-  finishedIds: ReadonlySet<UUID>;
+  /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
+  kickoffs: ReadonlyMap<UUID, string>;
   backLabel: string;
   onBack: () => void;
 }) {
@@ -52,8 +53,8 @@ export function MatchAnalysisScreen({
   }, [running]);
 
   const report = matchReport(engine, state, players, format);
-  const chart = matchChart(report, ledger, players, { finishedIds });
-  const season = ledger ? seasonChart(ledger, players, { finishedIds }) : null;
+  const chart = matchChart(report, ledger, players, { kickoffs });
+  const season = ledger ? seasonChart(ledger, players, { kickoffs }) : null;
 
   return (
     <View style={screen.flex}>
@@ -83,7 +84,7 @@ export function MatchAnalysisScreen({
             <SeasonBars chart={season} />
           </>
         ) : (
-          <Text style={screen.hint}>No finished matches yet.</Text>
+          <Text style={screen.hint}>No closed matches yet. Close a match with End match on its report.</Text>
         )}
 
         <Pressable

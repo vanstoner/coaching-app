@@ -11,18 +11,23 @@
  * the match record each time it is drawn; nothing is stored (AC3). No
  * player-of-the-week rating (AC4).
  *
- * Read-only by construction. A played match is history; corrections are
- * explicit and noted (invariant 5), and this screen makes none.
+ * A played match is history. Two acts only, each explicit (PO rulings D and
+ * F, #98): **End match** closes it, the counterpart of End quarter, so it
+ * counts towards season averages; **Correct attendance** writes a noted
+ * correction (invariant 5). Leaving without either keeps everything.
  */
 
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
-import type { Format, Player } from '../types/index';
+import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import { matchReport, wholeMinutes } from '../app/analysis';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
+import { displayName } from '../app/squad';
+import { Chip, ChipRow } from './Chip';
 import { colours, screen } from './theme';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -44,6 +49,8 @@ export function MatchSummaryScreen({
   players,
   now,
   onAnalysis,
+  onEndMatch,
+  onCorrectAttendance,
   onBack,
 }: {
   engine: MatchEngine;
@@ -53,8 +60,19 @@ export function MatchSummaryScreen({
   now: Date;
   /** Match analysis (#105 AC3). */
   onAnalysis?: () => void;
+  /** Close the match (ruling D). Absent when it cannot be closed. */
+  onEndMatch?: () => void;
+  /** A noted attendance correction (ruling F): the reason if refused, else null. */
+  onCorrectAttendance?: (playerId: UUID, status: AvailabilityStatus, note: string) => string | null;
   onBack: () => void;
 }) {
+  const [correcting, setCorrecting] = useState<{
+    playerId: UUID | null;
+    status: 'available' | 'absent';
+    note: string;
+    error: string;
+  } | null>(null);
+  const closed = state.match.status === 'completed';
   const report = matchReport(engine, state, players, format);
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
@@ -76,6 +94,12 @@ export function MatchSummaryScreen({
           {opponentLabel(state.match)}
         </Text>
         <Text style={screen.caption}>{details.join(' · ')}</Text>
+        {closed && <Text style={screen.caption}>Closed. It counts towards season averages.</Text>}
+        {!closed && onEndMatch && (
+          <Text style={[screen.caption, local.notClosed]}>
+            Not closed yet. Read it through, then End match at the bottom.
+          </Text>
+        )}
 
         <Text style={local.score}>
           {report.score.us} – {report.score.them}
@@ -156,6 +180,77 @@ export function MatchSummaryScreen({
           ))
         )}
 
+        {onCorrectAttendance &&
+          (correcting === null ? (
+            <Pressable
+              onPress={() => setCorrecting({ playerId: null, status: 'available', note: '', error: '' })}
+              style={screen.linkHit}
+            >
+              <Text style={screen.link}>Correct attendance</Text>
+            </Pressable>
+          ) : (
+            <View style={local.panel}>
+              <Text style={screen.fieldLabel}>Correct attendance</Text>
+              <Text style={screen.hint}>Who, here or not, and why. The record keeps both.</Text>
+              <ChipRow>
+                {players.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={displayName(p)}
+                    selected={correcting.playerId === p.id}
+                    onPress={() => setCorrecting({ ...correcting, playerId: p.id, error: '' })}
+                  />
+                ))}
+              </ChipRow>
+              <ChipRow>
+                <Chip
+                  label="Was here"
+                  selected={correcting.status === 'available'}
+                  onPress={() => setCorrecting({ ...correcting, status: 'available', error: '' })}
+                />
+                <Chip
+                  label="Absent"
+                  selected={correcting.status === 'absent'}
+                  onPress={() => setCorrecting({ ...correcting, status: 'absent', error: '' })}
+                />
+              </ChipRow>
+              <TextInput
+                style={screen.input}
+                value={correcting.note}
+                onChangeText={(note) => setCorrecting({ ...correcting, note, error: '' })}
+                placeholder="Why? (needed)"
+                placeholderTextColor={colours.inkFaint}
+                maxLength={120}
+              />
+              {correcting.error !== '' && <Text style={screen.error}>{correcting.error}</Text>}
+              <View style={screen.actions}>
+                <Pressable
+                  disabled={correcting.playerId === null || correcting.note.trim() === ''}
+                  onPress={() => {
+                    if (correcting.playerId === null) return;
+                    const refused = onCorrectAttendance(
+                      correcting.playerId,
+                      correcting.status,
+                      correcting.note
+                    );
+                    if (refused === null) setCorrecting(null);
+                    else setCorrecting({ ...correcting, error: refused });
+                  }}
+                  style={({ pressed }) => [
+                    screen.button,
+                    (correcting.playerId === null || correcting.note.trim() === '') && screen.buttonDisabled,
+                    pressed && screen.buttonPressed,
+                  ]}
+                >
+                  <Text style={screen.buttonLabel}>Save correction</Text>
+                </Pressable>
+                <Pressable onPress={() => setCorrecting(null)} style={screen.linkHit}>
+                  <Text style={screen.link}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+
         {onAnalysis && (
           <Pressable
             style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
@@ -164,8 +259,20 @@ export function MatchSummaryScreen({
             <Text style={screen.buttonLabel}>Match analysis</Text>
           </Pressable>
         )}
+        {onEndMatch && (
+          <Pressable
+            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+            onPress={onEndMatch}
+            accessibilityRole="button"
+          >
+            <Text style={screen.buttonLabel}>End match</Text>
+          </Pressable>
+        )}
         <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+          style={({ pressed }) => [
+            onEndMatch ? screen.buttonQuiet : screen.button,
+            pressed && screen.buttonPressed,
+          ]}
           onPress={onBack}
         >
           <Text style={screen.buttonLabel}>Back to Home</Text>
@@ -215,4 +322,6 @@ const local = StyleSheet.create({
     paddingRight: 4,
   },
   faint: { color: colours.inkFaint },
+  notClosed: { color: colours.warn },
+  panel: { alignSelf: 'stretch', marginTop: 8 },
 });

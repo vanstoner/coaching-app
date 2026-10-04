@@ -24,13 +24,14 @@ import { Text } from './Text';
 import { formatClock } from '../app/matchClock';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
-import type { Player } from '../types/index';
+import type { Player, UUID } from '../types/index';
 import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
 import { colours, screen } from './theme';
 
 export function MinutesSection({
   ledger,
   players,
+  kickoffs,
   message,
   busy,
   onExport,
@@ -39,6 +40,8 @@ export function MinutesSection({
   ledger: Ledger | null;
   /** The working squad, for each player's outfield-share target (#101). */
   players: Player[];
+  /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
+  kickoffs: ReadonlyMap<UUID, string>;
   /** The outcome of the last export or import, in plain English. */
   message: string;
   busy: boolean;
@@ -57,7 +60,7 @@ export function MinutesSection({
   const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
   // #102 AC3, AC4: derived from the ledger every time, never stored.
-  const attendance = ledger ? seasonAttendance(ledger) : new Map<string, SeasonAttendance>();
+  const attendance = ledger ? seasonAttendance(ledger, { players, kickoffs }) : new Map<string, SeasonAttendance>();
   const inferred = ledger ? inferredMatchCount(ledger) : 0;
 
   return (

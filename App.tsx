@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine } from './src/engine/MatchEngine';
 import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
-import type { Format, MatchEvent, Player, UUID } from './src/types/index';
+import type { AvailabilityStatus, Format, MatchEvent, Player, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
   appClockSetting,
@@ -58,7 +58,15 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
-import { progressById, scoresById } from './src/app/liveMatch';
+import { progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
+import { kickoffTimes } from './src/app/attendance';
+import {
+  canEndMatch,
+  correctMatchAttendance,
+  endMatch,
+  notClosedIds,
+  recordLateArrival,
+} from './src/app/matchClosing';
 import {
   deleteMatch,
   matchesOnRelease,
@@ -733,6 +741,50 @@ export default function App() {
     [match, persist]
   );
 
+  /**
+   * A child marked absent has just come on: they arrived late (ruling F). An
+   * explicit, noted correction in the ledger — before the save that follows,
+   * so the save builds on it.
+   */
+  const noteLateArrival = useCallback(
+    (playerId: UUID) => {
+      if (!match || ledgerBlockedRef.current) return;
+      const result = recordLateArrival(match.engine, match.state, ledgerRef.current, playerId, appNow());
+      if (result?.ok) commitLedger(result.ledger);
+    },
+    [match, commitLedger]
+  );
+
+  /** End match (ruling D): close it, so it counts towards season averages. */
+  const closeMatch = useCallback(() => {
+    if (!match || !endMatch(match.engine, match.state)) return;
+    repaint();
+    persist();
+  }, [match, persist]);
+
+  /** Correct attendance on the report (ruling F). The reason when refused, else null. */
+  const correctAttendanceOnReport = useCallback(
+    (playerId: UUID, status: AvailabilityStatus, note: string): string | null => {
+      if (!match) return 'No match is open.';
+      if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+      const result = correctMatchAttendance(
+        match.engine,
+        match.state,
+        ledgerRef.current,
+        playerId,
+        status,
+        note,
+        appNow()
+      );
+      if (!result.ok) return result.reason;
+      commitLedger(result.ledger);
+      repaint();
+      persist();
+      return null;
+    },
+    [match, persist, commitLedger]
+  );
+
   const startQuarter = useCallback(
     (sheet: Sheet, plan: PlannedSub[]) => {
       if (!match) return;
@@ -765,10 +817,11 @@ export default function App() {
         // plan done anyway would hide that from the coach, so leave it due.
         return;
       }
+      noteLateArrival(inPlayerId);
       setSubPlan((plan) => markDone(plan, inPlayerId));
       persist();
     },
-    [match, persist]
+    [match, persist, noteLateArrival]
   );
 
   /**
@@ -789,6 +842,7 @@ export default function App() {
         return false;
       }
       if (m.kind === 'sub') {
+        noteLateArrival(m.in);
         setSubPlan((plan) =>
           plan.map((s) =>
             s.playerId === m.in
@@ -802,7 +856,7 @@ export default function App() {
       persist();
       return true;
     },
-    [match, persist]
+    [match, persist, noteLateArrival]
   );
 
   /** A goal, save or goal conceded (#84). Null when the engine refuses it. */
@@ -933,6 +987,9 @@ export default function App() {
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
           now={appNow()}
+          // Ruling D: after the last period, the coach closes the match here.
+          onEndMatch={canEndMatch(match.state) ? closeMatch : undefined}
+          onCorrectAttendance={correctAttendanceOnReport}
           onAnalysis={() => {
             setAnalysisReturn('summary');
             setStep('analysis');
@@ -949,11 +1006,8 @@ export default function App() {
       );
     }
 
-    // Finished by its periods: the app never sets `completed` (ADR-015 §6).
-    const finishedIds = () =>
-      new Set(
-        [...progressById(matches, match)].filter(([, p]) => p === 'finished').map(([id]) => id)
-      );
+    // Each match's kick-off, for ruling E: who was in the squad for it.
+    const kickoffs = () => kickoffTimes(withLiveMatch(matches, match));
 
     if (effectiveStep === 'analysis' && match) {
       return (
@@ -963,7 +1017,7 @@ export default function App() {
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
           ledger={ledger}
-          finishedIds={finishedIds()}
+          kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
           onBack={() => setStep(analysisReturn)}
         />
@@ -975,7 +1029,7 @@ export default function App() {
         <SeasonScreen
           ledger={ledger}
           players={players}
-          finishedIds={finishedIds()}
+          kickoffs={kickoffs()}
           onBack={() => setStep('settings')}
         />
       );
@@ -997,6 +1051,7 @@ export default function App() {
               <MinutesSection
                 ledger={ledger}
                 players={players}
+                kickoffs={kickoffTimes(withLiveMatch(matches, match))}
                 message={ledgerMessage}
                 busy={ledgerBusy}
                 onExport={() => void exportMinutes()}
@@ -1121,6 +1176,7 @@ export default function App() {
         onOpen={openFixture}
         progress={progressById(matches, match)}
         scores={scoresById(matches, match)}
+        notClosed={notClosedIds(withLiveMatch(matches, match))}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}
         onPlan={(id) => {

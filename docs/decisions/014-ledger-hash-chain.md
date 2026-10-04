@@ -72,10 +72,16 @@ installed; Hermes has no `crypto.subtle`; the ledger code is synchronous pure TS
    recomputes. The first failure is reported in plain English, such as "the
    entry recorded on 3 Oct at 10:42 has been changed since it was written", or
    "an entry is missing after 3 Oct at 10:42".
-   - **Stored chain broken:** shown as untrusted, never repaired, never
-     appended to. Recording is suspended, and the season figures are not
-     shown. Nothing is lost, because the working document still holds its
-     matches and records them once a good chain is restored.
+   - **Stored chain broken:** never repaired and never appended to. It is set
+     aside intact, under its own key, and a new chain starts whose genesis
+     names where it was set aside (`follows`). The new chain is back-filled
+     from the working document's matches, so season figures keep showing,
+     rebuilt from the match records, and the coach is told it happened.
+     Nothing is deleted. Only if the copy cannot be set aside and read back
+     is recording suspended instead, with nothing changed. (PO ruling G-a, #98, 2026-10-04: "approve ... G-a",
+     which replaced the earlier "recording is suspended and the season
+     figures are not shown"; it matches what `ledgerStore.openStoredLedger`
+     does.)
    - **File broken:** refused, and nothing is imported (#100 AC5).
 9. **Import extends, never merges** (#100 AC2). After verifying the file:
    - If our chain is empty, adopt the file's chain.

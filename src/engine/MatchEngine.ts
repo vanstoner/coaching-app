@@ -505,6 +505,24 @@ export class MatchEngine {
     }
   }
 
+  /**
+   * Close the match: the coach's "End match", the counterpart of End quarter
+   * (PO ruling D, #98). Status only — no time, no interval, nothing derived is
+   * touched. Only a match whose every period has ended can be closed; a
+   * closed match is what season averages count (ADR-015 §6). Closing one
+   * already closed changes nothing. An abandoned match stays abandoned.
+   */
+  completeMatch(state: MatchState): void {
+    if (state.match.status === 'completed') return;
+    if (state.match.status === 'abandoned') {
+      throw new MatchEngineError('Cannot close an abandoned match');
+    }
+    if (state.quarters.length === 0 || state.quarters.some((q) => q.status !== 'ended')) {
+      throw new MatchEngineError('Cannot close the match until every period has ended');
+    }
+    state.match.status = 'completed';
+  }
+
   // ========================================================================
   // In play: position swaps and the time stream — #82, #83, #84
   // ========================================================================

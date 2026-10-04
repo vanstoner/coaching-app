@@ -12,9 +12,13 @@
  * - **Attended** means `available` at kick-off (§4). A match recorded before
  *   attendance existed has none, and attended is inferred as "played any
  *   interval" (§5), computed here and never stored.
- * - **Counted matches** are the finished ones (§6). See `isCounted`: the app
- *   never sets `Match.status` to `completed`, so "finished" also comes from
- *   the working document's periods, passed in by the caller.
+ * - **Counted matches** are the closed ones (§6): `completed`, which only
+ *   the coach's End match sets (PO ruling D, #98). A match whose periods
+ *   have all ended but which has not been closed does not count yet; an
+ *   abandoned one never does.
+ * - **In the squad at kick-off** (ruling E): who attended and missed each
+ *   match is `attendance.countedAttendance`, the one rule the Settings
+ *   figures fold with too.
  * - **Season average** = pitch time over counted matches attended ÷ counted
  *   matches attended; null when none, never zero (§7).
  * - **Competition split**: all four buckets, null competition as league (§8).
@@ -35,6 +39,7 @@ import type {
   UUID,
 } from '../types/index';
 import type { Ledger, LedgerMatch, LedgerPlayer } from './ledger';
+import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import { foldPlayerMinutes } from './playerMinutes';
 import { scoreOf, talliesOf, type Score } from './matchEvents';
 import { displayName } from './squad';
@@ -202,40 +207,9 @@ export function matchReport(
 // Season figures (ADR-015 §4–§8, #102 AC3, #103)
 // ============================================================================
 
-/**
- * Attendance as the ledger will carry it (ADR-014 §4, #100). Read optionally:
- * this build's ledger has none yet, and a match without it falls back to the
- * v1 inference rule. When a player has several records, the last one is the
- * latest revision.
- */
-export interface AttendanceRecord {
-  playerId: UUID;
-  status: AvailabilityStatus;
-}
-
-function attendanceOf(match: LedgerMatch): AttendanceRecord[] | null {
-  const raw = (match as { attendance?: unknown }).attendance;
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  return raw.filter(
-    (r): r is AttendanceRecord =>
-      typeof r === 'object' &&
-      r !== null &&
-      typeof (r as AttendanceRecord).playerId === 'string' &&
-      typeof (r as AttendanceRecord).status === 'string'
-  );
-}
-
-/**
- * Whether a ledger match counts towards averages (ADR-015 §6).
- *
- * `completed`, or finished as the working document's periods say. The engine
- * sets `in_progress` at kick-off and nothing sets `completed` (see
- * `fixtures.matchProgress`), so on status alone no match would ever count.
- * An abandoned match never counts towards averages.
- */
-function isCounted(match: LedgerMatch, finishedIds: ReadonlySet<UUID>): boolean {
-  if (match.status === 'abandoned' || match.status === 'planned') return false;
-  return match.status === 'completed' || finishedIds.has(match.id);
+/** Whether a ledger match counts towards averages: closed (ADR-015 §6, ruling D). */
+export function isCounted(match: Pick<LedgerMatch, 'status'>): boolean {
+  return match.status === 'completed';
 }
 
 /** The column a match sits in. Null counts as league (#103 AC3). */
@@ -256,7 +230,10 @@ export interface SeasonPlayer {
   retired: boolean;
   /** Counted matches attended. */
   attended: number;
-  /** Counted matches missed: recorded absent, injured or unavailable, or (v1) did not play. */
+  /**
+   * Counted matches missed: recorded absent, injured or unavailable, or (v1)
+   * in the squad at kick-off and did not play.
+   */
   missed: number;
   /** All pitch time in the ledger, every match, abandoned included (§6). */
   pitchMs: number;
@@ -273,10 +250,13 @@ export interface SeasonStats {
 }
 
 export interface SeasonOptions {
-  /** Matches finished according to the working document's periods. */
-  finishedIds?: ReadonlySet<UUID>;
   /** Left out of the averages (§9: the shadow excludes the match viewed). */
   excludeMatchId?: UUID | null;
+  /**
+   * Kick-off of a match with no `kickoffAt`: its first period's start
+   * (`attendance.kickoffTimes`), for ruling E.
+   */
+  kickoffs?: ReadonlyMap<UUID, string>;
 }
 
 const emptyBucket = (): Bucket => ({ attended: 0, pitchMs: 0, averageMs: null });
@@ -293,7 +273,6 @@ const average = (b: Bucket): Bucket => ({
  * attendance for, so a retired child's season is not dropped.
  */
 export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOptions = {}): SeasonStats {
-  const finished = options.finishedIds ?? new Set<UUID>();
   const ids: UUID[] = players.map((p) => p.id);
   const add = (id: UUID) => {
     if (!ids.includes(id)) ids.push(id);
@@ -327,6 +306,8 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
 
   let countedMatches = 0;
   let inferredMatches = 0;
+  const timeline: SquadTimeline = { players, kickoffs: options.kickoffs };
+  const seen = firstSeen(ledger);
 
   for (const m of ledger.matches) {
     const pitch = new Map<UUID, number>();
@@ -336,23 +317,11 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
     // Season totals: every match's minutes (§6).
     for (const [id, ms] of pitch) of(id).pitchMs += ms;
 
-    if (!isCounted(m, finished) || m.id === options.excludeMatchId) continue;
+    if (!isCounted(m) || m.id === options.excludeMatchId) continue;
     countedMatches++;
 
-    const recorded = attendanceOf(m);
-    const attended = new Set<UUID>();
-    const missed = new Set<UUID>();
-    if (recorded) {
-      const latest = new Map<UUID, AvailabilityStatus>();
-      for (const r of recorded) latest.set(r.playerId, r.status);
-      for (const [id, status] of latest) (status === 'available' ? attended : missed).add(id);
-    } else {
-      // v1 (§5): attended = played any interval. Everyone else known to the
-      // season missed it.
-      inferredMatches++;
-      for (const id of pitch.keys()) attended.add(id);
-      for (const id of ids) if (!attended.has(id)) missed.add(id);
-    }
+    const { inferred, attended, missed } = countedAttendance(ledger, m, timeline, seen);
+    if (inferred) inferredMatches++;
 
     const bucket = competitionBucket(m.competition);
     for (const id of attended) {

@@ -42,6 +42,12 @@ interface PlayOptions {
   /** Quarters to play; fewer than 4 leaves the match unfinished. */
   quarters?: number;
   goals?: boolean;
+  /**
+   * Press End match after the last period (ruling D). Default true: only a
+   * closed match counts towards averages, so a played-out test match is
+   * closed unless a test says otherwise.
+   */
+  close?: boolean;
 }
 
 /**
@@ -79,6 +85,7 @@ function play(sq: ReturnType<typeof squad>, opts: PlayOptions = {}) {
     now += QUARTER - 6 * MIN;
     engine.endQuarter(state, quarter);
   }
+  if ((opts.quarters ?? 4) === 4 && opts.close !== false) engine.completeMatch(state);
   return { engine, state, advance: (ms: number) => (now += ms) };
 }
 
@@ -87,8 +94,6 @@ function ledgerOf(sq: ReturnType<typeof squad>, states: MatchState[]): Ledger {
   return recordMatches(emptyLedger(sq.squadId, 'Test FC'), records, sq.players, 'Test FC', new Date(0));
 }
 
-const finishedIds = (states: MatchState[]) =>
-  new Set(states.filter((s) => s.quarters.every((q) => q.status === 'ended')).map((s) => s.match.id));
 
 describe('matchReport (#104)', () => {
   it('reports the score, scorers, keeper, minutes against the fair share, subs and absentees', () => {
@@ -158,7 +163,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     const a = play(sq).state; // Ivy and Jo never on
     const b = play(sq, { benched: [sq.players[1].id] }).state; // Ben benched, Ivy plays
     const ledger = ledgerOf(sq, [a, b]);
-    const s = seasonStats(ledger, sq.players, { finishedIds: finishedIds([a, b]) });
+    const s = seasonStats(ledger, sq.players);
     expect(s.countedMatches).toBe(2);
     expect(s.inferredMatches).toBe(2);
     const row = (id: UUID) => s.players.find((p) => p.playerId === id)!;
@@ -171,9 +176,12 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     expect(row(sq.players[0].id).averageMs).toBe(50 * MIN);
   });
 
-  it('counts nothing towards averages without a finished match, but keeps the minutes', () => {
+  // Ruling D (#98) replaced "finished by its periods": only a match the coach
+  // closed with End match counts.
+  it('counts nothing towards averages until the match is closed, but keeps the minutes', () => {
     const sq = squad();
-    const a = play(sq).state; // status stays in_progress: the engine never sets completed
+    const a = play(sq, { close: false }).state; // every period ended, End match not pressed
+    expect(a.quarters.every((q) => q.status === 'ended')).toBe(true);
     expect(a.match.status).toBe('in_progress');
     const ledger = ledgerOf(sq, [a]);
     const s = seasonStats(ledger, sq.players);
@@ -185,7 +193,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     expect(seasonStats(ledger, sq.players).countedMatches).toBe(1);
     // An abandoned match never counts towards averages; its minutes still do.
     ledger.matches[0].status = 'abandoned';
-    const ab = seasonStats(ledger, sq.players, { finishedIds: finishedIds([a]) });
+    const ab = seasonStats(ledger, sq.players);
     expect(ab.countedMatches).toBe(0);
     expect(ab.players[0].pitchMs).toBe(50 * MIN);
   });
@@ -200,7 +208,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     (ledger.matches[0] as { attendance?: unknown }).attendance = [
       ...[...a.playerAvailability].map(([playerId, status]) => ({ matchId: a.match.id, playerId, status })),
     ];
-    const s = seasonStats(ledger, sq.players, { finishedIds: finishedIds([a]) });
+    const s = seasonStats(ledger, sq.players);
     expect(s.inferredMatches).toBe(0);
     const benRow = s.players.find((p) => p.playerId === ben.id)!;
     expect(benRow).toMatchObject({ attended: 1, missed: 0, averageMs: 0 });
@@ -216,7 +224,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
       { playerId: ivy.id, status: 'available' },
       { playerId: ivy.id, status: 'injured', note: 'arrived hurt' },
     ];
-    const s = seasonStats(ledger, sq.players, { finishedIds: finishedIds([a]) });
+    const s = seasonStats(ledger, sq.players);
     expect(s.players.find((p) => p.playerId === ivy.id)).toMatchObject({ attended: 0, missed: 1 });
   });
 
@@ -226,7 +234,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     const cup = play(sq, { competition: 'cup' }).state;
     const friendly = play(sq, { competition: 'friendly' }).state;
     const states = [league, cup, friendly];
-    const s = seasonStats(ledgerOf(sq, states), sq.players, { finishedIds: finishedIds(states) });
+    const s = seasonStats(ledgerOf(sq, states), sq.players);
     const gus = s.players.find((p) => p.playerId === sq.players[6].id)!;
     expect(gus.attended).toBe(3);
     expect(gus.byCompetition.league).toEqual({ attended: 1, pitchMs: 24 * MIN, averageMs: 24 * MIN });
@@ -249,7 +257,7 @@ describe('matchChart (#105 AC1)', () => {
     const { engine, state } = play(sq, { absent: [jo.id] });
     const ledger = ledgerOf(sq, [earlier, state]);
     const report = matchReport(engine, state, sq.players);
-    const chart = matchChart(report, ledger, sq.players, { finishedIds: finishedIds([earlier, state]) });
+    const chart = matchChart(report, ledger, sq.players);
 
     const row = (id: UUID) => chart.rows.find((r) => r.playerId === id)!;
     // The shadow excludes this match (ADR-015 §9): only `earlier` counts.
@@ -299,7 +307,7 @@ describe('seasonChart (#105 AC2, #103 AC2)', () => {
       play(sq, { competition: 'friendly' }).state,
       play(sq, { competition: 'tournament', benched: [sq.players[6].id] }).state,
     ];
-    const chart = seasonChart(ledgerOf(sq, states), sq.players, { finishedIds: finishedIds(states) });
+    const chart = seasonChart(ledgerOf(sq, states), sq.players);
     expect(chart.countedMatches).toBe(4);
     expect(chart.inferredMatches).toBe(4);
 

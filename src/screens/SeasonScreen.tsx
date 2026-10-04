@@ -18,15 +18,16 @@ import { screen } from './theme';
 export function SeasonScreen({
   ledger,
   players,
-  finishedIds,
+  kickoffs,
   onBack,
 }: {
   ledger: Ledger | null;
   players: Player[];
-  finishedIds: ReadonlySet<UUID>;
+  /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
+  kickoffs: ReadonlyMap<UUID, string>;
   onBack: () => void;
 }) {
-  const chart = ledger ? seasonChart(ledger, players, { finishedIds }) : null;
+  const chart = ledger ? seasonChart(ledger, players, { kickoffs }) : null;
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
@@ -42,7 +43,7 @@ export function SeasonScreen({
             <SeasonBars chart={chart} />
           </>
         ) : (
-          <Text style={screen.hint}>No finished matches yet.</Text>
+          <Text style={screen.hint}>No closed matches yet. Close a match with End match on its report.</Text>
         )}
         <Pressable
           style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
