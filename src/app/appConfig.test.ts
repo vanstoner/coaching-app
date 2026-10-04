@@ -29,7 +29,31 @@ describe('app identity per variant (#79)', () => {
     expect(c.android.package).toBe('com.example.coachingapp');
     expect(c.name).toBe('Coaching App');
     expect(c.icon).toBe(base().icon);
-    expect(c.android.adaptiveIcon).toBe(base().android.adaptiveIcon);
+    expect(c.android.adaptiveIcon).toEqual(base().android.adaptiveIcon);
+  });
+
+  it('gives both apps a real icon, adaptive on Android, every image 1024 px', () => {
+    for (const variant of [undefined, 'beta']) {
+      if (variant) process.env.APP_VARIANT = variant;
+      else delete process.env.APP_VARIANT;
+      const c = appConfig({ config: base() });
+      const { foregroundImage, backgroundImage } = c.android.adaptiveIcon;
+      for (const img of [c.icon, foregroundImage, backgroundImage]) {
+        expect(existsSync(resolve(root, img))).toBe(true);
+        expect(pngSize(img)).toEqual([1024, 1024]);
+      }
+    }
+  });
+
+  it('backs up Coaching App and never Coaching Beta (#112, PO ruling "backup b")', () => {
+    delete process.env.APP_VARIANT;
+    const main = appConfig({ config: base() });
+    expect(main.android.allowBackup).toBe(true);
+    expect(main.ios.infoPlist.RCTAsyncStorageExcludeFromBackup).toBe(false);
+    process.env.APP_VARIANT = 'beta';
+    const beta = appConfig({ config: base() });
+    expect(beta.android.allowBackup).toBe(false);
+    expect(beta.ios.infoPlist.RCTAsyncStorageExcludeFromBackup).toBe(true);
   });
 
   it('gives the beta its own id, name and icon', () => {
@@ -80,16 +104,15 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     expect(c.icon).toBe('./assets/images/beta-icon.png');
   });
 
-  it('excludes AsyncStorage from iCloud/iTunes backup in BOTH variants (ADR-011)', () => {
+  it('sets the iOS backup key explicitly in both variants, never leaving it to the library default', () => {
     for (const variant of [undefined, 'beta']) {
       clean();
       if (variant) process.env.APP_VARIANT = variant;
       const c = appConfig({ config: base() });
       // The exact key RNCAsyncStorage.mm reads (async-storage 3.1.1,
-      // apple/legacy_storage/RNCAsyncStorage.mm:529). Absent also means
-      // excluded today; it is explicit so a library default change cannot
-      // silently flip it.
-      expect(c.ios.infoPlist.RCTAsyncStorageExcludeFromBackup).toBe(true);
+      // apple/legacy_storage/RNCAsyncStorage.mm:529). Absent means excluded,
+      // so it is always explicit: false for the app, true for the beta (#112).
+      expect(typeof c.ios.infoPlist.RCTAsyncStorageExcludeFromBackup).toBe('boolean');
     }
   });
 

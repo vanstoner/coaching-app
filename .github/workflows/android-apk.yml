@@ -226,13 +226,14 @@ jobs:
         working-directory: android
 
       # Every assertion below gates the job: the build is only a deliverable if
-      # the APK is structurally valid, debug-signed, and has backup disabled.
+      # the APK is structurally valid, debug-signed, and backs up only as
+      # Coaching App (#112): never as Coaching Beta.
       #
       # Tool output goes to files rather than through pipes: `grep ... | head -1`
       # under `pipefail` can exit 141 on SIGPIPE and kill the step with no
       # diagnostic at all, which is exactly what happened on run 35263505469.
       # Failures accumulate so one missing assertion does not hide the rest.
-      - name: Assert the APK is valid, signed and backup-disabled
+      - name: Assert the APK is valid, signed, and backed up only if it is Coaching App
         run: |
           set -uo pipefail
           fail=0
@@ -300,20 +301,24 @@ jobs:
             || note "signer is not the Android debug keystore"
           echo "::endgroup::"
 
-          echo "::group::AC-F2 — android:allowBackup=false in the built APK (ADR-011)"
+          echo "::group::AC-F2 — android:allowBackup in the built APK (ADR-011, #112)"
           if ! "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt 2>&1; then
             note "aapt2 dump xmltree failed — cannot read the built manifest"
           fi
-          # build-tools 37 renders the boolean as `=false`; older ones as
-          # `=(type 0x12)0x0`. Both mean false; anything else fails, including
-          # the attribute being absent, which on Android means backup is ON.
+          # #112 (PO ruling "backup b"): Coaching App is backed up by the
+          # phone's own backup, so a lost phone keeps the season; Coaching
+          # Beta is not, so test data never reaches a coach's cloud.
+          # build-tools 37 renders booleans as `=true`/`=false`; older ones as
+          # `=(type 0x12)0xffffffff`/`=(type 0x12)0x0`. Absent means ON, which
+          # is required to be explicit here either way.
           BACKUP_LINE="$(grep -E 'allowBackup' /tmp/manifest.txt | sed -n 1p)"
           echo "${BACKUP_LINE:-<allowBackup attribute absent>}"
-          case "$BACKUP_LINE" in
-            *'=false'|*'=(type 0x12)0x0')
-              echo "allowBackup is false in the artifact that reaches the phone" ;;
+          if [ "$APP_VARIANT" = "beta" ]; then WANT_BACKUP=false; else WANT_BACKUP=true; fi
+          case "$WANT_BACKUP:$BACKUP_LINE" in
+            false:*'=false'|false:*'=(type 0x12)0x0'|true:*'=true'|true:*'=(type 0x12)0xffffffff')
+              echo "allowBackup is $WANT_BACKUP in the artifact that reaches the phone (APP_VARIANT='$APP_VARIANT')" ;;
             *)
-              note "allowBackup is not false in the APK that would reach the phone" ;;
+              note "allowBackup is not $WANT_BACKUP in the APK that would reach the phone (APP_VARIANT='$APP_VARIANT', #112)" ;;
           esac
           echo "::endgroup::"
 

@@ -81,3 +81,34 @@ built `.app`'s Info.plist in CI (`.github/workflows/ios.yml`,
 
 Not covered: data written by any other store. A new storage library, or the
 `createAsyncStorage()` API (a different native path), needs this re-checked.
+
+## Amendment (2026-10-04, #112): the phone's own backup is allowed for Coaching App
+
+**PO ruling "backup b"** on #98, after: *"I am a bit more relaxed about data
+than I was given we impress on the user not to store it."* This amends
+decision 2 for Coaching App only.
+
+- **Coaching App** is included in the phone's own backup: Android Auto Backup
+  (`allowBackup` true) and iCloud (`RCTAsyncStorageExcludeFromBackup` false).
+  The reason is the minutes ledger, the season's spine (#98): a lost or
+  replaced phone gets the season back from the coach's own Google or Apple
+  account, rather than only from an export someone remembered to make.
+- **Coaching Beta** stays excluded on both platforms, so test data never
+  reaches a coach's cloud.
+- **Unchanged:** first names only and nothing else about a child (invariant
+  4); no server, no sync, no analytics of ours. The backup is the coach's,
+  held by the phone's own service, and the minutes export stays the explicit,
+  coach-initiated way to move data between phones.
+- Both CI gates assert the built artifact, per variant: the APK manifest's
+  `allowBackup` and the iOS Info.plist key (`check_ios_app.py`).
+
+**Impact assessment (decision 3), proportionate to what moves:**
+
+| | |
+|---|---|
+| Data | Children's first names (sometimes a display suffix), match minutes, goals/saves, availability. No surnames, dates of birth, contacts or photos (invariant 4). |
+| Where it goes | The coach's own Google (Auto Backup) or Apple (iCloud) account: encrypted by the platform, and covered by that coach's account security. Nothing reaches us or any third party of ours. |
+| Who can see it | The coach, and anyone who restores the coach's account. |
+| Risk | Low: a compromised coach account would expose first names with football minutes. |
+| Mitigations | First names only; the beta is never backed up; the coach can turn off backup in the phone's settings; "Forget everything" still wipes the app's data on the phone, and a later backup then holds none. |
+| Residual | Data deleted in the app can persist in an older backup until the platform rotates it. Accepted by the ruling. |

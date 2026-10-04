@@ -7,12 +7,13 @@ app.json, because the .app is what would reach a phone. Three things:
   1. CFBundleIdentifier is com.vanstoner.coachingapp on main and
      com.vanstoner.coachingapp.beta on a pull request (PO ruling on #107),
      and the display name matches.
-  2. RCTAsyncStorageExcludeFromBackup is present and true (ADR-011). This is
-     the key @react-native-async-storage/async-storage 3.1.1 reads in
+  2. RCTAsyncStorageExcludeFromBackup is present and explicit: FALSE for
+     Coaching App (backed up by the phone's own iCloud backup, #112 PO ruling
+     "backup b"), TRUE for Coaching Beta (test data never reaches a cloud).
+     This is the key @react-native-async-storage/async-storage 3.1.1 reads in
      apple/legacy_storage/RNCAsyncStorage.mm:529 before setting
-     NSURLIsExcludedFromBackupKey on its storage directory. Absent ALSO means
-     excluded in that version, but the gate requires it explicitly so a
-     library default change cannot silently flip ADR-011.
+     NSURLIsExcludedFromBackupKey on its storage directory. Absent means
+     excluded in that version, so the gate requires it explicitly either way.
   3. CFBundleVersion is the build number CI injected (the run number), when
      one is given — a silently missing injection would ship build 1.
 
@@ -42,6 +43,15 @@ def expected(variant):
     raise ValueError(f"unknown variant {variant!r}")
 
 
+def excluded_from_backup(variant):
+    # #112: the released app is backed up; the beta is not.
+    if variant == "beta":
+        return True
+    if variant == "":
+        return False
+    raise ValueError(f"unknown variant {variant!r}")
+
+
 def check(plist, variant, build_number=None):
     """Return a list of problems; empty means the .app is right."""
     want_id, want_name = expected(variant)
@@ -54,10 +64,11 @@ def check(plist, variant, build_number=None):
         problems.append(f"CFBundleDisplayName is {got_name!r}, expected {want_name!r}")
     # `is True`, not truthiness: the string "YES" or the integer 1 in a plist
     # is not what the library's NSNumber read expects to find.
-    if plist.get(BACKUP_KEY) is not True:
+    want_excluded = excluded_from_backup(variant)
+    if plist.get(BACKUP_KEY) is not want_excluded:
         problems.append(
-            f"{BACKUP_KEY} is {plist.get(BACKUP_KEY, '<absent>')!r}, expected true "
-            "(ADR-011: stored data excluded from iCloud/iTunes backup)"
+            f"{BACKUP_KEY} is {plist.get(BACKUP_KEY, '<absent>')!r}, expected {want_excluded} "
+            "(#112: Coaching App is backed up, Coaching Beta is not)"
         )
     if build_number:
         got_build = plist.get("CFBundleVersion")
@@ -66,7 +77,7 @@ def check(plist, variant, build_number=None):
     return problems
 
 
-def plist_of(app_id, name, backup=True, build="42"):
+def plist_of(app_id, name, backup="auto", build="42"):
     # The keys that matter, in the shape Xcode writes into a built .app.
     p = {
         "CFBundleIdentifier": app_id,
@@ -76,6 +87,8 @@ def plist_of(app_id, name, backup=True, build="42"):
         "CFBundleVersion": build,
         "CFBundleExecutable": name.replace(" ", ""),
     }
+    if backup == "auto":
+        backup = app_id == BETA_ID
     if backup is not None:
         p[BACKUP_KEY] = backup
     return p
@@ -90,9 +103,10 @@ def self_test():
         ("main build carrying the beta id", plist_of(BETA_ID, BETA_NAME), "", "42", False),
         ("beta build that kept the main id", plist_of(BASE_ID, BASE_NAME), "beta", "42", False),
         ("beta id with the main name", plist_of(BETA_ID, BASE_NAME), "beta", "42", False),
-        ("backup key absent", plist_of(BASE_ID, BASE_NAME, backup=None), "", "42", False),
-        ("backup key false", plist_of(BETA_ID, BETA_NAME, backup=False), "beta", "42", False),
-        ("backup key the string 'YES'", plist_of(BASE_ID, BASE_NAME, backup="YES"), "", "42", False),
+        ("backup key absent (means excluded)", plist_of(BASE_ID, BASE_NAME, backup=None), "", "42", False),
+        ("main app excluded from backup", plist_of(BASE_ID, BASE_NAME, backup=True), "", "42", False),
+        ("beta backed up", plist_of(BETA_ID, BETA_NAME, backup=False), "beta", "42", False),
+        ("backup key the string 'YES'", plist_of(BETA_ID, BETA_NAME, backup="YES"), "beta", "42", False),
         ("build number not injected", plist_of(BASE_ID, BASE_NAME, build="1"), "", "42", False),
         ("empty plist", {}, "", None, False),
     ]
@@ -130,7 +144,7 @@ def main(argv):
         print(f"ASSERTION FAILED: cannot read {path}: {e}")
         return 1
     want_id, want_name = expected(variant)
-    print(f"expected: {want_id} / {want_name} / {BACKUP_KEY}=True / build {build_number or '(not checked)'}")
+    print(f"expected: {want_id} / {want_name} / {BACKUP_KEY}={excluded_from_backup(variant)} / build {build_number or '(not checked)'}")
     print(
         f"found:    {plist.get('CFBundleIdentifier')} / {plist.get('CFBundleDisplayName')} / "
         f"{BACKUP_KEY}={plist.get(BACKUP_KEY, '<absent>')} / build {plist.get('CFBundleVersion')}"

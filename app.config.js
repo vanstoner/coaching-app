@@ -41,7 +41,13 @@ const BETA_NAME = 'Coaching Beta';
 // keeps whatever app.json gives it.
 const BETA_ICON = './assets/images/beta-icon.png';
 const BETA_ADAPTIVE_ICON = './assets/images/beta-adaptive-icon.png';
-const BETA_ICON_BACKGROUND = '#E86A17';
+const BETA_ADAPTIVE_BACKGROUND = './assets/images/beta-adaptive-background.png';
+// Both drawn by assets/icon/generate_icons.py: the whistle's cord as a heart
+// around the ball, on orange-mown grass for the beta (PO, 2026-10-04).
+
+// #112 (PO ruling "backup b"): Coaching App is backed up by the phone's own
+// backup so a lost phone keeps the season; Coaching Beta is NOT, so test
+// data never reaches a coach's cloud.
 
 function withVariant(config) {
   const variant = process.env.APP_VARIANT;
@@ -61,11 +67,13 @@ function withVariant(config) {
     ios: {
       ...config.ios,
       bundleIdentifier: `${config.ios.bundleIdentifier}${BETA_SUFFIX}`,
+      infoPlist: { ...config.ios.infoPlist, RCTAsyncStorageExcludeFromBackup: true },
     },
     android: {
       ...config.android,
       package: `${config.android.package}${BETA_SUFFIX}`,
-      adaptiveIcon: { foregroundImage: BETA_ADAPTIVE_ICON, backgroundColor: BETA_ICON_BACKGROUND },
+      allowBackup: false,
+      adaptiveIcon: { foregroundImage: BETA_ADAPTIVE_ICON, backgroundImage: BETA_ADAPTIVE_BACKGROUND },
     },
   };
 }
