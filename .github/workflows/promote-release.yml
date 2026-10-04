@@ -1,7 +1,8 @@
 name: Promote release
 
 # #79. Since the PO ruling "approve 1 2" (2026-10-03) a green build of main
-# publishes the full release itself, marked Latest, and clears the beta; this
+# publishes the full release itself, marked Latest, and (#128) replaces the beta
+# with a note pointing at it; this
 # workflow is no longer a step in shipping. It remains, on dispatch, to
 # retitle a release (e.g. "1.0 — Match day 4") or to re-point Latest at an
 # earlier build, because a Claude Code session cannot push tags or edit
@@ -9,7 +10,8 @@ name: Promote release
 #
 #   1. makes the named main build a full release, marked Latest, with the
 #      given title; the asset and notes are untouched;
-#   2. deletes the `beta` prerelease and its tag, if present.
+#   2. leaves `beta` alone (#128): it is either a live PR beta or the note
+#      pointing at the latest merge, and deleting it would leave Rob nothing.
 #
 # Dispatch only (AC-P4). Never on push or pull request.
 
@@ -64,16 +66,6 @@ jobs:
             || { echo "WHY THIS JOB FAILED: gh release edit refused:"; cat /tmp/err.txt; exit 1; }
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name,isPrerelease,url \
             --jq '"promoted: \(.name)  prerelease=\(.isPrerelease)  \(.url)"'
-
-      - name: Remove the stale beta prerelease, if any
-        run: |
-          set -uo pipefail
-          if gh release view beta --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete beta --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
-            echo "beta release and tag removed"
-          else
-            echo "no beta release; nothing to remove"
-          fi
 
       - name: Summary
         run: |

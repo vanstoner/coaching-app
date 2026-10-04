@@ -6,8 +6,10 @@ description: Own CI, the build, the APK and the release. Use when touching .gith
 Every session ends with a releasable artifact. Every pull request
 publishes **Coaching Beta** (its own app id; one rolling `beta` release). A
 merge is Rob's approval, so a green build of `main` publishes the full
-**Coaching App** release, marked Latest, and clears the beta. If a session produces no installable
-APK, it produced nothing.
+**Coaching App** release, marked Latest, and replaces the beta with a no-APK
+note pointing at it (#128). Each page opens with the PR it contains and the
+issues it closes (`release_notes.py`); iOS CI attaches a simulator zip to it.
+If a session produces no installable APK, it produced nothing.
 
 ## Produce
 

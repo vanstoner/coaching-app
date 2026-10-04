@@ -21,7 +21,36 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
 - **Coaching Beta** — the `beta` prerelease, rebuilt from each open pull
   request. It installs as a separate app (its own id, storage and orange icon),
   so testing never touches the real squad. Its Test kit adds made-up players, a
-  past season and a faster clock.
+  past season and a faster clock. After a merge, `beta` holds no APK, just a
+  note pointing at the new Coaching App build, until the next pull request.
+
+Each page opens with the pull request it contains, the issues that closes and
+what changed; the beta also lists its test steps.
+
+## Run it on a Mac (iPhone simulator)
+
+iPhone: waiting on Apple enrolment ([#108](https://github.com/vanstoner/coaching-app/issues/108)).
+Until then it runs only in the simulator that comes with Xcode. A real iPhone
+needs that enrolment.
+
+**Route 1: download the build CI made.** Each release carries
+`coaching-app-ios-simulator_….zip` (the beta: `coaching-beta-ios-simulator_….zip`),
+added by the iOS workflow a while after the APK.
+
+```bash
+unzip coaching-app-ios-simulator_*.zip        # gives CoachingApp.app (beta: CoachingBeta.app)
+open -a Simulator                             # boots the default iPhone
+xcrun simctl install booted CoachingApp.app   # or drag the .app onto the simulator window
+xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coachingapp.beta
+```
+
+**Route 2: build it yourself.** Needs Xcode and CocoaPods. CI uses Xcode 26.6
+on GitHub's `macos-26` image (the iOS job's Toolchain step prints it).
+
+```bash
+npm ci
+npx expo run:ios      # generates ios/, installs pods, builds and opens the simulator
+```
 
 ## The five things that must stay true
 

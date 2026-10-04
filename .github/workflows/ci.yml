@@ -71,6 +71,12 @@ jobs:
       - name: Prove the release check gates before trusting it
         run: python3 .github/scripts/check_release.py --self-test
 
+      # #128: the release and beta pages' PR summary. The release path only
+      # runs after merge, so its self-test (healthy cases first, then every
+      # degraded lookup) runs here on every PR.
+      - name: Prove the release-notes summary before trusting it
+        run: python3 .github/scripts/release_notes.py --self-test
+
       # #112: the APK's allowBackup gate runs in the Android job; its
       # self-test also runs here, on every PR, healthy cases first.
       - name: Prove the allowBackup check gates before trusting it

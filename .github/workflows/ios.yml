@@ -12,6 +12,10 @@ name: iOS
 # What it does NOT prove: that the app launches or renders on a simulator, or
 # anything about signing, provisioning or TestFlight. Signing is off because
 # there is no Apple Developer enrolment yet; delivery is a separate issue.
+#
+# #128 AC5: the built .app is zipped and attached to the matching release
+# (Coaching App on main, Coaching Beta on a PR) by the `attach` job, so it can
+# be run in the iPhone simulator on a Mac (README, "Run it on a Mac").
 
 on:
   pull_request:
@@ -187,3 +191,146 @@ jobs:
             echo "=============================================================="
           fi
           exit $fail
+
+      # #128 AC5: the simulator build Rob can run on a Mac. ditto, not zip:
+      # it keeps the .app bundle's symlinks and attributes intact, and Finder
+      # unzips it with a double-click. The .app holds no squad data — the app
+      # ships with a placeholder squad and real data lives only on a phone
+      # (ADR-011) — so it is safe on a public release.
+      - name: Zip the simulator .app
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphonesimulator/$SCHEME.app"
+          if [ "$APP_VARIANT" = "beta" ]; then
+            ZIP="coaching-beta-ios-simulator_pr-${PR_NUMBER}_${SHA:0:7}.zip"
+          else
+            ZIP="coaching-app-ios-simulator_${VERSION}_${SHA:0:7}.zip"
+          fi
+          mkdir -p sim-zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "sim-zip/$ZIP"
+          # It must unpack to exactly <Scheme>.app, which is what the README
+          # tells Rob to install.
+          if ! unzip -Z1 "sim-zip/$ZIP" | grep -qx "$SCHEME.app/Info.plist"; then
+            echo "WHY THIS JOB FAILED: $ZIP does not unpack to $SCHEME.app"
+            exit 1
+          fi
+          echo "zip: $ZIP ($(du -h "sim-zip/$ZIP" | cut -f1)), unpacks to $SCHEME.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: sim-zip/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Attach the simulator zip to the release or the beta — #128 AC5
+  # ---------------------------------------------------------------------------
+  #
+  # This workflow and android-apk.yml run independently, and only the Android
+  # one publishes releases (it owns the APK, the smoke test and the gates). So
+  # THIS job waits for the release to exist and then uploads to it, rather than
+  # the Android release job waiting on an iOS build that takes longer and may
+  # never come: a slow or red Mac build must never hold up an APK.
+  #
+  # Which release: the one whose target commit is this build's commit. On
+  # main, a full `v*` release at github.sha; on a PR, `beta` at the PR's head
+  # sha (the beta job creates it with --target HEAD_SHA). Matched by commit,
+  # because the tag's build number is Android's run number, not this one.
+  #
+  # Uploaded by release ID, not tag: if a newer PR replaces `beta` between the
+  # lookup and the upload, the upload fails instead of landing on someone
+  # else's beta. On a Linux runner, because waiting on macOS is billed at the
+  # Mac rate. Bounded at 60 minutes, then a readable failure; the zip stays
+  # downloadable as this run's `ios-simulator-app` artifact.
+  attach:
+    name: Attach the simulator build to the release
+    needs: simulator-build
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write             # least privilege: this job only
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      KIND: ${{ github.event_name == 'pull_request' && 'beta' || 'main' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: sim-zip
+
+      - name: Wait for the release, then attach
+        run: |
+          set -uo pipefail
+          ZIP="$(find sim-zip -name '*.zip' -print -quit)"
+          test -n "$ZIP" || { echo "WHY THIS JOB FAILED: no zip in the artifact"; exit 1; }
+          NAME="$(basename "$ZIP")"
+          if [ "$KIND" = "beta" ]; then
+            FILTER='[.[] | select(.tag_name == "beta" and .target_commitish == $sha)][0].id // empty'
+          else
+            FILTER='[.[] | select((.tag_name | startswith("v")) and .target_commitish == $sha and (.prerelease | not))][0].id // empty'
+          fi
+          ID=""
+          for i in $(seq 1 120); do
+            ID="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" 2>/dev/null \
+                  | jq -r --arg sha "$SHA" "$FILTER" 2>/dev/null)" || ID=""
+            [ -n "$ID" ] && break
+            echo "attempt $i: no $KIND release at ${SHA:0:7} yet; waiting 30s"
+            sleep 30
+          done
+          if [ -z "$ID" ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: no $KIND release for ${SHA:0:7} appeared within 60 minutes."
+            echo "android-apk.yml publishes it; check whether its release or beta job ran."
+            echo "The simulator zip is still on this run as the 'ios-simulator-app' artifact."
+            echo "=============================================================="
+            exit 1
+          fi
+          echo "release id $ID"
+
+          # A re-run replaces its own earlier upload of the same name.
+          OLD="$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" \
+                 --jq ".[] | select(.name == \"$NAME\") | .id")" || OLD=""
+          if [ -n "$OLD" ]; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$OLD" && echo "replaced earlier $NAME"
+          fi
+
+          if ! curl -sS --fail-with-body -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/zip" \
+              --data-binary @"$ZIP" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$NAME" \
+              > /tmp/upload.json 2>/tmp/upload-err.txt; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: uploading $NAME to release $ID was refused"
+            cat /tmp/upload-err.txt /tmp/upload.json 2>/dev/null
+            echo "=============================================================="
+            exit 1
+          fi
+
+          # Read back: the zip is on the release this build belongs to, and
+          # that release still carries exactly one APK.
+          gh api "repos/$GITHUB_REPOSITORY/releases/$ID" > /tmp/release.json || exit 1
+          TAG="$(jq -r .tag_name /tmp/release.json)"
+          TARGET="$(jq -r .target_commitish /tmp/release.json)"
+          APKS="$(jq '[.assets[].name | select(endswith(".apk"))] | length' /tmp/release.json)"
+          HAS="$(jq --arg n "$NAME" '[.assets[].name | select(. == $n)] | length' /tmp/release.json)"
+          jq -r '.assets[].name' /tmp/release.json | sed 's/^/  asset: /'
+          echo "release $TAG target=${TARGET:0:7} apks=$APKS zip attached=$HAS"
+          if [ "$TARGET" != "$SHA" ] || [ "$HAS" != "1" ] || [ "$APKS" != "1" ]; then
+            echo "WHY THIS JOB FAILED: after upload, $TAG has target=$TARGET (want $SHA), zip=$HAS (want 1), apks=$APKS (want 1)"
+            exit 1
+          fi
+          URL="$(jq -r .html_url /tmp/release.json)"
+          {
+            echo "### iPhone simulator build"
+            echo
+            echo "\`$NAME\` attached to **[$TAG]($URL)**."
+          } >> "$GITHUB_STEP_SUMMARY"
