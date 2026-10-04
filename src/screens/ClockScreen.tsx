@@ -72,6 +72,7 @@ export function ClockScreen({
   onFinish,
   onLeave,
   onPlanRest,
+  onAnalysis,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -92,6 +93,8 @@ export function ClockScreen({
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
+  /** Match analysis (#105 AC3). The clock keeps running. */
+  onAnalysis?: () => void;
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
   // Repaint just after each displayed second changes (#96), not on a free
@@ -378,6 +381,11 @@ export function ClockScreen({
         {onPlanRest && !view.isMatchOver && (
           <Pressable onPress={onPlanRest} style={screen.linkHit}>
             <Text style={screen.link}>Plan the rest of the match</Text>
+          </Pressable>
+        )}
+        {onAnalysis && (
+          <Pressable onPress={onAnalysis} style={screen.linkHit}>
+            <Text style={screen.link}>Playing time chart — the clock keeps running</Text>
           </Pressable>
         )}
         <Pressable onPress={onLeave} style={screen.linkHit}>

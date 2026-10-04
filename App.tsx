@@ -83,6 +83,8 @@ import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormS
 import { FixturesScreen } from './src/screens/FixturesScreen';
 import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
+import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
+import { SeasonChartLink, SeasonScreen } from './src/screens/SeasonScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -392,7 +394,7 @@ export default function App() {
     matches.find((m) => m.match.id === planningId) ??
     (match && match.state.match.id === planningId ? storedFromHeld(match) : undefined);
   const effectiveStep: Step =
-    (!match && (step === 'lineup' || step === 'playing' || step === 'summary')) ||
+    (!match && (step === 'lineup' || step === 'playing' || step === 'summary' || step === 'analysis')) ||
     (step === 'plan' && !planning)
       ? 'fixtures'
       : step;
@@ -522,6 +524,9 @@ export default function App() {
     },
     [matches, persist, planning]
   );
+
+  /** Where the analysis goes back to: the report or the clock (#105 AC3). */
+  const [analysisReturn, setAnalysisReturn] = useState<'summary' | 'playing'>('summary');
 
   /** Where Done on the plan goes back to: Home, or the match in play (#88). */
   const [planReturn, setPlanReturn] = useState<Step>('fixtures');
@@ -894,8 +899,13 @@ export default function App() {
         <MatchSummaryScreen
           engine={match.engine}
           state={match.state}
+          format={match.format}
           players={playersForMatch(players, match.state.appearances)}
           now={appNow()}
+          onAnalysis={() => {
+            setAnalysisReturn('summary');
+            setStep('analysis');
+          }}
           onBack={() => {
             // A finished match is history: it is safe to let go of, and
             // holding it would make Home think one is still current. Folded
@@ -904,6 +914,38 @@ export default function App() {
             releaseMatch(null);
             setStep('fixtures');
           }}
+        />
+      );
+    }
+
+    // Finished by its periods: the app never sets `completed` (ADR-015 §6).
+    const finishedIds = () =>
+      new Set(
+        [...progressById(matches, match)].filter(([, p]) => p === 'finished').map(([id]) => id)
+      );
+
+    if (effectiveStep === 'analysis' && match) {
+      return (
+        <MatchAnalysisScreen
+          engine={match.engine}
+          state={match.state}
+          format={match.format}
+          players={playersForMatch(players, match.state.appearances)}
+          ledger={ledger}
+          finishedIds={finishedIds()}
+          backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
+          onBack={() => setStep(analysisReturn)}
+        />
+      );
+    }
+
+    if (effectiveStep === 'season') {
+      return (
+        <SeasonScreen
+          ledger={ledger}
+          players={players}
+          finishedIds={finishedIds()}
+          onBack={() => setStep('settings')}
         />
       );
     }
@@ -920,14 +962,17 @@ export default function App() {
           onPeriodCount={setPeriodCount}
           onShape={setDefaultShape}
           minutes={
-            <MinutesSection
-              ledger={ledger}
-              players={players}
-              message={ledgerMessage}
-              busy={ledgerBusy}
-              onExport={() => void exportMinutes()}
-              onImport={() => void importMinutes()}
-            />
+            <>
+              <MinutesSection
+                ledger={ledger}
+                players={players}
+                message={ledgerMessage}
+                busy={ledgerBusy}
+                onExport={() => void exportMinutes()}
+                onImport={() => void importMinutes()}
+              />
+              <SeasonChartLink onPress={() => setStep('season')} />
+            </>
           }
           testKit={
             isBeta ? (
@@ -1015,6 +1060,10 @@ export default function App() {
           onFinish={() => setStep('summary')}
           onLeave={goHome}
           onPlanRest={planTheRest}
+          onAnalysis={() => {
+            setAnalysisReturn('playing');
+            setStep('analysis');
+          }}
         />
       );
     }

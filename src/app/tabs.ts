@@ -37,6 +37,10 @@ export type Step =
   /** Planning a fixture's periods before kick-off (#72). Full screen, Done exits. */
   | 'plan'
   | 'summary'
+  /** Match analysis (#105), from the report or the clock. Full screen. */
+  | 'analysis'
+  /** The season chart, league and cup side by side (#103). Full screen. */
+  | 'season'
   | 'settings'
   | 'squad'
   | 'lineup'
