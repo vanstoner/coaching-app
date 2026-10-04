@@ -37,7 +37,7 @@ import {
   playersForMatch,
   squadReadiness,
 } from './src/app/squad';
-import { toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
+import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
 import { markDone, type PlannedSub } from './src/app/subPlan';
 import { liveBaseline, planHasContent, type MatchPlan } from './src/app/matchPlan';
 import { foldPlayerMinutes } from './src/app/playerMinutes';
@@ -833,6 +833,10 @@ export default function App() {
     return {
       fromPeriod: started,
       baseline: liveBaseline(foldPlayerMinutes(match.engine, match.state, players), onNow, remaining),
+      // Who finished each period already started, for "Same as" (#111).
+      recordedEnd: [...match.state.quarters]
+        .sort((a, b) => a.index - b.index)
+        .map((q) => (q.status === 'pending' ? null : lineupAtPeriodEnd(match.state.appearances, q.id))),
     };
   };
 

@@ -92,3 +92,15 @@ by a newer version.
 
 Requirements and rulings: #98. Milestone: "v2 — season fairness, match
 analysis, iOS". Entries are added as each release ships.
+
+- **4 October — the foundation (#110).** Before v2 touches the ledger: the
+  match lifecycle moved out of untested app code into one tested module; the
+  ledger keeps fields a newer version wrote, refuses files that need a newer
+  reader, and sets a damaged ledger aside rather than overwriting it; tests,
+  lint and coverage now gate every release and every beta. ADRs 014–016
+  recorded the hash-chained ledger, fairness on total pitch time, and charts.
+  This history began here.
+- **4 October — "Same as quarter N" (#111).** Re-planning during a match, the
+  link copied the earlier quarter's plan — empty when its lineup had been set
+  at kick-off — and silently did nothing. It now copies who was on the pitch
+  at the end of a played quarter, and says so when there is nothing to copy.

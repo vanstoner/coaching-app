@@ -213,6 +213,29 @@ export function copyPeriod(plan: MatchPlan, from: number, to: number): MatchPlan
   }));
 }
 
+/**
+ * "Same as the previous period" (#111). A period already played or under
+ * way copies who was on the pitch at its end, from the match record, and
+ * keeps this period's planned subs; a period still to come copies its plan,
+ * subs and all. Null when there is nothing to copy, so the screen can say so
+ * instead of doing nothing.
+ */
+export function sameAsPrevious(
+  plan: MatchPlan,
+  to: number,
+  recordedEnd: Record<UUID, UUID | null> | null
+): MatchPlan | null {
+  const from = to - 1;
+  if (from < 0 || !plan.periods[to]) return null;
+  if (recordedEnd) {
+    if (!Object.values(recordedEnd).some((id) => id !== null)) return null;
+    return withPeriod(plan, to, (period) => ({ ...period, slots: { ...recordedEnd } }));
+  }
+  const source = plan.periods[from];
+  if (!source || !Object.values(source.slots).some((id) => id !== null)) return null;
+  return copyPeriod(plan, from, to);
+}
+
 // ---------------------------------------------------------------------------
 // Projection
 // ---------------------------------------------------------------------------
