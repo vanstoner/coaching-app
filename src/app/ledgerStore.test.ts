@@ -11,40 +11,52 @@ import {
   createMemoryStore,
   loadSession,
 } from './persistence';
-import { emptyLedger, foldLedger, type Ledger } from './ledger';
+import { emptyLedger, foldLedger, recordMatches, type Ledger } from './ledger';
+import { makePlayer } from './squad';
 import { LEDGER_STORAGE_KEY, clearLedger, loadLedger, sameRecords, saveLedger } from './ledgerStore';
 
+/** A ledger with one player and one completed match, built as the app builds it. */
 function sampleLedger(): Ledger {
-  const ledger = emptyLedger(uuid(), 'Test FC');
-  const p = uuid();
-  return {
-    ...ledger,
-    players: [{ id: p, firstName: 'Ann', displaySuffix: null, active: true }],
-    matches: [
+  const squadId = uuid();
+  const player = makePlayer(squadId, 'Ann');
+  const quarterId = uuid();
+  const matchId = uuid();
+  return recordMatches(
+    emptyLedger(squadId, 'Test FC', new Date(0)),
+    [
       {
-        id: uuid(),
-        kickoffAt: null,
-        opponent: null,
-        competition: null,
-        totalMinutes: 50,
-        periodCount: 2,
-        status: 'completed',
-        intervals: [
+        match: {
+          id: matchId,
+          kickoffAt: null,
+          opponent: null,
+          competition: null,
+          totalMinutes: 50,
+          quarterCount: 2,
+          status: 'completed',
+        },
+        quarters: [{ id: quarterId, index: 1, status: 'ended' }],
+        appearances: [
           {
             id: uuid(),
-            playerId: p,
-            period: 1,
-            kind: 'outfield',
-            unit: 'MID',
-            startMs: 0,
-            endMs: 600_000,
+            matchId,
+            quarterId,
+            playerId: player.id,
+            positionId: uuid(),
+            positionKind: 'outfield',
+            positionUnit: 'MID',
+            startElapsedMs: 0,
+            endElapsedMs: 600_000,
+            endReason: 'quarter_end',
             corrected: false,
-            note: null,
+            correctionNote: null,
           },
         ],
       },
     ],
-  };
+    [player],
+    'Test FC',
+    new Date(1000)
+  );
 }
 
 describe('the ledger store', () => {
@@ -85,6 +97,6 @@ describe('the ledger store', () => {
   it('knows when nothing worth writing has changed', () => {
     const a = sampleLedger();
     expect(sameRecords(a, { ...a, writtenAt: new Date().toISOString() })).toBe(true);
-    expect(sameRecords(a, { ...a, players: [] })).toBe(false);
+    expect(sameRecords(a, { ...a, entries: a.entries.slice(0, 1) })).toBe(false);
   });
 });

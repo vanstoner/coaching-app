@@ -1,46 +1,44 @@
 /**
- * The minutes ledger — #75, ADR-013.
+ * The minutes ledger — #75, ADR-013; v2 hash chain and attendance — #100,
+ * ADR-014.
  *
  * Pure TypeScript. No storage, no I/O.
  *
  * > *"Whatever happens there, player time is what I want to keep hold of."*
  * > — PO, 2026-10-03
- *
- * The working document (`persistence.ts`) holds everything and is allowed to
- * churn as the data model is experimented with. Player time is not. This is a
- * second, small store with a FROZEN contract, holding only what minutes are
- * made of — the closed playing intervals — kept under its own key and
- * exportable as a file.
+ * >
+ * > *"The ledger spine is key here, almost blockchainesque in the importance i
+ * > place on it."* — PO, 2026-10-04
  *
  * ---------------------------------------------------------------------------
  * Rules this file keeps
  * ---------------------------------------------------------------------------
  *
- * - **Intervals, never totals (invariant 1, PO ruling 1A).** Totals are always
- *   folded from intervals. The `summary` in a written file is for people and
- *   is recomputed and compared on import, never trusted.
- * - **It never shrinks.** Recording a match adds and updates intervals by id
- *   and never removes one, so a bug or a reset in the working document cannot
- *   take player time with it.
- * - **Import merges, never overwrites (invariant 5, AC5).** Same id and same
- *   content: skipped. Same id, different content: the existing entry is kept
- *   and the difference is reported.
- * - **Additive versioning (AC3).** `ledgerVersion` 1 is a contract. A later
- *   version may add optional fields and nothing else.
- * - **Forward-compatible (#99 AC2, ADR-013 addendum).** A field this build
- *   does not know is CARRIED, never dropped: through read, record, merge and
- *   export, at every level (ledger, squad, player, match, interval, event),
- *   and so is an event of a kind it does not know. Before this, an older build
- *   rebuilt each entry from the fields it knew and still labelled the result
- *   with the newer `ledgerVersion` — a silent downgrade. A file whose
- *   `minReaderVersion` is above `LEDGER_READER_VERSION` is refused with a
- *   reason, so it is never merged or written back by a build that cannot keep
- *   it whole.
+ * - **The chain is the ledger (ADR-014 §1).** What is stored and exported is
+ *   `entries`: a hash chain (`ledgerChain.ts`). `squad`, `players` and
+ *   `matches` on a `Ledger` are FOLDED from the entries every time one is
+ *   built, and are never written (invariant 1).
+ * - **Intervals, never totals (ADR-013, PO ruling 1A).** The `summary` in a
+ *   written file is for people and is recomputed and compared on read.
+ * - **It only grows (§2).** Recording appends one entry holding exactly the
+ *   records that changed; nothing is ever removed or rewritten, and a revised
+ *   interval is a new record, with the old one still in the chain.
+ * - **Verified on every read and import (§8).** A chain that does not verify
+ *   is refused, never repaired.
+ * - **Import extends, never merges (§9, #100 AC2).** A diverged chain is
+ *   refused (PO ruling A: one recording phone per match).
+ * - **Attendance (§4, #102)** is snapshotted at kick-off; a later change is a
+ *   new record with a mandatory note (invariant 5). Games missed are derived
+ *   (`attendance.ts`), never stored.
+ * - **Forward-compatible (#99 AC2).** Unknown fields and record types are
+ *   carried and hashed, never dropped. A file whose `minReaderVersion` is
+ *   above this build's is refused for writing.
  * - **First names only (invariant 4).**
  */
 
 import type {
   Appearance,
+  AvailabilityStatus,
   MatchEvent,
   MatchEventKind,
   Competition,
@@ -50,22 +48,30 @@ import type {
   PositionUnit,
   UUID,
 } from '../types/index';
+import {
+  latestRecords,
+  makeEntry,
+  sameRecord,
+  verifyChain,
+  whenOf,
+  type LedgerEntry,
+  type LedgerRecord,
+} from './ledgerChain';
+
+export type { LedgerEntry, LedgerRecord } from './ledgerChain';
 
 export const LEDGER_ID = 'coaching-app/minutes';
-export const LEDGER_VERSION = 1;
+/** The format this build writes (ADR-014 §10). It reads 1 by upgrading it. */
+export const LEDGER_VERSION = 2;
 
 /**
  * The newest `minReaderVersion` this build can read and write back safely.
- *
- * A writer raises a file's `minReaderVersion` only for a change an older
- * reader would damage by carrying it blindly. A file without one is read as
- * 1: the v1 contract already promised that later versions only add optional
- * fields, which carrying them handles.
+ * v2 files say 2, so a v1 reader built with #99 refuses to write one back.
  */
-export const LEDGER_READER_VERSION = 1;
+export const LEDGER_READER_VERSION = 2;
 
 export interface LedgerInterval {
-  /** The Appearance id: what makes recording and import idempotent. */
+  /** The Appearance id: what makes recording idempotent. */
   id: UUID;
   playerId: UUID;
   /** 1-based half or quarter. */
@@ -79,6 +85,14 @@ export interface LedgerInterval {
   note: string | null;
 }
 
+/** Who was available for a match, snapshotted at kick-off (ADR-014 §4). */
+export interface LedgerAttendance {
+  playerId: UUID;
+  status: AvailabilityStatus;
+  /** Mandatory on a change after kick-off (invariant 5); null on the snapshot. */
+  note: string | null;
+}
+
 export interface LedgerMatch {
   id: UUID;
   kickoffAt: string | null;
@@ -88,22 +102,20 @@ export interface LedgerMatch {
   periodCount: number;
   status: MatchStatus;
   intervals: LedgerInterval[];
-  /**
-   * Goals, saves, goals conceded and withdrawals (#84, PO ruling 13).
-   * Optional and additive: a v1 ledger without it is still a v1 ledger.
-   */
+  /** Goals, saves, goals conceded and withdrawals (#84). Absent when none. */
   events?: LedgerEvent[];
+  /**
+   * Latest revision per player. Absent for a match recorded before attendance
+   * existed (every v1 match): `attendance.ts` infers it from play (ADR-015 §5).
+   */
+  attendance?: LedgerAttendance[];
 }
 
 /** One entry on a match's time stream, as the ledger keeps it. */
 export interface LedgerEvent {
-  /** The MatchEvent id: what makes recording and import idempotent. */
+  /** The MatchEvent id: what makes recording idempotent. */
   id: UUID;
-  /**
-   * A `MatchEventKind` when this build wrote it. Widened because an event of
-   * a kind a later version added is carried as written, not dropped (#99
-   * AC2); nothing here folds a figure from an event's kind.
-   */
+  /** Widened: an event of a kind a later version added is carried (#99 AC2). */
   kind: MatchEventKind | (string & Record<never, never>);
   playerId: UUID | null;
   period: number;
@@ -132,54 +144,56 @@ export interface Ledger {
   /** The oldest reader that can safely carry this file. See LEDGER_READER_VERSION. */
   minReaderVersion: number;
   writtenAt: string;
+  /** The chain: the only thing stored (ADR-014 §1). */
+  entries: LedgerEntry[];
+  // --- folded from `entries`; never stored -----------------------------------
   squad: { id: UUID; name: string };
   players: LedgerPlayer[];
   matches: LedgerMatch[];
-  /** Written for people; recomputed and checked on read. */
-  summary?: PlayerTotal[];
 }
 
-// --- forward compatibility (#99 AC2) ---------------------------------------
+// --- fields this build knows, per record type ---------------------------------
 //
-// The fields this build knows, per level. Anything else on a parsed object is
-// a later version's, and rides along untouched.
+// Anything else on a record is a later version's and rides along untouched.
 
-const LEDGER_FIELDS = [
+const FIELDS: Record<string, readonly string[]> = {
+  squad: ['type', 'id', 'name'],
+  player: ['type', 'id', 'firstName', 'displaySuffix', 'active'],
+  match: ['type', 'id', 'kickoffAt', 'opponent', 'competition', 'totalMinutes', 'periodCount', 'status'],
+  interval: [
+    'type',
+    'matchId',
+    'id',
+    'playerId',
+    'period',
+    'kind',
+    'unit',
+    'startMs',
+    'endMs',
+    'corrected',
+    'note',
+  ],
+  event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'],
+  attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
+};
+
+/** Top-level fields of a file this build knows. The rest are carried. */
+const FILE_FIELDS = [
   'ledger',
   'ledgerVersion',
   'minReaderVersion',
   'writtenAt',
+  'entries',
+  // Folded or recomputed, never carried from a file:
   'squad',
   'players',
   'matches',
-  // Recomputed on every write and checked on read: never carried.
   'summary',
 ] as const;
-const SQUAD_FIELDS = ['id', 'name'] as const;
-const PLAYER_FIELDS = ['id', 'firstName', 'displaySuffix', 'active'] as const;
-const MATCH_FIELDS = [
-  'id',
-  'kickoffAt',
-  'opponent',
-  'competition',
-  'totalMinutes',
-  'periodCount',
-  'status',
-  'intervals',
-  'events',
-] as const;
-const INTERVAL_FIELDS = [
-  'id',
-  'playerId',
-  'period',
-  'kind',
-  'unit',
-  'startMs',
-  'endMs',
-  'corrected',
-  'note',
-] as const;
-const EVENT_FIELDS = ['id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'] as const;
+
+/** v1 fields per level, for reading a v1 file (ADR-013). */
+const V1_FILE_FIELDS = ['ledger', 'ledgerVersion', 'minReaderVersion', 'writtenAt', 'squad', 'players', 'matches', 'summary'];
+const V1_MATCH_FIELDS = [...FIELDS.match.filter((f) => f !== 'type'), 'intervals', 'events'];
 
 /** The fields on `from` this build does not know — a later version's. */
 function unknownOf(from: object | undefined, known: readonly string[]): Record<string, unknown> {
@@ -191,16 +205,11 @@ function unknownOf(from: object | undefined, known: readonly string[]): Record<s
   return keep;
 }
 
-/**
- * The unknown fields of two copies of the same entry: `ours` wins where both
- * have one, and a field only `theirs` has is added. Nothing is removed.
- */
-function unknownOfBoth(
-  ours: object,
-  theirs: object,
-  known: readonly string[]
-): Record<string, unknown> {
-  return { ...unknownOf(theirs, known), ...unknownOf(ours, known) };
+/** A record without its `type` and `matchId` tags: the shape a screen reads. */
+function untag<T>(record: LedgerRecord): T {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { type, matchId, ...rest } = record;
+  return rest as T;
 }
 
 /** What to tell a coach whose app is older than the minutes file. */
@@ -211,19 +220,219 @@ export function tooNewLedgerMessage(writtenBy: number, needsReader: number): str
   );
 }
 
-export function emptyLedger(squadId: UUID, squadName: string): Ledger {
+// --- the fold ---------------------------------------------------------------
+
+const byStart = (a: LedgerInterval, b: LedgerInterval) =>
+  a.startMs - b.startMs || a.id.localeCompare(b.id);
+const byTime = (a: LedgerEvent, b: LedgerEvent) => a.atMs - b.atMs || a.id.localeCompare(b.id);
+
+/** A record of a known type that is not shaped as that type: a damaged file. */
+class DamagedRecord extends Error {}
+
+function checkRecord(r: LedgerRecord): void {
+  const str = (v: unknown) => typeof v === 'string';
+  const num = (v: unknown) => typeof v === 'number';
+  const ok = (() => {
+    switch (r.type) {
+      case 'squad':
+        return str(r.id) && str(r.name);
+      case 'player':
+        return str(r.id) && str(r.firstName);
+      case 'match':
+        return str(r.id);
+      case 'interval':
+        return (
+          str(r.id) &&
+          str(r.matchId) &&
+          str(r.playerId) &&
+          (r.kind === 'goalkeeper' || r.kind === 'outfield') &&
+          num(r.startMs) &&
+          num(r.endMs) &&
+          (r.endMs as number) >= (r.startMs as number)
+        );
+      case 'event':
+        return str(r.id) && str(r.matchId) && str(r.kind) && num(r.atMs);
+      case 'attendance':
+        return str(r.matchId) && str(r.playerId) && str(r.status);
+      default:
+        return true;
+    }
+  })();
+  if (!ok) throw new DamagedRecord(r.type);
+}
+
+/** The ledger's squad, players and matches, folded from its chain. */
+function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'matches'> {
+  let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
+  const players: LedgerPlayer[] = [];
+  const matches = new Map<UUID, LedgerMatch>();
+  const intervals = new Map<UUID, LedgerInterval[]>();
+  const events = new Map<UUID, LedgerEvent[]>();
+  const attendance = new Map<UUID, LedgerAttendance[]>();
+  const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
+    const list = m.get(id);
+    if (list) list.push(v);
+    else m.set(id, [v]);
+  };
+  const matchFor = (id: UUID) => {
+    if (!matches.has(id)) {
+      matches.set(id, {
+        id,
+        kickoffAt: null,
+        opponent: null,
+        competition: null,
+        totalMinutes: 0,
+        periodCount: 0,
+        status: 'completed',
+        intervals: [],
+      });
+    }
+  };
+
+  for (const r of latestRecords(entries).values()) {
+    checkRecord(r);
+    switch (r.type) {
+      case 'squad':
+        squad = untag(r);
+        break;
+      case 'player':
+        players.push({
+          ...untag<LedgerPlayer>(r),
+          displaySuffix: typeof r.displaySuffix === 'string' ? r.displaySuffix : null,
+          active: r.active !== false,
+        });
+        break;
+      case 'match': {
+        const id = r.id as UUID;
+        matches.set(id, {
+          ...untag<LedgerMatch>(r),
+          kickoffAt: typeof r.kickoffAt === 'string' ? r.kickoffAt : null,
+          opponent: typeof r.opponent === 'string' ? r.opponent : null,
+          competition: typeof r.competition === 'string' ? (r.competition as Competition) : null,
+          totalMinutes: typeof r.totalMinutes === 'number' ? r.totalMinutes : 0,
+          periodCount: typeof r.periodCount === 'number' ? r.periodCount : 0,
+          status: typeof r.status === 'string' ? (r.status as MatchStatus) : 'completed',
+          intervals: [],
+        });
+        break;
+      }
+      case 'interval':
+        matchFor(r.matchId as UUID);
+        push(intervals, r.matchId as UUID, {
+          ...untag<LedgerInterval>(r),
+          period: typeof r.period === 'number' ? r.period : 0,
+          unit: typeof r.unit === 'string' ? (r.unit as PositionUnit) : null,
+          corrected: r.corrected === true,
+          note: typeof r.note === 'string' ? r.note : null,
+        });
+        break;
+      case 'event':
+        matchFor(r.matchId as UUID);
+        push(events, r.matchId as UUID, {
+          ...untag<LedgerEvent>(r),
+          playerId: typeof r.playerId === 'string' ? (r.playerId as UUID) : null,
+          period: typeof r.period === 'number' ? r.period : 0,
+          refersTo: typeof r.refersTo === 'string' ? (r.refersTo as UUID) : null,
+          note: typeof r.note === 'string' ? r.note : null,
+        });
+        break;
+      case 'attendance':
+        matchFor(r.matchId as UUID);
+        push(attendance, r.matchId as UUID, {
+          ...untag<LedgerAttendance>(r),
+          note: typeof r.note === 'string' ? r.note : null,
+        });
+        break;
+    }
+  }
+
   return {
-    ledger: LEDGER_ID,
-    ledgerVersion: LEDGER_VERSION,
-    minReaderVersion: LEDGER_READER_VERSION,
-    writtenAt: new Date(0).toISOString(),
-    squad: { id: squadId, name: squadName },
-    players: [],
-    matches: [],
+    squad,
+    players,
+    matches: [...matches.values()].map((m) => {
+      const ev = events.get(m.id);
+      const att = attendance.get(m.id);
+      return {
+        ...m,
+        intervals: (intervals.get(m.id) ?? []).sort(byStart),
+        ...(ev ? { events: ev.sort(byTime) } : {}),
+        ...(att ? { attendance: att } : {}),
+      };
+    }),
   };
 }
 
-/** The slice of a stored match the ledger reads. */
+/** A ledger built from its chain: the only way one is made. */
+function fromEntries(
+  entries: LedgerEntry[],
+  header: { ledgerVersion: number; minReaderVersion: number; writtenAt: string },
+  carried: Record<string, unknown> = {}
+): Ledger {
+  return {
+    ...carried,
+    ledger: LEDGER_ID,
+    ledgerVersion: header.ledgerVersion,
+    minReaderVersion: header.minReaderVersion,
+    writtenAt: header.writtenAt,
+    entries,
+    ...foldView(entries),
+  } as Ledger;
+}
+
+/** The top-level fields a later version added, which ride along outside the chain. */
+function carriedOf(ledger: Ledger): Record<string, unknown> {
+  return unknownOf(ledger, FILE_FIELDS);
+}
+
+/**
+ * A new ledger: a genesis entry holding the squad (ADR-014 §7). `follows`
+ * names where an unreadable predecessor was set aside (#100 AC7), so the new
+ * chain says what it follows.
+ */
+export function emptyLedger(
+  squadId: UUID,
+  squadName: string,
+  now: Date = new Date(0),
+  follows?: string
+): Ledger {
+  const genesis = makeEntry(
+    null,
+    'genesis',
+    [{ type: 'squad', id: squadId, name: squadName }],
+    now,
+    follows ? { from: 'new', follows } : { from: 'new' }
+  );
+  return fromEntries([genesis], {
+    ledgerVersion: LEDGER_VERSION,
+    minReaderVersion: LEDGER_READER_VERSION,
+    writtenAt: now.toISOString(),
+  });
+}
+
+/** Append one entry holding `records`. Nothing to record, nothing appended. */
+function appendRecords(ledger: Ledger, records: LedgerRecord[], now: Date): Ledger {
+  if (records.length === 0) return ledger;
+  const last = ledger.entries[ledger.entries.length - 1] ?? null;
+  const entries = [...ledger.entries, makeEntry(last, last ? 'record' : 'genesis', records, now)];
+  return fromEntries(
+    entries,
+    {
+      ledgerVersion: Math.max(ledger.ledgerVersion, LEDGER_VERSION),
+      minReaderVersion: Math.max(ledger.minReaderVersion, LEDGER_READER_VERSION),
+      writtenAt: now.toISOString(),
+    },
+    carriedOf(ledger)
+  );
+}
+
+/** True when this build may append to the ledger (#99 AC2, ADR-014 §10). */
+export function isWritable(ledger: Ledger): boolean {
+  return ledger.minReaderVersion <= LEDGER_READER_VERSION;
+}
+
+// --- recording ----------------------------------------------------------------
+
+/** The slice of a stored or live match the ledger reads. */
 export interface MatchRecord {
   match: {
     id: UUID;
@@ -234,80 +443,80 @@ export interface MatchRecord {
     quarterCount: number;
     status: MatchStatus;
   };
-  quarters: { id: UUID; index: number }[];
+  quarters: { id: UUID; index: number; status?: string }[];
   appearances: Appearance[];
   events?: MatchEvent[];
+  /** A stored match's availability (`SavedMatch`). */
+  availability?: [UUID, AvailabilityStatus][];
+  /** A live match's availability (`MatchState`). */
+  playerAvailability?: Map<UUID, AvailabilityStatus>;
 }
 
-function ledgerEvents(record: MatchRecord): LedgerEvent[] {
+/**
+ * A whole number. Every elapsed value is already whole ms (wall-clock
+ * differences), and the canonical form refuses anything else (ADR-014 §6);
+ * rounding here means a stray fraction costs under a millisecond rather than
+ * stopping the recording of a match (proportionality ruling).
+ */
+const ms = (n: number) => (Number.isFinite(n) ? Math.round(n) : 0);
+
+function eventRecords(record: MatchRecord): LedgerRecord[] {
   const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
   return (record.events ?? []).map((e) => ({
+    type: 'event',
+    matchId: record.match.id,
     id: e.id,
     kind: e.kind,
-    playerId: e.playerId,
+    playerId: e.playerId ?? null,
     period: periodOf.get(e.quarterId) ?? 0,
-    atMs: e.atElapsedMs,
-    refersTo: e.refersTo,
-    note: e.note,
+    atMs: ms(e.atElapsedMs),
+    refersTo: e.refersTo ?? null,
+    note: e.note ?? null,
   }));
 }
 
-function sameEvent(a: LedgerEvent, b: LedgerEvent): boolean {
-  return (
-    a.kind === b.kind &&
-    a.playerId === b.playerId &&
-    a.period === b.period &&
-    a.atMs === b.atMs &&
-    a.refersTo === b.refersTo &&
-    a.note === b.note
-  );
-}
-
-const byTime = (a: LedgerEvent, b: LedgerEvent) => a.atMs - b.atMs || a.id.localeCompare(b.id);
-
 /** Closed appearances only: a running one has no end yet (#75 design). */
-function closedIntervals(record: MatchRecord): LedgerInterval[] {
+function intervalRecords(record: MatchRecord): LedgerRecord[] {
   const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
   return record.appearances
     .filter((a) => a.endElapsedMs !== null)
     .map((a) => ({
+      type: 'interval',
+      matchId: record.match.id,
       id: a.id,
       playerId: a.playerId,
       period: periodOf.get(a.quarterId) ?? 0,
       kind: a.positionKind,
       unit: a.positionUnit ?? null,
-      startMs: a.startElapsedMs,
-      endMs: a.endElapsedMs as number,
-      corrected: a.corrected,
-      note: a.correctionNote,
+      startMs: ms(a.startElapsedMs),
+      endMs: ms(a.endElapsedMs as number),
+      corrected: a.corrected === true,
+      note: a.correctionNote ?? null,
     }));
 }
 
-function samePlayer(a: LedgerPlayer, b: LedgerPlayer): boolean {
-  return a.firstName === b.firstName && a.displaySuffix === b.displaySuffix;
+function availabilityOf(record: MatchRecord): [UUID, AvailabilityStatus][] {
+  if (record.playerAvailability) return [...record.playerAvailability.entries()];
+  return record.availability ?? [];
 }
 
-function sameInterval(a: LedgerInterval, b: LedgerInterval): boolean {
-  return (
-    a.playerId === b.playerId &&
-    a.period === b.period &&
-    a.kind === b.kind &&
-    a.unit === b.unit &&
-    a.startMs === b.startMs &&
-    a.endMs === b.endMs &&
-    a.corrected === b.corrected &&
-    a.note === b.note
-  );
-}
+const kickedOff = (record: MatchRecord) =>
+  record.quarters.some((q) => q.status !== undefined && q.status !== 'pending');
 
 /**
- * Write this device's matches and squad into the ledger.
+ * Write this device's matches and squad into the ledger: one new entry
+ * holding exactly the records whose canonical form differs from the folded
+ * copy (ADR-014 §2). No change, no entry — the same ledger is returned.
  *
- * This device is the authority for its own records, so an interval it holds
- * replaces the ledger's copy with the same id — a later correction flag lands.
- * Nothing absent from `records` is removed: matches, intervals and players
- * only ever accumulate. Players are updated by id, so a corrected spelling
- * reaches every match, and retired players stay (#77).
+ * Nothing absent from `records` is touched, so nothing is ever removed.
+ *
+ * **Attendance (§4)** is snapshotted the first time the ledger sees a match
+ * kicked off with no closed interval yet — that is, at kick-off. A match the
+ * ledger first sees already part-played (one recorded before this build, or
+ * back-filled into a new chain) gets none: its stored availability is the
+ * all-available default, not a measurement, and `attendance.ts` infers its
+ * attendance from play instead (ADR-015 §5). Once recorded, attendance is
+ * never rewritten from the working document; a change is `correctAttendance`.
  */
 export function recordMatches(
   ledger: Ledger,
@@ -316,61 +525,101 @@ export function recordMatches(
   squadName: string,
   now: Date
 ): Ledger {
-  const playersById = new Map(ledger.players.map((p) => [p.id, p]));
+  if (!isWritable(ledger)) return ledger;
+  const latest = new Map(latestRecords(ledger.entries));
+  const changed: LedgerRecord[] = [];
+  const put = (key: string, record: LedgerRecord) => {
+    const have = latest.get(key);
+    const next = { ...unknownOf(have, FIELDS[record.type]), ...record };
+    if (have && sameRecord(have, next)) return;
+    latest.set(key, next);
+    changed.push(next);
+  };
+
+  const squad = latest.get('squad');
+  put('squad', {
+    type: 'squad',
+    id: (squad?.id as string | undefined) ?? ledger.squad.id,
+    name: squadName || ((squad?.name as string | undefined) ?? ''),
+  });
   for (const p of players) {
-    playersById.set(p.id, {
-      ...unknownOf(playersById.get(p.id), PLAYER_FIELDS),
+    put(`player:${p.id}`, {
+      type: 'player',
       id: p.id,
       firstName: p.firstName,
-      displaySuffix: p.displaySuffix,
+      displaySuffix: p.displaySuffix ?? null,
       active: p.active !== false,
     });
   }
 
-  const matches = new Map(ledger.matches.map((m) => [m.id, m]));
-  for (const record of records) {
-    const fresh = closedIntervals(record);
-    const freshEvents = ledgerEvents(record);
-    // Nothing played and nothing recorded yet: nothing to keep.
-    if (fresh.length === 0 && freshEvents.length === 0) continue;
-    const existing = matches.get(record.match.id);
-    const intervals = new Map((existing?.intervals ?? []).map((i) => [i.id, i]));
-    for (const i of fresh) {
-      intervals.set(i.id, { ...unknownOf(intervals.get(i.id), INTERVAL_FIELDS), ...i });
-    }
-    // Events are append-only, so this phone's copy of one never changes;
-    // the union by id is the whole rule.
-    const events = new Map((existing?.events ?? []).map((e) => [e.id, e]));
-    for (const e of freshEvents) {
-      events.set(e.id, { ...unknownOf(events.get(e.id), EVENT_FIELDS), ...e });
-    }
-    matches.set(record.match.id, {
-      ...unknownOf(existing, MATCH_FIELDS),
-      id: record.match.id,
-      kickoffAt: record.match.kickoffAt,
-      opponent: record.match.opponent,
-      competition: record.match.competition,
-      totalMinutes: record.match.totalMinutes,
-      periodCount: record.match.quarterCount,
-      status: record.match.status,
-      intervals: [...intervals.values()].sort(
-        (a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id)
-      ),
-      ...(events.size > 0 ? { events: [...events.values()].sort(byTime) } : {}),
-    });
+  // Which matches already have intervals or attendance in the chain.
+  const played = new Set<string>();
+  const attended = new Set<string>();
+  for (const r of latest.values()) {
+    if (r.type === 'interval') played.add(String(r.matchId));
+    if (r.type === 'attendance') attended.add(String(r.matchId));
   }
 
-  // `...ledger` carries the ledger's own unknown fields. Its version and
-  // reader version stay as the newest writer set them, which is honest now
-  // that nothing that writer added is dropped.
+  for (const record of records) {
+    const intervals = intervalRecords(record);
+    const events = eventRecords(record);
+    const started = kickedOff(record);
+    // Not kicked off and nothing recorded: nothing to keep yet.
+    if (!started && intervals.length === 0 && events.length === 0) continue;
+    const id = record.match.id;
+    put(`match:${id}`, {
+      type: 'match',
+      id,
+      kickoffAt: record.match.kickoffAt ?? null,
+      opponent: record.match.opponent ?? null,
+      competition: record.match.competition ?? null,
+      totalMinutes: ms(record.match.totalMinutes),
+      periodCount: ms(record.match.quarterCount),
+      status: record.match.status,
+    });
+    if (started && intervals.length === 0 && !played.has(id) && !attended.has(id)) {
+      for (const [playerId, status] of availabilityOf(record)) {
+        put(`attendance:${id}:${playerId}`, { type: 'attendance', matchId: id, playerId, status, note: null });
+      }
+      attended.add(id);
+    }
+    for (const i of intervals) put(`interval:${id}:${String(i.id)}`, i);
+    for (const e of events) put(`event:${id}:${String(e.id)}`, e);
+  }
+
+  return appendRecords(ledger, changed, now);
+}
+
+export type CorrectionResult = { ok: true; ledger: Ledger } | { ok: false; reason: string };
+
+/**
+ * Change a player's attendance after kick-off (ADR-014 §4, #102 AC2,
+ * invariant 5): a new record carrying a mandatory note. The snapshot it
+ * corrects stays in the chain.
+ */
+export function correctAttendance(
+  ledger: Ledger,
+  matchId: UUID,
+  playerId: UUID,
+  status: AvailabilityStatus,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) {
+    return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  }
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A correction needs a note saying why.' };
+  if (!ledger.matches.some((m) => m.id === matchId)) {
+    return { ok: false, reason: 'That match is not in the ledger.' };
+  }
   return {
-    ...ledger,
-    ledgerVersion: Math.max(ledger.ledgerVersion, LEDGER_VERSION),
-    minReaderVersion: Math.max(ledger.minReaderVersion ?? LEDGER_READER_VERSION, LEDGER_READER_VERSION),
-    writtenAt: now.toISOString(),
-    squad: { ...ledger.squad, name: squadName || ledger.squad.name },
-    players: [...playersById.values()],
-    matches: [...matches.values()],
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ type: 'attendance', matchId, playerId, status, note: trimmed }],
+      now
+    ),
   };
 }
 
@@ -395,48 +644,65 @@ export function foldLedger(ledger: Ledger): PlayerTotal[] {
   return [...totals.values()];
 }
 
-/** The file: the ledger plus a summary a person can read. */
-export function serialiseLedger(ledger: Ledger): string {
-  return JSON.stringify({ ...ledger, summary: foldLedger(ledger) }, null, 2);
+// --- the file -----------------------------------------------------------------
+
+/**
+ * The file: the chain, plus a summary a person can read (ADR-014 §10). The
+ * folded squad, players and matches are not written. Pretty for an export;
+ * compact for the phone's own store.
+ */
+export function serialiseLedger(ledger: Ledger, pretty = true): string {
+  const file = {
+    ...carriedOf(ledger),
+    ledger: ledger.ledger,
+    ledgerVersion: ledger.ledgerVersion,
+    minReaderVersion: ledger.minReaderVersion,
+    writtenAt: ledger.writtenAt,
+    entries: ledger.entries,
+    summary: foldLedger(ledger),
+  };
+  return pretty ? JSON.stringify(file, null, 2) : JSON.stringify(file);
 }
 
 export type ParseResult =
   | { ok: true; ledger: Ledger }
-  /** `tooNew`: written by a build this one must not write back over (#99 AC2). */
-  | { ok: false; reason: string; tooNew?: true };
+  | {
+      ok: false;
+      reason: string;
+      /** Written by a build this one must not write back over (#99 AC2). */
+      tooNew?: true;
+      /** The chain did not verify: `detail` says where, in plain English (ADR-014 §8). */
+      broken?: true;
+      detail?: string;
+      /** A too-new file that verifies, for viewing only (ADR-014 §10). */
+      view?: Ledger;
+    };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/**
- * The events in a file. A damaged one (no id, kind or time) is skipped; one of
- * a kind a later version added is carried as written (#99 AC2), so writing
- * the file back cannot lose it.
- */
-function parseEvents(raw: unknown[]): LedgerEvent[] {
-  const out: LedgerEvent[] = [];
-  for (const e of raw) {
-    if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string') continue;
-    if (typeof e.atMs !== 'number') continue;
-    out.push({
-      ...unknownOf(e, EVENT_FIELDS),
-      id: e.id as UUID,
-      kind: e.kind,
-      playerId: typeof e.playerId === 'string' ? (e.playerId as UUID) : null,
-      period: typeof e.period === 'number' ? e.period : 0,
-      atMs: e.atMs,
-      refersTo: typeof e.refersTo === 'string' ? (e.refersTo as UUID) : null,
-      note: typeof e.note === 'string' ? e.note : null,
-    });
+const SUMMARY_MISMATCH =
+  "This file's totals do not match its playing times. It has been damaged or edited, so nothing was imported.";
+
+/** The summary is for people. If present it must agree with the intervals. */
+function summaryAgrees(ledger: Ledger, summary: unknown): boolean {
+  if (!Array.isArray(summary)) return true;
+  const folded = new Map(foldLedger(ledger).map((t) => [t.playerId, t]));
+  for (const s of summary) {
+    if (!isObj(s) || typeof s.playerId !== 'string') continue;
+    const f = folded.get(s.playerId as UUID);
+    if (!f || f.outfieldMs !== s.outfieldMs || f.goalkeeperMs !== s.goalkeeperMs) return false;
   }
-  return out;
+  return true;
 }
 
 /**
- * Read a ledger file. Unknown fields are kept, to be written back as they
- * came (#99 AC2). A missing required field, a summary that disagrees with the
- * intervals, or a `minReaderVersion` newer than this build refuses the file
- * with a reason a coach can act on.
+ * Read a ledger file — v2 (a chain) or v1 (upgraded, ADR-014 §7).
+ *
+ * A v2 chain is verified before anything else is believed. Unknown fields are
+ * kept. A `minReaderVersion` newer than this build, a chain that does not
+ * verify, or a summary that disagrees is refused with a reason a coach can
+ * act on.
  */
 export function parseLedger(text: string): ParseResult {
   let raw: unknown;
@@ -451,39 +717,100 @@ export function parseLedger(text: string): ParseResult {
   if (typeof raw.ledgerVersion !== 'number' || raw.ledgerVersion < 1) {
     return { ok: false, reason: 'This minutes file has no version and cannot be trusted.' };
   }
-  // Before any structural check: a newer file may well be shaped differently,
-  // and "update the app" is the reason a coach can act on.
-  const minReader = raw.minReaderVersion === undefined ? LEDGER_READER_VERSION : raw.minReaderVersion;
+  const minReader = raw.minReaderVersion === undefined ? 1 : raw.minReaderVersion;
   if (typeof minReader !== 'number' || !Number.isInteger(minReader) || minReader < 1) {
     return { ok: false, reason: 'This minutes file has a damaged version and cannot be trusted.' };
   }
+  const header = {
+    ledgerVersion: raw.ledgerVersion,
+    minReaderVersion: minReader,
+    writtenAt: typeof raw.writtenAt === 'string' ? raw.writtenAt : new Date(0).toISOString(),
+  };
+
   if (minReader > LEDGER_READER_VERSION) {
-    return { ok: false, reason: tooNewLedgerMessage(raw.ledgerVersion, minReader), tooNew: true };
+    // Viewable if it is a chain that verifies; never appended to or imported.
+    const reason = tooNewLedgerMessage(raw.ledgerVersion, minReader);
+    if (Array.isArray(raw.entries) && verifyChain(raw.entries).ok) {
+      try {
+        const view = fromEntries(raw.entries as LedgerEntry[], header, unknownOf(raw, FILE_FIELDS));
+        return { ok: false, reason, tooNew: true, view };
+      } catch {
+        // A newer shape this build cannot fold: refused, without a view.
+      }
+    }
+    return { ok: false, reason, tooNew: true };
   }
+
+  if (!Array.isArray(raw.entries)) return parseV1(raw, header);
+
+  const verified = verifyChain(raw.entries);
+  if (!verified.ok) {
+    return {
+      ok: false,
+      broken: true,
+      detail: verified.detail,
+      reason: `This minutes file cannot be trusted: ${verified.detail}. Nothing was imported.`,
+    };
+  }
+  let ledger: Ledger;
+  try {
+    ledger = fromEntries(raw.entries as LedgerEntry[], header, unknownOf(raw, FILE_FIELDS));
+  } catch {
+    return { ok: false, reason: 'A record in this minutes file is damaged.' };
+  }
+  if (!summaryAgrees(ledger, raw.summary)) return { ok: false, reason: SUMMARY_MISMATCH };
+  return { ok: true, ledger };
+}
+
+/**
+ * A v1 file (ADR-013), upgraded: its whole content becomes the genesis entry,
+ * `from: 'v1'` (ADR-014 §7, #100 AC4). The genesis is stamped with the v1
+ * file's own `writtenAt`, so the same v1 file always upgrades to the same
+ * chain — two phones that upgrade one export agree, and a failed first save
+ * upgrades identically on the next launch.
+ */
+function parseV1(
+  raw: Record<string, unknown>,
+  header: { ledgerVersion: number; minReaderVersion: number; writtenAt: string }
+): ParseResult {
   if (!isObj(raw.squad) || !Array.isArray(raw.players) || !Array.isArray(raw.matches)) {
     return { ok: false, reason: 'This minutes file is incomplete.' };
   }
-
-  const players: LedgerPlayer[] = [];
+  const records: LedgerRecord[] = [
+    {
+      ...raw.squad,
+      type: 'squad',
+      id: typeof raw.squad.id === 'string' ? raw.squad.id : '',
+      name: typeof raw.squad.name === 'string' ? raw.squad.name : '',
+    },
+  ];
   for (const p of raw.players) {
     if (!isObj(p) || typeof p.id !== 'string' || typeof p.firstName !== 'string') {
       return { ok: false, reason: 'A player in this file is damaged.' };
     }
-    players.push({
-      ...unknownOf(p, PLAYER_FIELDS),
-      id: p.id as UUID,
-      firstName: p.firstName,
+    records.push({
+      ...p,
+      type: 'player',
       displaySuffix: typeof p.displaySuffix === 'string' ? p.displaySuffix : null,
       active: p.active !== false,
     });
   }
-
-  const matches: LedgerMatch[] = [];
+  const tail: LedgerRecord[] = [];
   for (const m of raw.matches) {
     if (!isObj(m) || typeof m.id !== 'string' || !Array.isArray(m.intervals)) {
       return { ok: false, reason: 'A match in this file is damaged.' };
     }
-    const intervals: LedgerInterval[] = [];
+    records.push({
+      ...unknownOf(m, V1_MATCH_FIELDS),
+      type: 'match',
+      id: m.id,
+      kickoffAt: typeof m.kickoffAt === 'string' ? m.kickoffAt : null,
+      opponent: typeof m.opponent === 'string' ? m.opponent : null,
+      competition: typeof m.competition === 'string' ? m.competition : null,
+      totalMinutes: typeof m.totalMinutes === 'number' ? m.totalMinutes : 0,
+      periodCount: typeof m.periodCount === 'number' ? m.periodCount : 0,
+      status: typeof m.status === 'string' ? m.status : 'completed',
+    });
     for (const i of m.intervals) {
       if (
         !isObj(i) ||
@@ -496,206 +823,144 @@ export function parseLedger(text: string): ParseResult {
       ) {
         return { ok: false, reason: 'A playing interval in this file is damaged.' };
       }
-      intervals.push({
-        ...unknownOf(i, INTERVAL_FIELDS),
-        id: i.id as UUID,
-        playerId: i.playerId as UUID,
+      tail.push({
+        ...i,
+        type: 'interval',
+        matchId: m.id,
         period: typeof i.period === 'number' ? i.period : 0,
-        kind: i.kind,
-        unit: typeof i.unit === 'string' ? (i.unit as PositionUnit) : null,
-        startMs: i.startMs,
-        endMs: i.endMs,
+        unit: typeof i.unit === 'string' ? i.unit : null,
         corrected: i.corrected === true,
         note: typeof i.note === 'string' ? i.note : null,
       });
     }
-    matches.push({
-      ...unknownOf(m, MATCH_FIELDS),
-      id: m.id as UUID,
-      kickoffAt: typeof m.kickoffAt === 'string' ? m.kickoffAt : null,
-      opponent: typeof m.opponent === 'string' ? m.opponent : null,
-      competition: typeof m.competition === 'string' ? (m.competition as Competition) : null,
-      totalMinutes: typeof m.totalMinutes === 'number' ? m.totalMinutes : 0,
-      periodCount: typeof m.periodCount === 'number' ? m.periodCount : 0,
-      status: typeof m.status === 'string' ? (m.status as MatchStatus) : 'completed',
-      intervals,
-      ...(Array.isArray(m.events) ? { events: parseEvents(m.events) } : {}),
-    });
-  }
-
-  const ledger: Ledger = {
-    ...unknownOf(raw, LEDGER_FIELDS),
-    ledger: LEDGER_ID,
-    ledgerVersion: raw.ledgerVersion,
-    minReaderVersion: minReader,
-    writtenAt: typeof raw.writtenAt === 'string' ? raw.writtenAt : new Date(0).toISOString(),
-    squad: {
-      ...unknownOf(raw.squad, SQUAD_FIELDS),
-      id: (typeof raw.squad.id === 'string' ? raw.squad.id : '') as UUID,
-      name: typeof raw.squad.name === 'string' ? raw.squad.name : '',
-    },
-    players,
-    matches,
-  };
-
-  // The summary is for people. If it is present it must agree with the
-  // intervals, or the file was damaged or edited by hand.
-  if (Array.isArray(raw.summary)) {
-    const folded = new Map(foldLedger(ledger).map((t) => [t.playerId, t]));
-    for (const s of raw.summary) {
-      if (!isObj(s) || typeof s.playerId !== 'string') continue;
-      const f = folded.get(s.playerId as UUID);
-      if (!f || f.outfieldMs !== s.outfieldMs || f.goalkeeperMs !== s.goalkeeperMs) {
-        return {
-          ok: false,
-          reason:
-            "This file's totals do not match its playing times. It has been damaged or edited, so nothing was imported.",
-        };
-      }
+    for (const e of Array.isArray(m.events) ? m.events : []) {
+      // A damaged event (no id, kind or time) is skipped, as v1 did.
+      if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string') continue;
+      if (typeof e.atMs !== 'number') continue;
+      tail.push({
+        ...e,
+        type: 'event',
+        matchId: m.id,
+        playerId: typeof e.playerId === 'string' ? e.playerId : null,
+        period: typeof e.period === 'number' ? e.period : 0,
+        refersTo: typeof e.refersTo === 'string' ? e.refersTo : null,
+        note: typeof e.note === 'string' ? e.note : null,
+      });
     }
   }
 
+  let ledger: Ledger;
+  try {
+    const at = new Date(header.writtenAt);
+    const genesis = makeEntry(
+      null,
+      'genesis',
+      [...records, ...tail],
+      Number.isNaN(at.getTime()) ? new Date(0) : at,
+      { from: 'v1' }
+    );
+    ledger = fromEntries(
+      [genesis],
+      {
+        ledgerVersion: LEDGER_VERSION,
+        minReaderVersion: LEDGER_READER_VERSION,
+        writtenAt: header.writtenAt,
+      },
+      unknownOf(raw, V1_FILE_FIELDS)
+    );
+  } catch {
+    // canonical() refused a value — a number that is not a safe integer.
+    return { ok: false, reason: 'A value in this minutes file is damaged.' };
+  }
+  if (!summaryAgrees(ledger, raw.summary)) return { ok: false, reason: SUMMARY_MISMATCH };
   return { ok: true, ledger };
 }
 
-export interface MergeReport {
-  ledger: Ledger;
-  addedPlayers: number;
-  addedMatches: number;
-  addedIntervals: number;
-  skipped: number;
-  /** Same id, different content. The existing entry was kept. Plain English. */
-  conflicts: string[];
+// --- import -------------------------------------------------------------------
+
+export type ImportResult =
+  | {
+      ok: true;
+      ledger: Ledger;
+      /** Entries appended from the file; 0 when there was nothing new. */
+      addedEntries: number;
+      addedMatches: number;
+      addedPlayers: number;
+    }
+  | { ok: false; reason: string };
+
+/** True when the ledger holds any match: player time a phone must not lose. */
+function holdsPlayerTime(ledger: Ledger): boolean {
+  return ledger.matches.length > 0;
 }
 
 /**
- * Merge an imported ledger into this one — AC5.
+ * Import a verified file (ADR-014 §9, #100 AC2). Extends, never merges:
  *
- * By id. New: added. Identical: skipped. Different: the existing entry is
- * kept and the difference listed. Nothing is overwritten or deleted, so
- * importing the same file twice changes nothing.
+ * - this phone holds no player time yet: the file's chain is adopted (a new
+ *   phone's own genesis and squad are not player time; the working document
+ *   still holds its squad and records it again on the next save);
+ * - this phone's chain is a prefix of the file's: the extra entries are
+ *   appended verbatim;
+ * - the file's chain is a prefix of this phone's: nothing new;
+ * - otherwise the chains have diverged and the import is refused (PO ruling
+ *   A: one recording phone per match).
  */
-export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport {
-  let addedPlayers = 0;
-  let addedMatches = 0;
-  let addedIntervals = 0;
-  let skipped = 0;
-  const conflicts: string[] = [];
+export function importLedger(ours: Ledger, file: Ledger): ImportResult {
+  if (!isWritable(file)) {
+    return { ok: false, reason: tooNewLedgerMessage(file.ledgerVersion, file.minReaderVersion) };
+  }
+  const counts = (next: Ledger) => ({
+    addedMatches: next.matches.filter((m) => !ours.matches.some((o) => o.id === m.id)).length,
+    addedPlayers: next.players.filter((p) => !ours.players.some((o) => o.id === p.id)).length,
+  });
 
-  const players = new Map(into.players.map((p) => [p.id, p]));
-  for (const p of from.players) {
-    const mine = players.get(p.id);
-    if (!mine) {
-      players.set(p.id, p);
-      addedPlayers++;
-      continue;
-    }
-    if (samePlayer(mine, p)) {
-      skipped++;
-    } else {
-      conflicts.push(`A player is called ${mine.firstName} here and ${p.firstName} in the file; kept ${mine.firstName}.`);
-    }
-    // This phone's entry is kept; a later version's field only the file has
-    // is added to it, never dropped (#99 AC2).
-    players.set(p.id, { ...unknownOfBoth(mine, p, PLAYER_FIELDS), ...mine });
+  if (!holdsPlayerTime(ours)) {
+    return { ok: true, ledger: file, addedEntries: file.entries.length, ...counts(file) };
   }
 
-  const matches = new Map(into.matches.map((m) => [m.id, m]));
-  for (const m of from.matches) {
-    const mine = matches.get(m.id);
-    if (!mine) {
-      matches.set(m.id, m);
-      addedMatches++;
-      addedIntervals += m.intervals.length;
-      continue;
+  const shared = Math.min(ours.entries.length, file.entries.length);
+  for (let i = 0; i < shared; i++) {
+    if (ours.entries[i].hash !== file.entries[i].hash) {
+      return {
+        ok: false,
+        reason:
+          `This file's record of the season differs from this phone's from the entry of ` +
+          `${whenOf(ours.entries[i].at)}. Only one phone should record matches; import onto a ` +
+          `phone that has not recorded its own. Nothing was imported.`,
+      };
     }
-    const intervals = new Map(mine.intervals.map((i) => [i.id, i]));
-    let changed = false;
-    const events = new Map((mine.events ?? []).map((e) => [e.id, e]));
-    for (const e of m.events ?? []) {
-      const have = events.get(e.id);
-      if (!have) {
-        events.set(e.id, e);
-        addedIntervals++;
-        changed = true;
-        continue;
-      }
-      if (sameEvent(have, e)) {
-        skipped++;
-      } else {
-        conflicts.push(
-          `A goal or save in the match against ${mine.opponent ?? 'an unnamed opponent'} differs from the file; kept this phone's.`
-        );
-      }
-      events.set(e.id, { ...unknownOfBoth(have, e, EVENT_FIELDS), ...have });
-    }
-    for (const i of m.intervals) {
-      const have = intervals.get(i.id);
-      if (!have) {
-        intervals.set(i.id, i);
-        addedIntervals++;
-        changed = true;
-        continue;
-      }
-      if (sameInterval(have, i)) {
-        skipped++;
-      } else {
-        conflicts.push(
-          `A playing time in the match against ${mine.opponent ?? 'an unnamed opponent'} differs from the file; kept this phone's.`
-        );
-      }
-      intervals.set(i.id, { ...unknownOfBoth(have, i, INTERVAL_FIELDS), ...have });
-    }
-    // Rebuilt every time, so a later version's field only the file has
-    // reaches this phone's copy too. Order is only re-sorted when something
-    // was added, as before.
-    matches.set(m.id, {
-      ...unknownOfBoth(mine, m, MATCH_FIELDS),
-      ...mine,
-      intervals: changed
-        ? [...intervals.values()].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id))
-        : mine.intervals.map((i) => intervals.get(i.id) ?? i),
-      ...(changed && events.size > 0
-        ? { events: [...events.values()].sort(byTime) }
-        : mine.events
-          ? { events: mine.events.map((e) => events.get(e.id) ?? e) }
-          : {}),
-    });
   }
-
-  const changed = addedPlayers + addedMatches + addedIntervals > 0;
-  return {
-    ledger: {
-      ...unknownOfBoth(into, from, LEDGER_FIELDS),
-      ...into,
-      ledgerVersion: Math.max(into.ledgerVersion, from.ledgerVersion, LEDGER_VERSION),
-      // The file's fields are carried, so its reader requirement comes too.
-      minReaderVersion: Math.max(
-        into.minReaderVersion ?? LEDGER_READER_VERSION,
-        from.minReaderVersion ?? LEDGER_READER_VERSION
-      ),
-      writtenAt: changed ? now.toISOString() : into.writtenAt,
-      // A fresh install takes the squad's identity from the file, so its
-      // later matches line up with the imported ones.
-      squad:
-        into.players.length === 0 && into.matches.length === 0
-          ? from.squad
-          : { ...unknownOfBoth(into.squad, from.squad, SQUAD_FIELDS), ...into.squad },
-      players: [...players.values()],
-      matches: [...matches.values()],
+  if (file.entries.length <= ours.entries.length) {
+    return { ok: true, ledger: ours, addedEntries: 0, addedMatches: 0, addedPlayers: 0 };
+  }
+  const next = fromEntries(
+    [...ours.entries, ...file.entries.slice(shared)],
+    {
+      ledgerVersion: Math.max(ours.ledgerVersion, file.ledgerVersion),
+      minReaderVersion: Math.max(ours.minReaderVersion, file.minReaderVersion),
+      writtenAt: file.writtenAt,
     },
-    addedPlayers,
-    addedMatches,
-    addedIntervals,
-    skipped,
-    conflicts,
-  };
+    { ...carriedOf(file), ...carriedOf(ours) }
+  );
+  return { ok: true, ledger: next, addedEntries: file.entries.length - shared, ...counts(next) };
+}
+
+/** What an import did, in a sentence a coach can read. */
+export function describeImport(result: Extract<ImportResult, { ok: true }>): string {
+  if (result.addedEntries === 0) return 'Nothing new in that file — everything in it is already here.';
+  return (
+    `Added ${result.addedMatches} ${result.addedMatches === 1 ? 'match' : 'matches'} and ` +
+    `${result.addedPlayers} ${result.addedPlayers === 1 ? 'player' : 'players'}.`
+  );
 }
 
 /** "minutes-2026-10-03.json". */
 export function ledgerFileName(now: Date): string {
   return `minutes-${now.toISOString().slice(0, 10)}.json`;
 }
+
+// --- season view ----------------------------------------------------------------
 
 export interface SeasonRow {
   playerId: UUID;
@@ -740,23 +1005,4 @@ export function seasonRows(ledger: Ledger): SeasonRow[] {
       };
     })
     .sort((a, b) => b.outfieldMs - a.outfieldMs || a.name.localeCompare(b.name));
-}
-
-/** What an import did, in one or two sentences a coach can read. */
-export function describeMerge(report: Omit<MergeReport, 'ledger'>): string {
-  const added = report.addedMatches + report.addedIntervals + report.addedPlayers;
-  const parts: string[] = [];
-  if (added === 0) {
-    parts.push('Nothing new in that file — everything in it is already here.');
-  } else {
-    parts.push(
-      `Added ${report.addedMatches} ${report.addedMatches === 1 ? 'match' : 'matches'} and ${report.addedPlayers} ${report.addedPlayers === 1 ? 'player' : 'players'}.`
-    );
-  }
-  if (report.conflicts.length > 0) {
-    parts.push(
-      `${report.conflicts.length} ${report.conflicts.length === 1 ? 'entry differs' : 'entries differ'} from this phone; this phone's ${report.conflicts.length === 1 ? 'was' : 'were'} kept.`
-    );
-  }
-  return parts.join(' ');
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -67,9 +67,9 @@ import {
   storedFromHeld,
 } from './src/app/matchLifecycle';
 import {
-  describeMerge,
+  describeImport,
   emptyLedger,
-  mergeLedger,
+  importLedger,
   parseLedger,
   recordMatches,
   type Ledger,
@@ -77,6 +77,7 @@ import {
 } from './src/app/ledger';
 import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { beforeKickoff, markAbsent, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -230,6 +231,8 @@ export default function App() {
       if (cancelled) return;
       if (!opened.writable) ledgerBlockedRef.current = true;
       if (opened.message !== '') setLedgerMessage(opened.message);
+      // A newer build's ledger that verified: shown, never written (ADR-014 §10).
+      if (opened.view) setLedger(opened.view);
       const storedLedger = opened.ledger;
 
       // AC7: back-fill. Every match already played is copied in from its
@@ -237,7 +240,13 @@ export default function App() {
       // every later launch this is a no-op: recording is idempotent by id.
       const base =
         storedLedger ??
-        emptyLedger(saved?.squadId ?? squadId, saved?.squadName ?? PLACEHOLDER_SQUAD_NAME);
+        emptyLedger(
+          saved?.squadId ?? squadId,
+          saved?.squadName ?? PLACEHOLDER_SQUAD_NAME,
+          appNow(),
+          // A new chain after an unreadable one names where it was set aside (#100 AC7).
+          opened.follows
+        );
       commitLedger(
         saved
           ? recordMatches(base, saved.matches, saved.players, saved.squadName, appNow())
@@ -325,9 +334,10 @@ export default function App() {
   }, []);
 
   /**
-   * Import a minutes file (AC5, AC6). Merged by id: new things are added,
-   * nothing is overwritten or deleted. Players the squad does not have come
-   * back with the same ids, so later matches line up with the imported ones.
+   * Import a minutes file (#100 AC2, AC5; ADR-014 §9). Verified, then the
+   * chain is extended — never merged: a file whose chain has diverged from
+   * this phone's is refused. Players the squad does not have come back with
+   * the same ids, so later matches line up with the imported ones.
    */
   const importMinutes = useCallback(async () => {
     // The ledger on this phone came from a newer build: merging into an empty
@@ -346,8 +356,12 @@ export default function App() {
       setLedgerMessage(parsed.reason);
       return;
     }
-    const current = ledgerRef.current ?? emptyLedger(squadId, squadName);
-    const report = mergeLedger(current, parsed.ledger, appNow());
+    const current = ledgerRef.current ?? emptyLedger(squadId, squadName, appNow());
+    const report = importLedger(current, parsed.ledger);
+    if (!report.ok) {
+      setLedgerMessage(report.reason);
+      return;
+    }
     commitLedger(report.ledger);
 
     const fresh = players.length === 0 && matches.length === 0;
@@ -370,7 +384,7 @@ export default function App() {
     setSquadId(nextSquadId);
     setSquadName(nextName);
     persist({ players: nextPlayers, squadId: nextSquadId, squadName: nextName });
-    setLedgerMessage(describeMerge(report));
+    setLedgerMessage(describeImport(report));
   }, [squadId, squadName, players, matches, persist, commitLedger]);
 
   useEffect(() => {
@@ -679,7 +693,7 @@ export default function App() {
     void clearLedger(store);
     const nextSquadId = uuid();
     // A fresh, empty ledger rather than none, so the next match is recorded.
-    const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME);
+    const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME, appNow());
     // Cleared above, so nothing newer is left to protect.
     ledgerBlockedRef.current = false;
     ledgerRef.current = fresh;
@@ -701,6 +715,23 @@ export default function App() {
   const setDefaultShape = useCallback((shape: ShapeCode) => {
     setFormat((current) => formatForShape(shape, current));
   }, []);
+
+  /** The engine changes the live match in place; this repaints after an absence mark. */
+  const [, repaint] = useReducer((n: number) => n + 1, 0);
+
+  /**
+   * Mark a player absent, or present again, before kick-off (#102 AC1). The
+   * ledger snapshots it at kick-off (ADR-014 §4); after that, nothing here
+   * can change it.
+   */
+  const toggleAbsent = useCallback(
+    (playerId: UUID, absent: boolean) => {
+      if (!match || !markAbsent(match.engine, match.state, playerId, absent)) return;
+      repaint();
+      persist();
+    },
+    [match, persist]
+  );
 
   const startQuarter = useCallback(
     (sheet: Sheet, plan: PlannedSub[]) => {
@@ -1028,7 +1059,19 @@ export default function App() {
           engine={match.engine}
           state={match.state}
           format={match.format}
-          players={playersForMatch(players, match.state.appearances)}
+          // An absent player cannot be picked (#102 AC1).
+          players={pickablePlayers(playersForMatch(players, match.state.appearances), match.state)}
+          // Before kick-off only: after it, a change is a noted correction.
+          attendance={
+            beforeKickoff(match.state)
+              ? {
+                  squad: playersForMatch(players, match.state.appearances),
+                  isAbsent: (id) =>
+                    (match.state.playerAvailability.get(id) ?? 'available') !== 'available',
+                  onToggle: toggleAbsent,
+                }
+              : undefined
+          }
           squadName={squadName}
           // This period of the fixture's plan, if one was made (#72, AC7).
           planned={

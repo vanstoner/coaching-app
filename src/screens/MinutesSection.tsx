@@ -25,6 +25,7 @@ import { formatClock } from '../app/matchClock';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player } from '../types/index';
+import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
 import { colours, screen } from './theme';
 
 export function MinutesSection({
@@ -55,6 +56,9 @@ export function MinutesSection({
     .map(({ row }) => row);
   const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
+  // #102 AC3, AC4: derived from the ledger every time, never stored.
+  const attendance = ledger ? seasonAttendance(ledger) : new Map<string, SeasonAttendance>();
+  const inferred = ledger ? inferredMatchCount(ledger) : 0;
 
   return (
     <View style={local.section}>
@@ -64,6 +68,9 @@ export function MinutesSection({
         {matches === 0
           ? 'Nothing played yet.'
           : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
+        {inferred > 0
+          ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
+          : ''}
       </Text>
 
       {rows.length > 0 && (
@@ -87,6 +94,10 @@ export function MinutesSection({
                 .filter((u) => row.byUnit[u] > 0)
                 .map((u) => `${UNIT_LABEL[u]} ${formatClock(row.byUnit[u])}`)
                 .join(' · ')}
+            </Text>
+            {/* #102 AC4: matches attended and missed; AC3: average per match attended. */}
+            <Text style={local.units} numberOfLines={1}>
+              {attendanceLine(attendance.get(row.playerId))}
             </Text>
             {shareLabel(shares.get(row.playerId)) !== '' && (
               <Text
@@ -139,12 +150,20 @@ export function MinutesSection({
         <Text style={screen.buttonLabel}>Import minutes file</Text>
       </Pressable>
       <Text style={screen.hint}>
-        Adds what is missing. Never overwrites or deletes anything here.
+        Adds matches recorded after this phone's. A file from a phone that
+        recorded its own matches is refused. Nothing here is ever overwritten
+        or deleted.
       </Text>
 
       {message !== '' && <Text style={local.message}>{message}</Text>}
     </View>
   );
+}
+
+function attendanceLine(a: SeasonAttendance | undefined): string {
+  if (!a) return '';
+  const avg = a.averageMs === null ? '' : ` · ${formatClock(Math.round(a.averageMs))} a match`;
+  return `Attended ${a.attended} · missed ${a.missed}${avg}`;
 }
 
 const local = StyleSheet.create({
