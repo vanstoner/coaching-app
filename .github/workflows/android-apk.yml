@@ -552,6 +552,13 @@ jobs:
   # looked like a beta on the phone but installed over the real app.
   # promote-release.yml remains for retitling or re-pointing Latest only.
   #
+  # #128 ("approve 11"): the page opens with "Build N contains PR #M", the
+  # issues it closes and what changed (release_notes.py, which degrades rather
+  # than blocks). The `beta` prerelease is no longer deleted, which left Rob
+  # with "no beta": it is REPLACED by a no-APK note pointing here, until the
+  # next PR's beta replaces it. ios.yml attaches the iPhone-simulator zip to
+  # this release once both exist (it waits for this job, not the other way).
+  #
   # The repository is public, so a published asset is world-readable. That is
   # acceptable for this artifact and only this artifact: the APK contains no
   # player data (ADR-011 keeps all of it on the device) and the app ships with
@@ -568,6 +575,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write             # least privilege: this job only
+      pull-requests: read         # #128: which PR this commit came from
+      issues: read                # #128: the titles of the issues it closes
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -611,6 +620,7 @@ jobs:
           echo "tag: $TAG   version: $VERSION   title: $TITLE"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "TITLE=$TITLE" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
           # -print -quit rather than `| head -n 1`: a pipeline that exits 141
           # on SIGPIPE under pipefail has already cost this project three runs.
@@ -639,17 +649,27 @@ jobs:
       - name: Generate the release notes
         run: |
           set -uo pipefail
-          PREV="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          # --match: since #128 the `beta` note's tag sits on main commits too,
+          # and must never be taken for the previous release.
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
           RANGE="${PREV:+$PREV..}HEAD"
           echo "range: ${RANGE}"
+          # #128 AC1/AC4: which PR, which issues, what changed, iPhone status.
+          # Self-test first; a failing lookup degrades the page, never the run.
+          python3 .github/scripts/release_notes.py --self-test 2>/dev/null || {
+            echo "WHY THIS JOB FAILED: release_notes.py failed its own self-test"; exit 1; }
+          python3 .github/scripts/release_notes.py main "$GITHUB_SHA" "$GITHUB_RUN_NUMBER" > summary.md \
+            || echo "_Could not build the PR summary for this build; see the changelog below._" > summary.md
           {
+            cat summary.md
+            echo
             echo "## Install it"
             echo
             echo "Download the \`.apk\` below on an Android phone and open it."
             echo "Allow installation from this source when prompted — it is signed"
             echo "with the Android debug key, not a Play Store key."
             echo
-            echo "## What changed"
+            echo "## Changelog"
             echo
             git log --no-merges --format='- %s' "$RANGE" 2>/dev/null || echo "- initial build"
             echo
@@ -691,22 +711,48 @@ jobs:
             gh release edit "$TAG" --prerelease=false --latest --title "$TITLE" || exit 1
           fi
 
-          # The beta has been approved and merged: this release supersedes it.
-          if gh release view beta >/dev/null 2>&1; then
-            gh release delete beta --cleanup-tag --yes || exit 1
-            echo "beta release and tag removed"
+          URL="$(gh release view "$TAG" --json url --jq .url)"
+
+          # #128 AC3: the beta has been approved and merged. Replace it with a
+          # note pointing here, with NO APK, rather than leaving nothing —
+          # until the next PR's beta job replaces the note in turn. The note's
+          # tag sits on this main commit; --latest=false keeps this release
+          # Latest. A missing beta on the first run is fine.
+          gh release delete beta --cleanup-tag --yes 2>/dev/null \
+            && echo "previous beta removed" || echo "no previous beta"
+          {
+            echo "## Merged into Coaching App build ${GITHUB_RUN_NUMBER} — install that instead"
+            echo
+            echo "[Coaching App build ${GITHUB_RUN_NUMBER} (${VERSION})](${URL}) is the release marked Latest."
+            echo "The beta it came from was approved and merged, so there is nothing to test here."
+            echo "The next pull request's Coaching Beta replaces this note."
+            echo
+            echo "**iPhone: waiting on Apple enrolment (#108)**"
+          } > beta-note.md
+          if ! gh release create beta \
+              --target "$GITHUB_SHA" \
+              --title "Coaching Beta — merged into build ${GITHUB_RUN_NUMBER}" \
+              --notes-file beta-note.md \
+              --prerelease \
+              --latest=false 2>/tmp/gh-err.txt; then
+            echo "WHY THIS JOB FAILED: could not replace the beta with its merged note:"
+            cat /tmp/gh-err.txt
+            exit 1
           fi
 
           # Read the outcome back from GitHub rather than trusting the flags.
           gh release view "$TAG" --json tagName,isPrerelease,isDraft,assets > /tmp/release.json || exit 1
           LATEST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
-          if gh release view beta >/dev/null 2>&1; then BETA=yes; else BETA=no; fi
+          if gh release view beta --json tagName,isPrerelease,isDraft,assets,body > /tmp/beta.json 2>/dev/null; then
+            BETA=/tmp/beta.json
+          else
+            BETA=none
+          fi
           python3 .github/scripts/check_release.py --self-test || {
             echo "WHY THIS JOB FAILED: the release check failed its own self-test"; exit 1; }
           python3 .github/scripts/check_release.py /tmp/release.json "$LATEST" "$BETA" "$TAG" || {
-            echo "WHY THIS JOB FAILED: main's build did not end up as the Latest full release (above)"; exit 1; }
+            echo "WHY THIS JOB FAILED: main's build is not the Latest full release, or the beta is not its no-APK note (above)"; exit 1; }
 
-          URL="$(gh release view "$TAG" --json url --jq .url)"
           IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
           IS_PRE="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
           echo "release: $URL  draft=$IS_DRAFT prerelease=$IS_PRE"
@@ -727,7 +773,8 @@ jobs:
   # PR builds only. The latest one replaces a single prerelease named `beta`,
   # so the PO can install it from a phone as a plain .apk, next to the released
   # app (its own application ID). Never marked latest: the newest main release
-  # stays the default download. The release job deletes it when the PR merges.
+  # stays the default download. When the PR merges, the release job replaces
+  # it with a no-APK "Merged into Coaching App build N" note (#128 AC3).
   #
   # The `beta` tag points at the PR's head commit, which a squash merge never
   # puts in main's history, so the release job's `git describe` cannot reach
@@ -745,12 +792,17 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write             # least privilege: this job only
+      pull-requests: read         # #128: the PR's description
+      issues: read                # #128: the titles of the issues it closes
     env:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_TITLE: ${{ github.event.pull_request.title }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      # For release_notes.py only (#128).
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: coaching-app-apk
@@ -766,7 +818,16 @@ jobs:
           sha256sum "$NAME" > "$NAME.sha256"
           cat "$NAME.sha256"
 
+          # #128 AC2/AC4: the same summary as a release, plus the PR's Beta
+          # test steps. Self-test first; a failing lookup degrades the page.
+          python3 .github/scripts/release_notes.py --self-test 2>/dev/null || {
+            echo "WHY THIS JOB FAILED: release_notes.py failed its own self-test"; exit 1; }
+          python3 .github/scripts/release_notes.py beta "$PR_NUMBER" "$GITHUB_RUN_NUMBER" > summary.md \
+            || echo "_Could not build the PR summary for this beta._" > summary.md
+
           {
+            cat summary.md
+            echo
             echo "## Coaching Beta — PR #${PR_NUMBER}"
             echo
             echo "**${PR_TITLE}**"
