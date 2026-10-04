@@ -2,6 +2,10 @@
 
 Status: **Approved** by the Product Owner, 2026-09-18.
 
+**v1 foundation (approved 18 September 2026). Where a later issue or ADR
+differs, that wins.** Later behaviour lives in each issue's acceptance
+criteria and in [HISTORY.md](../../HISTORY.md).
+
 > Approved 2026-09-18 — 12 of its 13 entities exist in `src/types/index.ts` and match. Only `Vacancy` is unbuilt. Open questions below are carried as issues, not blockers.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-20

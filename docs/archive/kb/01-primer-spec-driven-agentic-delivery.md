@@ -324,8 +324,8 @@ be more instructive than the successes.
 
 ## Related documents
 
-- [Squad roles and charters](../roles/README.md)
+- [Squad roles and charters](../../roles/README.md)
 - [Delivery process](../process/README.md)
-- [Decision log (ADRs)](../decisions/README.md)
-- [Specifications](../specs/)
+- [Decision log (ADRs)](../../decisions/README.md)
+- [Specifications](../../specs/)
 - [Glossary](./02-glossary.md)

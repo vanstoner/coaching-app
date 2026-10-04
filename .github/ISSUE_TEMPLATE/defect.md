@@ -25,7 +25,7 @@ labels: defect
 **Actual:**
 
 ## Layer diagnosis
-<!-- implementation / spec / intent — see docs/process/README.md "Handling a wrong output" -->
+<!-- implementation (behaviour wrong, criteria right: fix the code) / specification (criteria also wrong: fix them on the issue first) / intent (Rob changed his mind: new criteria, expect rework) -->
 
 ## Acceptance criteria for the fix
 - [ ] Regression test that fails before the fix, committed first

@@ -2,6 +2,10 @@
 
 Status: **Approved** by the Product Owner, 2026-09-18.
 
+**v1 foundation (approved 18 September 2026). Where a later issue or ADR
+differs, that wins.** Later behaviour lives in each issue's acceptance
+criteria and in [HISTORY.md](../../HISTORY.md).
+
 > Approved 2026-09-18 — its defining rule (fairness is total outfield time, goalkeeper excluded, position never part of the arithmetic) is implemented in `src/app/playerMinutes.ts` and `src/app/lineup.ts`. The season-scoped ledger it describes is still ahead of what is built; that is REQ-07 (#7).
 >
 > **Superseded in part, 2026-10-04** ([ADR-015](../decisions/015-fairness-is-total-pitch-time.md), #101, PO ruling 3 on #98). Fairness is now **total time on the pitch, goal plus outfield**; goalkeeper time is no longer excluded, and a full-match keeper is in the share like everyone else. Position is still never a fairness input. An optional per-player outfield-share target is shown beside their figures, never used as a fairness input. Where this spec says "outfield minutes" as the fairness figure, read "pitch time"; the GK-exclusion rules below no longer apply.
