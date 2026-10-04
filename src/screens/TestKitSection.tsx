@@ -13,11 +13,14 @@ export function TestKitSection({
   speed,
   onSpeed,
   onAddTestData,
+  onAddTestSeason,
   message,
 }: {
   speed: ClockSpeed;
   onSpeed: (speed: ClockSpeed) => void;
   onAddTestData: () => void;
+  /** A played season on past Saturdays, for the averages (#106). */
+  onAddTestSeason: () => void;
   message: string;
 }) {
   return (
@@ -44,6 +47,16 @@ export function TestKitSection({
       >
         <Text style={screen.buttonLabel}>Add test squad and fixtures</Text>
       </Pressable>
+      <Pressable
+        style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+        onPress={onAddTestSeason}
+      >
+        <Text style={screen.buttonLabel}>Add a past season</Text>
+      </Pressable>
+      <Text style={screen.hint}>
+        Nine played matches on the Saturdays before today: league, cup and a friendly, with
+        absences, subs, goals and a keeper.
+      </Text>
       {message !== '' && <Text style={screen.hint}>{message}</Text>}
     </View>
   );
