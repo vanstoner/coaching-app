@@ -19,8 +19,8 @@ import { makeSevenASideFormat } from './placeholderSquad';
 import { teamSheetFor } from './lineup';
 import { currentQuarter } from './matchClock';
 import { foldPlayerMinutes } from './playerMinutes';
-import { fixtureList, inBucket } from './fixtures';
-import { progressById, scoresById, withLiveMatch } from './liveMatch';
+import { fixtureList, inBucket, kickoffLabel } from './fixtures';
+import { periodsById, progressById, scoresById, withLiveMatch } from './liveMatch';
 import { scoreOf } from './matchEvents';
 import {
   createMemoryStore,
@@ -191,6 +191,17 @@ describe('a mock match, kick-off to Played (match day 4)', () => {
     );
     expect(inBucket(rows, 'past')).toHaveLength(1);
     expect(inBucket(rows, 'future')).toHaveLength(0);
+  });
+
+  it('dates a finished Play-now match on its fixture card from its first period (#126, ruling 10)', async () => {
+    const day = matchDay(null);
+    const matches = [day.fixture];
+    const { state } = await playFourQuarters(day, matches);
+    const after = withLiveMatch(matches, { state, format: day.format });
+    const match = after[0].match;
+    const label = kickoffLabel(match, day.nowFn(), periodsById(after, null).get(match.id));
+    expect(label).not.toBe('Date TBC');
+    expect(label).toBe(kickoffLabel(match, day.nowFn(), state.quarters));
   });
 
   it('lists a match under way as Now, read from the live state', async () => {
