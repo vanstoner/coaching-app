@@ -96,7 +96,6 @@ import { FixturesScreen } from './src/screens/FixturesScreen';
 import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
-import { SeasonChartLink, SeasonScreen } from './src/screens/SeasonScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -992,6 +991,9 @@ export default function App() {
       );
     }
 
+    // Each match's kick-off, for ruling E: who was in the squad for it.
+    const kickoffs = () => kickoffTimes(withLiveMatch(matches, match));
+
     if (effectiveStep === 'summary' && match) {
       return (
         <MatchSummaryScreen
@@ -999,6 +1001,8 @@ export default function App() {
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
+          ledger={ledger}
+          kickoffs={kickoffs()}
           now={appNow()}
           // Ruling D: after the last period, the coach closes the match here.
           onEndMatch={canEndMatch(match.state) ? closeMatch : undefined}
@@ -1019,9 +1023,6 @@ export default function App() {
       );
     }
 
-    // Each match's kick-off, for ruling E: who was in the squad for it.
-    const kickoffs = () => kickoffTimes(withLiveMatch(matches, match));
-
     if (effectiveStep === 'analysis' && match) {
       return (
         <MatchAnalysisScreen
@@ -1033,17 +1034,6 @@ export default function App() {
           kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
           onBack={() => setStep(analysisReturn)}
-        />
-      );
-    }
-
-    if (effectiveStep === 'season') {
-      return (
-        <SeasonScreen
-          ledger={ledger}
-          players={players}
-          kickoffs={kickoffs()}
-          onBack={() => setStep('settings')}
         />
       );
     }
@@ -1060,18 +1050,15 @@ export default function App() {
           onPeriodCount={setPeriodCount}
           onShape={setDefaultShape}
           minutes={
-            <>
-              <MinutesSection
-                ledger={ledger}
-                players={players}
-                kickoffs={kickoffTimes(withLiveMatch(matches, match))}
-                message={ledgerMessage}
-                busy={ledgerBusy}
-                onExport={() => void exportMinutes()}
-                onImport={() => void importMinutes()}
-              />
-              <SeasonChartLink onPress={() => setStep('season')} />
-            </>
+            <MinutesSection
+              ledger={ledger}
+              players={players}
+              kickoffs={kickoffTimes(withLiveMatch(matches, match))}
+              message={ledgerMessage}
+              busy={ledgerBusy}
+              onExport={() => void exportMinutes()}
+              onImport={() => void importMinutes()}
+            />
           }
           testKit={
             isBeta ? (
@@ -1134,6 +1121,8 @@ export default function App() {
           squadId={squadId}
           players={players}
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
+          ledger={ledger}
+          kickoffs={kickoffs()}
           onPlayers={setPlayers}
           onFieldCount={format.onFieldCount}
           onStartMatch={forMatch ? beginMatch : null}

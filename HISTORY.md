@@ -135,3 +135,13 @@ analysis, iOS". Entries are added as each release ships.
   a bench player opens a menu: bring them on at a time (the midpoint, or the
   next free 15 seconds after it) and pick who comes off. A player with a sub
   already sees it, with Change and Remove. Add a sub still works as before.
+- **4 October — the docs tell the truth again (#123).** A review found the
+  README still said the app's data was never backed up, and three specs
+  claiming to be current had stopped on 18 September. The README was rewritten,
+  the specs now say they are the v1 foundation, the September process documents
+  moved to `docs/archive/`, and every pull request now updates any doc it makes
+  wrong. Shipped issues were checked criterion by criterion against their tests.
+- **4 October — season figures live with each child (#121).** Match screens
+  now show only the match and point to Squad, where each child's row and page
+  carry their minutes a game, played and missed, by competition. The Main
+  keeper is left out of the squad average. The Season screen is gone.

@@ -2,8 +2,9 @@
  * Match analysis — #105.
  *
  * This match's playing time per player, each bar over a shadow of their
- * season average from the other matches (AC1), then the season itself with
- * league, cup and other side by side (AC2, #103).
+ * season average from the other matches (AC1). This match only (#121 AC1):
+ * the season figures live on each child's page in Squad, and the screen says
+ * so in one plain line.
  *
  * Opened from the report and, during a match, from the clock (AC3). Opening
  * it stops nothing: the clock is wall-clock anchors, not a timer this screen
@@ -12,15 +13,16 @@
  */
 
 import { useEffect, useReducer } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { Format, Player, UUID } from '../types/index';
 import type { Ledger } from '../app/ledger';
-import { matchChart, matchReport, seasonChart } from '../app/analysis';
+import { matchChart, matchReport } from '../app/analysis';
+import { SEASON_POINTER } from '../app/childSeason';
 import { opponentLabel } from '../app/fixtures';
-import { MatchBars, SeasonBars } from './Charts';
+import { MatchBars } from './Charts';
 import { screen } from './theme';
 
 export function MatchAnalysisScreen({
@@ -54,7 +56,6 @@ export function MatchAnalysisScreen({
 
   const report = matchReport(engine, state, players, format);
   const chart = matchChart(report, ledger, players, { kickoffs });
-  const season = ledger ? seasonChart(ledger, players, { kickoffs }) : null;
 
   return (
     <View style={screen.flex}>
@@ -77,15 +78,7 @@ export function MatchAnalysisScreen({
         </Text>
         <MatchBars chart={chart} />
 
-        <Text style={screen.fieldLabel}>Season, average minutes per match</Text>
-        {season && season.rows.length > 0 ? (
-          <>
-            <SeasonNote counted={season.countedMatches} inferred={season.inferredMatches} />
-            <SeasonBars chart={season} />
-          </>
-        ) : (
-          <Text style={screen.hint}>No closed matches yet. Close a match with End match on its report.</Text>
-        )}
+        <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 
         <Pressable
           style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
@@ -98,14 +91,6 @@ export function MatchAnalysisScreen({
   );
 }
 
-/** How many matches the averages rest on, and how many were inferred (ADR-015 §5). */
-export function SeasonNote({ counted, inferred }: { counted: number; inferred: number }) {
-  return (
-    <Text style={screen.hint}>
-      {counted} closed {counted === 1 ? 'match' : 'matches'}.
-      {inferred > 0
-        ? ` For ${inferred} of them attendance was not recorded, so "attended" means played.`
-        : ''}
-    </Text>
-  );
-}
+const local = StyleSheet.create({
+  pointer: { marginTop: 18 },
+});

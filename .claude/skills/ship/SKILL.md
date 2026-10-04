@@ -13,6 +13,10 @@ APK, it produced nothing.
 
 - Workflows, build scripts, gates, release plumbing.
 - A green `main`, and an APK Rob can install from the releases page.
+- **Docs that stay true (#123).** Every PR either updates any doc it makes
+  wrong (README.md, a spec, an ADR, a skill, CLAUDE.md) or says in its
+  description "No doc affected". The live set is listed in `docs/README.md`;
+  `docs/archive/` is frozen and never updated.
 
 ## Never
 
@@ -52,7 +56,8 @@ Write the self-test first. Run it in CI **before** the gate is trusted.
 - **Never route around an organisation policy denial.** Report it. Tag pushes
   are blocked through the proxy; the release fires on `main` instead.
 - Android refuses a lower `versionCode`, and uninstalling to force a downgrade
-  clears app-private storage with `allowBackup=false` and no backup. Treat
+  clears app-private storage. Coaching Beta has no backup at all, and Coaching
+  App's phone backup is not a restore you control. Treat
   "install last week's APK" as destructive until tested.
 
 ## Learned here

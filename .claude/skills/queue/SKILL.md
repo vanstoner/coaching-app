@@ -35,7 +35,8 @@ Ask for rulings in one batch (AskUserQuestion where options are clear).
 
 ## Record
 
-For each ruling, follow `docs/process/operating-model.md` §3: write it where it
-takes effect (spec / ADR / OMP) via a PR, or in the issue's closing comment if
-small; close the `decision-needed` issue linking the record. For "approve #NN" on
+For each ruling, write it on the issue it affects, quoting Rob, and remove
+`decision-needed` (CLAUDE.md: issues are the audit trail). Only a ruling that
+changes an invariant or is expensive to reverse also gets an ADR in
+`docs/decisions/`, via a PR. For "approve #NN" on
 a PR: confirm evidence is present, squash-merge, delete the branch.

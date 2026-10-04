@@ -31,7 +31,7 @@ own charter, context and boundaries.
 | **Quinn** | QA | Adversarial verification | Fix what it finds |
 | **Pip** | Platform Engineer | CI/CD, builds, releases | Write product features |
 
-See [`roles/README.md`](./roles/README.md) for the squad and the flow.
+See [`roles/README.md`](../roles/README.md) for the squad and the flow.
 
 ### Why five agents rather than one
 
@@ -122,7 +122,7 @@ He was right, and the ratio proved it: seven lines of documentation for every
 line of production code, and nothing a coach could hold.
 
 The response was to measure it rather than argue, write a
-[delivery-slices](./process/delivery-slices.md) document naming the six stages
+[delivery-slices](../process/delivery-slices.md) document naming the six stages
 between source and an app on a phone, and start closing them. Within one session
 there was a signed, downloadable APK produced by CI on every pull request.
 
@@ -252,5 +252,5 @@ Things that are not specific to AI agents, and would improve a human team.
 ---
 
 *This document describes the programme, not the product. For the product, start
-with [`specs/01-domain-model.md`](./specs/01-domain-model.md). For how work
+with [`specs/01-domain-model.md`](../specs/01-domain-model.md). For how work
 reaches `main`, see [`process/operating-model.md`](./process/operating-model.md).*

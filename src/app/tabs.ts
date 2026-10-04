@@ -39,8 +39,6 @@ export type Step =
   | 'summary'
   /** Match analysis (#105), from the report or the clock. Full screen. */
   | 'analysis'
-  /** The season chart, league and cup side by side (#103). Full screen. */
-  | 'season'
   | 'settings'
   | 'squad'
   | 'lineup'

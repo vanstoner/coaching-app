@@ -1,76 +1,71 @@
 # Coaching App
 
-A junior football coaching app for Android (iOS later): squad management, match
-clock, position tracking, substitutions with alerts, and season-long fair play
-time with an audit trail.
+A junior football coaching app for one under-10s squad. It answers one question
+at the touchline: **who comes off next, and is everyone getting a fair share?**
+It is a substitution reminder, not a timing system. Android first; iPhone
+builds are compiled in CI ahead of TestFlight.
 
-**Start here → [`docs/README.md`](./docs/README.md)**
+What it does today: a squad of first names with position preferences; fixtures
+and Play now; a plan for every period with projected minutes; a match clock
+with substitution reminders, a pitch you drag players around, goals, saves and
+a score; a match report closed with **End match**; each child's minutes against
+their season average; and a hash-chained ledger of every match's minutes. The
+story of how it got here is in [HISTORY.md](./HISTORY.md).
 
-## Status
+## Install it
 
-Specs are approved before feature implementation begins. Slice 0a — the walking
-skeleton — is the first application code: an Expo scaffold, one static screen,
-and a CI pipeline that produces a sideloadable debug APK. See
-[`docs/process/delivery-slices.md`](./docs/process/delivery-slices.md).
+From the [releases page](https://github.com/vanstoner/coaching-app/releases):
 
-| Area | Status |
-|---|---|
-| Domain model | Spec drafted, awaiting approval |
-| Match engine | Spec drafted, awaiting approval; pure-TypeScript engine in `src/engine/` |
-| Fairness ledger | Spec drafted, awaiting approval |
-| Squad roles & process | Defined |
-| App scaffold (Slice 0a) | Static screen, APK pipeline |
-| Clock wired to the engine (Slice 0b) | Not started |
+- **Coaching App** — the release marked **Latest**. Every merge to `main` that
+  builds green publishes one.
+- **Coaching Beta** — the `beta` prerelease, rebuilt from each open pull
+  request. It installs as a separate app (its own id, storage and orange icon),
+  so testing never touches the real squad. Its Test kit adds made-up players, a
+  past season and a faster clock.
 
 ## The five things that must stay true
 
-1. Minutes are derived from intervals, never stored as running totals.
-2. Elapsed time comes from wall-clock anchors, never tick counting.
-3. Fairness is total playing time, never per position.
-4. First names only. No PII.
-5. Corrections are explicit, noted, and never destructive.
+1. **Minutes fold from events; nothing derived is stored as authoritative.**
+2. **Elapsed time comes from wall-clock anchors, never tick counting.**
+3. **Fairness is total time on the pitch, in goal plus outfield, never per
+   position.**
+4. **First names only. No PII.**
+5. **Corrections are explicit, noted, and never destructive.**
 
-Each is recorded as an ADR in [`docs/decisions/`](./docs/decisions/).
-
-## Build and run
-
-Requires Node 22, a JDK (17) and the Android SDK. From a fresh clone:
-
-```bash
-npm ci && npm run apk
-```
-
-That runs `expo prebuild` and Gradle `assembleDebug`, leaving a sideloadable
-debug APK at `android/app/build/outputs/apk/debug/app-debug.apk`. The same two
-steps run in the `Android APK` GitHub Actions workflow, which publishes the APK
-as a downloadable artifact; that workflow can also be started by hand from the
-Actions tab.
-
-**`android/` and `ios/` are generated, never committed.** `expo prebuild`
-recreates them, and `.gitignore` blocks them. This is not tidiness: it keeps
-`app.json` the single source of truth for the Android manifest, so
-[ADR-011](./docs/decisions/011-player-data-stays-on-device.md)'s
-`allowBackup=false` cannot be contradicted by a stale committed manifest.
-
-`npm start` runs the Expo dev server for day-to-day work.
+[CLAUDE.md](./CLAUDE.md) states them in full; each is an ADR in
+[`docs/decisions/`](./docs/decisions/).
 
 ## Data protection
 
-This app handles children's participation data. First names only; no surnames,
-dates of birth, contact details or photographs. **Real squad data must never be
-committed to this repository** — `.gitignore` guards common patterns, but the
-rule is the important part.
+The app holds children's participation data: first names only, and no
+surnames, dates of birth, contact details or photographs. **Real squad data is
+never committed to this repository** and never attached to a release.
 
-App data is device-local and is **not** backed up: Android auto-backup is
-disabled in `app.json`, and the CI build asserts `allowBackup=false` against the
-built APK. See
-[ADR-011](./docs/decisions/011-player-data-stays-on-device.md).
+Data stays on the phone. **Coaching App** is included in the phone's own
+backup, so a lost or replaced phone keeps the season; **Coaching Beta** is not.
+CI checks both against the built APK. See
+[ADR-011](./docs/decisions/011-player-data-stays-on-device.md) and its
+amendment.
 
-## Validate the docs
+## Build and check
+
+Node 22, JDK 17 and the Android SDK. From a fresh clone:
 
 ```bash
-python3 docs/process/validate-docs.py
+npm ci
+npx vitest run                          # tests
+npx tsc --noEmit                        # typecheck
+npm run lint
+python3 docs/process/validate-docs.py   # docs links, ADRs, specs
+npm run apk                             # sideloadable debug APK
 ```
 
-Checks that internal links resolve, ADRs are well-formed, and no spec has been
-sitting in Draft too long. Exits non-zero on failure, so it can gate CI.
+`android/` and `ios/` are generated by `expo prebuild` and never committed, so
+`app.json` and `app.config.js` stay the single source of truth.
+
+## How it is run
+
+Rob is the Product Owner and the only approver. Work is an issue with
+acceptance criteria, built on a branch, released as a beta from its pull
+request and merged on Rob's approval. The rules are in [CLAUDE.md](./CLAUDE.md);
+the docs are indexed in [`docs/README.md`](./docs/README.md).

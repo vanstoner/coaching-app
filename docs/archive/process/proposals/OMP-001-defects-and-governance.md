@@ -136,7 +136,7 @@ What this session would have logged under Proposal C:
 
 **Raised**
 - DEF-001 [#13](https://github.com/vanstoner/coaching-app/issues/13) — double-counted minutes (`severity:high`)
-- ADR-006 to ADR-011 — Proposed ([index](../../decisions/README.md))
+- ADR-006 to ADR-011 — Proposed ([index](../../../decisions/README.md))
 - OMP-001 — this document
 
 **Actions**
