@@ -69,7 +69,8 @@ for good reasons. Do not relitigate them without evidence.
    displayed figure and the audit trail must be incapable of disagreeing.
 2. **Elapsed time comes from wall-clock anchors, never tick counting.** Android
    throttles background JS timers; ticks are silently lost.
-3. **Fairness is total outfield playing time, never per position.**
+3. **Fairness is total time on the pitch, in goal plus outfield, never per
+   position.** (2026-10-04, ADR-015 / #101; was outfield only.)
 4. **First names only. No PII.** Children's data. No surnames, DOB, contacts or
    photos, in the model or the UI. Real squad data is never committed.
 5. **Corrections are explicit, noted, and never destructive.**

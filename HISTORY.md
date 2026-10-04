@@ -111,3 +111,8 @@ analysis, iOS". Entries are added as each release ships.
   season (Rob: "backup b"); the beta never does. iPhone bundle ids
   `com.vanstoner.coachingapp` (+ `.beta`), and every change is now compiled
   for iPhone in CI, ahead of TestFlight once Rob has enrolled with Apple.
+- **4 October — fairness is total time on the pitch (#101).** Invariant 3
+  changed by Rob's ruling: fairness now counts goal plus outfield, so a
+  dedicated keeper is no longer shown as owed time; the gloves still rotate
+  by least time in goal. A player can carry an outfield-share target (25 %
+  for the keeper), shown beside their figures and never a fairness input.

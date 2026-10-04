@@ -47,6 +47,7 @@ import {
   validateName,
 } from '../app/squad';
 import { Chip, ChipRow } from './Chip';
+import { OUTFIELD_TARGET_CHOICES, setOutfieldTarget } from '../app/outfieldTarget';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadScreen({
@@ -183,8 +184,26 @@ export function SquadScreen({
                           />
                         ))}
                       </ChipRow>
+                      {/* #101 AC2: shown beside their figures; never a fairness input. */}
+                      <Text style={screen.hint}>Outfield share target</Text>
+                      <ChipRow>
+                        {OUTFIELD_TARGET_CHOICES.map((t) => (
+                          <Chip
+                            key={t}
+                            label={`${t}%`}
+                            selected={p.outfieldTargetPct === t}
+                            onPress={() =>
+                              onPlayers(
+                                setOutfieldTarget(everyone, p.id, p.outfieldTargetPct === t ? null : t)
+                              )
+                            }
+                            narrow
+                          />
+                        ))}
+                      </ChipRow>
                       <Text style={screen.hint}>
                         Only decides who is suggested where. Minutes and fairness are not affected.
+                        Fairness counts time in goal and outfield together.
                       </Text>
                     </View>
                   )}

@@ -29,9 +29,7 @@ implementation would break one, stop and escalate.
    throttles background timers; ticks are silently lost. Never increment an
    authoritative value in a timer callback. A timer may trigger a *repaint*; the
    value it paints is recomputed from anchors every time.
-3. **Fairness is total outfield playing time, never per position.** Positions
-   are assigned by affinity; per-position measurement would flag the coach's own
-   decisions as anomalies.
+3. **Fairness is total time on the pitch, in goal plus outfield, never per position.** Positions are assigned by affinity; per-position measurement would flag the coach's own decisions as anomalies. A player's outfield-share target is shown beside their figures, never used as a fairness input (ADR-015).
 4. **First names only. No PII.** Children's data. No surnames, DOB, contacts or
    photos — in the model or the UI.
 5. **Corrections are explicit, noted, and never destructive.** A correction is a

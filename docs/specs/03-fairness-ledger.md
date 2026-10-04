@@ -3,6 +3,8 @@
 Status: **Approved** by the Product Owner, 2026-09-18.
 
 > Approved 2026-09-18 — its defining rule (fairness is total outfield time, goalkeeper excluded, position never part of the arithmetic) is implemented in `src/app/playerMinutes.ts` and `src/app/lineup.ts`. The season-scoped ledger it describes is still ahead of what is built; that is REQ-07 (#7).
+>
+> **Superseded in part, 2026-10-04** ([ADR-015](../decisions/015-fairness-is-total-pitch-time.md), #101, PO ruling 3 on #98). Fairness is now **total time on the pitch, goal plus outfield**; goalkeeper time is no longer excluded, and a full-match keeper is in the share like everyone else. Position is still never a fairness input. An optional per-player outfield-share target is shown beside their figures, never used as a fairness input. Where this spec says "outfield minutes" as the fairness figure, read "pitch time"; the GK-exclusion rules below no longer apply.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
@@ -26,11 +28,14 @@ affinities that the coach assigns deliberately. A defender who never plays up
 front is not an anomaly — it is the plan. Measuring fairness per position would
 therefore generate false alarms against the coach's own selection policy.
 
-**Fairness is measured on one number: total outfield minutes on the pitch.**
+**Fairness is measured on one number: total minutes on the pitch, goal plus outfield** (2026-10-04, ADR-015; was outfield only).
 
 > *"Keep GK out of fairness entirely."*
 
-Goalkeeper minutes are excluded from the fairness measure. Rationale: the keeper
+*Superseded 2026-10-04 (ADR-015):* goalkeeper minutes now count. The text that
+follows is kept as the history of the earlier ruling.
+
+Goalkeeper minutes were excluded from the fairness measure. Rationale: the keeper
 is a specialist role, and counting it as equivalent to outfield time would let
 outfield allocation be offset by time in goal.
 
@@ -38,8 +43,9 @@ outfield allocation be offset by time in goal.
 
 | Quantity | Tracked? | Drives fairness? | Raises flags? |
 |---|---|---|---|
-| Total outfield minutes | Yes | **Yes — this is the measure** | Yes |
-| Goalkeeper minutes | Yes, separately | No | No |
+| Total pitch minutes (goal + outfield) | Yes | **Yes — this is the measure** (ADR-015) | Yes |
+| Outfield / goalkeeper breakdown | Yes, separately | No | No |
+| Outfield-share target (per player, optional) | Coach setting | **No** — shown as on track / below | No |
 | Minutes per position | Yes | **No** | **No** |
 | Bench minutes | Yes | No (derived view) | No |
 
@@ -72,6 +78,10 @@ only for matches where their Availability is `available`. This prevents the
 perverse result where the most absent player appears most owed.
 
 ### Goalkeeper handling in the arithmetic
+
+*Superseded 2026-10-04 (ADR-015): goalkeeper time is pitch time, and
+`expectedMs` and `actualMs` are on pitch time for every available player. The
+rules below are the earlier outfield-only version.*
 
 - A player keeping for a whole match accrues **no** outfield minutes and, for
   that match, **no** `expectedMs` either — they were not in the outfield pool.
@@ -118,7 +128,7 @@ freely.
 
 For any player, the coach can open a record showing:
 
-- Season totals: outfield minutes (**the fairness figure**), GK minutes, bench
+- Season totals: pitch minutes (**the fairness figure**, ADR-015), its outfield and GK breakdown, bench
   minutes, matches available, matches played.
 - Running fairness balance over time, match by match.
 - Every individual Appearance: match, quarter, position, start, end, duration.
@@ -136,7 +146,7 @@ evidence for it.
 
 ## Anomaly detection
 
-Flags relate **only** to total outfield time. There is deliberately no
+Flags relate **only** to total pitch time (ADR-015; was outfield time). There is deliberately no
 position-distribution flag.
 
 | Anomaly | Trigger | Surfaced as |
@@ -162,6 +172,11 @@ informs.
   planning suggestions.
 
 ## Worked example
+
+*Superseded 2026-10-04 (ADR-015): under the current rule the keeper's 40 GK
+minutes are pitch time, so every available player's share is
+`(7 × 40) / 10 = 28` minutes and the keeper is +12. The example below is the
+earlier outfield-only arithmetic.*
 
 Squad of 10, 7-a-side (1 GK + 6 outfield), 4×10-minute quarters = 40 minutes.
 One player keeps for the whole match.

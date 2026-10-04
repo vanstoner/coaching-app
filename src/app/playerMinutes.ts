@@ -18,13 +18,13 @@
  * from its anchors, so a player currently on the pitch has their time included
  * and it stays correct across a phone being asleep.
  *
- * **Invariant 3 — fairness is total OUTFIELD time, never per position.**
- * `outfieldMs` is the fairness figure. Goalkeeper time is counted separately
- * and deliberately excluded from it: a coach who puts a child in goal for a
- * quarter has made a decision, not created an unfairness, and measuring per
- * position would flag their own choices as anomalies. `totalMs` exists for
- * display — "how long have they been involved" — and must never be used to
- * decide who comes off.
+ * **Invariant 3 — fairness is total time on the pitch, never per position**
+ * (ADR-015, #101; it supersedes the outfield-only rule of ADR-004). `totalMs`,
+ * goal plus outfield, is the fairness figure: a dedicated keeper who has kept
+ * for the whole match has played the whole match. `outfieldMs` and
+ * `goalkeeperMs` are the breakdown, shown and never compared for fairness.
+ * Which position the time was in is never an input: measuring per position
+ * would flag the coach's own choices as anomalies.
  */
 
 import { MatchEngine } from '../engine/MatchEngine';
@@ -33,11 +33,14 @@ import type { Player, UUID } from '../types/index';
 
 export interface PlayerMinutes {
   playerId: UUID;
-  /** **The fairness figure.** Outfield only, per invariant 3. */
+  /** Outfield part of the breakdown. Shown; not the fairness figure. */
   outfieldMs: number;
-  /** Counted, shown, and never part of fairness. */
+  /** In-goal part of the breakdown. Shown; not the fairness figure. */
   goalkeeperMs: number;
-  /** outfieldMs + goalkeeperMs. For display only — never for who comes off. */
+  /**
+   * **The fairness figure**: outfieldMs + goalkeeperMs, total time on the
+   * pitch (invariant 3, ADR-015).
+   */
   totalMs: number;
   /** Time on the bench. Not the inverse of totalMs: a player can be neither. */
   benchMs: number;
@@ -147,10 +150,10 @@ export function foldPlayerMinutes(
 }
 
 /**
- * The gap between the most and least played, measured in outfield time.
+ * The gap between the most and least played, in total time on the pitch.
  *
- * This is the number that says whether the match is fair so far. It is
- * deliberately outfield-only (invariant 3), and it is zero for an empty squad
+ * This is the number that says whether the match is fair so far. It is goal
+ * plus outfield (invariant 3, ADR-015), and it is zero for an empty squad
  * rather than undefined, because a screen should not have to special-case it.
  */
 export function fairnessSpreadMs(minutes: PlayerMinutes[]): number {
@@ -158,14 +161,14 @@ export function fairnessSpreadMs(minutes: PlayerMinutes[]): number {
   let min = Infinity;
   let max = -Infinity;
   for (const m of minutes) {
-    if (m.outfieldMs < min) min = m.outfieldMs;
-    if (m.outfieldMs > max) max = m.outfieldMs;
+    if (m.totalMs < min) min = m.totalMs;
+    if (m.totalMs > max) max = m.totalMs;
   }
   return max - min;
 }
 
 /**
- * Who has played least, least first.
+ * Who has played least, least first, on total pitch time (ADR-015).
  *
  * The answer to "who should come on next". Ties keep squad order, so the same
  * question asked twice in a row gives the same answer — a list that reshuffles
@@ -174,7 +177,7 @@ export function fairnessSpreadMs(minutes: PlayerMinutes[]): number {
 export function leastPlayedFirst(minutes: PlayerMinutes[]): PlayerMinutes[] {
   return minutes
     .map((m, i) => ({ m, i }))
-    .sort((a, b) => a.m.outfieldMs - b.m.outfieldMs || a.i - b.i)
+    .sort((a, b) => a.m.totalMs - b.m.totalMs || a.i - b.i)
     .map(({ m }) => m);
 }
 

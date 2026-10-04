@@ -7,6 +7,11 @@
  *
  * The export warning is the PO's ruling 3A in words the coach reads at the
  * moment it matters: the file carries children's first names.
+ *
+ * Invariant 3 (ADR-015, #101): the season list is ordered on Total, goal plus
+ * outfield, the fairness figure. Out and GK are its breakdown. A player's
+ * outfield-share target is shown under their name as on track or below, and
+ * is never a fairness input.
  */
 
 import {
@@ -18,23 +23,37 @@ import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
+import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
+import type { Player } from '../types/index';
 import { colours, screen } from './theme';
 
 export function MinutesSection({
   ledger,
+  players,
   message,
   busy,
   onExport,
   onImport,
 }: {
   ledger: Ledger | null;
+  /** The working squad, for each player's outfield-share target (#101). */
+  players: Player[];
   /** The outcome of the last export or import, in plain English. */
   message: string;
   busy: boolean;
   onExport: () => void;
   onImport: () => void;
 }) {
-  const rows = ledger ? seasonRows(ledger) : [];
+  // Most pitch time first (goal + outfield); ties as the ledger orders them.
+  const rows = (ledger ? seasonRows(ledger) : [])
+    .map((row, i) => ({ row, i }))
+    .sort(
+      (a, b) =>
+        b.row.outfieldMs + b.row.goalkeeperMs - (a.row.outfieldMs + a.row.goalkeeperMs) ||
+        a.i - b.i
+    )
+    .map(({ row }) => row);
+  const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
 
   return (
@@ -52,6 +71,7 @@ export function MinutesSection({
           <Text style={[local.name, local.headText]}>Player</Text>
           <Text style={[local.figure, local.headText]}>Out</Text>
           <Text style={[local.figure, local.headText]}>GK</Text>
+          <Text style={[local.figure, local.headText]}>Total</Text>
         </View>
       )}
       {rows.map((row) => (
@@ -68,12 +88,26 @@ export function MinutesSection({
                 .map((u) => `${UNIT_LABEL[u]} ${formatClock(row.byUnit[u])}`)
                 .join(' · ')}
             </Text>
+            {shareLabel(shares.get(row.playerId)) !== '' && (
+              <Text
+                style={[
+                  local.units,
+                  shares.get(row.playerId)?.status === 'below' && local.below,
+                ]}
+                numberOfLines={1}
+              >
+                {shareLabel(shares.get(row.playerId))}
+              </Text>
+            )}
           </View>
           <Text style={local.figure} numberOfLines={1}>
             {formatClock(row.outfieldMs)}
           </Text>
           <Text style={[local.figure, row.goalkeeperMs === 0 && local.faint]} numberOfLines={1}>
             {row.goalkeeperMs === 0 ? '-' : formatClock(row.goalkeeperMs)}
+          </Text>
+          <Text style={local.figure} numberOfLines={1}>
+            {formatClock(row.outfieldMs + row.goalkeeperMs)}
           </Text>
         </View>
       ))}
@@ -144,6 +178,7 @@ const local = StyleSheet.create({
   },
   // Colour only: a weight change re-measures and clips (theme.ts).
   faint: { color: colours.inkFaint },
+  below: { color: colours.warn },
   message: {
     alignSelf: 'stretch',
     color: colours.warn,

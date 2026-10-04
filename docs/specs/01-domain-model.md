@@ -312,9 +312,9 @@ this guarantees the displayed figure and the audit trail can never disagree.
 |---|---|---|
 | `playerId` | UUID | |
 | `seasonId` | UUID | |
-| `outfieldMs` | int | Sum of `outfield` Appearances, **all positions combined — this is the fairness figure** |
-| `goalkeeperMs` | int | Sum of `goalkeeper` Appearances — reported separately, excluded from fairness |
-| `totalMs` | int | `outfieldMs + goalkeeperMs` — display only, not the fairness measure |
+| `outfieldMs` | int | Sum of `outfield` Appearances, all positions combined — breakdown |
+| `goalkeeperMs` | int | Sum of `goalkeeper` Appearances — breakdown |
+| `totalMs` | int | `outfieldMs + goalkeeperMs` — **the fairness figure** (2026-10-04, ADR-015 / #101; was `outfieldMs`) |
 | `matchesAvailable` | int | Matches where player was in the selected squad |
 | `matchesPlayed` | int | Matches with ≥1 Appearance |
 | `benchMs` | int | Sum of BenchStints |

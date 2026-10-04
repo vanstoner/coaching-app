@@ -19,8 +19,8 @@
  * kicking off to find out.
  *
  * Invariant 3 is untouched: which outfield slot a player takes is not a
- * fairness input. The fairness column is OUTFIELD minutes and goalkeeping is
- * shown separately, never added to it.
+ * fairness input. Fairness is total pitch time, goal plus outfield (ADR-015,
+ * #101); the minutes shown are its outfield and in-goal breakdown.
  *
  * ---------------------------------------------------------------------------
  * The plan, explicit positions, and who comes off — #72
@@ -213,11 +213,12 @@ export function LineupScreen({
     .map((p) => sheet[p.id] ?? null)
     .filter((id): id is UUID => id !== null);
 
-  // Players owed the most time first — the answer to "who comes on".
+  // Players owed the most time first — the answer to "who comes on". On total
+  // pitch time, goal plus outfield (#101, ADR-015).
   const ordered = useMemo(
     () =>
       [...players].sort(
-        (a, b) => (byId.get(a.id)?.outfieldMs ?? 0) - (byId.get(b.id)?.outfieldMs ?? 0)
+        (a, b) => (byId.get(a.id)?.totalMs ?? 0) - (byId.get(b.id)?.totalMs ?? 0)
       ),
     [players, byId]
   );

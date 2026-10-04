@@ -41,8 +41,8 @@ describe('kindOfUnit — invariant 3, expressed once', () => {
   });
 
   it('means outfield is exactly DEF + MID + ATT', () => {
-    // Fairness is total outfield time. Widening the enum must not quietly
-    // change what counts toward it.
+    // The outfield breakdown (and the outfield-share target, #101) is
+    // DEF + MID + ATT. Widening the enum must not quietly change it.
     const outfield = UNITS.filter((u) => kindOfUnit(u) === 'outfield');
     expect(outfield).toEqual(['DEF', 'MID', 'ATT']);
   });

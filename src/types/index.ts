@@ -139,6 +139,14 @@ export interface Player {
    * thing from one match to the next.
    */
   prefers?: OutfieldUnit | null;
+  /**
+   * Outfield-share target, a whole percentage (#101, ADR-015 §3): e.g. 25 for
+   * a dedicated keeper who still wants some outfield play. Optional: absent on
+   * players saved before it existed, which reads as "no target". Shown beside
+   * their figures as on track or below; NEVER a fairness input, never per
+   * position (invariant 3).
+   */
+  outfieldTargetPct?: number | null;
 }
 
 export type KeeperPreference = 'main' | 'backup' | 'never';
@@ -173,12 +181,12 @@ export type PositionKind = 'goalkeeper' | 'outfield';
  * re-bucket a child's recorded minutes.
  *
  * `PositionKind` remains derived from this — GK is goalkeeping, everything
- * else is outfield — so invariant 3 is unchanged: fairness is total outfield
- * time, which is now simply DEF + MID + ATT.
+ * else is outfield. Invariant 3 (ADR-015, #101): fairness is total time on the
+ * pitch, GK + DEF + MID + ATT; units are a breakdown, never a fairness input.
  */
 export type PositionUnit = 'GK' | 'DEF' | 'MID' | 'ATT';
 
-/** Invariant 3, expressed once: goalkeeping is the only thing excluded. */
+/** Goalkeeping or outfield: the breakdown shown beside the fairness figure. */
 export function kindOfUnit(unit: PositionUnit): PositionKind {
   return unit === 'GK' ? 'goalkeeper' : 'outfield';
 }
@@ -303,9 +311,9 @@ export interface Season {
 export interface PlayerSeasonTotals {
   playerId: UUID;
   seasonId: UUID;
-  outfieldMs: number; // The fairness figure
+  outfieldMs: number;
   goalkeeperMs: number;
-  totalMs: number; // outfieldMs + goalkeeperMs
+  totalMs: number; // outfieldMs + goalkeeperMs: the fairness figure (ADR-015)
   matchesAvailable: number;
   matchesPlayed: number;
   benchMs: number;

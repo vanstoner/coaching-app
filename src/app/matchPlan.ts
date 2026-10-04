@@ -23,8 +23,10 @@
  * Slots are keyed by position id from the MATCH'S format snapshot (ADR-012),
  * so changing the squad's default shape cannot scramble a saved plan.
  *
- * Invariant 3: projected time is split by position KIND — goalkeeper or
- * outfield — and never by which outfield position.
+ * Invariant 3: fairness is total time on the pitch, goal plus outfield
+ * (ADR-015, #101). Projected time is shown split by position KIND — goalkeeper
+ * or outfield — as a breakdown, and never by which outfield position; the fair
+ * share, deltas and spread are all on the total.
  */
 
 import type { Format, Player, Position, UUID } from '../types/index';
@@ -252,20 +254,23 @@ export interface ProjectedRow {
   firstName: string;
   outfieldMs: number;
   goalkeeperMs: number;
+  /** Goal plus outfield: the fairness figure (ADR-015). */
+  pitchMs: number;
   /**
-   * Difference from the fair share. Null for a player in goal for the whole
-   * match, who is not in the outfield share at all.
+   * Difference from the fair share, on pitch time. A full-match keeper is in
+   * the share like everyone else (#101 supersedes the old "in goal" null).
    */
-  deltaMs: number | null;
+  deltaMs: number;
 }
 
 export interface Projection {
-  /** Every squad player, most owed first; full-match keepers last. */
+  /** Every squad player, most owed first. */
   rows: ProjectedRow[];
-  totalOutfieldMs: number;
-  /** Total outfield ÷ players not in goal for the whole match. */
+  /** Goal plus outfield, summed over the squad. */
+  totalPitchMs: number;
+  /** Total pitch time ÷ squad players. */
   fairShareMs: number;
-  /** Most minus least outfield time among those same players. */
+  /** Most minus least pitch time across the squad. */
   spreadMs: number;
   problems: PlanProblem[];
 }
@@ -300,7 +305,6 @@ export function projectPlan(
   } | null = null
 ): Projection {
   const periodMs = periodLengthMs(totalMinutes, periodCount);
-  const matchMs = totalMinutes * 60_000;
   const noun = periodNoun(periodCount);
   const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
   const name = (id: UUID) => nameOf.get(id) ?? 'A removed player';
@@ -376,35 +380,33 @@ export function projectPlan(
     credit(at, periodMs);
   });
 
-  const fullTimeKeeper = (id: UUID) =>
-    (keeping.get(id) ?? 0) >= matchMs && (outfield.get(id) ?? 0) === 0;
-  const sharers = players.filter((p) => !fullTimeKeeper(p.id));
-  const totalOutfieldMs = [...outfield.values()].reduce((a, b) => a + b, 0);
-  const fairShareMs = sharers.length === 0 ? 0 : totalOutfieldMs / sharers.length;
-  const shares = sharers.map((p) => outfield.get(p.id) ?? 0);
+  // Invariant 3 (ADR-015, #101): the fairness figure is goal plus outfield,
+  // and every squad player is in the share. A full-match keeper used to be
+  // left out of it, which made a dedicated keeper look unplayed.
+  const pitch = (id: UUID) => (outfield.get(id) ?? 0) + (keeping.get(id) ?? 0);
+  const shares = players.map((p) => pitch(p.id));
+  const totalPitchMs = shares.reduce((a, b) => a + b, 0);
+  const fairShareMs = players.length === 0 ? 0 : totalPitchMs / players.length;
   const spreadMs = shares.length === 0 ? 0 : Math.max(...shares) - Math.min(...shares);
 
   const rows: ProjectedRow[] = players.map((p) => {
-    const outfieldMs = outfield.get(p.id) ?? 0;
+    const pitchMs = pitch(p.id);
     return {
       playerId: p.id,
       firstName: p.firstName,
-      outfieldMs,
+      outfieldMs: outfield.get(p.id) ?? 0,
       goalkeeperMs: keeping.get(p.id) ?? 0,
-      deltaMs: fullTimeKeeper(p.id) ? null : Math.round(outfieldMs - fairShareMs),
+      pitchMs,
+      deltaMs: Math.round(pitchMs - fairShareMs),
     };
   });
   // Most owed first, as the live fairness table does; ties in squad order.
   const order = new Map(players.map((p, i) => [p.id, i]));
-  rows.sort((a, b) => {
-    if (a.deltaMs === null || b.deltaMs === null) {
-      if (a.deltaMs === b.deltaMs) return order.get(a.playerId)! - order.get(b.playerId)!;
-      return a.deltaMs === null ? 1 : -1;
-    }
-    return a.deltaMs - b.deltaMs || order.get(a.playerId)! - order.get(b.playerId)!;
-  });
+  rows.sort(
+    (a, b) => a.deltaMs - b.deltaMs || order.get(a.playerId)! - order.get(b.playerId)!
+  );
 
-  return { rows, totalOutfieldMs, fairShareMs, spreadMs, problems };
+  return { rows, totalPitchMs, fairShareMs, spreadMs, problems };
 }
 
 /** "+04:10" / "-05:50" / "±00:00", for a difference from the fair share. */

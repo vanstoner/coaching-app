@@ -257,7 +257,7 @@ export function squadReadiness(players: Player[], onFieldCount: number): SquadRe
  * The first `onFieldCount` players start, in entry order, which is a
  * placeholder: choosing who plays where by affinity is REQ-02 (#2). Position
  * assignment is deliberately NOT a fairness input — invariant 3 measures total
- * outfield time, never time per position.
+ * time on the pitch, goal plus outfield, never time per position (ADR-015).
  */
 export function buildTeamSheet(
   players: Player[],
@@ -306,11 +306,16 @@ export function setUnitPreference(
   return players.map((p) => (p.id === playerId ? { ...p, prefers } : p));
 }
 
-/** "Main keeper · MID", or '' with no preference. For the squad list. */
+/**
+ * "Main keeper · MID · Outfield 25%", or '' with no preference. For the squad
+ * list. The outfield-share target (#101) is shown, never a fairness input.
+ */
 export function preferenceSummary(player: Player): string {
+  const target = player.outfieldTargetPct;
   return [
     player.keeper ? KEEPER_LABEL[player.keeper] : null,
     player.prefers ? UNIT_PREF_LABEL[player.prefers] : null,
+    typeof target === 'number' ? `Outfield ${target}%` : null,
   ]
     .filter(Boolean)
     .join(' · ');

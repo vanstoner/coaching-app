@@ -922,6 +922,7 @@ export default function App() {
           minutes={
             <MinutesSection
               ledger={ledger}
+              players={players}
               message={ledgerMessage}
               busy={ledgerBusy}
               onExport={() => void exportMinutes()}

@@ -109,7 +109,11 @@ describe('suggestLineup', () => {
     expect(s.goalkeeper).not.toBe(players[0].id);
   });
 
-  it('does not penalise a keeper on outfield fairness', () => {
+  // Replaced for #101 / ADR-015. This was "does not penalise a keeper on
+  // outfield fairness": it asserted the keeper was OWED time because he had
+  // no outfield minutes. That intent no longer holds — his time in goal is
+  // time played. It now asserts the three who sat out come on first.
+  it('counts a keeper\'s time in goal as time played', () => {
     const { engine, state, format, players, clock } = setUp(10);
     engine.startQuarter(
       state,
@@ -120,9 +124,10 @@ describe('suggestLineup', () => {
     clock.advance(10 * 60_000);
     engine.endQuarter(state, state.quarters[0]);
 
-    // The keeper accrued no OUTFIELD time, so he is owed it and must be picked.
-    const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
-    expect(s.onPitch).toContain(players[0].id);
+    const minutes = foldPlayerMinutes(engine, state, players);
+    expect(minutes[0].totalMs).toBe(10 * 60_000);
+    const s = suggestLineup(players, minutes, format);
+    for (const p of players.slice(7)) expect(s.onPitch).toContain(p.id);
   });
 
   it('is stable: the same question twice gives the same answer', () => {
@@ -317,9 +322,10 @@ describe('rotating on the suggestion actually produces fair time', () => {
     // Nobody was forgotten.
     for (const m of minutes) expect(m.totalMs).toBeGreaterThan(0);
 
-    // And the outfield spread is under one quarter — the actual fairness claim.
-    // With 10 players, 6 outfield slots and 4 quarters there are 24 outfield
-    // places for 10 children, so a perfectly even split is impossible; what
+    // And the spread, on total pitch time since #101 / ADR-015, is under one
+    // quarter — the actual fairness claim. With 10 players, 7 slots and 4
+    // quarters there are 28 places for 10 children, so a perfectly even split
+    // is impossible; what
     // matters is that nobody is a whole quarter adrift.
     expect(fairnessSpreadMs(minutes)).toBeLessThanOrEqual(quarterMs);
   });
@@ -528,5 +534,45 @@ describe('goalkeeping preference set on the squad screen (#86 AC2)', () => {
     const players = base.map((p, i) => (i === 0 ? { ...p, keeper: 'never' as const } : p));
     const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
     expect(s.goalkeeper).not.toBe(players[0].id);
+  });
+});
+
+// --- #101 / ADR-015: fairness is total pitch time ---------------------------
+//
+// Each of these fails under the superseded outfield-only rule (ADR-004),
+// where a keeper with only goalkeeper time read as owed time.
+
+describe('#101 — a keeper with only GK time is not owed time', () => {
+  function afterKeeperQuarter() {
+    const { engine, state, format, players: base, clock } = setUp(10);
+    // P6 is the dedicated keeper; P9 kept goal for the first quarter.
+    const players = base.map((p, i) => (i === 6 ? { ...p, keeper: 'main' as const } : p));
+    const keeper = players[9].id;
+    const onPitch = [keeper, ...players.slice(0, 6).map((p) => p.id)];
+    engine.startQuarter(state, state.quarters[0], teamSheetFor(onPitch, keeper, format), format);
+    clock.advance(10 * 60_000);
+    engine.endQuarter(state, state.quarters[0]);
+    return { engine, state, format, players, keeper };
+  }
+
+  it('suggestLineup does not rush a quarter-long keeper back on ahead of others', () => {
+    const { engine, state, format, players, keeper } = afterKeeperQuarter();
+    const s = suggestLineup(players, foldPlayerMinutes(engine, state, players), format);
+    expect(s.goalkeeper).toBe(players[6].id);
+    // P7 and P8 sat out and have nothing; everyone else has 10:00 on the
+    // pitch, P9 included, so squad order fills the last four: P0–P3.
+    expect(s.onPitch).toEqual(expect.arrayContaining([players[7].id, players[8].id]));
+    expect(s.bench).toContain(keeper);
+  });
+
+  it('fairnessTable reads the keeper as ahead, not owed, and counts their GK time', () => {
+    const { engine, state, players, keeper } = afterKeeperQuarter();
+    const table = fairnessTable(players, foldPlayerMinutes(engine, state, players));
+    const row = table.find((r) => r.playerId === keeper)!;
+    expect(row.outfieldMs).toBe(0);
+    expect(row.pitchMs).toBe(10 * 60_000);
+    // Average is 70:00 ÷ 10 = 7:00; the keeper is 3:00 ahead of it.
+    expect(row.deltaMs).toBe(3 * 60_000);
+    expect(table.slice(0, 3).map((r) => r.pitchMs)).toEqual([0, 0, 0]);
   });
 });

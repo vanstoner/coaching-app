@@ -74,8 +74,10 @@ function setUp(size = 10, totalMinutes = 50, quarterCount = 4) {
 
 // --- invariant 3 ------------------------------------------------------------
 
-describe('invariant 3 — fairness is outfield time, never per position', () => {
-  it('keeps goalkeeper time out of the fairness figure', () => {
+// #101 / ADR-015 superseded the outfield-only rule (ADR-004): the fairness
+// figure is now total time on the pitch, goal plus outfield.
+describe('invariant 3 — fairness is total pitch time, never per position', () => {
+  it('splits the fairness figure into outfield and goalkeeper breakdowns', () => {
     const { engine, state, format, players, sheetOf, clock } = setUp();
     engine.startQuarter(state, state.quarters[0], sheetOf(players.slice(0, 7)), format);
     clock.advance(10 * 60_000);
@@ -88,25 +90,27 @@ describe('invariant 3 — fairness is outfield time, never per position', () => 
     expect(keeper.totalMs).toBe(10 * 60_000);
     expect(outfielder.totalMs).toBe(10 * 60_000);
 
-    // But only the outfielder accrued the fairness figure.
+    // Both accrued the same fairness figure (totalMs, above); the breakdown
+    // says where it was played.
     expect(keeper.goalkeeperMs).toBe(10 * 60_000);
     expect(keeper.outfieldMs).toBe(0);
     expect(outfielder.outfieldMs).toBe(10 * 60_000);
     expect(outfielder.goalkeeperMs).toBe(0);
   });
 
-  it('measures the spread on outfield time, so a keeper is not read as unfair', () => {
+  // Rewritten for #101 / ADR-015. Under the old outfield-only rule this spread
+  // was 10:00 — the keeper's zero outfield against the outfielders' ten — so a
+  // keeper who had played every minute in goal read as owed time. That
+  // intent no longer holds: the keeper has played as long as anyone.
+  it('measures the spread on pitch time, so a keeper with only GK time is not owed', () => {
     const { engine, state, format, players, sheetOf, clock } = setUp();
     engine.startQuarter(state, state.quarters[0], sheetOf(players.slice(0, 7)), format);
     clock.advance(10 * 60_000);
 
     const onPitch = foldPlayerMinutes(engine, state, players).filter((m) => m.onPitchNow);
-    // Six outfielders on ten minutes each, one keeper on zero outfield.
-    // The spread must be the keeper's zero against the outfielders' ten.
-    expect(fairnessSpreadMs(onPitch)).toBe(10 * 60_000);
-    // And every outfielder is equal, which is the point.
-    const outfieldOnly = onPitch.filter((m) => m.goalkeeperMs === 0);
-    expect(fairnessSpreadMs(outfieldOnly)).toBe(0);
+    // Six outfielders on ten minutes each, one keeper on ten minutes in goal.
+    expect(onPitch.find((m) => m.playerId === players[0].id)!.outfieldMs).toBe(0);
+    expect(fairnessSpreadMs(onPitch)).toBe(0);
   });
 });
 
@@ -254,11 +258,15 @@ describe('who comes off, who comes on', () => {
     clock.advance(10 * 60_000);
 
     const order = leastPlayedFirst(foldPlayerMinutes(engine, state, players));
-    // The three who never came on, then the keeper (zero OUTFIELD), all on
-    // zero — and among equals, squad order is preserved.
-    expect(order.slice(0, 4).map((m) => m.outfieldMs)).toEqual([0, 0, 0, 0]);
-    expect(order[0].playerId).toBe(players[0].id); // the keeper, squad index 0
-    expect(order.at(-1)!.outfieldMs).toBe(10 * 60_000);
+    // #101 / ADR-015: ranked on pitch time. The three who never came on are
+    // first, in squad order; the keeper (ten minutes in goal) is no longer
+    // ranked among them as it was under the outfield-only rule.
+    expect(order.slice(0, 3).map((m) => m.playerId)).toEqual(
+      players.slice(7, 10).map((p) => p.id)
+    );
+    expect(order.slice(0, 3).map((m) => m.totalMs)).toEqual([0, 0, 0]);
+    expect(order[3].playerId).toBe(players[0].id); // the keeper, first among the tied ten
+    expect(order.at(-1)!.totalMs).toBe(10 * 60_000);
   });
 
   it('ranks longest continuous stint first, and only for players on the pitch', () => {
