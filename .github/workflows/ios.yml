@@ -42,6 +42,9 @@ jobs:
       APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
       # CFBundleVersion — this workflow's run number, read by app.config.js.
       IOS_BUILD_NUMBER: ${{ github.run_number }}
+      # The build label says "(pr N)" on a PR build, which is what shows the
+      # Test kit in Coaching Beta (#95). Without it the label read "(pr ?)".
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +66,15 @@ jobs:
       # the build commit's date, never app.json's stale value.
       - name: Compute the version
         run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      # Same as the Android job (#52): the label is baked into the bundle, so
+      # the beta knows it is the beta. Proved after the build, in the .app.
+      - name: Write the build label into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
+            || { echo "WHY THIS JOB FAILED: the generated module does not contain the label"; exit 1; }
 
       - name: Toolchain
         run: |
@@ -158,6 +170,10 @@ jobs:
           echo "::group::#46 — the JS bundle is embedded (Release)"
           if [ -s "$APP/main.jsbundle" ]; then
             echo "main.jsbundle: $(wc -c < "$APP/main.jsbundle" | tr -d ' ') bytes"
+            # The label in the bundle is what tells the app it is the beta
+            # (#95): checked in both encodings Hermes may use (#52).
+            python3 .github/scripts/assert_label_in_bundle.py "$APP/main.jsbundle" "$BUILD_LABEL" \
+              || note "the build label '$BUILD_LABEL' is not in the .app's bundle"
           else
             note "no main.jsbundle in the .app — it could not run without a Metro server"
           fi
