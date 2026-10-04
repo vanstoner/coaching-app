@@ -45,6 +45,7 @@ import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '.
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
 import { Chip, ChipRow } from './Chip';
 import { colours, screen } from './theme';
+import { appNow } from '../app/appClock';
 
 export interface FixtureDraft {
   opponent: string;
@@ -202,7 +203,7 @@ function KickoffField({
   const [day, setDay] = useState<Date | null>(valid ? startOfDay(parsed!) : null);
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
   const [other, setOther] = useState(false);
-  const [now] = useState(() => new Date());
+  const [now] = useState(() => appNow());
   const saturdays = upcomingSaturdays(now);
   // AC4: a saved day that is not one of the coming Saturdays still shows,
   // selected, rather than as a blank.

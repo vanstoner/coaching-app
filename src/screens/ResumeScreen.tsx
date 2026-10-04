@@ -27,6 +27,7 @@ import type { SavedSession } from '../app/persistence';
 import { toMatchState } from '../app/persistence';
 import { BuildLabel } from './BuildLabel';
 import { screen } from './theme';
+import { appNow } from '../app/appClock';
 
 export function ResumeScreen({
   saved,
@@ -38,7 +39,7 @@ export function ResumeScreen({
   /** Back to Home, match untouched. */
   onLeave: () => void;
 }) {
-  const engine = useMemo(() => new MatchEngine(), []);
+  const engine = useMemo(() => new MatchEngine({ nowFn: appNow }), []);
   const state = useMemo(() => toMatchState(saved), [saved]);
   const elapsed = state ? engine.getMatchElapsedMs(state) : 0;
   const played = state ? state.quarters.filter((q) => q.status === 'ended').length : 0;

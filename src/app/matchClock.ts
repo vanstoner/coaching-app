@@ -160,3 +160,19 @@ export function deriveClockView(engine: MatchEngine, state: MatchState): ClockVi
     canEnd: isRunning,
   };
 }
+
+/**
+ * How long until the clock's displayed second next changes, in device time —
+ * #96. The clock repaints just after each boundary instead of on a free-running
+ * half-second interval, which a late Android timer could carry across two
+ * boundaries ("jumps over 2 seconds"). The repaint only repaints: the value it
+ * paints is recomputed from anchors (invariant 2). `speed` is the Test kit's
+ * clock speed (#95); at ×10 a second of match time is 100 ms of device time.
+ */
+export const REPAINT_SLACK_MS = 20;
+
+export function msUntilNextSecond(elapsedMs: number, speed = 1): number {
+  const safe = Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0;
+  const toBoundary = 1000 - (safe % 1000);
+  return Math.ceil(toBoundary / Math.max(1, speed)) + REPAINT_SLACK_MS;
+}
