@@ -55,3 +55,60 @@ children's data to a third party with no decision recorded.
 
 **Decide hosting approach now.** Rejected: premature; the scenario (ADR-010
 open question) and appetite for controller duties are not yet known.
+
+## Addendum (2026-10-04, #107): how iOS meets decision 2
+
+iOS has no `allowBackup`; the equivalent is excluding the stored data from
+iCloud and iTunes/Finder backup. Established from the installed
+`@react-native-async-storage/async-storage` 3.1.1, not assumed:
+
+- The app's `import AsyncStorage from ...` default export is the legacy store
+  (`src/index.tsx:9`, `getLegacyStorage()`), implemented on iOS by
+  `apple/legacy_storage/RNCAsyncStorage.mm`.
+- It stores under `Application Support/<bundle id>/RCTAsyncLocalStorage_V1`
+  (`RNCAsyncStorage.mm:17`, `:137-148`).
+- On first use each launch it reads the Info.plist key
+  `RCTAsyncStorageExcludeFromBackup`, defaulting to YES when absent
+  (`:528-533`), and sets `NSURLIsExcludedFromBackupKey` on that directory
+  (`:534`, `:37-57`).
+
+So the library already excludes by default. `app.json` sets
+`ios.infoPlist.RCTAsyncStorageExcludeFromBackup: true` explicitly anyway, so a
+change of library default cannot silently move children's data to iCloud. It
+is asserted twice: on the config (`src/app/appConfig.test.ts`) and on the
+built `.app`'s Info.plist in CI (`.github/workflows/ios.yml`,
+`.github/scripts/check_ios_app.py`).
+
+Not covered: data written by any other store. A new storage library, or the
+`createAsyncStorage()` API (a different native path), needs this re-checked.
+
+## Amendment (2026-10-04, #112): the phone's own backup is allowed for Coaching App
+
+**PO ruling "backup b"** on #98, after: *"I am a bit more relaxed about data
+than I was given we impress on the user not to store it."* This amends
+decision 2 for Coaching App only.
+
+- **Coaching App** is included in the phone's own backup: Android Auto Backup
+  (`allowBackup` true) and iCloud (`RCTAsyncStorageExcludeFromBackup` false).
+  The reason is the minutes ledger, the season's spine (#98): a lost or
+  replaced phone gets the season back from the coach's own Google or Apple
+  account, rather than only from an export someone remembered to make.
+- **Coaching Beta** stays excluded on both platforms, so test data never
+  reaches a coach's cloud.
+- **Unchanged:** first names only and nothing else about a child (invariant
+  4); no server, no sync, no analytics of ours. The backup is the coach's,
+  held by the phone's own service, and the minutes export stays the explicit,
+  coach-initiated way to move data between phones.
+- Both CI gates assert the built artifact, per variant: the APK manifest's
+  `allowBackup` and the iOS Info.plist key (`check_ios_app.py`).
+
+**Impact assessment (decision 3), proportionate to what moves:**
+
+| | |
+|---|---|
+| Data | Children's first names (sometimes a display suffix), match minutes, goals/saves, availability. No surnames, dates of birth, contacts or photos (invariant 4). |
+| Where it goes | The coach's own Google (Auto Backup) or Apple (iCloud) account: encrypted by the platform, and covered by that coach's account security. Nothing reaches us or any third party of ours. |
+| Who can see it | The coach, and anyone who restores the coach's account. |
+| Risk | Low: a compromised coach account would expose first names with football minutes. |
+| Mitigations | First names only; the beta is never backed up; the coach can turn off backup in the phone's settings; "Forget everything" still wipes the app's data on the phone, and a later backup then holds none. |
+| Residual | Data deleted in the app can persist in an older backup until the platform rotates it. Accepted by the ruling. |

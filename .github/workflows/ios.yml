@@ -1,0 +1,189 @@
+name: iOS
+
+# #107 AC3 — every change proves the app still compiles for iPhone. Separate
+# from android-apk.yml on purpose: different runner, different toolchain, and
+# a red iOS build must not be confused with a red APK.
+#
+# What this job proves: the native iOS project Expo generates from app.json +
+# app.config.js compiles, links and bundles the JS (Release embeds the bundle,
+# as Android's assembleRelease does — #46), and the built .app carries the
+# ruled bundle id (main vs beta) and ADR-011's backup exclusion key.
+#
+# What it does NOT prove: that the app launches or renders on a simulator, or
+# anything about signing, provisioning or TestFlight. Signing is off because
+# there is no Apple Developer enrolment yet; delivery is a separate issue.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-build:
+    name: Compile for the iOS simulator (signing off)
+    # Pinned, not macos-latest: the -latest label migrates between images
+    # over weeks and would change Xcode under us without a commit. macos-26 is
+    # arm64 with Xcode 26 and CocoaPods preinstalled (actions/runner-images
+    # README, read 2026-10-04). ExpoModulesCore needs Swift 6 (Xcode 16+).
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      # #79/#107: a PR build is Coaching Beta (com.vanstoner.coachingapp.beta);
+      # main is Coaching App (com.vanstoner.coachingapp). Job level, so the
+      # prebuild and the assertion agree.
+      APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
+      # CFBundleVersion — this workflow's run number, read by app.config.js.
+      IOS_BUILD_NUMBER: ${{ github.run_number }}
+      # The build label says "(pr N)" on a PR build, which is what shows the
+      # Test kit in Coaching Beta (#95). Without it the label read "(pr ?)".
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Self-test BEFORE anything expensive: the assertion that runs at the
+      # end is dry-run against both healthy cases (main and beta) and the
+      # failing ones first. A gate nobody has run on good input is not a gate.
+      - name: Self-test the .app assertion
+        run: python3 .github/scripts/check_ios_app.py --self-test
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same computation as the Android job, so CFBundleShortVersionString is
+      # the build commit's date, never app.json's stale value.
+      - name: Compute the version
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      # Same as the Android job (#52): the label is baked into the bundle, so
+      # the beta knows it is the beta. Proved after the build, in the .app.
+      - name: Write the build label into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
+            || { echo "WHY THIS JOB FAILED: the generated module does not contain the label"; exit 1; }
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          pod --version
+          node --version
+
+      # ios/ is never committed (.gitignore): generated here from app.json, so
+      # app.json stays the single source of truth for Info.plist.
+      - name: Generate the native iOS project
+        env:
+          APP_VERSION_NAME: ${{ env.VERSION }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      # Names are DERIVED from what prebuild generated, never hardcoded: the
+      # project is named after the display name (CoachingApp on main,
+      # CoachingBeta on a PR — seen in a local prebuild, 2026-10-04).
+      - name: Build for the simulator, signing off
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          workspaces=(ios/*.xcworkspace)
+          if [ "${#workspaces[@]}" -ne 1 ]; then
+            echo "WHY THIS JOB FAILED: expected exactly one .xcworkspace in ios/ after pod install, found ${#workspaces[@]}: ${workspaces[*]:-none}"
+            ls -la ios
+            exit 1
+          fi
+          WORKSPACE="${workspaces[0]}"
+          SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
+          if [ ! -f "ios/$SCHEME.xcodeproj/xcshareddata/xcschemes/$SCHEME.xcscheme" ]; then
+            echo "WHY THIS JOB FAILED: no shared scheme named '$SCHEME' — prebuild's naming has changed"
+            ls ios/*.xcodeproj/xcshareddata/xcschemes || true
+            exit 1
+          fi
+          echo "workspace=$WORKSPACE scheme=$SCHEME"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          # Full log to a file; xcodebuild's output is tens of thousands of
+          # lines and the error that matters is never in the last forty.
+          if ! xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphonesimulator \
+              -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              build > /tmp/xcodebuild.log 2>&1; then
+            echo "::group::last 200 lines of xcodebuild"
+            tail -n 200 /tmp/xcodebuild.log
+            echo "::endgroup::"
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: xcodebuild did not compile the app"
+            echo "=============================================================="
+            echo "--- first errors ---"
+            grep -E '(error:|\*\* BUILD FAILED)' /tmp/xcodebuild.log | sed -n '1,25p' || true
+            echo "=============================================================="
+            exit 1
+          fi
+          grep -E '\*\* BUILD SUCCEEDED' /tmp/xcodebuild.log
+
+      - name: Assert the .app's identity, version and backup exclusion
+        run: |
+          set -uo pipefail
+          fail=0
+          note() { echo "ASSERTION FAILED: $*"; fail=1; why="${why:-}$*"$'\n'; }
+          APP="build/Build/Products/Release-iphonesimulator/$SCHEME.app"
+          if [ ! -d "$APP" ]; then
+            echo "WHY THIS JOB FAILED: no .app at $APP. Products found:"
+            ls build/Build/Products/*/ || true
+            exit 1
+          fi
+          echo "app: $APP ($(du -sh "$APP" | cut -f1))"
+
+          echo "::group::#107 — bundle id, name, build number and ADR-011 key"
+          # To a file, then printed: the specific ASSERTION lines are repeated
+          # in the WHY block so the last forty lines say exactly what was wrong.
+          # `|| check=$?`, not a bare call then `$?`: Actions runs this under
+          # `bash -e`, which would end the step before the WHY block printed.
+          check=0
+          python3 .github/scripts/check_ios_app.py "$APP/Info.plist" "$APP_VARIANT" "$IOS_BUILD_NUMBER" \
+            > /tmp/ios-check.txt 2>&1 || check=$?
+          cat /tmp/ios-check.txt
+          if [ "$check" != "0" ]; then
+            note "the .app is not the app this build should produce (APP_VARIANT='$APP_VARIANT'):"
+            why="${why}$(grep -E '^ASSERTION FAILED' /tmp/ios-check.txt | sed 's/^/  /')"$'\n'
+          fi
+          echo "::endgroup::"
+
+          echo "::group::#46 — the JS bundle is embedded (Release)"
+          if [ -s "$APP/main.jsbundle" ]; then
+            echo "main.jsbundle: $(wc -c < "$APP/main.jsbundle" | tr -d ' ') bytes"
+            # The label in the bundle is what tells the app it is the beta
+            # (#95): checked in both encodings Hermes may use (#52).
+            python3 .github/scripts/assert_label_in_bundle.py "$APP/main.jsbundle" "$BUILD_LABEL" \
+              || note "the build label '$BUILD_LABEL' is not in the .app's bundle"
+          else
+            note "no main.jsbundle in the .app — it could not run without a Metro server"
+          fi
+          echo "::endgroup::"
+
+          if [ "$fail" != "0" ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED"
+            echo "=============================================================="
+            printf '%s' "$why"
+            echo "=============================================================="
+          fi
+          exit $fail

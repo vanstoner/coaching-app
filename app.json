@@ -5,14 +5,26 @@
     "version": "2026.09.19",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/images/icon.png",
+    "ios": {
+      "bundleIdentifier": "com.vanstoner.coachingapp",
+      "supportsTablet": false,
+      "infoPlist": {
+        "RCTAsyncStorageExcludeFromBackup": false
+      }
+    },
     "android": {
       "package": "com.example.coachingapp",
-      "allowBackup": false,
+      "allowBackup": true,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundImage": "./assets/images/adaptive-background.png"
+      }
     },
     "plugins": [
       [
