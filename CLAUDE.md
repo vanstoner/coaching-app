@@ -6,7 +6,7 @@ Product Owner and the only approver.
 **Every session ends with a releasable artifact.** Every pull request
 publishes **Coaching Beta** (its own app id; one rolling `beta` release). A
 merge is Rob's approval, so a green build of `main` publishes the full
-**Coaching App** release, marked Latest, and replaces the beta with a note pointing to it (#128). If a session produces no installable
+**Coaching App** release, marked Latest, and replaces the beta with a note pointing to it, unless a newer open PR's beta is there (#128). If a session produces no installable
 APK, it produced nothing.
 
 ## What we are building
