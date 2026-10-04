@@ -556,7 +556,8 @@ jobs:
   # issues it closes and what changed (release_notes.py, which degrades rather
   # than blocks). The `beta` prerelease is no longer deleted, which left Rob
   # with "no beta": it is REPLACED by a no-APK note pointing here, until the
-  # next PR's beta replaces it. ios.yml attaches the iPhone-simulator zip to
+  # next PR's beta replaces it — unless an open PR's beta already has
+  # (beta_decision.py). ios.yml attaches the iPhone-simulator zip to
   # this release once both exist (it waits for this job, not the other way).
   #
   # The repository is public, so a published asset is world-readable. That is
@@ -717,41 +718,52 @@ jobs:
           # note pointing here, with NO APK, rather than leaving nothing —
           # until the next PR's beta job replaces the note in turn. The note's
           # tag sits on this main commit; --latest=false keeps this release
-          # Latest. A missing beta on the first run is fine.
-          gh release delete beta --cleanup-tag --yes 2>/dev/null \
-            && echo "previous beta removed" || echo "no previous beta"
-          {
-            echo "## Merged into Coaching App build ${GITHUB_RUN_NUMBER} — install that instead"
-            echo
-            echo "[Coaching App build ${GITHUB_RUN_NUMBER} (${VERSION})](${URL}) is the release marked Latest."
-            echo "The beta it came from was approved and merged, so there is nothing to test here."
-            echo "The next pull request's Coaching Beta replaces this note."
-            echo
-            echo "**iPhone: waiting on Apple enrolment (#108)**"
-          } > beta-note.md
-          if ! gh release create beta \
-              --target "$GITHUB_SHA" \
-              --title "Coaching Beta — merged into build ${GITHUB_RUN_NUMBER}" \
-              --notes-file beta-note.md \
-              --prerelease \
-              --latest=false 2>/tmp/gh-err.txt; then
-            echo "WHY THIS JOB FAILED: could not replace the beta with its merged note:"
-            cat /tmp/gh-err.txt
-            exit 1
+          # Latest. But another PR's beta may have published while this build
+          # was in its emulator test: an older merge's note must never replace
+          # an open PR's newer beta. beta_decision.py decides (self-test first).
+          python3 .github/scripts/beta_decision.py --self-test >/dev/null || {
+            echo "WHY THIS JOB FAILED: beta_decision.py failed its own self-test"; exit 1; }
+          BETA_ACTION="$(python3 .github/scripts/beta_decision.py "$GITHUB_REPOSITORY" "$GITHUB_SHA")" || BETA_ACTION=keep
+          [ "$BETA_ACTION" = replace ] || BETA_ACTION=keep
+          echo "beta: $BETA_ACTION"
+          if [ "$BETA_ACTION" = replace ]; then
+            gh release delete beta --cleanup-tag --yes 2>/dev/null \
+              && echo "previous beta removed" || echo "no previous beta"
+            {
+              echo "## Merged into Coaching App build ${GITHUB_RUN_NUMBER} — install that instead"
+              echo
+              echo "[Coaching App build ${GITHUB_RUN_NUMBER} (${VERSION})](${URL}) is the release marked Latest."
+              echo "The beta it came from was approved and merged, so there is nothing to test here."
+              echo "The next pull request's Coaching Beta replaces this note."
+              echo
+              echo "**iPhone: waiting on Apple enrolment (#108)**"
+            } > beta-note.md
+            if ! gh release create beta \
+                --target "$GITHUB_SHA" \
+                --title "Coaching Beta — merged into build ${GITHUB_RUN_NUMBER}" \
+                --notes-file beta-note.md \
+                --prerelease \
+                --latest=false 2>/tmp/gh-err.txt; then
+              echo "WHY THIS JOB FAILED: could not replace the beta with its merged note:"
+              cat /tmp/gh-err.txt
+              exit 1
+            fi
+          else
+            echo "beta left in place, not replaced by this merge's note (reason above)"
           fi
 
           # Read the outcome back from GitHub rather than trusting the flags.
           gh release view "$TAG" --json tagName,isPrerelease,isDraft,assets > /tmp/release.json || exit 1
           LATEST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
-          if gh release view beta --json tagName,isPrerelease,isDraft,assets,body > /tmp/beta.json 2>/dev/null; then
+          if gh release view beta --json name,tagName,isPrerelease,isDraft,assets,body > /tmp/beta.json 2>/dev/null; then
             BETA=/tmp/beta.json
           else
             BETA=none
           fi
           python3 .github/scripts/check_release.py --self-test || {
             echo "WHY THIS JOB FAILED: the release check failed its own self-test"; exit 1; }
-          python3 .github/scripts/check_release.py /tmp/release.json "$LATEST" "$BETA" "$TAG" || {
-            echo "WHY THIS JOB FAILED: main's build is not the Latest full release, or the beta is not its no-APK note (above)"; exit 1; }
+          python3 .github/scripts/check_release.py /tmp/release.json "$LATEST" "$BETA" "$TAG" "$BETA_ACTION" || {
+            echo "WHY THIS JOB FAILED: main's build is not the Latest full release, or the beta is neither its no-APK note nor a kept open PR's beta (above)"; exit 1; }
 
           IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
           IS_PRE="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
@@ -774,7 +786,8 @@ jobs:
   # so the PO can install it from a phone as a plain .apk, next to the released
   # app (its own application ID). Never marked latest: the newest main release
   # stays the default download. When the PR merges, the release job replaces
-  # it with a no-APK "Merged into Coaching App build N" note (#128 AC3).
+  # it with a no-APK "Merged into Coaching App build N" note (#128 AC3),
+  # unless a newer open PR's beta has replaced it first.
   #
   # The `beta` tag points at the PR's head commit, which a squash merge never
   # puts in main's history, so the release job's `git describe` cannot reach
