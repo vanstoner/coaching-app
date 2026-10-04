@@ -209,7 +209,7 @@ describe('a round trip does not lose anything', () => {
     v1.seasonLedger = { rounds: [1, 2, 3], note: 'written by a later version' };
     const result = readSession(JSON.stringify(v1));
     if (result.status !== 'ok') throw new Error(result.status);
-    expect((result.session as Record<string, unknown>).seasonLedger).toEqual({
+    expect((result.session as unknown as Record<string, unknown>).seasonLedger).toEqual({
       rounds: [1, 2, 3],
       note: 'written by a later version',
     });
@@ -244,7 +244,7 @@ describe('a save from a newer build', () => {
     if (result.status !== 'ok') return;
     expect(result.session.players).toHaveLength(10);
     // And the field this build knows nothing about comes back out again.
-    expect((result.session as Record<string, unknown>).somethingAddedLater).toBe('x');
+    expect((result.session as unknown as Record<string, unknown>).somethingAddedLater).toBe('x');
   });
 
   it('is refused when its shape cannot actually be read, whatever it claims', () => {

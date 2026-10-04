@@ -1,6 +1,6 @@
 # ADR-004: Fairness is measured on total playing time, not per position
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-015](./015-fairness-is-total-pitch-time.md)
 **Date:** 2026-09-17
 **Decision maker:** Product Owner
 

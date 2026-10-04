@@ -1,0 +1,11 @@
+{
+  // #99 AC3: tsconfig.json excludes the tests (they use vitest and node APIs the
+  // app never ships), and vitest strips types without checking them. This
+  // config type-checks the tests too. Run: npm run typecheck:tests
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*", "App.tsx", "index.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

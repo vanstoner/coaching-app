@@ -43,6 +43,7 @@ function makeFormat(onFieldCount = 7): Format {
     formatId,
     label: i === 0 ? 'GK' : `P${i}`,
     kind: i === 0 ? ('goalkeeper' as const) : ('outfield' as const),
+    unit: i === 0 ? ('GK' as const) : null,
     sortOrder: i,
   }));
   return { id: formatId, name: `${onFieldCount}-a-side`, onFieldCount, positions };

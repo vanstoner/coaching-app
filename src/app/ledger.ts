@@ -26,8 +26,16 @@
  *   content: skipped. Same id, different content: the existing entry is kept
  *   and the difference is reported.
  * - **Additive versioning (AC3).** `ledgerVersion` 1 is a contract. A later
- *   version may add optional fields and nothing else; this reader ignores
- *   fields it does not know and reads any version.
+ *   version may add optional fields and nothing else.
+ * - **Forward-compatible (#99 AC2, ADR-013 addendum).** A field this build
+ *   does not know is CARRIED, never dropped: through read, record, merge and
+ *   export, at every level (ledger, squad, player, match, interval, event),
+ *   and so is an event of a kind it does not know. Before this, an older build
+ *   rebuilt each entry from the fields it knew and still labelled the result
+ *   with the newer `ledgerVersion` — a silent downgrade. A file whose
+ *   `minReaderVersion` is above `LEDGER_READER_VERSION` is refused with a
+ *   reason, so it is never merged or written back by a build that cannot keep
+ *   it whole.
  * - **First names only (invariant 4).**
  */
 
@@ -45,6 +53,16 @@ import type {
 
 export const LEDGER_ID = 'coaching-app/minutes';
 export const LEDGER_VERSION = 1;
+
+/**
+ * The newest `minReaderVersion` this build can read and write back safely.
+ *
+ * A writer raises a file's `minReaderVersion` only for a change an older
+ * reader would damage by carrying it blindly. A file without one is read as
+ * 1: the v1 contract already promised that later versions only add optional
+ * fields, which carrying them handles.
+ */
+export const LEDGER_READER_VERSION = 1;
 
 export interface LedgerInterval {
   /** The Appearance id: what makes recording and import idempotent. */
@@ -81,7 +99,12 @@ export interface LedgerMatch {
 export interface LedgerEvent {
   /** The MatchEvent id: what makes recording and import idempotent. */
   id: UUID;
-  kind: MatchEventKind;
+  /**
+   * A `MatchEventKind` when this build wrote it. Widened because an event of
+   * a kind a later version added is carried as written, not dropped (#99
+   * AC2); nothing here folds a figure from an event's kind.
+   */
+  kind: MatchEventKind | (string & Record<never, never>);
   playerId: UUID | null;
   period: number;
   atMs: number;
@@ -106,6 +129,8 @@ export interface PlayerTotal {
 export interface Ledger {
   ledger: typeof LEDGER_ID;
   ledgerVersion: number;
+  /** The oldest reader that can safely carry this file. See LEDGER_READER_VERSION. */
+  minReaderVersion: number;
   writtenAt: string;
   squad: { id: UUID; name: string };
   players: LedgerPlayer[];
@@ -114,10 +139,83 @@ export interface Ledger {
   summary?: PlayerTotal[];
 }
 
+// --- forward compatibility (#99 AC2) ---------------------------------------
+//
+// The fields this build knows, per level. Anything else on a parsed object is
+// a later version's, and rides along untouched.
+
+const LEDGER_FIELDS = [
+  'ledger',
+  'ledgerVersion',
+  'minReaderVersion',
+  'writtenAt',
+  'squad',
+  'players',
+  'matches',
+  // Recomputed on every write and checked on read: never carried.
+  'summary',
+] as const;
+const SQUAD_FIELDS = ['id', 'name'] as const;
+const PLAYER_FIELDS = ['id', 'firstName', 'displaySuffix', 'active'] as const;
+const MATCH_FIELDS = [
+  'id',
+  'kickoffAt',
+  'opponent',
+  'competition',
+  'totalMinutes',
+  'periodCount',
+  'status',
+  'intervals',
+  'events',
+] as const;
+const INTERVAL_FIELDS = [
+  'id',
+  'playerId',
+  'period',
+  'kind',
+  'unit',
+  'startMs',
+  'endMs',
+  'corrected',
+  'note',
+] as const;
+const EVENT_FIELDS = ['id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'] as const;
+
+/** The fields on `from` this build does not know — a later version's. */
+function unknownOf(from: object | undefined, known: readonly string[]): Record<string, unknown> {
+  const keep: Record<string, unknown> = {};
+  if (!from) return keep;
+  for (const [key, value] of Object.entries(from)) {
+    if (!known.includes(key)) keep[key] = value;
+  }
+  return keep;
+}
+
+/**
+ * The unknown fields of two copies of the same entry: `ours` wins where both
+ * have one, and a field only `theirs` has is added. Nothing is removed.
+ */
+function unknownOfBoth(
+  ours: object,
+  theirs: object,
+  known: readonly string[]
+): Record<string, unknown> {
+  return { ...unknownOf(theirs, known), ...unknownOf(ours, known) };
+}
+
+/** What to tell a coach whose app is older than the minutes file. */
+export function tooNewLedgerMessage(writtenBy: number, needsReader: number): string {
+  return (
+    `This minutes file was saved by a newer version of the app (format ${writtenBy}, ` +
+    `needs ${needsReader}). Update the app to use it. Nothing has been changed.`
+  );
+}
+
 export function emptyLedger(squadId: UUID, squadName: string): Ledger {
   return {
     ledger: LEDGER_ID,
     ledgerVersion: LEDGER_VERSION,
+    minReaderVersion: LEDGER_READER_VERSION,
     writtenAt: new Date(0).toISOString(),
     squad: { id: squadId, name: squadName },
     players: [],
@@ -221,6 +319,7 @@ export function recordMatches(
   const playersById = new Map(ledger.players.map((p) => [p.id, p]));
   for (const p of players) {
     playersById.set(p.id, {
+      ...unknownOf(playersById.get(p.id), PLAYER_FIELDS),
       id: p.id,
       firstName: p.firstName,
       displaySuffix: p.displaySuffix,
@@ -236,12 +335,17 @@ export function recordMatches(
     if (fresh.length === 0 && freshEvents.length === 0) continue;
     const existing = matches.get(record.match.id);
     const intervals = new Map((existing?.intervals ?? []).map((i) => [i.id, i]));
-    for (const i of fresh) intervals.set(i.id, i);
+    for (const i of fresh) {
+      intervals.set(i.id, { ...unknownOf(intervals.get(i.id), INTERVAL_FIELDS), ...i });
+    }
     // Events are append-only, so this phone's copy of one never changes;
     // the union by id is the whole rule.
     const events = new Map((existing?.events ?? []).map((e) => [e.id, e]));
-    for (const e of freshEvents) events.set(e.id, e);
+    for (const e of freshEvents) {
+      events.set(e.id, { ...unknownOf(events.get(e.id), EVENT_FIELDS), ...e });
+    }
     matches.set(record.match.id, {
+      ...unknownOf(existing, MATCH_FIELDS),
       id: record.match.id,
       kickoffAt: record.match.kickoffAt,
       opponent: record.match.opponent,
@@ -256,9 +360,13 @@ export function recordMatches(
     });
   }
 
+  // `...ledger` carries the ledger's own unknown fields. Its version and
+  // reader version stay as the newest writer set them, which is honest now
+  // that nothing that writer added is dropped.
   return {
     ...ledger,
     ledgerVersion: Math.max(ledger.ledgerVersion, LEDGER_VERSION),
+    minReaderVersion: Math.max(ledger.minReaderVersion ?? LEDGER_READER_VERSION, LEDGER_READER_VERSION),
     writtenAt: now.toISOString(),
     squad: { ...ledger.squad, name: squadName || ledger.squad.name },
     players: [...playersById.values()],
@@ -294,22 +402,26 @@ export function serialiseLedger(ledger: Ledger): string {
 
 export type ParseResult =
   | { ok: true; ledger: Ledger }
-  | { ok: false; reason: string };
+  /** `tooNew`: written by a build this one must not write back over (#99 AC2). */
+  | { ok: false; reason: string; tooNew?: true };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const EVENT_KINDS: readonly string[] = ['goal', 'save', 'conceded', 'withdrawn'];
-
-/** Readable events only; an unknown kind from a later version is skipped. */
+/**
+ * The events in a file. A damaged one (no id, kind or time) is skipped; one of
+ * a kind a later version added is carried as written (#99 AC2), so writing
+ * the file back cannot lose it.
+ */
 function parseEvents(raw: unknown[]): LedgerEvent[] {
   const out: LedgerEvent[] = [];
   for (const e of raw) {
     if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string') continue;
-    if (!EVENT_KINDS.includes(e.kind) || typeof e.atMs !== 'number') continue;
+    if (typeof e.atMs !== 'number') continue;
     out.push({
+      ...unknownOf(e, EVENT_FIELDS),
       id: e.id as UUID,
-      kind: e.kind as MatchEventKind,
+      kind: e.kind,
       playerId: typeof e.playerId === 'string' ? (e.playerId as UUID) : null,
       period: typeof e.period === 'number' ? e.period : 0,
       atMs: e.atMs,
@@ -321,9 +433,10 @@ function parseEvents(raw: unknown[]): LedgerEvent[] {
 }
 
 /**
- * Read a ledger file. Unknown fields are ignored; a missing required one, or a
- * summary that disagrees with the intervals, refuses the file with a reason a
- * coach can act on.
+ * Read a ledger file. Unknown fields are kept, to be written back as they
+ * came (#99 AC2). A missing required field, a summary that disagrees with the
+ * intervals, or a `minReaderVersion` newer than this build refuses the file
+ * with a reason a coach can act on.
  */
 export function parseLedger(text: string): ParseResult {
   let raw: unknown;
@@ -338,6 +451,15 @@ export function parseLedger(text: string): ParseResult {
   if (typeof raw.ledgerVersion !== 'number' || raw.ledgerVersion < 1) {
     return { ok: false, reason: 'This minutes file has no version and cannot be trusted.' };
   }
+  // Before any structural check: a newer file may well be shaped differently,
+  // and "update the app" is the reason a coach can act on.
+  const minReader = raw.minReaderVersion === undefined ? LEDGER_READER_VERSION : raw.minReaderVersion;
+  if (typeof minReader !== 'number' || !Number.isInteger(minReader) || minReader < 1) {
+    return { ok: false, reason: 'This minutes file has a damaged version and cannot be trusted.' };
+  }
+  if (minReader > LEDGER_READER_VERSION) {
+    return { ok: false, reason: tooNewLedgerMessage(raw.ledgerVersion, minReader), tooNew: true };
+  }
   if (!isObj(raw.squad) || !Array.isArray(raw.players) || !Array.isArray(raw.matches)) {
     return { ok: false, reason: 'This minutes file is incomplete.' };
   }
@@ -348,6 +470,7 @@ export function parseLedger(text: string): ParseResult {
       return { ok: false, reason: 'A player in this file is damaged.' };
     }
     players.push({
+      ...unknownOf(p, PLAYER_FIELDS),
       id: p.id as UUID,
       firstName: p.firstName,
       displaySuffix: typeof p.displaySuffix === 'string' ? p.displaySuffix : null,
@@ -374,6 +497,7 @@ export function parseLedger(text: string): ParseResult {
         return { ok: false, reason: 'A playing interval in this file is damaged.' };
       }
       intervals.push({
+        ...unknownOf(i, INTERVAL_FIELDS),
         id: i.id as UUID,
         playerId: i.playerId as UUID,
         period: typeof i.period === 'number' ? i.period : 0,
@@ -386,6 +510,7 @@ export function parseLedger(text: string): ParseResult {
       });
     }
     matches.push({
+      ...unknownOf(m, MATCH_FIELDS),
       id: m.id as UUID,
       kickoffAt: typeof m.kickoffAt === 'string' ? m.kickoffAt : null,
       opponent: typeof m.opponent === 'string' ? m.opponent : null,
@@ -399,10 +524,13 @@ export function parseLedger(text: string): ParseResult {
   }
 
   const ledger: Ledger = {
+    ...unknownOf(raw, LEDGER_FIELDS),
     ledger: LEDGER_ID,
     ledgerVersion: raw.ledgerVersion,
+    minReaderVersion: minReader,
     writtenAt: typeof raw.writtenAt === 'string' ? raw.writtenAt : new Date(0).toISOString(),
     squad: {
+      ...unknownOf(raw.squad, SQUAD_FIELDS),
       id: (typeof raw.squad.id === 'string' ? raw.squad.id : '') as UUID,
       name: typeof raw.squad.name === 'string' ? raw.squad.name : '',
     },
@@ -460,11 +588,16 @@ export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport 
     if (!mine) {
       players.set(p.id, p);
       addedPlayers++;
-    } else if (samePlayer(mine, p)) {
+      continue;
+    }
+    if (samePlayer(mine, p)) {
       skipped++;
     } else {
       conflicts.push(`A player is called ${mine.firstName} here and ${p.firstName} in the file; kept ${mine.firstName}.`);
     }
+    // This phone's entry is kept; a later version's field only the file has
+    // is added to it, never dropped (#99 AC2).
+    players.set(p.id, { ...unknownOfBoth(mine, p, PLAYER_FIELDS), ...mine });
   }
 
   const matches = new Map(into.matches.map((m) => [m.id, m]));
@@ -485,13 +618,16 @@ export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport 
         events.set(e.id, e);
         addedIntervals++;
         changed = true;
-      } else if (sameEvent(have, e)) {
+        continue;
+      }
+      if (sameEvent(have, e)) {
         skipped++;
       } else {
         conflicts.push(
           `A goal or save in the match against ${mine.opponent ?? 'an unnamed opponent'} differs from the file; kept this phone's.`
         );
       }
+      events.set(e.id, { ...unknownOfBoth(have, e, EVENT_FIELDS), ...have });
     }
     for (const i of m.intervals) {
       const have = intervals.get(i.id);
@@ -499,34 +635,52 @@ export function mergeLedger(into: Ledger, from: Ledger, now: Date): MergeReport 
         intervals.set(i.id, i);
         addedIntervals++;
         changed = true;
-      } else if (sameInterval(have, i)) {
+        continue;
+      }
+      if (sameInterval(have, i)) {
         skipped++;
       } else {
         conflicts.push(
           `A playing time in the match against ${mine.opponent ?? 'an unnamed opponent'} differs from the file; kept this phone's.`
         );
       }
+      intervals.set(i.id, { ...unknownOfBoth(have, i, INTERVAL_FIELDS), ...have });
     }
-    if (changed) {
-      matches.set(m.id, {
-        ...mine,
-        intervals: [...intervals.values()].sort(
-          (a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id)
-        ),
-        ...(events.size > 0 ? { events: [...events.values()].sort(byTime) } : {}),
-      });
-    }
+    // Rebuilt every time, so a later version's field only the file has
+    // reaches this phone's copy too. Order is only re-sorted when something
+    // was added, as before.
+    matches.set(m.id, {
+      ...unknownOfBoth(mine, m, MATCH_FIELDS),
+      ...mine,
+      intervals: changed
+        ? [...intervals.values()].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id))
+        : mine.intervals.map((i) => intervals.get(i.id) ?? i),
+      ...(changed && events.size > 0
+        ? { events: [...events.values()].sort(byTime) }
+        : mine.events
+          ? { events: mine.events.map((e) => events.get(e.id) ?? e) }
+          : {}),
+    });
   }
 
   const changed = addedPlayers + addedMatches + addedIntervals > 0;
   return {
     ledger: {
+      ...unknownOfBoth(into, from, LEDGER_FIELDS),
       ...into,
-      ledgerVersion: Math.max(into.ledgerVersion, LEDGER_VERSION),
+      ledgerVersion: Math.max(into.ledgerVersion, from.ledgerVersion, LEDGER_VERSION),
+      // The file's fields are carried, so its reader requirement comes too.
+      minReaderVersion: Math.max(
+        into.minReaderVersion ?? LEDGER_READER_VERSION,
+        from.minReaderVersion ?? LEDGER_READER_VERSION
+      ),
       writtenAt: changed ? now.toISOString() : into.writtenAt,
       // A fresh install takes the squad's identity from the file, so its
       // later matches line up with the imported ones.
-      squad: into.players.length === 0 && into.matches.length === 0 ? from.squad : into.squad,
+      squad:
+        into.players.length === 0 && into.matches.length === 0
+          ? from.squad
+          : { ...unknownOfBoth(into.squad, from.squad, SQUAD_FIELDS), ...into.squad },
       players: [...players.values()],
       matches: [...matches.values()],
     },

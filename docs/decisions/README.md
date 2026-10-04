@@ -33,7 +33,7 @@ state management does.
 | [001](./001-react-native-expo.md) | React Native + Expo for cross-platform | Accepted | 2026-09-17 |
 | [002](./002-wall-clock-time-derivation.md) | Derive elapsed time from wall-clock anchors | Accepted | 2026-09-17 |
 | [003](./003-intervals-as-source-of-truth.md) | Appearances as the source of truth for minutes | Superseded by [ADR-007](./007-append-only-match-event-log.md) | 2026-09-17 |
-| [004](./004-fairness-is-position-independent.md) | Fairness measured on total time, not per position | Accepted | 2026-09-17 |
+| [004](./004-fairness-is-position-independent.md) | Fairness measured on total time, not per position | Superseded by [ADR-015](./015-fairness-is-total-pitch-time.md) | 2026-09-17 |
 | [005](./005-deterministic-docs-build.md) | Documentation site built deterministically | Accepted | 2026-09-17 |
 | [006](./006-sync-ready-not-hosted.md) | Build the spine sync-ready; do not build hosting yet | Accepted | 2026-09-17 |
 | [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Accepted | 2026-09-17 |
@@ -43,6 +43,9 @@ state management does.
 | [011](./011-player-data-stays-on-device.md) | Player data stays on device until a hosting ADR is approved | Accepted | 2026-09-17 |
 | [012](./012-match-owns-its-format.md) | A match owns the format it is played in | Accepted | 2026-09-20 |
 | [013](./013-minutes-ledger.md) | Player time lives in its own ledger, with a frozen format | Accepted | 2026-10-03 |
+| [014](./014-ledger-hash-chain.md) | Ledger v2 is a hash chain, and it records attendance | Accepted | 2026-10-04 |
+| [015](./015-fairness-is-total-pitch-time.md) | Fairness is total time on the pitch; averages are per match attended | Accepted | 2026-10-04 |
+| [016](./016-charts-drawn-from-views.md) | Charts are bars we draw ourselves, from a pure numbers module | Accepted | 2026-10-04 |
 
 ## Template
 

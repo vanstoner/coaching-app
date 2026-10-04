@@ -171,6 +171,10 @@ therefore enforced by hand, on trust.
 3. `npx tsc --noEmit`
 4. `python3 docs/process/validate-docs.py`
 
+*Since #99 (2026-10-04)* the tests, typecheck, test typecheck, lint and
+coverage run as the `checks` job of `android-apk.yml`, which the release and
+the beta both need; `ci.yml` keeps the bundle check, commit trailers and docs.
+
 The PO ruled this in alongside the reshape. It is landed **before** the reshape
 pull request rather than inside it, because a gate that arrives in the same PR
 cannot guard that PR's own review — and the reshape is the largest engine rewrite

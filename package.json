@@ -8,9 +8,11 @@
     "apk": "expo prebuild --platform android --clean && ./android/gradlew -p android assembleDebug",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
+    "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit",
-    "bundle:check": "expo export --platform android --output-dir .expo-bundle-check"
+    "bundle:check": "expo export --platform android --output-dir .expo-bundle-check",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint ."
   },
   "keywords": [
     "coaching",
@@ -21,10 +23,16 @@
   "author": "Rob van Stone",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.0.0",
     "@types/react": "~19.2.2",
+    "@vitest/coverage-v8": "^2.1.9",
     "@vitest/ui": "^2.1.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.13.0",
     "typescript": "^5.6.2",
+    "typescript-eslint": "^8.71.0",
     "vitest": "^2.1.0"
   },
   "dependencies": {
