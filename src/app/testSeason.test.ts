@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
-import { matchChart, matchReport, seasonChart, seasonStats } from './analysis';
+import { matchChart, matchReport, seasonStats } from './analysis';
 import { kickoffTimes, seasonAttendance } from './attendance';
 import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { verifyChain } from './ledgerChain';
@@ -117,10 +117,9 @@ describe('a past season in the Test kit (#106 AC1)', () => {
   });
 
   it('groups the season view League 6+ and Cup 2+, with differing averages', () => {
-    const chart = seasonChart(ledger, s.players);
-    expect(chart.countedMatches).toBe(SEASON.length);
-    expect(chart.inferredMatches).toBe(0);
     const stats = seasonStats(ledger, s.players);
+    expect(stats.countedMatches).toBe(SEASON.length);
+    expect(stats.inferredMatches).toBe(0);
     const ivy = stats.players.find((p) => p.playerId === s.id('Ivy'))!;
     expect(ivy.byCompetition.league.attended).toBeGreaterThanOrEqual(6);
     expect(ivy.byCompetition.cup.attended).toBeGreaterThanOrEqual(2);

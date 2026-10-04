@@ -11,6 +11,10 @@
  * the match record each time it is drawn; nothing is stored (AC3). No
  * player-of-the-week rating (AC4).
  *
+ * This match only (#121 AC1): each child's minutes over the outline of their
+ * average from the other matches, and one plain line saying the season
+ * figures are on each child's page in Squad.
+ *
  * A played match is history. Two acts only, each explicit (PO rulings D and
  * F, #98): **End match** closes it, the counterpart of End quarter, so it
  * counts towards season averages; **Correct attendance** writes a noted
@@ -23,11 +27,14 @@ import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
-import { matchReport, wholeMinutes } from '../app/analysis';
+import type { Ledger } from '../app/ledger';
+import { matchChart, matchReport, wholeMinutes } from '../app/analysis';
+import { SEASON_POINTER } from '../app/childSeason';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
 import { Chip, ChipRow } from './Chip';
+import { MatchBars } from './Charts';
 import { colours, screen } from './theme';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -47,6 +54,8 @@ export function MatchSummaryScreen({
   state,
   format,
   players,
+  ledger,
+  kickoffs,
   now,
   onAnalysis,
   onEndMatch,
@@ -57,6 +66,10 @@ export function MatchSummaryScreen({
   state: MatchState;
   format?: Format | null;
   players: Player[];
+  /** For the outline of each child's average from the other matches (#121 AC1). */
+  ledger: Ledger | null;
+  /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
+  kickoffs: ReadonlyMap<UUID, string>;
   now: Date;
   /** Match analysis (#105 AC3). */
   onAnalysis?: () => void;
@@ -74,6 +87,7 @@ export function MatchSummaryScreen({
   } | null>(null);
   const closed = state.match.status === 'completed';
   const report = matchReport(engine, state, players, format);
+  const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
     (id && players.find((p) => p.id === id)?.firstName) ||
@@ -161,6 +175,13 @@ export function MatchSummaryScreen({
             </Text>
           </View>
         ))}
+
+        <Text style={screen.fieldLabel}>Against their average</Text>
+        <Text style={screen.hint}>
+          Outline: their average per match attended, from the other matches. Furthest below it first.
+        </Text>
+        <MatchBars chart={{ ...chart, absent: [] }} />
+        <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 
         <Text style={screen.fieldLabel}>Subs made: {report.subs.length}</Text>
         {report.subs.map((s, i) => (
@@ -324,4 +345,5 @@ const local = StyleSheet.create({
   faint: { color: colours.inkFaint },
   notClosed: { color: colours.warn },
   panel: { alignSelf: 'stretch', marginTop: 8 },
+  pointer: { marginTop: 14 },
 });

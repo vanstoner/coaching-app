@@ -141,3 +141,7 @@ analysis, iOS". Entries are added as each release ships.
   the specs now say they are the v1 foundation, the September process documents
   moved to `docs/archive/`, and every pull request now updates any doc it makes
   wrong. Shipped issues were checked criterion by criterion against their tests.
+- **4 October — season figures live with each child (#121).** Match screens
+  now show only the match and point to Squad, where each child's row and page
+  carry their minutes a game, played and missed, by competition. The Main
+  keeper is left out of the squad average. The Season screen is gone.

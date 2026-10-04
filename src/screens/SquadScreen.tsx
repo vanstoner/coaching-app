@@ -15,6 +15,16 @@
  * On the way to a **match** it is step one of a kick-off: the tabs are gone,
  * it offers the lineup, and it offers Leave. A screen whose only exit commits
  * the coach to starting a game is a trap — the lineup screen was one.
+ *
+ * ---------------------------------------------------------------------------
+ * Each child's season (#121)
+ * ---------------------------------------------------------------------------
+ *
+ * Each row answers "is anyone behind?": minutes a game, played X of Y, and a
+ * small bar against the squad average. The list keeps its order (PO ruling).
+ * A Main keeper is not in the squad average, and their row says so. Tapping a
+ * name opens the child's page, where their figures and their position
+ * preferences live.
  */
 
 import { useCallback, useState } from 'react';
@@ -30,30 +40,31 @@ import {
 import { Text } from './Text';
 
 import type { Player, UUID } from '../types/index';
+import type { Ledger } from '../app/ledger';
 import {
   MAX_NAME_LENGTH,
   activePlayers,
   displayName,
   duplicatedNames,
   makePlayer,
-  KEEPER_LABEL,
-  UNIT_PREF_LABEL,
   preferenceSummary,
-  setKeeperPreference,
-  setUnitPreference,
   removePlayer,
   restorePlayer,
   squadReadiness,
   validateName,
 } from '../app/squad';
-import { Chip, ChipRow } from './Chip';
-import { OUTFIELD_TARGET_CHOICES, setOutfieldTarget } from '../app/outfieldTarget';
+import { wholeMinutes } from '../app/analysis';
+import { MAIN_KEEPER_NOTE, squadSeason } from '../app/childSeason';
+import { AverageBar, chartColours } from './Charts';
+import { ChildScreen } from './ChildScreen';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadScreen({
   squadId,
   players: everyone,
   played,
+  ledger,
+  kickoffs,
   onPlayers,
   onFieldCount,
   /** Offered only on the way to a match; the tab has tabs instead. */
@@ -66,6 +77,10 @@ export function SquadScreen({
   players: Player[];
   /** Players with recorded time: removing one retires rather than deletes. */
   played: ReadonlySet<UUID>;
+  /** Each child's season figures (#121), folded on every draw. */
+  ledger: Ledger | null;
+  /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
+  kickoffs: ReadonlyMap<UUID, string>;
   onPlayers: (p: Player[]) => void;
   onFieldCount: number;
   onStartMatch: (() => void) | null;
@@ -74,12 +89,14 @@ export function SquadScreen({
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
   const [draft, setDraft] = useState('');
-  /** Whose position preference is open (#86). */
-  const [openPrefs, setOpenPrefs] = useState<UUID | null>(null);
+  /** Whose page is open (#121). */
+  const [openChild, setOpenChild] = useState<UUID | null>(null);
   const [error, setError] = useState('');
 
   const readiness = squadReadiness(players, onFieldCount);
   const dupes = duplicatedNames(players);
+  const season = squadSeason(ledger, everyone, { kickoffs });
+  const seasonOf = (id: UUID) => season.children.find((c) => c.playerId === id);
 
   const add = useCallback(() => {
     const check = validateName(draft);
@@ -91,6 +108,21 @@ export function SquadScreen({
     setDraft('');
     setError('');
   }, [draft, everyone, onPlayers, squadId]);
+
+  const child = openChild === null ? undefined : players.find((p) => p.id === openChild);
+  if (child) {
+    return (
+      <ChildScreen
+        player={child}
+        season={seasonOf(child.id)}
+        squadAverageMs={season.squadAverageMs}
+        scaleMs={season.scaleMs}
+        everyone={everyone}
+        onPlayers={onPlayers}
+        onBack={() => setOpenChild(null)}
+      />
+    );
+  }
 
   return (
     <View style={screen.flex}>
@@ -129,84 +161,68 @@ export function SquadScreen({
           {error !== '' && <Text style={screen.error}>{error}</Text>}
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
-            {players.map((p) => {
-              const open = openPrefs === p.id;
-              const summary = preferenceSummary(p);
-              return (
-                <View key={p.id}>
-                  <View style={screen.playerRow}>
-                    {/* #86: tap a name for their position preference. */}
-                    <Pressable
-                      onPress={() => setOpenPrefs(open ? null : p.id)}
-                      style={local.nameHit}
-                    >
-                      <Text style={screen.playerName} numberOfLines={1}>
-                        {displayName(p)}
-                      </Text>
-                      <Text style={local.prefSummary} numberOfLines={1}>
-                        {summary === '' ? 'Tap to set a position preference' : summary}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
-                      style={local.removeHit}
-                    >
-                      <Text style={local.remove}>Remove</Text>
-                    </Pressable>
+            {players.length > 0 &&
+              (season.countedMatches === 0 ? (
+                <Text style={screen.hint}>
+                  Each child&apos;s minutes a game appear here after the first match is closed.
+                </Text>
+              ) : (
+                <View style={local.key}>
+                  <View style={local.keyItem}>
+                    <View style={local.keyFill} />
+                    <Text style={local.keyText}>Minutes a game, out of {wholeMinutes(season.scaleMs)}</Text>
                   </View>
-                  {open && (
-                    <View style={local.prefs}>
-                      <Text style={screen.hint}>In goal</Text>
-                      <ChipRow>
-                        {(['main', 'backup', 'never'] as const).map((k) => (
-                          <Chip
-                            key={k}
-                            label={KEEPER_LABEL[k]}
-                            selected={p.keeper === k}
-                            // Tapping the chosen one clears it.
-                            onPress={() =>
-                              onPlayers(setKeeperPreference(everyone, p.id, p.keeper === k ? null : k))
-                            }
-                          />
-                        ))}
-                      </ChipRow>
-                      <Text style={screen.hint}>Prefers, outfield</Text>
-                      <ChipRow>
-                        {(['DEF', 'MID', 'ATT'] as const).map((u) => (
-                          <Chip
-                            key={u}
-                            label={UNIT_PREF_LABEL[u]}
-                            selected={p.prefers === u}
-                            onPress={() =>
-                              onPlayers(setUnitPreference(everyone, p.id, p.prefers === u ? null : u))
-                            }
-                            narrow
-                          />
-                        ))}
-                      </ChipRow>
-                      {/* #101 AC2: shown beside their figures; never a fairness input. */}
-                      <Text style={screen.hint}>Outfield share target</Text>
-                      <ChipRow>
-                        {OUTFIELD_TARGET_CHOICES.map((t) => (
-                          <Chip
-                            key={t}
-                            label={`${t}%`}
-                            selected={p.outfieldTargetPct === t}
-                            onPress={() =>
-                              onPlayers(
-                                setOutfieldTarget(everyone, p.id, p.outfieldTargetPct === t ? null : t)
-                              )
-                            }
-                            narrow
-                          />
-                        ))}
-                      </ChipRow>
-                      <Text style={screen.hint}>
-                        Only decides who is suggested where. Minutes and fairness are not affected.
-                        Fairness counts time in goal and outfield together.
-                      </Text>
+                  {season.squadAverageMs !== null && (
+                    <View style={local.keyItem}>
+                      <View style={local.keyTick} />
+                      <Text style={local.keyText}>Squad average, {wholeMinutes(season.squadAverageMs)}</Text>
                     </View>
                   )}
+                </View>
+              ))}
+            {players.map((p) => {
+              const s = seasonOf(p.id);
+              const summary = preferenceSummary(p);
+              const figures = s?.summary ?? 'No matches yet';
+              return (
+                <View key={p.id} style={screen.playerRow}>
+                  {/* #121: tap a name for their page. */}
+                  <Pressable
+                    onPress={() => setOpenChild(p.id)}
+                    style={local.nameHit}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${displayName(p)}, ${figures}${s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
+                  >
+                    <Text style={screen.playerName} numberOfLines={1}>
+                      {displayName(p)}
+                    </Text>
+                    <Text style={local.figures} numberOfLines={1}>
+                      {figures}
+                    </Text>
+                    {s && s.averageMs !== null && (
+                      <AverageBar
+                        value={s.averageMs}
+                        line={s.mainKeeper ? null : season.squadAverageMs}
+                        scale={season.scaleMs}
+                      />
+                    )}
+                    {s?.mainKeeper && s.averageMs !== null && (
+                      <Text style={local.prefSummary} numberOfLines={1}>
+                        {MAIN_KEEPER_NOTE}
+                      </Text>
+                    )}
+                    {summary !== '' && (
+                      <Text style={local.prefSummary} numberOfLines={1}>
+                        {summary}
+                      </Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
+                    style={local.removeHit}
+                  >
+                    <Text style={local.remove}>Remove</Text>
+                  </Pressable>
                 </View>
               );
             })}
@@ -273,9 +289,14 @@ const local = StyleSheet.create({
     minWidth: 72,
     paddingHorizontal: 18,
   },
-  nameHit: { flex: 1, minHeight: TOUCH_TARGET, justifyContent: 'center' },
-  prefSummary: { color: colours.inkMuted, fontSize: 12, marginTop: 2, includeFontPadding: false },
-  prefs: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#164f3c' },
+  nameHit: { flex: 1, minHeight: TOUCH_TARGET, justifyContent: 'center', paddingVertical: 8, paddingRight: 8 },
+  figures: { color: colours.inkMuted, fontSize: 14, marginTop: 3, includeFontPadding: false },
+  prefSummary: { color: colours.inkFaint, fontSize: 12, marginTop: 4, includeFontPadding: false },
+  key: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'stretch', marginTop: 10, marginBottom: 2 },
+  keyItem: { flexDirection: 'row', alignItems: 'center', marginRight: 14, marginBottom: 4 },
+  keyFill: { width: 18, height: 8, borderRadius: 2, backgroundColor: chartColours.outfield, marginRight: 6 },
+  keyTick: { width: 2, height: 14, backgroundColor: colours.ink, marginRight: 6 },
+  keyText: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, flexShrink: 0 },
   // 44dp even though the word is small: a mis-hit here deletes a child from
   // the squad, and the row it sits in is 44 high anyway.
   removeHit: {

@@ -1,5 +1,6 @@
 /**
- * The two bar charts — #105, #103, ADR-016.
+ * The match bar chart — #105, ADR-016. The season chart it sat beside was
+ * removed by #121: season figures live on each child's page in Squad.
  *
  * Plain `View` and `Text`: a bar is a box whose width is a fraction of the
  * track. No drawing library. Every number arrives ready from
@@ -8,15 +9,12 @@
  * **Colours (AC4).** Green and orange are taken by the app and the beta's
  * identity, so the bars use the Okabe–Ito palette, designed to stay distinct
  * under the common colour-vision deficiencies, and readable on the dark pitch
- * green: sky blue, yellow and reddish purple. Colour is never the only cue:
+ * green: sky blue. Colour is never the only cue:
  *
  * - This match: one bar in two segments that differ in LIGHTNESS (pale = in
  *   goal, full = outfield), named in the legend.
  * - The shadow: an OUTLINE with no fill, drawn over the bar so it shows
  *   whether the bar falls short of it or runs past it.
- * - Season: each bar sits in a fixed order (League, Cup, Friendly, Tournament,
- *   then Other only when a competition this build does not know has a match) and carries
- *   its own text label, so the colour is a second cue, never the first.
  *
  * **Legibility (AC4).** First names at 17, values in the same line as the
  * name ("Ava 32 · avg 28"), bars 22 high. Each row carries one
@@ -26,7 +24,7 @@
 import { StyleSheet, View, type DimensionValue } from 'react-native';
 import { Text } from './Text';
 
-import type { MatchChart, SeasonChart, SeasonColumn } from '../app/analysis';
+import type { MatchChart } from '../app/analysis';
 import { colours } from './theme';
 
 export const chartColours = {
@@ -37,13 +35,6 @@ export const chartColours = {
   /** The shadow's outline: no hue at all. */
   shadow: '#ffffff',
   track: '#164f3c',
-  season: {
-    league: '#56B4E9',
-    cup: '#F0E442',
-    friendly: '#E69F00',
-    tournament: '#CC79A7',
-    other: '#D55E00',
-  } as Record<SeasonColumn, string>,
 } as const;
 
 const pct = (ms: number, max: number): DimensionValue =>
@@ -92,39 +83,27 @@ export function MatchBars({ chart }: { chart: MatchChart }) {
   );
 }
 
-/** #105 AC2, #103 AC2: season average per match attended, split by competition. */
-export function SeasonBars({ chart }: { chart: SeasonChart }) {
+/**
+ * #121: one child's minutes a game against a reference line — the squad
+ * average on the Squad list, the target on a keeper's share. No line when
+ * there is no reference (a Main keeper is not in the squad average).
+ */
+export function AverageBar({
+  value,
+  line,
+  scale,
+  wide = false,
+}: {
+  value: number;
+  line: number | null;
+  scale: number;
+  wide?: boolean;
+}) {
+  const height = wide ? 14 : 8;
   return (
-    <View style={local.chart}>
-      {chart.rows.map((row) => (
-        <View key={row.playerId} style={local.group} accessible accessibilityLabel={row.label}>
-          <Text style={local.label} numberOfLines={1}>
-            {row.name}
-            {row.averageMs === null ? ' · no matches yet' : ''}
-          </Text>
-          {row.averageMs !== null &&
-            row.bars.map((bar) => (
-              <View key={bar.column} style={local.seasonRow}>
-                <Text style={local.seasonLabel} numberOfLines={1}>
-                  {bar.label}
-                </Text>
-                <View style={local.seasonTrack}>
-                  {bar.averageMs !== null && (
-                    <View
-                      style={[
-                        local.seasonBar,
-                        {
-                          width: pct(bar.averageMs, chart.maxMs),
-                          backgroundColor: chartColours.season[bar.column],
-                        },
-                      ]}
-                    />
-                  )}
-                </View>
-              </View>
-            ))}
-        </View>
-      ))}
+    <View style={[local.mini, { height }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[local.miniFill, { width: pct(value, scale) }]} />
+      {line !== null && <View style={[local.miniTick, { left: pct(line, scale) }]} />}
     </View>
   );
 }
@@ -182,22 +161,19 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginTop: 8,
   },
-  group: {
+  mini: {
     alignSelf: 'stretch',
-    paddingVertical: 8,
-    borderBottomColor: colours.line,
-    borderBottomWidth: 1,
+    backgroundColor: chartColours.track,
+    borderRadius: 2,
+    marginTop: 7,
   },
-  seasonRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 4 },
-  // Fixed width, never minWidth: "Tournament 32 · n 12" and "Cup — none" share it.
-  seasonLabel: {
-    width: 176,
-    flexShrink: 0,
-    color: colours.inkMuted,
-    fontSize: 15,
-    includeFontPadding: false,
-    paddingRight: 6,
+  miniFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: chartColours.outfield,
+    borderRadius: 2,
   },
-  seasonTrack: { flex: 1, height: 16, backgroundColor: chartColours.track, borderRadius: 3 },
-  seasonBar: { height: '100%', borderRadius: 3 },
+  miniTick: { position: 'absolute', top: -4, bottom: -4, width: 2, marginLeft: -1, backgroundColor: colours.ink },
 });

@@ -17,7 +17,6 @@ import {
   competitionBucket,
   matchChart,
   matchReport,
-  seasonChart,
   seasonStats,
   wholeMinutes,
 } from './analysis';
@@ -257,10 +256,6 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     expect(gus.byCompetition.league.attended).toBe(0);
     expect(gus.byCompetition.friendly.attended).toBe(0);
     expect(gus.byCompetition.other).toEqual({ attended: 1, pitchMs: 24 * MIN, averageMs: 24 * MIN });
-    const chart = seasonChart(ledger, sq.players);
-    const row = chart.rows.find((r) => r.playerId === sq.players[6].id)!;
-    expect(row.bars.map((b) => b.column)).toEqual(['league', 'cup', 'friendly', 'tournament', 'other']);
-    expect(row.bars[4]).toMatchObject({ matches: 1, label: 'Other 24 · n 1' });
   });
 });
 
@@ -313,43 +308,5 @@ describe('matchChart (#105 AC1)', () => {
     expect(chart.rows.every((r) => r.shadowMs === null)).toBe(true);
     // Least played first when nobody has an average.
     expect(chart.rows[0].thisMatchMs).toBe(0);
-  });
-});
-
-describe('seasonChart (#105 AC2, #103 AC2)', () => {
-  // PO ruling N3 (#98) replaced "friendly and tournament together as Other":
-  // each competition has its own column.
-  it('puts league, cup, friendly and tournament side by side; no Other when empty', () => {
-    const sq = squad();
-    const states = [
-      play(sq, { competition: 'league' }).state,
-      play(sq, { competition: 'cup' }).state,
-      play(sq, { competition: 'friendly' }).state,
-      play(sq, { competition: 'tournament', benched: [sq.players[6].id] }).state,
-    ];
-    const chart = seasonChart(ledgerOf(sq, states), sq.players);
-    expect(chart.countedMatches).toBe(4);
-    expect(chart.inferredMatches).toBe(4);
-
-    const gus = chart.rows.find((r) => r.name === 'Gus')!;
-    expect(gus.bars.map((b) => b.column)).toEqual(['league', 'cup', 'friendly', 'tournament']);
-    expect(gus.bars[2]).toMatchObject({ averageMs: 24 * MIN, matches: 1, label: 'Friendly 24 · n 1' });
-    // Benched in the tournament (v1: not attended), so no tournament average.
-    expect(gus.bars[3]).toMatchObject({ averageMs: null, matches: 0, label: 'Tournament — none' });
-    expect(gus.bars[1].label).toBe('Cup 24 · n 1');
-    const ava = chart.rows.find((r) => r.name === 'Ava')!;
-    expect(ava.bars[3]).toMatchObject({ averageMs: 50 * MIN, matches: 1, label: 'Tournament 50 · n 1' });
-
-    // Jo never played: no average, no zero bar, last.
-    const jo = chart.rows[chart.rows.length - 1];
-    expect(jo.name).toBe('Jo');
-    expect(jo.averageMs).toBeNull();
-    expect(jo.bars.every((b) => b.averageMs === null)).toBe(true);
-    expect(jo.bars[1].label).toBe('Cup — none');
-    // Lowest season average first.
-    const averages = chart.rows.filter((r) => r.averageMs !== null).map((r) => r.averageMs as number);
-    expect(averages).toEqual([...averages].sort((a, b) => a - b));
-    expect(chart.maxMs).toBe(50 * MIN);
-    expect(gus.label).toContain('Gus, avg 24.');
   });
 });
