@@ -28,7 +28,13 @@ import {
   serialiseLedger,
   type Ledger,
 } from './ledger';
-import { LEDGER_STORAGE_KEY, loadLedger, readStoredLedger } from './ledgerStore';
+import {
+  LEDGER_STORAGE_KEY,
+  UNREADABLE_LEDGER_PREFIX,
+  loadLedger,
+  openStoredLedger,
+  readStoredLedger,
+} from './ledgerStore';
 import { createMemoryStore } from './persistence';
 
 const MIN = 60_000;
@@ -221,5 +227,54 @@ describe('v1 files and this build’s own writing', () => {
     expect(out.ledgerVersion).toBe(LEDGER_VERSION);
     expect(LEDGER_VERSION).toBe(1);
     expect(out.minReaderVersion).toBe(1);
+  });
+});
+
+describe('opening the stored ledger never loses it (QA on #110)', () => {
+  const at = new Date('2026-10-04T09:30:00Z');
+  const v1 = () => serialiseLedger(emptyLedger(uuid(), 'Test FC'));
+
+  it('carries on from a healthy ledger, and starts one when there is none', async () => {
+    const store = createMemoryStore();
+    expect(await openStoredLedger(store, at)).toEqual({ ledger: null, writable: true, message: '' });
+    await store.setItem(LEDGER_STORAGE_KEY, v1());
+    const opened = await openStoredLedger(store, at);
+    expect(opened.writable).toBe(true);
+    expect(opened.ledger).not.toBeNull();
+    expect(opened.message).toBe('');
+  });
+
+  it('sets an unreadable ledger aside intact, proved by reading it back, before a new one starts', async () => {
+    const store = createMemoryStore();
+    await store.setItem(LEDGER_STORAGE_KEY, '{damaged');
+    const opened = await openStoredLedger(store, at);
+    expect(opened).toMatchObject({ ledger: null, writable: true });
+    expect(opened.message).toMatch(/set aside unchanged/);
+    expect(await store.getItem(`${UNREADABLE_LEDGER_PREFIX}${at.toISOString()}`)).toBe('{damaged');
+  });
+
+  it('writes nothing when the copy cannot be made, or the store cannot be read at all', async () => {
+    const failingWrites = createMemoryStore();
+    await failingWrites.setItem(LEDGER_STORAGE_KEY, '{damaged');
+    failingWrites.setItem = async () => {
+      throw new Error('disk full');
+    };
+    expect(await openStoredLedger(failingWrites, at)).toMatchObject({ ledger: null, writable: false });
+
+    const unreadableStore = createMemoryStore();
+    unreadableStore.getItem = async () => {
+      throw new Error('I/O');
+    };
+    const opened = await openStoredLedger(unreadableStore, at);
+    expect(opened).toMatchObject({ ledger: null, writable: false });
+    expect(opened.message).toMatch(/Nothing has been changed or deleted/);
+  });
+
+  it('writes nothing over a ledger a newer build said this one must not write', async () => {
+    const store = createMemoryStore();
+    const doc = v2File(played().ledger);
+    doc.minReaderVersion = LEDGER_READER_VERSION + 1;
+    await store.setItem(LEDGER_STORAGE_KEY, JSON.stringify(doc));
+    expect(await openStoredLedger(store, at)).toMatchObject({ ledger: null, writable: false });
   });
 });

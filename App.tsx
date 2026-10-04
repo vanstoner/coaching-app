@@ -75,7 +75,7 @@ import {
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { clearLedger, readStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
+import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
@@ -192,11 +192,11 @@ export default function App() {
    * safely write it back (#99 AC2). Nothing is recorded, imported or saved
    * over it until the app is updated — or Forget everything clears it.
    */
-  const ledgerTooNewRef = useRef(false);
+  const ledgerBlockedRef = useRef(false);
 
   const commitLedger = useCallback(
     (next: Ledger) => {
-      if (ledgerTooNewRef.current) return;
+      if (ledgerBlockedRef.current) return;
       const current = ledgerRef.current;
       ledgerRef.current = next;
       setLedger(next);
@@ -222,13 +222,13 @@ export default function App() {
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
       const saved = await loadSession(store);
-      const read = await readStoredLedger(store);
+      // A ledger that will not read is set aside intact, never written over;
+      // one this build may not write is left alone (#99, QA on #110).
+      const opened = await openStoredLedger(store, appNow());
       if (cancelled) return;
-      if (read.status === 'too_new') {
-        ledgerTooNewRef.current = true;
-        setLedgerMessage(read.reason);
-      }
-      const storedLedger = read.status === 'ok' ? read.ledger : null;
+      if (!opened.writable) ledgerBlockedRef.current = true;
+      if (opened.message !== '') setLedgerMessage(opened.message);
+      const storedLedger = opened.ledger;
 
       // AC7: back-fill. Every match already played is copied in from its
       // recorded appearances — measured values, never estimated ones. On
@@ -330,7 +330,7 @@ export default function App() {
   const importMinutes = useCallback(async () => {
     // The ledger on this phone came from a newer build: merging into an empty
     // one and saving would write over it.
-    if (ledgerTooNewRef.current) return;
+    if (ledgerBlockedRef.current) return;
     setLedgerBusy(true);
     const picked = await pickLedgerFile();
     setLedgerBusy(false);
@@ -676,7 +676,7 @@ export default function App() {
     // A fresh, empty ledger rather than none, so the next match is recorded.
     const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME);
     // Cleared above, so nothing newer is left to protect.
-    ledgerTooNewRef.current = false;
+    ledgerBlockedRef.current = false;
     ledgerRef.current = fresh;
     setLedger(fresh);
     setLedgerMessage('');
