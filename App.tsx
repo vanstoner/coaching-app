@@ -86,6 +86,7 @@ import {
 } from './src/app/ledger';
 import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
@@ -335,11 +336,13 @@ export default function App() {
 
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
   const exportMinutes = useCallback(async () => {
-    if (!ledgerRef.current) return;
+    const written = ledgerRef.current;
+    if (!written) return;
     setLedgerBusy(true);
-    const result = await exportLedgerFile(ledgerRef.current, appNow());
+    const result = await exportLedgerFile(written, appNow());
     setLedgerBusy(false);
-    setLedgerMessage(result.ok ? '' : result.reason);
+    // Ruling N1: the count and fingerprint, for two coaches to compare.
+    setLedgerMessage(result.ok ? exportedMessage(written) : result.reason);
   }, []);
 
   /**
@@ -368,7 +371,7 @@ export default function App() {
     const current = ledgerRef.current ?? emptyLedger(squadId, squadName, appNow());
     const report = importLedger(current, parsed.ledger);
     if (!report.ok) {
-      setLedgerMessage(report.reason);
+      setLedgerMessage(importedMessage(report.reason, parsed.ledger, current));
       return;
     }
     commitLedger(report.ledger);
@@ -393,7 +396,7 @@ export default function App() {
     setSquadId(nextSquadId);
     setSquadName(nextName);
     persist({ players: nextPlayers, squadId: nextSquadId, squadName: nextName });
-    setLedgerMessage(describeImport(report));
+    setLedgerMessage(importedMessage(describeImport(report), parsed.ledger, report.ledger));
   }, [squadId, squadName, players, matches, persist, commitLedger]);
 
   useEffect(() => {

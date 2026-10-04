@@ -118,6 +118,14 @@ export. It detects accidental and casual changes, and loss of part of the
 chain. That is the bar the ruling set, and the proportionality ruling argues
 against keys.
 
+**Mitigation (PO ruling N1, #98, 2026-10-04).** The phone also remembers the
+chain head (entry count and last hash) under its own key after every save.
+At launch, a stored chain shorter than that, or whose entry at that count
+differs, is treated as damaged and set aside as in §8. Export and import show
+"N entries · 6 hex of the head hash" so two coaches can compare. A file cut
+short before it reaches another phone is still not detectable without a
+signing key (v3, #113).
+
 **Flag for Rob:** refusing a diverged chain (AC2, applied literally) means one
 phone records and the others import from it. If the coaching team's iPhones
 ever record matches independently, the remedy is additive: a `merge` entry
