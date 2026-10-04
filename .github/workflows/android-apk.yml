@@ -308,18 +308,12 @@ jobs:
           # #112 (PO ruling "backup b"): Coaching App is backed up by the
           # phone's own backup, so a lost phone keeps the season; Coaching
           # Beta is not, so test data never reaches a coach's cloud.
-          # build-tools 37 renders booleans as `=true`/`=false`; older ones as
-          # `=(type 0x12)0xffffffff`/`=(type 0x12)0x0`. Absent means ON, which
-          # is required to be explicit here either way.
-          BACKUP_LINE="$(grep -E 'allowBackup' /tmp/manifest.txt | sed -n 1p)"
-          echo "${BACKUP_LINE:-<allowBackup attribute absent>}"
-          if [ "$APP_VARIANT" = "beta" ]; then WANT_BACKUP=false; else WANT_BACKUP=true; fi
-          case "$WANT_BACKUP:$BACKUP_LINE" in
-            false:*'=false'|false:*'=(type 0x12)0x0'|true:*'=true'|true:*'=(type 0x12)0xffffffff')
-              echo "allowBackup is $WANT_BACKUP in the artifact that reaches the phone (APP_VARIANT='$APP_VARIANT')" ;;
-            *)
-              note "allowBackup is not $WANT_BACKUP in the APK that would reach the phone (APP_VARIANT='$APP_VARIANT', #112)" ;;
-          esac
+          # Self-test first: the check is dry-run against BOTH healthy cases
+          # and the failing ones before it is trusted with this artifact.
+          python3 .github/scripts/check_backup.py --self-test \
+            || note "the allowBackup check failed its own self-test"
+          python3 .github/scripts/check_backup.py /tmp/manifest.txt "$APP_VARIANT" \
+            || note "allowBackup is wrong in the APK that would reach the phone (APP_VARIANT='$APP_VARIANT', #112)"
           echo "::endgroup::"
 
           echo "::group::#44 — no permission beyond the agreed set"
