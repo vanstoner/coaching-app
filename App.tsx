@@ -16,6 +16,7 @@ import {
   type ClockSpeed,
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, isBetaBuild } from './src/app/testKit';
+import { addTestSeason } from './src/app/testSeason';
 import {
   canArchiveFixture,
   canDeleteFixture,
@@ -1091,6 +1092,27 @@ export default function App() {
                     periodCount,
                     appNow()
                   );
+                  setPlayers(data.players);
+                  setMatches(data.matches);
+                  persist({ players: data.players, matches: data.matches });
+                  setTestKitMessage(data.summary);
+                }}
+                onAddTestSeason={() => {
+                  // Played through the engine and recorded into the ledger as
+                  // each save would (#106 AC2); the save below then finds
+                  // nothing new to record.
+                  const data = addTestSeason({
+                    players,
+                    matches,
+                    squadId,
+                    squadName,
+                    format,
+                    totalMinutes,
+                    periodCount,
+                    ledger: ledgerBlockedRef.current ? null : ledgerRef.current,
+                    now: appNow(),
+                  });
+                  if (data.ledger && data.ledger !== ledgerRef.current) commitLedger(data.ledger);
                   setPlayers(data.players);
                   setMatches(data.matches);
                   persist({ players: data.players, matches: data.matches });

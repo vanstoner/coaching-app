@@ -125,3 +125,9 @@ analysis, iOS". Entries are added as each release ships.
   recorded at kick-off, including late arrivals between periods. The ledger is
   hash-chained with a remembered head, so a damaged or shortened ledger is set
   aside intact rather than trusted, and each export shows a short fingerprint.
+- **4 October — a past season in the beta (#106).** Rob: "more historical
+  data in the beta so I can see averages." The beta's Test kit can now add
+  nine played matches on the Saturdays before today — six league, two cup,
+  a friendly — with goals, saves, subs, absences and a dedicated keeper.
+  Each is played through the real match engine and ledger, so the charts,
+  the season columns and the match report show real-shaped history.
