@@ -16,7 +16,9 @@
  *
  * Invariant 1: the score is folded from the events on every paint.
  * Invariant 2: the interval below is a REPAINT trigger and nothing else.
- * Invariant 3: the figure under each name is OUTFIELD minutes.
+ * Invariant 3: fairness is total pitch time, goal plus outfield (ADR-015,
+ * #101). The figures under each name are that time's breakdown, outfield and
+ * GK; who comes off is by unbroken stint on the pitch, never by position.
  */
 
 import { useEffect, useReducer, useRef, useState } from 'react';

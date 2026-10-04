@@ -788,11 +788,11 @@ explicitly out of MVP scope; the app is expected to be open during a match. The
 - A player accrues time only while holding an open Appearance.
 - Each interval records the exact position held, so time-per-position is always
   derivable for reporting.
-- For **fairness**, only the `outfield` / `goalkeeper` distinction matters: all
-  outfield minutes sum into one figure regardless of position, and goalkeeper
-  minutes are excluded from the fairness measure entirely. A player who keeps for
-  one quarter and plays outfield for three has 3 quarters of fairness-counting
-  time and 1 quarter of GK time.
+- For **fairness**, all time on the pitch sums into one figure regardless of
+  position, goal included (2026-10-04, ADR-015 / #101; goalkeeper minutes were
+  previously excluded). A player who keeps for one quarter and plays outfield
+  for three has 4 quarters of fairness-counting time, shown as 3 outfield and
+  1 GK.
 - Position is never a fairness dimension — see Spec 03 for why (deliberate
   position affinities would otherwise be flagged as anomalies).
 - Substitutions are instantaneous at the recorded `elapsedMs`. The outgoing

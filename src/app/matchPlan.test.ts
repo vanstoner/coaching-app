@@ -104,25 +104,33 @@ describe('AC4 — the match-day-4 worked example', () => {
     for (const p of ['P8', 'P9', 'P10']) expect(row(p).outfieldMs).toBe(30 * MIN);
   });
 
-  it('totals 300:00, a fair share of 33:20 and a spread of 7:30', () => {
-    expect(projection.totalOutfieldMs).toBe(300 * MIN);
-    expect(projection.fairShareMs).toBe(33 * MIN + 20_000);
-    expect(projection.spreadMs).toBe(7.5 * MIN);
+  // #101 / ADR-015 replaced the outfield-only figures written on #72 AC4
+  // (300:00 outfield, fair share 33:20 over nine, spread 7:30, keeper left
+  // out). Fairness is now total pitch time over the whole squad: 300:00
+  // outfield + 50:00 in goal = 350:00, ÷ 10 = 35:00; spread 50:00 − 30:00.
+  it('totals 350:00 on the pitch, a fair share of 35:00 and a spread of 20:00', () => {
+    expect(projection.totalPitchMs).toBe(350 * MIN);
+    expect(projection.fairShareMs).toBe(35 * MIN);
+    expect(projection.spreadMs).toBe(20 * MIN);
   });
 
   it('finds nothing wrong with it', () => {
     expect(projection.problems).toEqual([]);
   });
 
-  it('leaves the full-match keeper out of the fair share, and lists them last', () => {
-    expect(row('P1').deltaMs).toBeNull();
+  // #101 / ADR-015: this replaces "leaves the full-match keeper out of the
+  // fair share". Under the outfield-only rule a keeper with only GK time had
+  // no delta; now their 50:00 in goal is time played, and it reads as ahead.
+  it('puts the full-match keeper in the fair share, on their time in goal', () => {
+    expect(row('P1').pitchMs).toBe(50 * MIN);
+    expect(formatDelta(row('P1').deltaMs)).toBe('+15:00');
     expect(projection.rows[projection.rows.length - 1].firstName).toBe('P1');
   });
 
   it('lists the most owed first', () => {
     expect(projection.rows.slice(0, 3).map((r) => r.firstName)).toEqual(['P8', 'P9', 'P10']);
-    expect(formatDelta(row('P8').deltaMs!)).toBe('-03:20');
-    expect(formatDelta(row('P2').deltaMs!)).toBe('+04:10');
+    expect(formatDelta(row('P8').deltaMs)).toBe('-05:00');
+    expect(formatDelta(row('P2').deltaMs)).toBe('+02:30');
   });
 
   it('catches the slip the hand sum made: subs at 7:30 on a 15:00 bench', () => {
@@ -139,8 +147,10 @@ describe('AC4 — the match-day-4 worked example', () => {
   });
 });
 
-describe('invariant 3 — keeping is not outfield time', () => {
-  it('a keeper for one half is in the fair share and is credited only the other half', () => {
+// #101 / ADR-015: keeping is still shown apart from outfield, but both count
+// towards the fairness figure.
+describe('invariant 3 — keeping is pitch time, shown apart from outfield', () => {
+  it('a keeper for one half is credited both halves, split by kind', () => {
     const format = makeFormat('2-3-1');
     const players = squad(7);
     const ids = players.map((p) => p.id);
@@ -155,8 +165,11 @@ describe('invariant 3 — keeping is not outfield time', () => {
     const p1 = p.rows.find((r) => r.playerId === ids[0])!;
     expect(p1.goalkeeperMs).toBe(25 * MIN);
     expect(p1.outfieldMs).toBe(25 * MIN);
-    expect(p1.deltaMs).not.toBeNull();
-    expect(p.fairShareMs).toBeCloseTo((300 * MIN) / 7, 6);
+    expect(p1.pitchMs).toBe(50 * MIN);
+    // Seven players, all on for all 50:00: everyone is exactly fair.
+    expect(p.fairShareMs).toBe(50 * MIN);
+    expect(p1.deltaMs).toBe(0);
+    expect(p.spreadMs).toBe(0);
   });
 });
 
@@ -225,7 +238,7 @@ describe('AC5 — a plan that does not add up is flagged, not blocked', () => {
 
   it('still projects an incomplete plan rather than refusing it', () => {
     const p = projectPlan(emptyPlan(4), format, 50, 4, players);
-    expect(p.totalOutfieldMs).toBe(0);
+    expect(p.totalPitchMs).toBe(0);
     expect(p.problems).toHaveLength(28);
   });
 

@@ -304,6 +304,8 @@ export function PlanScreen({
           Fair share {formatClock(projection.fairShareMs)} · spread{' '}
           {formatClock(projection.spreadMs)}
         </Text>
+        {/* #101 / ADR-015: the share and the +/- are goal plus outfield. */}
+        <Text style={screen.hint}>Fair share counts time in goal and outfield together.</Text>
         {projection.rows.map((row) => (
           <View key={row.playerId} style={screen.playerRow}>
             <Text style={screen.playerName} numberOfLines={1}>
@@ -313,11 +315,8 @@ export function PlanScreen({
               {formatClock(row.outfieldMs)}
               {row.goalkeeperMs > 0 ? ` · GK ${formatClock(row.goalkeeperMs)}` : ''}
             </Text>
-            <Text
-              style={[local.delta, row.deltaMs !== null && row.deltaMs < 0 && local.owed]}
-              numberOfLines={1}
-            >
-              {row.deltaMs === null ? 'in goal' : formatDelta(row.deltaMs)}
+            <Text style={[local.delta, row.deltaMs < 0 && local.owed]} numberOfLines={1}>
+              {formatDelta(row.deltaMs)}
             </Text>
           </View>
         ))}

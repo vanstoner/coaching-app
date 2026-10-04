@@ -57,10 +57,11 @@ export function MatchSummaryScreen({
     [engine, state, players]
   );
 
-  // Most outfield time first: the question a coach asks of a finished match is
-  // who got a game, and the answer is easiest to read from the top.
+  // Most time on the pitch first: the question a coach asks of a finished match
+  // is who got a game, and the answer is easiest to read from the top. Total
+  // is goal plus outfield, the fairness figure (#101, ADR-015).
   const rows = useMemo(
-    () => [...minutes].sort((a, b) => b.outfieldMs - a.outfieldMs),
+    () => [...minutes].sort((a, b) => b.totalMs - a.totalMs),
     [minutes]
   );
 
@@ -91,6 +92,7 @@ export function MatchSummaryScreen({
           <Text style={[local.name, local.headText]}>Player</Text>
           <Text style={[local.figure, local.headText]}>Out</Text>
           <Text style={[local.figure, local.headText]}>GK</Text>
+          <Text style={[local.figure, local.headText]}>Total</Text>
         </View>
 
         {played.map((row) => {
@@ -107,6 +109,9 @@ export function MatchSummaryScreen({
                 numberOfLines={1}
               >
                 {row.goalkeeperMs === 0 ? '—' : formatClock(row.goalkeeperMs)}
+              </Text>
+              <Text style={local.figure} numberOfLines={1}>
+                {formatClock(row.totalMs)}
               </Text>
             </View>
           );

@@ -17,11 +17,11 @@
  * what the engine already supports: `startQuarter` takes a fresh team sheet
  * every time.
  *
- * **Invariant 3 shapes the whole thing.** Fairness is total outfield time.
- * Goalkeeping is excluded, so a child who keeps for a quarter is not thereby
- * "ahead" on minutes and will still be picked on outfield fairness next time.
- * The keeper is chosen on a separate ledger — fewest goalkeeper minutes so far —
- * so that job rotates too.
+ * **Invariant 3 shapes the whole thing.** Fairness is total time on the pitch,
+ * goal plus outfield (ADR-015, #101; it superseded the outfield-only rule). A
+ * child who keeps for a quarter has played that quarter. The keeper is still
+ * CHOSEN on a separate ledger — fewest goalkeeper minutes so far — so that job
+ * rotates; that is a choice of who keeps, not a fairness measure.
  *
  * Nothing here decides anything on its own. It suggests, the coach overrides,
  * and the override is the thing that happens.
@@ -60,7 +60,7 @@ const byId = (minutes: PlayerMinutes[]) => {
 /**
  * Suggest the next quarter's lineup: the players owed the most minutes.
  *
- * Ordering is deliberate and stable. Least outfield time first; ties broken by
+ * Ordering is deliberate and stable. Least pitch time first; ties broken by
  * squad order, never randomly, so asking twice gives the same answer. A coach
  * who sees the list change under his thumb stops trusting it.
  *
@@ -84,10 +84,10 @@ const byId = (minutes: PlayerMinutes[]) => {
  * that player keeps whenever they are available; `secondary` is the deputy,
  * used when no primary is. With neither, the old behaviour stands exactly.
  *
- * Invariant 3 is untouched. Goalkeeping time is still excluded from the
- * fairness figure, so a child who keeps every week is still picked on outfield
- * fairness for the rest of the match — which is the protection that makes a
- * fixed keeper safe rather than unfair.
+ * Invariant 3: the outfielders are then picked on total pitch time, goal
+ * included (ADR-015). A dedicated keeper's time in goal counts as time played;
+ * their outfield-share target is shown beside their figures and never enters
+ * this ordering.
  */
 export function suggestLineup(
   players: Player[],
@@ -98,7 +98,7 @@ export function suggestLineup(
   const rows = byId(minutes);
   const pool = players.filter((p) => options.available?.has(p.id) ?? true);
 
-  const outfieldMs = (id: UUID) => rows.get(id)?.outfieldMs ?? 0;
+  const pitchMs = (id: UUID) => rows.get(id)?.totalMs ?? 0;
   const goalkeeperMs = (id: UUID) => rows.get(id)?.goalkeeperMs ?? 0;
   const order = new Map(players.map((p, i) => [p.id, i]));
   const squadOrder = (a: UUID, b: UUID) => (order.get(a) ?? 0) - (order.get(b) ?? 0);
@@ -149,12 +149,12 @@ export function suggestLineup(
       byLeastKept(willing.length > 0 ? willing : pool.map((p) => p.id))[0];
   }
 
-  // Then the outfielders, least outfield time first.
+  // Then the outfielders, least total pitch time first (ADR-015).
   const outfieldSlots = format.onFieldCount - (hasKeeper ? 1 : 0);
   const outfielders = pool
     .map((p) => p.id)
     .filter((id) => id !== goalkeeper)
-    .sort((a, b) => outfieldMs(a) - outfieldMs(b) || squadOrder(a, b))
+    .sort((a, b) => pitchMs(a) - pitchMs(b) || squadOrder(a, b))
     .slice(0, Math.max(0, outfieldSlots));
 
   const onPitch = (goalkeeper ? [goalkeeper, ...outfielders] : outfielders).sort(squadOrder);
@@ -175,7 +175,7 @@ function describe(
   if (bench.length === 0) return 'Everyone plays — nobody on the bench.';
 
   const sitting = [...bench]
-    .sort((a, b) => (rows.get(b)?.outfieldMs ?? 0) - (rows.get(a)?.outfieldMs ?? 0))
+    .sort((a, b) => (rows.get(b)?.totalMs ?? 0) - (rows.get(a)?.totalMs ?? 0))
     .slice(0, 3)
     .map(name);
 
@@ -266,7 +266,9 @@ export interface FairnessRow {
   firstName: string;
   outfieldMs: number;
   goalkeeperMs: number;
-  /** Difference from the squad's average outfield time. Negative means owed. */
+  /** Goal plus outfield: the fairness figure (ADR-015). */
+  pitchMs: number;
+  /** Difference from the squad's average pitch time. Negative means owed. */
   deltaMs: number;
   onPitchNow: boolean;
 }
@@ -282,19 +284,20 @@ export function fairnessTable(players: Player[], minutes: PlayerMinutes[]): Fair
   const rows = byId(minutes);
   if (players.length === 0) return [];
 
-  const total = players.reduce((sum, p) => sum + (rows.get(p.id)?.outfieldMs ?? 0), 0);
+  const total = players.reduce((sum, p) => sum + (rows.get(p.id)?.totalMs ?? 0), 0);
   const average = total / players.length;
 
   return players
     .map((p) => {
       const m = rows.get(p.id);
-      const outfieldMs = m?.outfieldMs ?? 0;
+      const pitchMs = m?.totalMs ?? 0;
       return {
         playerId: p.id,
         firstName: p.firstName,
-        outfieldMs,
+        outfieldMs: m?.outfieldMs ?? 0,
         goalkeeperMs: m?.goalkeeperMs ?? 0,
-        deltaMs: Math.round(outfieldMs - average),
+        pitchMs,
+        deltaMs: Math.round(pitchMs - average),
         onPitchNow: m?.onPitchNow ?? false,
       };
     })
