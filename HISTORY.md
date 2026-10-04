@@ -116,3 +116,12 @@ analysis, iOS". Entries are added as each release ships.
   dedicated keeper is no longer shown as owed time; the gloves still rotate
   by least time in goal. A player can carry an outfield-share target (25 %
   for the keeper), shown beside their figures and never a fairness input.
+- **October — the match report, the season, and a ledger that notices
+  (#100, #102–#105).** Full time now opens a short match report, and the
+  coach closes the match with End match, the way a quarter is ended; only a
+  closed match counts toward the season. Charts show each child's minutes
+  beside a shadow average adjusted for the matches they missed, and the season
+  splits into League, Cup, Friendly and Tournament. Who was available is
+  recorded at kick-off, including late arrivals between periods. The ledger is
+  hash-chained with a remembered head, so a damaged or shortened ledger is set
+  aside intact rather than trusted, and each export shows a short fingerprint.
