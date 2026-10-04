@@ -61,3 +61,23 @@ derived-as-authoritative record ADR-007 forbids, and cannot be corrected.
 
 **Text share and paste (2B).** No dependencies. Rejected: pasting 150 KB on a
 phone is where this stops being used.
+
+## Addendum, 2026-10-04: forward compatibility (#99 AC2)
+
+Decision 4 said readers ignore what they do not know. Ignoring turned out to
+mean *dropping*: an older build rebuilt every entry from the fields it knew,
+yet kept the newer `ledgerVersion` on what it wrote back — a silent downgrade
+of a newer phone's file. Two rules now hold:
+
+- **Unknown fields are carried, not ignored.** At every level (ledger, squad,
+  player, match, interval, event), through read, record, merge and export. An
+  event of a kind this build does not know is carried too. On a merge, this
+  phone's known values win; an unknown field only the file has is added.
+- **`minReaderVersion`**, as the working document already has. A writer raises
+  it only for a change an older reader would damage by carrying it blindly. A
+  file without one reads as 1. A build whose reader version (1 here) is below
+  it refuses the file in plain words, and never merges into or writes over it —
+  including a stored ledger, which is left untouched until the app is updated.
+
+`ledgerVersion` 1 remains the version written. Proved by a synthetic v2-shaped
+file in `src/app/ledgerForwardCompat.test.ts`.

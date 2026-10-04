@@ -12,16 +12,36 @@ import { parseLedger, serialiseLedger, type Ledger } from './ledger';
 
 export const LEDGER_STORAGE_KEY = 'coaching-app/ledger/v1';
 
+/**
+ * What is stored, and whether this build may write over it (#99 AC2).
+ *
+ * `too_new` is the case that must not be collapsed into "none": a ledger a
+ * newer build wrote and declared unsafe for this one. Treating it as absent
+ * would start an empty ledger and save it over the season.
+ */
+export type StoredLedger =
+  | { status: 'ok'; ledger: Ledger }
+  | { status: 'empty' }
+  | { status: 'unreadable' }
+  | { status: 'too_new'; reason: string };
+
+export async function readStoredLedger(store: KeyValueStore): Promise<StoredLedger> {
+  let raw: string | null;
+  try {
+    raw = await store.getItem(LEDGER_STORAGE_KEY);
+  } catch {
+    return { status: 'unreadable' };
+  }
+  if (raw === null) return { status: 'empty' };
+  const parsed = parseLedger(raw);
+  if (parsed.ok) return { status: 'ok', ledger: parsed.ledger };
+  return parsed.tooNew ? { status: 'too_new', reason: parsed.reason } : { status: 'unreadable' };
+}
+
 /** The stored ledger, or null if there is none or it cannot be read. */
 export async function loadLedger(store: KeyValueStore): Promise<Ledger | null> {
-  try {
-    const raw = await store.getItem(LEDGER_STORAGE_KEY);
-    if (raw === null) return null;
-    const parsed = parseLedger(raw);
-    return parsed.ok ? parsed.ledger : null;
-  } catch {
-    return null;
-  }
+  const stored = await readStoredLedger(store);
+  return stored.status === 'ok' ? stored.ledger : null;
 }
 
 /** Fire and forget, like the session: a full disk loses the save, not the match. */

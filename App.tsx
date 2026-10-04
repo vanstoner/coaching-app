@@ -58,7 +58,14 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
-import { progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
+import { progressById, scoresById } from './src/app/liveMatch';
+import {
+  deleteMatch,
+  matchesOnRelease,
+  newMatch,
+  openMatch,
+  storedFromHeld,
+} from './src/app/matchLifecycle';
 import {
   describeMerge,
   emptyLedger,
@@ -68,7 +75,7 @@ import {
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { clearLedger, loadLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
+import { clearLedger, readStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
@@ -180,9 +187,16 @@ export default function App() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [ledgerMessage, setLedgerMessage] = useState('');
   const [ledgerBusy, setLedgerBusy] = useState(false);
+  /**
+   * The stored ledger was written by a newer build that says this one cannot
+   * safely write it back (#99 AC2). Nothing is recorded, imported or saved
+   * over it until the app is updated — or Forget everything clears it.
+   */
+  const ledgerTooNewRef = useRef(false);
 
   const commitLedger = useCallback(
     (next: Ledger) => {
+      if (ledgerTooNewRef.current) return;
       const current = ledgerRef.current;
       ledgerRef.current = next;
       setLedger(next);
@@ -208,8 +222,13 @@ export default function App() {
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
       const saved = await loadSession(store);
-      const storedLedger = await loadLedger(store);
+      const read = await readStoredLedger(store);
       if (cancelled) return;
+      if (read.status === 'too_new') {
+        ledgerTooNewRef.current = true;
+        setLedgerMessage(read.reason);
+      }
+      const storedLedger = read.status === 'ok' ? read.ledger : null;
 
       // AC7: back-fill. Every match already played is copied in from its
       // recorded appearances — measured values, never estimated ones. On
@@ -309,6 +328,9 @@ export default function App() {
    * back with the same ids, so later matches line up with the imported ones.
    */
   const importMinutes = useCallback(async () => {
+    // The ledger on this phone came from a newer build: merging into an empty
+    // one and saving would write over it.
+    if (ledgerTooNewRef.current) return;
     setLedgerBusy(true);
     const picked = await pickLedgerFile();
     setLedgerBusy(false);
@@ -368,16 +390,7 @@ export default function App() {
   // next save), so planning it during play (#88) builds the entry from state.
   const planning: SavedMatch | undefined =
     matches.find((m) => m.match.id === planningId) ??
-    (match && match.state.match.id === planningId
-      ? {
-          match: match.state.match,
-          quarters: match.state.quarters,
-          appearances: match.state.appearances,
-          benchStints: match.state.benchStints,
-          availability: [...match.state.playerAvailability.entries()],
-          format: match.format,
-        }
-      : undefined);
+    (match && match.state.match.id === planningId ? storedFromHeld(match) : undefined);
   const effectiveStep: Step =
     (!match && (step === 'lineup' || step === 'playing' || step === 'summary')) ||
     (step === 'plan' && !planning)
@@ -410,17 +423,14 @@ export default function App() {
 
   /**
    * Hold a different live match, or none, without losing the one held now.
-   *
-   * The engine changes the live match in place and `matches` keeps the copy
-   * from before kick-off, so the held match is folded in FIRST. Without this,
-   * leaving a finished match's summary saved that stale copy over the played
-   * match: no periods, no appearances, no subs (PO, match day 4).
+   * The held match is folded into the list FIRST — the rule, and the match
+   * day 4 defect it fixes, are in `matchesOnRelease` (src/app/matchLifecycle.ts).
    */
   const releaseMatch = useCallback(
     (next: LiveMatch | null) => {
       if (match && match !== next) {
         const held = match;
-        setMatches((prev) => withLiveMatch(prev, held));
+        setMatches((prev) => matchesOnRelease(prev, held, next));
       }
       setMatch(next);
     },
@@ -430,34 +440,27 @@ export default function App() {
   // --- actions --------------------------------------------------------------
 
   /**
-   * Save a planned fixture. A fixture IS a Match with status 'planned', so
-   * this goes through the engine rather than building a parallel record.
-   *
-   * The draft's length, period count and shape are copied onto the match here
-   * and belong to it from then on (#70).
+   * Save a planned fixture, built by the one match builder (#99 AC1): the
+   * draft's length, period count and shape are copied onto it (#70), and
+   * today's squad is recorded as available (#64).
    */
   const saveFixture = useCallback(
     (draft: FixtureDraft) => {
-      const engine = new MatchEngine({ nowFn: appNow });
-      const matchFormat = formatForShape(draft.shape, format);
-      const state = engine.createMatch(squadId, matchFormat.id, {
-        totalMinutes: draft.totalMinutes,
-        quarterCount: draft.periodCount,
-        availablePlayerIds: squad.map((p) => p.id),
-        opponent: draft.opponent.trim() === '' ? null : draft.opponent.trim(),
-        competition: draft.competition,
-        kickoffAt: draft.kickoffAt,
-      });
-      const stored: SavedMatch = {
-        match: state.match,
-        quarters: state.quarters,
-        appearances: [],
-        benchStints: [],
-        availability: [],
-        // Snapshotted, not referenced: changing the default shape later must
-        // not re-shape a fixture already saved.
-        format: matchFormat,
-      };
+      const { stored } = newMatch(
+        {
+          squadId,
+          // Snapshotted, not referenced: changing the default shape later
+          // must not re-shape a fixture already saved.
+          format: formatForShape(draft.shape, format),
+          totalMinutes: draft.totalMinutes,
+          periodCount: draft.periodCount,
+          players: squad,
+          opponent: draft.opponent,
+          competition: draft.competition,
+          kickoffAt: draft.kickoffAt,
+        },
+        appNow
+      );
       const next = [...matches, stored];
       setMatches(next);
       // Persist immediately with the new list: the effect that saves on step
@@ -485,21 +488,18 @@ export default function App() {
    */
   const deleteFixture = useCallback(
     (matchId: UUID) => {
-      // Judged on the live state when it is the match being held: the stored
-      // copy of a match kicked off a moment ago still looks unplayed.
-      const stored = withLiveMatch(matches, match).find((m) => m.match.id === matchId);
-      if (!stored) return;
-      if (!canDeleteFixture(stored.quarters, stored.match.status)) return;
-      const next = matches.filter((m) => m.match.id !== matchId);
-      setMatches(next);
+      // Judged on the live state, never the stored copy (deleteMatch).
+      const outcome = deleteMatch(matches, match, matchId);
+      if (!outcome.ok) return;
+      setMatches(outcome.matches);
       // A fixture opened and left without kicking off is still held as the
       // live match. Saving with it would write the deleted fixture straight
-      // back (mergeCurrentMatch), so it is let go of first.
-      const holding = match?.state.match.id === matchId;
-      if (holding) setMatch(null);
+      // back (mergeCurrentMatch), so it is let go of first — directly, not
+      // through releaseMatch, which would fold it back in.
+      if (outcome.releaseLive) setMatch(null);
       persist({
-        matches: next,
-        ...(holding ? { state: null, matchFormat: null } : {}),
+        matches: outcome.matches,
+        ...(outcome.releaseLive ? { state: null, matchFormat: null } : {}),
       });
     },
     [matches, persist, match]
@@ -550,62 +550,23 @@ export default function App() {
   /** Open a fixture: play it if it is today's, otherwise look at it. */
   const openFixture = useCallback(
     (matchId: UUID) => {
-      // Already the live match: go back to it as it is. Rebuilding it from
-      // the stored list would drop everything since it was last folded in.
-      if (match && match.state.match.id === matchId) {
-        const to = openDestination(
-          match.state.quarters,
-          match.state.match.status,
-          squadReadiness(squad, match.format.onFieldCount).ready
-        );
-        if (to === 'squad') setSquadErrand('match');
-        setStep(to);
-        return;
+      // The live match is gone back to as it is; any other is rebuilt from
+      // its stored copy, availability back-filled only if not yet started and
+      // events carried over. The rules, and the bugs behind them, are in
+      // openMatch (src/app/matchLifecycle.ts).
+      const outcome = openMatch(matches, match, matchId, squad, format);
+      if (outcome.kind === 'not_found') return;
+      const { state, format: matchFormat } = outcome.held;
+      if (outcome.kind === 'open') {
+        releaseMatch({ engine: new MatchEngine({ nowFn: appNow }), state, format: matchFormat });
+        setSubPlan([]);
       }
-      const stored = matches.find((m) => m.match.id === matchId);
-      if (!stored) return;
-      const engine = new MatchEngine({ nowFn: appNow });
-
-      const availability = new Map(stored.availability);
-      const notStarted = stored.quarters.every((q) => q.status === 'pending');
-      if (availability.size === 0 && notStarted) {
-        // A fixture planned before availability was recorded (#64) would
-        // otherwise play with an empty map and write no bench stints at all.
-        //
-        // Only for a match NOT YET STARTED. Back-filling one that has been
-        // played would invent a bench for children who may not have been
-        // there, and a fabricated figure is indistinguishable from a measured
-        // one once it is stored.
-        for (const player of squad) availability.set(player.id, 'available');
-      }
-
-      // The shape THIS match is played in. A v3 save that somehow arrives
-      // unmigrated has none, and the squad default is the only honest
-      // fallback — it is the format that match was created against.
-      const matchFormat = stored.format ?? format;
-
-      releaseMatch({
-        engine,
-        format: matchFormat,
-        state: {
-          match: stored.match,
-          quarters: stored.quarters,
-          appearances: stored.appearances,
-          benchStints: stored.benchStints,
-          playerAvailability: availability,
-          // The time stream comes with the match. Rebuilt without it, the
-          // first goal after reopening would start a fresh list and the next
-          // save would write it over every event already recorded (#84).
-          events: stored.events ?? [],
-        },
-      });
-      setSubPlan([]);
 
       // The rule lives in fixtures.ts and is tested there: two defects lived
       // in this decision at once and no gate could have caught either.
       const to = openDestination(
-        stored.quarters,
-        stored.match.status,
+        state.quarters,
+        state.match.status,
         squadReadiness(squad, matchFormat.onFieldCount).ready
       );
       if (to === 'squad') setSquadErrand('match');
@@ -625,15 +586,20 @@ export default function App() {
    * does not touch it.
    */
   const beginMatch = useCallback(() => {
-    const engine = new MatchEngine({ nowFn: appNow });
-    const matchFormat = formatForShape(shapeOfFormat(format) ?? DEFAULT_SHAPE, format);
-    const state = engine.createMatch(squadId, matchFormat.id, {
-      totalMinutes,
-      quarterCount: periodCount,
-      // #64: without this the bench ledger is never written at all.
-      availablePlayerIds: squad.map((p) => p.id),
-    });
-    releaseMatch({ engine, state, format: matchFormat });
+    // The same builder as a saved fixture (#99 AC1). The match is held, not
+    // added to the list: the next save folds it in on disk, and letting go of
+    // it folds it into the list (matchesOnRelease), so it is never lost.
+    const { held } = newMatch(
+      {
+        squadId,
+        format: formatForShape(shapeOfFormat(format) ?? DEFAULT_SHAPE, format),
+        totalMinutes,
+        periodCount,
+        players: squad,
+      },
+      appNow
+    );
+    releaseMatch({ engine: new MatchEngine({ nowFn: appNow }), ...held });
     setSubPlan([]);
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch]);
@@ -709,6 +675,8 @@ export default function App() {
     const nextSquadId = uuid();
     // A fresh, empty ledger rather than none, so the next match is recorded.
     const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME);
+    // Cleared above, so nothing newer is left to protect.
+    ledgerTooNewRef.current = false;
     ledgerRef.current = fresh;
     setLedger(fresh);
     setLedgerMessage('');

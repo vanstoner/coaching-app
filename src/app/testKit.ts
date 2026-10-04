@@ -8,11 +8,11 @@
  * real squad. Synthetic first names only.
  */
 
-import { MatchEngine } from '../engine/MatchEngine';
 import type { Format, Player, UUID } from '../types/index';
 import { makePlayer } from './squad';
 import { kickoffIso, nextSaturday } from './kickoff';
-import { mergeCurrentMatch, type SavedMatch } from './persistence';
+import { newMatch } from './matchLifecycle';
+import type { SavedMatch } from './persistence';
 import { addSwap, emptyPlan, periodLengthMs, setSlot, updateSwap } from './matchPlan';
 
 /**
@@ -58,16 +58,12 @@ export function addTestData(
   const squad = [...players, ...added];
   const testPlayers = squad.filter((p) => p.active && TEST_NAMES.includes(p.firstName));
 
-  const fixture = (opponent: string, kickoffAt: string) => {
-    const state = new MatchEngine({ nowFn: () => now }).createMatch(squadId, format.id, {
-      opponent,
-      kickoffAt,
-      totalMinutes,
-      quarterCount: periodCount,
-      availablePlayerIds: squad.filter((p) => p.active).map((p) => p.id),
-    });
-    return mergeCurrentMatch([], state, format)[0];
-  };
+  // The same builder as the fixture form and Play now (#99 AC1).
+  const fixture = (opponent: string, kickoffAt: string) =>
+    newMatch(
+      { squadId, format, totalMinutes, periodCount, players: squad, opponent, kickoffAt },
+      () => now
+    ).stored;
 
   const soon = fixture(TEST_OPPONENTS[0], new Date(now.getTime() + 30 * 60_000).toISOString());
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
