@@ -102,7 +102,7 @@ export function MatchAnalysisScreen({
 export function SeasonNote({ counted, inferred }: { counted: number; inferred: number }) {
   return (
     <Text style={screen.hint}>
-      {counted} finished {counted === 1 ? 'match' : 'matches'}. Other is friendly and tournament.
+      {counted} closed {counted === 1 ? 'match' : 'matches'}.
       {inferred > 0
         ? ` For ${inferred} of them attendance was not recorded, so "attended" means played.`
         : ''}

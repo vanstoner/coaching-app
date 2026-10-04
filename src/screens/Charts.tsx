@@ -14,7 +14,8 @@
  *   goal, full = outfield), named in the legend.
  * - The shadow: an OUTLINE with no fill, drawn over the bar so it shows
  *   whether the bar falls short of it or runs past it.
- * - Season: each bar sits in a fixed order (League, Cup, Other) and carries
+ * - Season: each bar sits in a fixed order (League, Cup, Friendly, Tournament,
+ *   then Other only when a competition this build does not know has a match) and carries
  *   its own text label, so the colour is a second cue, never the first.
  *
  * **Legibility (AC4).** First names at 17, values in the same line as the
@@ -39,7 +40,9 @@ export const chartColours = {
   season: {
     league: '#56B4E9',
     cup: '#F0E442',
-    other: '#CC79A7',
+    friendly: '#E69F00',
+    tournament: '#CC79A7',
+    other: '#D55E00',
   } as Record<SeasonColumn, string>,
 } as const;
 
@@ -186,9 +189,9 @@ const local = StyleSheet.create({
     borderBottomWidth: 1,
   },
   seasonRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 4 },
-  // Fixed width, never minWidth: "League 32 · n 12" and "Cup — none" share it.
+  // Fixed width, never minWidth: "Tournament 32 · n 12" and "Cup — none" share it.
   seasonLabel: {
-    width: 136,
+    width: 176,
     flexShrink: 0,
     color: colours.inkMuted,
     fontSize: 15,

@@ -245,19 +245,22 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
     expect(competitionBucket(null)).toBe('league');
   });
 
-  it("a competition this build doesn't know goes to Other, never a crash (QA on #103)", () => {
+  it("a competition this build doesn't know goes to Other, never a crash (QA on #103, ruling N3)", () => {
     const sq = squad();
     const a = play(sq).state;
     const ledger = ledgerOf(sq, [a]);
     // A later version's competition, carried through the ledger (#99 AC2).
     (ledger.matches[0] as { competition: string }).competition = 'futsal';
-    expect(competitionBucket('futsal' as Competition)).toBe('friendly');
+    expect(competitionBucket('futsal' as Competition)).toBe('other');
     const gus = seasonStats(ledger, sq.players).players.find((p) => p.playerId === sq.players[6].id)!;
     expect(gus.attended).toBe(1);
     expect(gus.byCompetition.league.attended).toBe(0);
+    expect(gus.byCompetition.friendly.attended).toBe(0);
+    expect(gus.byCompetition.other).toEqual({ attended: 1, pitchMs: 24 * MIN, averageMs: 24 * MIN });
     const chart = seasonChart(ledger, sq.players);
     const row = chart.rows.find((r) => r.playerId === sq.players[6].id)!;
-    expect(row.bars.find((b) => b.column === 'other')!.matches).toBe(1);
+    expect(row.bars.map((b) => b.column)).toEqual(['league', 'cup', 'friendly', 'tournament', 'other']);
+    expect(row.bars[4]).toMatchObject({ matches: 1, label: 'Other 24 · n 1' });
   });
 });
 
@@ -314,7 +317,9 @@ describe('matchChart (#105 AC1)', () => {
 });
 
 describe('seasonChart (#105 AC2, #103 AC2)', () => {
-  it('puts league, cup and other side by side; friendly and tournament together', () => {
+  // PO ruling N3 (#98) replaced "friendly and tournament together as Other":
+  // each competition has its own column.
+  it('puts league, cup, friendly and tournament side by side; no Other when empty', () => {
     const sq = squad();
     const states = [
       play(sq, { competition: 'league' }).state,
@@ -327,10 +332,13 @@ describe('seasonChart (#105 AC2, #103 AC2)', () => {
     expect(chart.inferredMatches).toBe(4);
 
     const gus = chart.rows.find((r) => r.name === 'Gus')!;
-    expect(gus.bars.map((b) => b.column)).toEqual(['league', 'cup', 'other']);
-    // Benched in the tournament (v1: not attended), so Other is the friendly alone.
-    expect(gus.bars[2]).toMatchObject({ averageMs: 24 * MIN, matches: 1, label: 'Other 24 · n 1' });
+    expect(gus.bars.map((b) => b.column)).toEqual(['league', 'cup', 'friendly', 'tournament']);
+    expect(gus.bars[2]).toMatchObject({ averageMs: 24 * MIN, matches: 1, label: 'Friendly 24 · n 1' });
+    // Benched in the tournament (v1: not attended), so no tournament average.
+    expect(gus.bars[3]).toMatchObject({ averageMs: null, matches: 0, label: 'Tournament — none' });
     expect(gus.bars[1].label).toBe('Cup 24 · n 1');
+    const ava = chart.rows.find((r) => r.name === 'Ava')!;
+    expect(ava.bars[3]).toMatchObject({ averageMs: 50 * MIN, matches: 1, label: 'Tournament 50 · n 1' });
 
     // Jo never played: no average, no zero bar, last.
     const jo = chart.rows[chart.rows.length - 1];

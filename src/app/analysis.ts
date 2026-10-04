@@ -21,10 +21,11 @@
  *   figures fold with too.
  * - **Season average** = pitch time over counted matches attended ÷ counted
  *   matches attended; null when none, never zero (§7).
- * - **Competition split**: all four buckets, null competition as league (§8).
- *   The screens show friendly and tournament together as one "Other" column
- *   (#103 AC3, PO ruling), so the buckets carry sums, not just averages, and
- *   are combined exactly.
+ * - **Competition split**: league, cup, friendly and tournament each have
+ *   their own column (PO ruling N3, #98, settling #103 AC3); a null
+ *   competition is league (§8). A competition this build does not know (a
+ *   later version's, carried in the ledger) goes to "Other", shown only
+ *   when it holds something.
  * - **The shadow** excludes the match being viewed (§9).
  *
  * Synthetic first names only in tests (invariant 4).
@@ -214,15 +215,18 @@ export function isCounted(match: Pick<LedgerMatch, 'status'>): boolean {
 
 const KNOWN_COMPETITIONS: readonly string[] = ['league', 'cup', 'friendly', 'tournament'];
 
+/** A competition, or "other" for one this build does not know. */
+export type CompetitionBucket = Competition | 'other';
+
 /**
  * The bucket a match sits in. Null counts as league (#103 AC3). A competition
  * this build does not know — a later version's, carried in the ledger
- * (#99 AC2) — goes to friendly, which the screens show as "Other" with
- * tournament: never league or cup, and never a crash (QA on #103).
+ * (#99 AC2) — goes to "other" (PO ruling N3): never another column, and
+ * never a crash (QA on #103).
  */
-export function competitionBucket(c: Competition | null): Competition {
+export function competitionBucket(c: Competition | null): CompetitionBucket {
   if (c === null) return 'league';
-  return KNOWN_COMPETITIONS.includes(c) ? c : 'friendly';
+  return KNOWN_COMPETITIONS.includes(c) ? c : 'other';
 }
 
 export interface Bucket {
@@ -247,7 +251,7 @@ export interface SeasonPlayer {
   pitchMs: number;
   /** ADR-015 §7. Null when no counted match attended. */
   averageMs: number | null;
-  byCompetition: Record<Competition, Bucket>;
+  byCompetition: Record<CompetitionBucket, Bucket>;
 }
 
 export interface SeasonStats {
@@ -290,7 +294,7 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
     attended: number;
     missed: number;
     pitchMs: number;
-    buckets: Record<Competition, Bucket>;
+    buckets: Record<CompetitionBucket, Bucket>;
   }
   const acc = new Map<UUID, Acc>();
   const of = (id: UUID): Acc => {
@@ -300,7 +304,13 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
         attended: 0,
         missed: 0,
         pitchMs: 0,
-        buckets: { league: emptyBucket(), cup: emptyBucket(), friendly: emptyBucket(), tournament: emptyBucket() },
+        buckets: {
+          league: emptyBucket(),
+          cup: emptyBucket(),
+          friendly: emptyBucket(),
+          tournament: emptyBucket(),
+          other: emptyBucket(),
+        },
       };
       acc.set(id, a);
       add(id);
@@ -350,6 +360,7 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
       cup: average(a.buckets.cup),
       friendly: average(a.buckets.friendly),
       tournament: average(a.buckets.tournament),
+      other: average(a.buckets.other),
     };
     const countedMs = Object.values(a.buckets).reduce((sum, b) => sum + b.pitchMs, 0);
     return {
@@ -455,12 +466,18 @@ export function matchChart(
 // #105 AC2, #103 AC2: the season, league and cup side by side
 // ============================================================================
 
-/** The three columns on screen: friendly and tournament together (#103 AC3). */
-export type SeasonColumn = 'league' | 'cup' | 'other';
+/**
+ * The columns on screen: one per competition (PO ruling N3, #98), and
+ * "Other" for competitions this build does not know — shown only when some
+ * player has a match in it.
+ */
+export type SeasonColumn = CompetitionBucket;
 
 export const SEASON_COLUMNS: readonly { key: SeasonColumn; label: string }[] = [
   { key: 'league', label: 'League' },
   { key: 'cup', label: 'Cup' },
+  { key: 'friendly', label: 'Friendly' },
+  { key: 'tournament', label: 'Tournament' },
   { key: 'other', label: 'Other' },
 ];
 
@@ -489,14 +506,6 @@ export interface SeasonChart {
   inferredMatches: number;
 }
 
-function combine(...buckets: Bucket[]): Bucket {
-  return average({
-    attended: buckets.reduce((s, b) => s + b.attended, 0),
-    pitchMs: buckets.reduce((s, b) => s + b.pitchMs, 0),
-    averageMs: null,
-  });
-}
-
 /**
  * The season chart (#105 AC2, #103 AC2). Lowest season average first: the
  * player owed most time is the one to look at. No average yet comes last.
@@ -508,16 +517,14 @@ export function seasonChart(
   options: SeasonOptions = {}
 ): SeasonChart {
   const stats = seasonStats(ledger, players, options);
+  const columns = SEASON_COLUMNS.filter(
+    ({ key }) => key !== 'other' || stats.players.some((p) => p.byCompetition.other.attended > 0)
+  );
   const rows: SeasonChartRow[] = stats.players
     .filter((p) => !p.retired || p.attended > 0)
     .map((p) => {
-      const cols: Record<SeasonColumn, Bucket> = {
-        league: p.byCompetition.league,
-        cup: p.byCompetition.cup,
-        other: combine(p.byCompetition.friendly, p.byCompetition.tournament),
-      };
-      const bars = SEASON_COLUMNS.map(({ key, label }) => {
-        const b = cols[key];
+      const bars = columns.map(({ key, label }) => {
+        const b = p.byCompetition[key];
         return {
           column: key,
           averageMs: b.averageMs,
