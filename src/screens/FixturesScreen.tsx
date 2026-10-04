@@ -49,6 +49,7 @@ export function FixturesScreen({
   buildLabel,
   progress,
   scores,
+  notClosed,
 }: {
   squadName: string;
   matches: Match[];
@@ -78,9 +79,11 @@ export function FixturesScreen({
   progress: ReadonlyMap<UUID, MatchProgress>;
   /** The score of each match kicked off, folded from its events. */
   scores: ReadonlyMap<UUID, Score>;
+  /** Played to the end, not yet closed with End match (ruling D): hinted on the card. */
+  notClosed: ReadonlySet<UUID>;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, notClosed };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -165,6 +168,7 @@ interface CardActions {
   plannedIds: ReadonlySet<UUID>;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
+  notClosed: ReadonlySet<UUID>;
 }
 
 /** A bucket, omitted entirely when empty rather than shown as a bare heading. */
@@ -189,6 +193,7 @@ function FixtureCard({
   plannedIds,
   housekeeping,
   scores,
+  notClosed,
 }: { row: FixtureRow } & CardActions) {
   const { match } = row;
   const score = scores.get(match.id);
@@ -226,6 +231,12 @@ function FixtureCard({
         </Text>
       )}
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
+      {/* Ruling D: played, but the coach has not pressed End match yet. */}
+      {notClosed.has(match.id) && (
+        <Text style={local.nowTag} numberOfLines={1}>
+          Not closed: open it to End match
+        </Text>
+      )}
       {isArchived && <Text style={local.meta}>Archived</Text>}
 
       {/* Only before kick-off: once a match is played its plan is history. */}

@@ -94,6 +94,7 @@ export function LineupScreen({
   onStart,
   onLeave,
   onPlanRest,
+  attendance,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -108,6 +109,22 @@ export function LineupScreen({
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
+  /**
+   * Who is here today (#102 AC1). Given between periods, never while one
+   * runs; `players` above is already only those not marked absent, so an
+   * absent player can't be picked.
+   */
+  attendance?: {
+    /**
+     * After kick-off: only the absent are listed, and a tap marks them
+     * arrived — a late-arrival correction (ruling F). Nobody is marked
+     * absent here once the match has kicked off.
+     */
+    arrivalsOnly?: boolean;
+    squad: Player[];
+    isAbsent: (id: UUID) => boolean;
+    onToggle: (id: UUID, absent: boolean) => void;
+  };
 }) {
   const quarter = currentQuarter(state);
   const minutes = useMemo(
@@ -372,6 +389,60 @@ export function LineupScreen({
               </View>
             );
           })}
+
+          {attendance && attendance.arrivalsOnly && (() => {
+            const away = attendance.squad.filter((p) => attendance.isAbsent(p.id));
+            if (away.length === 0) return null;
+            return (
+              <>
+                <Text style={screen.fieldLabel}>Arrived late?</Text>
+                <Text style={screen.hint}>
+                  Tap a name to mark them here. They can then be picked, and the
+                  record notes they arrived after kick-off.
+                </Text>
+                <ChipRow>
+                  {away.map((p) => (
+                    <Chip
+                      key={p.id}
+                      label={p.firstName}
+                      detail="Absent"
+                      selected={false}
+                      onPress={() => attendance.onToggle(p.id, false)}
+                    />
+                  ))}
+                </ChipRow>
+              </>
+            );
+          })()}
+
+          {attendance && !attendance.arrivalsOnly && (
+            <>
+              <Text style={screen.fieldLabel}>Here today?</Text>
+              <Text style={screen.hint}>
+                Everyone is here unless you say so. Tap a name to mark them
+                absent; an absent player can&apos;t be picked. After kick-off
+                this can only be changed as a correction.
+              </Text>
+              <ChipRow>
+                {attendance.squad.map((p) => {
+                  const absent = attendance.isAbsent(p.id);
+                  return (
+                    <Chip
+                      key={p.id}
+                      label={p.firstName}
+                      detail={absent ? 'Absent' : 'Here'}
+                      selected={!absent}
+                      onPress={() => {
+                        // Off the sheet first, so an absent player is never left picked.
+                        if (!absent) setSheet((s) => removeFromSheet(s, p.id));
+                        attendance.onToggle(p.id, !absent);
+                      }}
+                    />
+                  );
+                })}
+              </ChipRow>
+            </>
+          )}
         </ScrollView>
 
         <Text style={[screen.caption, !complete && screen.overtime]}>

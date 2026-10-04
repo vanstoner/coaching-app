@@ -1,11 +1,11 @@
 /**
- * Ledger forward-compatibility — #99 AC2, ADR-013 addendum.
+ * Ledger forward-compatibility — #99 AC2, ADR-013 addendum, ADR-014 §10.
  *
- * A minutes file written by a NEWER build, read by this one. Every field this
- * build does not know must survive read → record → merge → export, at every
- * level; a file that declares this build unsafe must be refused, not
- * silently downgraded. The "v2" file here is synthetic: no such version
- * exists yet. Synthetic first names only.
+ * A minutes file written by a NEWER build, read by this one. Every field and
+ * record type this build does not know must survive read → record → import →
+ * export; a file that declares this build unsafe must be refused, never
+ * written back. The "v3" file here is synthetic: no such version exists.
+ * Synthetic first names only.
  */
 
 import { readFileSync } from 'node:fs';
@@ -22,18 +22,22 @@ import {
   LEDGER_VERSION,
   emptyLedger,
   foldLedger,
-  mergeLedger,
+  importLedger,
   parseLedger,
   recordMatches,
   serialiseLedger,
   type Ledger,
+  type LedgerEntry,
 } from './ledger';
+import { hashOf } from './ledgerChain';
 import {
   LEDGER_STORAGE_KEY,
+  LEDGER_V1_STORAGE_KEY,
   UNREADABLE_LEDGER_PREFIX,
   loadLedger,
   openStoredLedger,
   readStoredLedger,
+  saveLedger,
 } from './ledgerStore';
 import { createMemoryStore } from './persistence';
 
@@ -52,123 +56,101 @@ function played() {
   const ids = players.map((p) => p.id);
   const state = engine.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 2 });
   const sheet = toTeamSheet(sheetFromSelection(ids.slice(0, 7), ids[0], format));
+  for (const id of ids) engine.setAvailability(state, id, 'available');
   engine.startQuarter(state, state.quarters[0], sheet, format);
+  // Recorded at kick-off, as the app does: the attendance snapshot.
+  const kicked = recordMatches(emptyLedger(squadId, 'Test FC', NOW), [state], players, 'Test FC', NOW);
   nowMs += 10 * MIN;
   engine.substitute(state, state.quarters[0], ids[6], ids[7]);
   nowMs += 2 * MIN;
   engine.recordEvent(state, state.quarters[0], 'goal', ids[3]);
   nowMs += 13 * MIN;
   engine.endQuarter(state, state.quarters[0]);
-  const ledger = recordMatches(emptyLedger(squadId, 'Test FC'), [state], players, 'Test FC', NOW);
+  const ledger = recordMatches(kicked, [state], players, 'Test FC', NOW);
   return { state, players, squadId, ledger };
 }
 
+/** Re-link and re-hash a chain after editing it, as its own writer would have. */
+function rehash(entries: LedgerEntry[]): LedgerEntry[] {
+  const out: LedgerEntry[] = [];
+  for (const e of entries) {
+    const body = { ...e, seq: out.length, prev: out.length ? out[out.length - 1].hash : null };
+    out.push({ ...body, hash: hashOf(body) });
+  }
+  return out;
+}
+
 /**
- * The file a hypothetical v2 build would write from the same match: every
- * level carries a field v1 does not know, plus an event of a kind v1 does not
- * know, and it says a v1 reader may carry it.
+ * The file a hypothetical v3 build would write: fields this build does not
+ * know on the file, an entry and every record type, plus a record of a type
+ * this build does not know — all hashed by their writer. It says a v2 reader
+ * may carry it.
  */
-function v2File(ledger: Ledger) {
+function v3File(ledger: Ledger) {
   const doc = JSON.parse(serialiseLedger(ledger));
-  doc.ledgerVersion = 2;
-  doc.minReaderVersion = 1;
+  doc.ledgerVersion = 3;
+  doc.minReaderVersion = 2;
   doc.club = { colours: 'blue' };
-  doc.squad.ageGroup = 'U10';
-  doc.players[0].preferredFoot = 'left';
-  doc.matches[0].venue = 'Home';
-  doc.matches[0].intervals[0].heartRate = 150;
-  doc.matches[0].events[0].assistBy = doc.players[1].id;
-  doc.matches[0].events.push({
-    id: 'event-from-v2',
-    kind: 'assist',
-    playerId: doc.players[2].id,
-    period: 1,
-    atMs: 12 * MIN,
-    refersTo: null,
-    note: null,
-    shotDistance: 'close',
-  });
+  const entries: LedgerEntry[] = doc.entries;
+  entries[1].device = 'tablet';
+  for (const r of entries.flatMap((e) => e.records)) {
+    if (r.type === 'squad') r.ageGroup = 'U10';
+    if (r.type === 'player' && r.firstName === 'Ava') r.preferredFoot = 'left';
+    if (r.type === 'match') r.venue = 'Home';
+    if (r.type === 'interval') r.heartRate = 150;
+    if (r.type === 'event') r.assistBy = 'someone';
+    if (r.type === 'attendance') r.arrivedAt = '09:15';
+  }
+  entries[1].records.push({ type: 'weather', matchId: 'x', sky: 'grey' });
+  doc.entries = rehash(entries);
   return doc;
 }
 
-/** Every v2 field, read back from a written file. */
-function expectV2Fields(text: string) {
+/** Every v3 field, read back from a written file. */
+function expectV3Fields(text: string) {
   const out = JSON.parse(text);
-  expect(out.ledgerVersion).toBe(2);
-  expect(out.minReaderVersion).toBe(1);
+  expect(out.ledgerVersion).toBe(3);
+  expect(out.minReaderVersion).toBe(2);
   expect(out.club).toEqual({ colours: 'blue' });
-  expect(out.squad.ageGroup).toBe('U10');
-  const ava = out.players.find((p: { preferredFoot?: string }) => p.preferredFoot);
-  expect(ava?.preferredFoot).toBe('left');
-  expect(out.matches[0].venue).toBe('Home');
-  expect(out.matches[0].intervals.some((i: { heartRate?: number }) => i.heartRate === 150)).toBe(true);
-  expect(out.matches[0].events.some((e: { assistBy?: string }) => typeof e.assistBy === 'string')).toBe(true);
-  expect(out.matches[0].events.find((e: { id: string }) => e.id === 'event-from-v2')).toMatchObject({
-    kind: 'assist',
-    shotDistance: 'close',
-  });
+  const entries: LedgerEntry[] = out.entries;
+  expect(entries[1].device).toBe('tablet');
+  const records = entries.flatMap((e) => e.records);
+  expect(records.some((r) => r.type === 'squad' && r.ageGroup === 'U10')).toBe(true);
+  expect(records.some((r) => r.type === 'player' && r.preferredFoot === 'left')).toBe(true);
+  expect(records.some((r) => r.type === 'match' && r.venue === 'Home')).toBe(true);
+  expect(records.some((r) => r.type === 'interval' && r.heartRate === 150)).toBe(true);
+  expect(records.some((r) => r.type === 'event' && r.assistBy === 'someone')).toBe(true);
+  expect(records.some((r) => r.type === 'attendance' && r.arrivedAt === '09:15')).toBe(true);
+  expect(records.some((r) => r.type === 'weather' && r.sky === 'grey')).toBe(true);
 }
 
 describe('a newer file keeps every field this build does not know (#99 AC2)', () => {
   it('through parse and export', () => {
     const { ledger } = played();
-    const parsed = parseLedger(JSON.stringify(v2File(ledger)));
+    const parsed = parseLedger(JSON.stringify(v3File(ledger)));
     if (!parsed.ok) throw new Error(parsed.reason);
-    expectV2Fields(serialiseLedger(parsed.ledger));
+    expectV3Fields(serialiseLedger(parsed.ledger));
   });
 
-  it('through parse → record → merge → export: the whole path a phone takes', () => {
-    const { ledger, state, players, squadId } = played();
-    const text = JSON.stringify(v2File(ledger));
-
-    // Imported onto a fresh phone, which then plays on: the same match is
-    // recorded again from its own appearances and events on every save.
-    const parsed = parseLedger(text);
+  it('through parse → import → record → export: the whole path a phone takes', () => {
+    const { ledger, state, players } = played();
+    const parsed = parseLedger(JSON.stringify(v3File(ledger)));
     if (!parsed.ok) throw new Error(parsed.reason);
-    const merged = mergeLedger(emptyLedger(uuid(), ''), parsed.ledger, NOW);
-    const recorded = recordMatches(merged.ledger, [state], players, 'Test FC', NOW);
-    expectV2Fields(serialiseLedger(recorded));
-
-    // And merged the other way: this phone's own v1 copy of the same match,
-    // then the v2 file imported over it. Nothing conflicts, so nothing is
-    // added — but the file's extra fields must still reach this phone's copy.
-    const mine = recordMatches(emptyLedger(squadId, 'Test FC'), [state], players, 'Test FC', NOW);
-    const again = mergeLedger(mine, parsed.ledger, NOW);
-    expect(again.conflicts).toEqual([]);
-    expect(again.addedMatches + again.addedPlayers).toBe(0);
-    expectV2Fields(serialiseLedger(again.ledger));
-    // The minutes are the same minutes.
-    expect(foldLedger(again.ledger)).toEqual(foldLedger(mine));
-  });
-
-  it('this phone’s known values win a conflict; the file’s unknown ones are still added', () => {
-    const { ledger, players, squadId, state } = played();
-    const doc = v2File(ledger);
-    doc.players[0].firstName = 'Renamed';
-    const parsed = parseLedger(JSON.stringify(doc));
-    if (!parsed.ok) throw new Error(parsed.reason);
-    const mine = recordMatches(emptyLedger(squadId, 'Test FC'), [state], players, 'Test FC', NOW);
-    const report = mergeLedger(mine, parsed.ledger, NOW);
-    expect(report.conflicts).toHaveLength(1);
-    const kept = report.ledger.players.find((p) => p.id === doc.players[0].id)!;
-    expect(kept.firstName).toBe(players.find((p) => p.id === kept.id)!.firstName);
-    expect((kept as unknown as Record<string, unknown>).preferredFoot).toBe('left');
-  });
-
-  it('a second import of the same newer file changes nothing', () => {
-    const { ledger } = played();
-    const parsed = parseLedger(JSON.stringify(v2File(ledger)));
-    if (!parsed.ok) throw new Error(parsed.reason);
-    const once = mergeLedger(emptyLedger(uuid(), ''), parsed.ledger, NOW).ledger;
-    const twice = mergeLedger(once, parsed.ledger, NOW);
-    expect(twice.addedPlayers + twice.addedMatches + twice.addedIntervals).toBe(0);
-    expect(twice.ledger).toEqual(once);
+    const imported = importLedger(emptyLedger(uuid(), '', NOW), parsed.ledger);
+    if (!imported.ok) throw new Error(imported.reason);
+    // The phone plays on: the same match recorded again from its own records.
+    const recorded = recordMatches(imported.ledger, [state], players, 'Test FC', NOW);
+    expectV3Fields(serialiseLedger(recorded));
+    // Unknown fields on a known record are carried, so re-recording the same
+    // facts is not a change: nothing appended.
+    expect(recorded).toBe(imported.ledger);
+    expect(foldLedger(recorded)).toEqual(foldLedger(ledger));
   });
 });
 
-describe('a file this build cannot safely write back is refused (#99 AC2)', () => {
+describe('a file this build cannot safely write back is refused (#99 AC2, ADR-014 §10)', () => {
   const tooNew = () => {
-    const doc = v2File(played().ledger);
+    const doc = v3File(played().ledger);
     doc.minReaderVersion = LEDGER_READER_VERSION + 1;
     return JSON.stringify(doc);
   };
@@ -179,21 +161,23 @@ describe('a file this build cannot safely write back is refused (#99 AC2)', () =
     if (r.ok) return;
     expect(r.tooNew).toBe(true);
     expect(r.reason).toBe(
-      'This minutes file was saved by a newer version of the app (format 2, needs 2). ' +
+      'This minutes file was saved by a newer version of the app (format 3, needs 3). ' +
         'Update the app to use it. Nothing has been changed.'
     );
+    // Verified and viewable, never written (ADR-014 §10).
+    expect(r.view?.matches).toHaveLength(1);
   });
 
   it('refuses it before any structural check: a newer shape is not "damaged"', () => {
     const doc = JSON.parse(tooNew());
-    doc.matches = { reshaped: true };
+    doc.entries = { reshaped: true };
     const r = parseLedger(JSON.stringify(doc));
     expect(!r.ok && r.tooNew).toBe(true);
   });
 
   it('refuses a damaged minReaderVersion rather than guessing', () => {
     for (const bad of ['1', 0, 1.5, null]) {
-      const doc = v2File(played().ledger);
+      const doc = v3File(played().ledger);
       doc.minReaderVersion = bad;
       const r = parseLedger(JSON.stringify(doc));
       expect(r.ok).toBe(false);
@@ -212,36 +196,61 @@ describe('a file this build cannot safely write back is refused (#99 AC2)', () =
     await store.removeItem(LEDGER_STORAGE_KEY);
     expect((await readStoredLedger(store)).status).toBe('empty');
   });
+
+  it('does not append to a too-new ledger even if handed one', () => {
+    const { state, players } = played();
+    const view = parseLedger(tooNew());
+    if (view.ok || !view.view) throw new Error('expected a view');
+    expect(recordMatches(view.view, [state], players, 'x', NOW)).toBe(view.view);
+  });
 });
 
 describe('v1 files and this build’s own writing', () => {
-  it('reads the committed v1 fixture, which has no minReaderVersion, as reader version 1', () => {
+  it('reads the committed v1 fixture, which has no minReaderVersion, by upgrading it', () => {
     const r = parseLedger(readFileSync(join(__dirname, 'fixtures', 'ledger-v1.json'), 'utf-8'));
     if (!r.ok) throw new Error(r.reason);
-    expect(r.ledger.ledgerVersion).toBe(1);
-    expect(r.ledger.minReaderVersion).toBe(1);
+    expect(r.ledger.ledgerVersion).toBe(2);
+    expect(r.ledger.minReaderVersion).toBe(2);
+    expect(r.ledger.entries).toHaveLength(1);
+    expect(r.ledger.entries[0]).toMatchObject({ seq: 0, prev: null, kind: 'genesis', from: 'v1' });
   });
 
-  it('writes ledgerVersion 1 and minReaderVersion 1', () => {
+  it('writes ledgerVersion 2 and minReaderVersion 2, so a v1 reader refuses to write it back', () => {
     const out = JSON.parse(serialiseLedger(played().ledger));
-    expect(out.ledgerVersion).toBe(LEDGER_VERSION);
-    expect(LEDGER_VERSION).toBe(1);
-    expect(out.minReaderVersion).toBe(1);
+    expect(LEDGER_VERSION).toBe(2);
+    expect(out.ledgerVersion).toBe(2);
+    // A #99 v1 reader refuses any minReaderVersion above 1 and writes nothing.
+    expect(out.minReaderVersion).toBe(2);
+    // A pre-#99 v1 reader requires these arrays and refuses the file without them.
+    expect(out.players).toBeUndefined();
+    expect(out.matches).toBeUndefined();
   });
 });
 
-describe('opening the stored ledger never loses it (QA on #110)', () => {
+describe('opening the stored ledger never loses it (#100 AC7, QA on #110)', () => {
   const at = new Date('2026-10-04T09:30:00Z');
-  const v1 = () => serialiseLedger(emptyLedger(uuid(), 'Test FC'));
+  const v2 = () => serialiseLedger(emptyLedger(uuid(), 'Test FC', at));
 
   it('carries on from a healthy ledger, and starts one when there is none', async () => {
     const store = createMemoryStore();
     expect(await openStoredLedger(store, at)).toEqual({ ledger: null, writable: true, message: '' });
-    await store.setItem(LEDGER_STORAGE_KEY, v1());
+    await store.setItem(LEDGER_STORAGE_KEY, v2());
     const opened = await openStoredLedger(store, at);
     expect(opened.writable).toBe(true);
     expect(opened.ledger).not.toBeNull();
     expect(opened.message).toBe('');
+  });
+
+  it('upgrades a v1 ledger from its own key, and never writes that key', async () => {
+    const store = createMemoryStore();
+    const v1 = readFileSync(join(__dirname, 'fixtures', 'ledger-v1.json'), 'utf-8');
+    await store.setItem(LEDGER_V1_STORAGE_KEY, v1);
+    const opened = await openStoredLedger(store, at);
+    expect(opened.ledger?.entries[0].from).toBe('v1');
+    await saveLedger(store, opened.ledger!);
+    expect(await store.getItem(LEDGER_V1_STORAGE_KEY)).toBe(v1);
+    const again = await openStoredLedger(store, at);
+    expect(again.ledger?.entries).toEqual(opened.ledger?.entries);
   });
 
   it('sets an unreadable ledger aside intact, proved by reading it back, before a new one starts', async () => {
@@ -250,7 +259,24 @@ describe('opening the stored ledger never loses it (QA on #110)', () => {
     const opened = await openStoredLedger(store, at);
     expect(opened).toMatchObject({ ledger: null, writable: true });
     expect(opened.message).toMatch(/set aside unchanged/);
-    expect(await store.getItem(`${UNREADABLE_LEDGER_PREFIX}${at.toISOString()}`)).toBe('{damaged');
+    const key = `${UNREADABLE_LEDGER_PREFIX}${at.toISOString()}`;
+    expect(opened.follows).toBe(key);
+    expect(await store.getItem(key)).toBe('{damaged');
+    // The new chain says what it follows.
+    expect(emptyLedger(uuid(), '', at, opened.follows).entries[0].follows).toBe(key);
+  });
+
+  it('ADR-014 §8: a stored chain that fails verification is set aside, never repaired, and says why', async () => {
+    const store = createMemoryStore();
+    const doc = JSON.parse(serialiseLedger(played().ledger));
+    doc.entries[doc.entries.length - 1].records.find((r: { type: string }) => r.type === 'interval').endMs += MIN;
+    delete doc.summary;
+    const text = JSON.stringify(doc);
+    await store.setItem(LEDGER_STORAGE_KEY, text);
+    const opened = await openStoredLedger(store, at);
+    expect(opened.ledger).toBeNull();
+    expect(opened.message).toMatch(/cannot be trusted: the entry recorded on .* has been changed since it was written/);
+    expect(await store.getItem(`${UNREADABLE_LEDGER_PREFIX}${at.toISOString()}`)).toBe(text);
   });
 
   it('writes nothing when the copy cannot be made, or the store cannot be read at all', async () => {
@@ -270,11 +296,13 @@ describe('opening the stored ledger never loses it (QA on #110)', () => {
     expect(opened.message).toMatch(/Nothing has been changed or deleted/);
   });
 
-  it('writes nothing over a ledger a newer build said this one must not write', async () => {
+  it('writes nothing over a ledger a newer build said this one must not write, but can show it', async () => {
     const store = createMemoryStore();
-    const doc = v2File(played().ledger);
+    const doc = v3File(played().ledger);
     doc.minReaderVersion = LEDGER_READER_VERSION + 1;
     await store.setItem(LEDGER_STORAGE_KEY, JSON.stringify(doc));
-    expect(await openStoredLedger(store, at)).toMatchObject({ ledger: null, writable: false });
+    const opened = await openStoredLedger(store, at);
+    expect(opened).toMatchObject({ ledger: null, writable: false });
+    expect(opened.view?.matches).toHaveLength(1);
   });
 });

@@ -72,10 +72,16 @@ installed; Hermes has no `crypto.subtle`; the ledger code is synchronous pure TS
    recomputes. The first failure is reported in plain English, such as "the
    entry recorded on 3 Oct at 10:42 has been changed since it was written", or
    "an entry is missing after 3 Oct at 10:42".
-   - **Stored chain broken:** shown as untrusted, never repaired, never
-     appended to. Recording is suspended, and the season figures are not
-     shown. Nothing is lost, because the working document still holds its
-     matches and records them once a good chain is restored.
+   - **Stored chain broken:** never repaired and never appended to. It is set
+     aside intact, under its own key, and a new chain starts whose genesis
+     names where it was set aside (`follows`). The new chain is back-filled
+     from the working document's matches, so season figures keep showing,
+     rebuilt from the match records, and the coach is told it happened.
+     Nothing is deleted. Only if the copy cannot be set aside and read back
+     is recording suspended instead, with nothing changed. (PO ruling G-a, #98, 2026-10-04: "approve ... G-a",
+     which replaced the earlier "recording is suspended and the season
+     figures are not shown"; it matches what `ledgerStore.openStoredLedger`
+     does.)
    - **File broken:** refused, and nothing is imported (#100 AC5).
 9. **Import extends, never merges** (#100 AC2). After verifying the file:
    - If our chain is empty, adopt the file's chain.
@@ -111,6 +117,14 @@ being recorded honestly, the whole ledger being deleted, or loss without an
 export. It detects accidental and casual changes, and loss of part of the
 chain. That is the bar the ruling set, and the proportionality ruling argues
 against keys.
+
+**Mitigation (PO ruling N1, #98, 2026-10-04).** The phone also remembers the
+chain head (entry count and last hash) under its own key after every save.
+At launch, a stored chain shorter than that, or whose entry at that count
+differs, is treated as damaged and set aside as in §8. Export and import show
+"N entries · 6 hex of the head hash" so two coaches can compare. A file cut
+short before it reaches another phone is still not detectable without a
+signing key (v3, #113).
 
 **Flag for Rob:** refusing a diverged chain (AC2, applied literally) means one
 phone records and the others import from it. If the coaching team's iPhones
