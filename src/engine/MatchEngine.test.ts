@@ -25,6 +25,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'GK',
       kind: 'goalkeeper',
+      unit: 'GK',
       sortOrder: 0,
     },
     {
@@ -32,6 +33,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'LB',
       kind: 'outfield',
+      unit: null,
       sortOrder: 1,
     },
     {
@@ -39,6 +41,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'CB',
       kind: 'outfield',
+      unit: null,
       sortOrder: 2,
     },
     {
@@ -46,6 +49,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'RB',
       kind: 'outfield',
+      unit: null,
       sortOrder: 3,
     },
     {
@@ -53,6 +57,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'CM',
       kind: 'outfield',
+      unit: null,
       sortOrder: 4,
     },
     {
@@ -60,6 +65,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'LW',
       kind: 'outfield',
+      unit: null,
       sortOrder: 5,
     },
     {
@@ -67,6 +73,7 @@ function createTestFormat(onFieldCount: number = 7): Format {
       formatId: uuid(),
       label: 'ST',
       kind: 'outfield',
+      unit: null,
       sortOrder: 6,
     },
   ];
@@ -1040,7 +1047,7 @@ describe('REQ-01: Match clock with quarter management', () => {
 
   describe('Invariant: Every player in exactly one place (Appearance or BenchStint)', () => {
     it('enforces that each available player is tracked', () => {
-      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const mockTime = new Date('2026-09-17T14:00:00Z');
       const engine = new MatchEngine({ nowFn: () => mockTime });
 
       const state = engine.createMatch(squadId, format.id);
@@ -1061,7 +1068,7 @@ describe('REQ-01: Match clock with quarter management', () => {
     it('detects when a player is not tracked', () => {
       // This is more of a safety net — in normal operation, the engine
       // maintains this invariant. This test ensures the validator catches it.
-      let mockTime = new Date('2026-09-17T14:00:00Z');
+      const mockTime = new Date('2026-09-17T14:00:00Z');
       const engine = new MatchEngine({ nowFn: () => mockTime });
 
       const state = engine.createMatch(squadId, format.id);

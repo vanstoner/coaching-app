@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   gate:
-    name: Test, typecheck and validate docs
+    name: Bundle, commit trailers and docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,11 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Unit tests
-        run: npx vitest run
-
-      - name: Typecheck
-        run: npx tsc --noEmit
+      # Unit tests, typecheck, lint and coverage moved to the `checks` job in
+      # android-apk.yml (#99 AC6): the release job there must `need` them, and
+      # `needs` cannot reach across workflows. They still run on every PR.
 
       # Metro resolves differently from tsc and vitest. It does NOT map a `.js`
       # import specifier onto a `.ts` file, so `import '../types/index.js'`

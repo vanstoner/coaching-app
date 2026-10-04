@@ -1,15 +1,20 @@
 name: Android APK
 
-# Separate from ci.yml on purpose. ci.yml is the test gate (vitest, tsc,
-# validate-docs) and is shared with the engine lane; this workflow owns the
-# Android artifact end to end — building it, and proving it runs — and must
-# never duplicate ci.yml's steps (AC-E1/E2/E3, issue #11).
+# This workflow owns the Android artifact end to end — testing the code it is
+# built from, building it, proving it runs, and releasing it. ci.yml keeps the
+# checks that do not gate a release (Metro bundle, commit trailers, docs), and
+# the two never duplicate each other's steps (AC-E1/E2/E3, issue #11).
 #
-# Two jobs:
-#   apk    builds the debug APK and asserts what can be asserted about the file.
-#   smoke  boots an emulator, installs that same APK, and proves the app
-#          renders (issue #43). It consumes the `apk` job's artifact rather
-#          than rebuilding, so the ~6-minute build happens once per run.
+# Jobs:
+#   checks  unit tests, typecheck (app and tests), lint, coverage. #99 AC6:
+#           these live HERE, not in ci.yml, because `needs` cannot reach
+#           across workflows. While they lived in ci.yml a red test run could
+#           not stop a release: `release` needed only apk and smoke.
+#   apk     builds the APK and asserts what can be asserted about the file.
+#   smoke   boots an emulator, installs that same APK, and proves the app
+#           renders (issue #43). It consumes the `apk` job's artifact rather
+#           than rebuilding, so the ~6-minute build happens once per run.
+#   release / beta  publish, and only after the jobs they need succeeded.
 
 on:
   pull_request:
@@ -28,6 +33,77 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Unit tests, typecheck, lint, coverage — #99 AC3–AC6
+  # ---------------------------------------------------------------------------
+  #
+  # Runs in parallel with `apk`, so it adds no time to the critical path. The
+  # release job needs it: no green tests on this commit, no release.
+  checks:
+    name: Unit tests, typecheck, lint, coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `npm ci` installs the lockfile exactly as committed, which is what
+      # makes this run reproducible rather than indicative.
+      - name: Install dependencies
+        id: install
+        run: npm ci
+
+      - name: Unit tests
+        id: tests
+        run: npx vitest run
+
+      - name: Typecheck the app
+        id: typecheck
+        run: npx tsc --noEmit
+
+      # #99 AC3: tsconfig.json excludes the tests and vitest strips types
+      # without checking them, so a test could assert against a shape the
+      # app no longer has and still go green.
+      - name: Typecheck the tests
+        id: typecheck_tests
+        run: npm run typecheck:tests
+
+      # #99 AC5: includes the engine-purity and one-clock rules
+      # (eslint.config.mjs). Warnings print but do not fail the job.
+      - name: Lint
+        id: lint
+        run: npm run lint
+
+      # #99 AC4: per-module coverage, printed to the log. No threshold yet —
+      # this reports, it does not gate, so it runs even if lint failed.
+      - name: Coverage (report only)
+        id: coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:coverage
+
+      - name: Why this job failed
+        if: failure()
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          TYPECHECK_TESTS: ${{ steps.typecheck_tests.outcome }}
+          LINT: ${{ steps.lint.outcome }}
+          COVERAGE: ${{ steps.coverage.outcome }}
+        run: |
+          echo "WHY THIS JOB FAILED — no release can be cut from this commit:"
+          echo "  npm ci                   $INSTALL"
+          echo "  npx vitest run           $TESTS"
+          echo "  npx tsc --noEmit         $TYPECHECK"
+          echo "  npm run typecheck:tests  $TYPECHECK_TESTS"
+          echo "  npm run lint             $LINT"
+          echo "  npm run test:coverage    $COVERAGE"
+          echo "The first 'failure' above is the cause; its step log has the detail."
+          echo "Reproduce locally with the same command."
+
   apk:
     name: Build release APK
     runs-on: ubuntu-latest
@@ -483,7 +559,10 @@ jobs:
   # a placeholder squad.
   release:
     name: Cut the release
-    needs: [apk, smoke]           # never attach a build whose smoke test failed
+    # Never attach a build whose smoke test failed, or whose commit failed its
+    # unit tests, typecheck or lint (#99 AC6). With no status function in
+    # `if:`, Actions ANDs in success(): a failed or skipped need skips this job.
+    needs: [checks, apk, smoke]
     if: >-
       github.event_name == 'push' &&
       (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')

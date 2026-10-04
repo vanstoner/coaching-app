@@ -122,6 +122,7 @@ describe('a document written by a newer app', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('too_new');
+    if (result.reason !== 'too_new') return; // narrows the union; the expect above already failed
     expect(result.writtenBy).toBe(5);
     expect(result.needsReader).toBe(5);
 
@@ -154,6 +155,7 @@ describe('a document written by a newer app', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe('too_new');
+    if (result.reason !== 'too_new') return; // narrows the union; the expect above already failed
     expect(result.needsReader).toBe(9);
   });
 });

@@ -17,7 +17,7 @@ import { uuid } from './index';
 
 const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-const realCrypto = (globalThis as { crypto?: Crypto }).crypto;
+const realCrypto = (globalThis as { crypto?: typeof import('node:crypto').webcrypto }).crypto;
 
 function setCrypto(value: unknown): void {
   Object.defineProperty(globalThis, 'crypto', {
