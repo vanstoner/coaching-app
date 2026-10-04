@@ -13,7 +13,7 @@
 
 import type { MatchState } from '../engine/MatchEngine';
 import type { Format, UUID } from '../types/index';
-import { matchProgress, type MatchProgress } from './fixtures';
+import { matchProgress, type MatchProgress, type StartedPeriod } from './fixtures';
 import { scoreOf, type Score } from './matchEvents';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
 
@@ -33,6 +33,18 @@ export function progressById(
   live: HeldMatch | null
 ): Map<UUID, MatchProgress> {
   return new Map(withLiveMatch(matches, live).map((m) => [m.match.id, matchProgress(m.quarters)]));
+}
+
+/**
+ * Each match's periods, the live one read from its live state, so a fixture
+ * card can date a Play-now match by when it actually kicked off (#126, PO
+ * ruling 10). Recorded anchors, never a timer (invariant 2).
+ */
+export function periodsById(
+  matches: SavedMatch[],
+  live: HeldMatch | null
+): Map<UUID, readonly StartedPeriod[]> {
+  return new Map(withLiveMatch(matches, live).map((m) => [m.match.id, m.quarters]));
 }
 
 /**

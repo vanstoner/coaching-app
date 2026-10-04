@@ -188,6 +188,32 @@ describe('labels', () => {
     expect(label).toMatch(/\d{2}:\d{2}/);
   });
 
+  // #126: Play now creates a match with no planned kick-off. Once played, the
+  // report gives the date and time its first period started, from the
+  // recorded wall-clock anchor (invariant 2), not "Date TBC".
+  it('reports when a Play now match actually started (#126 AC1)', () => {
+    const played = [
+      { index: 2, startedAt: '2026-09-26T09:20:00Z' },
+      { index: 1, startedAt: '2026-09-26T09:05:00Z' },
+    ];
+    const label = kickoffLabel(fixture({ kickoffAt: null }), NOW, played);
+    expect(label).toBe(kickoffLabel(fixture({ kickoffAt: '2026-09-26T09:05:00Z' }), NOW));
+    expect(label).not.toBe('Date TBC');
+  });
+
+  it('keeps a planned kick-off over when play started (#126 AC2)', () => {
+    const played = [{ index: 1, startedAt: '2026-09-26T10:07:00Z' }];
+    expect(kickoffLabel(fixture({ kickoffAt: '2026-09-26T10:00:00Z' }), NOW, played)).toBe(
+      kickoffLabel(fixture({ kickoffAt: '2026-09-26T10:00:00Z' }), NOW)
+    );
+  });
+
+  it('is still Date TBC when nothing was planned and nothing has started', () => {
+    expect(kickoffLabel(fixture({ kickoffAt: null }), NOW, [{ index: 1, startedAt: null }])).toBe(
+      'Date TBC'
+    );
+  });
+
   it('adds the year only when it is not this one', () => {
     expect(kickoffLabel(fixture({ kickoffAt: '2026-09-26T10:00:00Z' }), NOW)).not.toMatch(/2026/);
     expect(kickoffLabel(fixture({ kickoffAt: '2027-03-06T10:00:00Z' }), NOW)).toMatch(/2027/);

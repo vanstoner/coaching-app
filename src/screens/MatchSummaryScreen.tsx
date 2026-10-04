@@ -95,7 +95,7 @@ export function MatchSummaryScreen({
 
   const competition = competitionLabel(report.competition);
   const details = [
-    kickoffLabel(state.match, now),
+    kickoffLabel(state.match, now, state.quarters),
     competition === '' ? 'League' : competition,
     report.formatName,
     `${report.totalMinutes} min, ${periodNounPlural(report.periodCount).toLowerCase()}`,

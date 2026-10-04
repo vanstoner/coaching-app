@@ -59,7 +59,7 @@ import {
   type SavedSession,
 } from './src/app/persistence';
 import { createDeviceStore } from './src/app/storage';
-import { progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
+import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { kickoffTimes } from './src/app/attendance';
 import {
   canEndMatch,
@@ -1201,6 +1201,7 @@ export default function App() {
         onOpen={openFixture}
         progress={progressById(matches, match)}
         scores={scoresById(matches, match)}
+        periods={periodsById(matches, match)}
         notClosed={notClosedIds(withLiveMatch(matches, match))}
         onDelete={deleteFixture}
         onAdd={() => setStep('fixtureForm')}

@@ -145,3 +145,7 @@ analysis, iOS". Entries are added as each release ships.
   now show only the match and point to Squad, where each child's row and page
   carry their minutes a game, played and missed, by competition. The Main
   keeper is left out of the squad average. The Season screen is gone.
+- **4 October — two defects from QA's retroactive check (#125, #126).** Every
+  pill on the pitch and bench now shows total pitch time, with "GK" on the
+  child in goal, so a former keeper no longer reads 00:00. A Play now match
+  reports the date and time its first period started instead of "Date TBC".

@@ -100,7 +100,8 @@ decision 2 for Coaching App only.
   held by the phone's own service, and the minutes export stays the explicit,
   coach-initiated way to move data between phones.
 - Both CI gates assert the built artifact, per variant: the APK manifest's
-  `allowBackup` and the iOS Info.plist key (`check_ios_app.py`).
+  `allowBackup` (`check_backup.py`) and the iOS Info.plist key
+  (`check_ios_app.py`), each self-tested healthy case first.
 
 **Impact assessment (decision 3), proportionate to what moves:**
 

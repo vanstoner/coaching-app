@@ -30,6 +30,7 @@ import {
   lengthLabel,
   opponentLabel,
   type MatchProgress,
+  type StartedPeriod,
   type FixtureRow,
 } from '../app/fixtures';
 import { colours, screen, TOUCH_TARGET } from './theme';
@@ -49,6 +50,7 @@ export function FixturesScreen({
   buildLabel,
   progress,
   scores,
+  periods,
   notClosed,
 }: {
   squadName: string;
@@ -79,11 +81,13 @@ export function FixturesScreen({
   progress: ReadonlyMap<UUID, MatchProgress>;
   /** The score of each match kicked off, folded from its events. */
   scores: ReadonlyMap<UUID, Score>;
+  /** Each match's periods, so a Play-now match is dated by its kick-off (#126). */
+  periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
   /** Played to the end, not yet closed with End match (ruling D): hinted on the card. */
   notClosed: ReadonlySet<UUID>;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, notClosed };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -168,6 +172,7 @@ interface CardActions {
   plannedIds: ReadonlySet<UUID>;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
+  periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
   notClosed: ReadonlySet<UUID>;
 }
 
@@ -193,6 +198,7 @@ function FixtureCard({
   plannedIds,
   housekeeping,
   scores,
+  periods,
   notClosed,
 }: { row: FixtureRow } & CardActions) {
   const { match } = row;
@@ -218,7 +224,7 @@ function FixtureCard({
         {opponentLabel(match)}
       </Text>
       <Text style={local.meta} numberOfLines={1}>
-        {kickoffLabel(match, now)}
+        {kickoffLabel(match, now, periods.get(match.id))}
         {competition === '' ? '' : ` · ${competition}`}
       </Text>
       {/* This match's OWN length and periods, not the squad default (#70). */}

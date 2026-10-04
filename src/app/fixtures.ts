@@ -163,11 +163,45 @@ export function inBucket(rows: FixtureRow[], bucket: FixtureBucket): FixtureRow[
  */
 export const NO_FIXTURES_YET = 'No fixtures yet. Add your first match.';
 
-/** A short, sortable date for a fixture row. Empty when there is no kick-off. */
-export function kickoffLabel(match: Match, now: Date): string {
-  if (!match.kickoffAt) return 'Date TBC';
-  const at = new Date(match.kickoffAt);
-  if (Number.isNaN(at.getTime())) return 'Date TBC';
+/** A period as far as when it started: its recorded wall-clock anchor. */
+export interface StartedPeriod {
+  index: number;
+  startedAt: string | null;
+}
+
+/**
+ * When play actually began: the recorded start of the earliest period that
+ * has started. Read from the stored anchor, never a timer (invariant 2).
+ */
+export function firstStartedAt(periods: readonly StartedPeriod[]): string | null {
+  let first: StartedPeriod | null = null;
+  for (const p of periods) {
+    if (!p.startedAt || Number.isNaN(new Date(p.startedAt).getTime())) continue;
+    if (!first || p.index < first.index) first = p;
+  }
+  return first?.startedAt ?? null;
+}
+
+/**
+ * A short date and time for a fixture. The planned kick-off when there is
+ * one; otherwise, given the match's periods, when its first period started
+ * (#126: a Play now match has no planned kick-off but was still played on a
+ * date). "Date TBC" only when neither is known.
+ */
+export function kickoffLabel(
+  match: Match,
+  now: Date,
+  periods: readonly StartedPeriod[] = []
+): string {
+  const planned = match.kickoffAt ? new Date(match.kickoffAt) : null;
+  const started = firstStartedAt(periods);
+  const at =
+    planned && !Number.isNaN(planned.getTime())
+      ? planned
+      : started
+        ? new Date(started)
+        : null;
+  if (!at) return 'Date TBC';
 
   const time = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const sameYear = at.getFullYear() === now.getFullYear();
