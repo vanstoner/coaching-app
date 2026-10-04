@@ -71,13 +71,19 @@ describe('pills do not touch (#89 AC3)', () => {
   });
 });
 
-describe('the time under a pill (match day 4)', () => {
+describe('the time under a pill (#125, ADR-015: total pitch time)', () => {
   const m = { outfieldMs: 0, goalkeeperMs: 12 * 60_000 + 30_000 };
-  it('shows the keeper their time in goal, not 00:00 outfield', () => {
+  it('marks the keeper GK beside their total pitch time', () => {
     expect(pillDetail(m, true)).toBe('GK 12:30');
+    expect(pillDetail({ outfieldMs: 5 * 60_000, goalkeeperMs: 60_000 }, true)).toBe('GK 06:00');
   });
-  it('shows everyone else their outfield time', () => {
-    expect(pillDetail({ outfieldMs: 5 * 60_000, goalkeeperMs: 60_000 }, false)).toBe('05:00');
+  it('shows everyone else goal plus outfield: 5 min outfield and 1 min in goal is 06:00', () => {
+    expect(pillDetail({ outfieldMs: 5 * 60_000, goalkeeperMs: 60_000 }, false)).toBe('06:00');
+  });
+  it('shows a former keeper on the bench the quarter they kept goal, not 00:00', () => {
+    expect(pillDetail(m, false)).toBe('12:30');
+  });
+  it('shows 00:00 for a child with no minutes yet', () => {
     expect(pillDetail(undefined, false)).toBe('00:00');
     expect(pillDetail(undefined, true)).toBe('GK 00:00');
   });

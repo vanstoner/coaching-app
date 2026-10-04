@@ -114,15 +114,15 @@ export function dropTargetAt(
 }
 
 /**
- * The time under a pill on the pitch. A player in goal shows their time in
- * goal; everyone else shows outfield time (PO, match day 4: the keeper's pill
- * read 00:00, which was their outfield time, not the time they had played).
+ * The time under a pill on the pitch: total time on the pitch, goal plus
+ * outfield (invariant 3, ADR-015; PO ruling on #125). The child in goal now
+ * is marked "GK", so "GK 12:30" is 12:30 on the pitch in total, not 12:30 in
+ * goal. One figure, meaning the same thing on every pill.
  */
 export function pillDetail(
   minutes: { outfieldMs: number; goalkeeperMs: number } | undefined,
   inGoal: boolean
 ): string {
-  return inGoal
-    ? `GK ${formatClock(minutes?.goalkeeperMs ?? 0)}`
-    : formatClock(minutes?.outfieldMs ?? 0);
+  const total = formatClock((minutes?.outfieldMs ?? 0) + (minutes?.goalkeeperMs ?? 0));
+  return inGoal ? `GK ${total}` : total;
 }
