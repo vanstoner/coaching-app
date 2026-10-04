@@ -104,3 +104,10 @@ analysis, iOS". Entries are added as each release ships.
   link copied the earlier quarter's plan — empty when its lineup had been set
   at kick-off — and silently did nothing. It now copies who was on the pitch
   at the end of a played quarter, and says so when there is nothing to copy.
+- **4 October — an icon, a backup, and the first step to iPhone (#107,
+  #112).** The app got its own icon — the whistle's cord tied into a heart
+  around the ball, on a mown pitch; orange grass and a BETA tag for the beta.
+  Coaching App now joins the phone's own backup so a lost phone keeps the
+  season (Rob: "backup b"); the beta never does. iPhone bundle ids
+  `com.vanstoner.coachingapp` (+ `.beta`), and every change is now compiled
+  for iPhone in CI, ahead of TestFlight once Rob has enrolled with Apple.
