@@ -47,6 +47,12 @@ xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coa
 The beta zip is the one with the **Test kit** (made-up players, a past season,
 a faster clock): install `CoachingBeta.app` and open Settings › Test kit.
 
+To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
+`npm run android:beta`) once route 2 below works. It builds **Coaching
+Beta**, with its own id, orange icon and storage, so test data never sits
+beside a real squad. Any development build shows the Test kit, and a release
+of Coaching App never does (#134).
+
 **Route 2: build it yourself.** A *development* build: it loads the app's code
 live from your Mac, so `npx expo start` must be running while you use it.
 Route 1 is standalone. Each step below is one that failed when skipped (#133):
