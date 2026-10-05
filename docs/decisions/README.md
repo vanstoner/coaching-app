@@ -46,6 +46,7 @@ state management does.
 | [014](./014-ledger-hash-chain.md) | Ledger v2 is a hash chain, and it records attendance | Accepted | 2026-10-04 |
 | [015](./015-fairness-is-total-pitch-time.md) | Fairness is total time on the pitch; averages are per match attended | Accepted | 2026-10-04 |
 | [016](./016-charts-drawn-from-views.md) | Charts are bars we draw ourselves, from a pure numbers module | Accepted | 2026-10-04 |
+| [017](./017-data-categories-and-audiences.md) | Data categories and audiences | Accepted | 2026-10-05 |
 
 ## Template
 
