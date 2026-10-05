@@ -15,9 +15,12 @@ import { makePlayer } from './squad';
 import { foldPlayerMinutes } from './playerMinutes';
 import { teamSheetFor } from './lineup';
 import { formatClock } from './matchClock';
+import { CLOCK_SPEEDS, NORMAL_CLOCK, virtualNowMs, withSpeed } from './appClock';
 import {
+  NO_BUZZES,
   NO_SUB_PLANNED,
   isPlanned,
+  checkBuzz,
   clearSubTime,
   defaultSubTimeMs,
   planSubs,
@@ -27,7 +30,11 @@ import {
   dueSubs,
   nextSub,
   msUntilNextSub,
+  subMoment,
+  subsToBuzz,
   whoComesOff,
+  type BuzzLog,
+  type PlannedSub,
 } from './subPlan';
 
 function makeFormat(onFieldCount = 7): Format {
@@ -511,5 +518,192 @@ describe('a substitute with no planned time', () => {
     let plan = nudgeSubTime(planSubs([a], periodMs), a, 30_000, periodMs);
     for (let i = 0; i < 40; i++) plan = nudgeSubTime(plan, a, -30_000, periodMs);
     expect(plan[0].atMs).toBe(NO_SUB_PLANNED);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The buzz — #137, ruling 19 (R1): once, when a sub falls due, app open
+// ---------------------------------------------------------------------------
+
+describe('subsToBuzz (#137 AC5)', () => {
+  const periodMs = 750_000; // a 12:30 quarter
+  const due = defaultSubTimeMs(periodMs); // 6:15
+
+  it('buzzes a planned sub the moment it falls due, and not before', () => {
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    expect(subsToBuzz(plan, due - 1, new Set())).toEqual([]);
+    expect(subsToBuzz(plan, due, new Set()).map((s) => s.playerId)).toEqual([a]);
+  });
+
+  it('never buzzes the same moment twice, however late the swap is', () => {
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    const buzzed = new Set([subMoment(plan[0])]);
+    for (const t of [due, due + 1_000, 9 * 60_000, periodMs, periodMs * 2]) {
+      expect(subsToBuzz(plan, t, buzzed)).toEqual([]);
+    }
+    // The clock still shows it as due: only the buzz is once.
+    expect(dueSubs(plan, 9 * 60_000)).toHaveLength(1);
+  });
+
+  it('never buzzes a sub already made, or one taken out of the plan', () => {
+    const [made, removed, waiting] = [uuid(), uuid(), uuid()] as UUID[];
+    let plan = allScheduled([made, removed, waiting], periodMs);
+    plan = markDone(plan, made);
+    plan = clearSubTime(plan, removed);
+    expect(subsToBuzz(plan, periodMs, new Set()).map((s) => s.playerId)).toEqual([waiting]);
+    expect(subsToBuzz([], periodMs, new Set())).toEqual([]);
+  });
+
+  it('buzzes a sub moved to a later time again, at its new time', () => {
+    const a = uuid() as UUID;
+    let plan = allScheduled([a], periodMs);
+    const buzzed = new Set(subsToBuzz(plan, due, new Set()).map(subMoment));
+    expect(buzzed.size).toBe(1);
+    plan = setSubTime(plan, a, 8 * 60_000, periodMs);
+    expect(subsToBuzz(plan, 7 * 60_000, buzzed)).toEqual([]);
+    expect(subsToBuzz(plan, 8 * 60_000, buzzed).map((s) => s.playerId)).toEqual([a]);
+  });
+
+  it('hands back subs that fell due together in one go, oldest first, for one buzz', () => {
+    const [a, b, c] = [uuid(), uuid(), uuid()] as UUID[];
+    let plan = allScheduled([a, b, c], periodMs); // all at 6:15
+    plan = setSubTime(plan, c, 4 * 60_000, periodMs);
+    expect(subsToBuzz(plan, 7 * 60_000, new Set()).map((s) => s.playerId)).toEqual([c, a, b]);
+  });
+});
+
+describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
+  const periodMs = 750_000;
+  const due = defaultSubTimeMs(periodMs);
+
+  /** One repaint of the clock: in front, buzzing on, the period running, unless told otherwise. */
+  function repaint(
+    log: BuzzLog,
+    plan: PlannedSub[],
+    elapsedMs: number,
+    { enabled = true, foreground = true, running = true, periodKey = 'match-1/q1' } = {}
+  ) {
+    return checkBuzz(log, {
+      enabled,
+      foreground,
+      running: running ? { periodKey, elapsedMs } : null,
+      plan,
+    });
+  }
+
+  it('buzzes each planned sub once, at its moment, across a whole period of repaints', () => {
+    const [ava, ben, cal, dee] = [uuid(), uuid(), uuid(), uuid()] as UUID[];
+    const names = new Map([
+      [ava, 'Ava'],
+      [ben, 'Ben'],
+      [cal, 'Cal'],
+      [dee, 'Dee'],
+    ]);
+    let plan = allScheduled([ava, ben, cal, dee], periodMs); // all at 6:15
+    plan = setSubTime(plan, ava, 3 * 60_000, periodMs);
+    plan = clearSubTime(plan, dee); // not coming on this quarter
+
+    // A repaint every second, as the clock does: 751 of them.
+    let log = NO_BUZZES;
+    const heard: string[] = [];
+    for (let t = 0; t <= periodMs; t += 1_000) {
+      const r = repaint(log, plan, t);
+      log = r.log;
+      if (r.buzz.length > 0) {
+        heard.push(`${formatClock(t)} ${r.buzz.map((s) => names.get(s.playerId)).join(' + ')}`);
+      }
+    }
+    expect(heard).toEqual(['03:00 Ava', '06:15 Ben + Cal']);
+  });
+
+  it('buzzes nothing for a period that is not running', () => {
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    const r = repaint(NO_BUZZES, plan, periodMs, { running: false });
+    expect(r.buzz).toEqual([]);
+    expect(r.log).toBe(NO_BUZZES);
+  });
+
+  it('uses nothing up in the background, then buzzes once on coming back (AC3)', () => {
+    // Android drops a vibration from an app in the background, so a buzz
+    // spent there would be lost for good.
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    let log = repaint(NO_BUZZES, plan, 5 * 60_000).log; // 5:00, nothing due yet
+    for (const t of [6 * 60_000, due, 7 * 60_000]) {
+      const away = repaint(log, plan, t, { foreground: false });
+      expect(away.buzz).toEqual([]);
+      log = away.log;
+    }
+    const back = repaint(log, plan, 9 * 60_000);
+    expect(back.buzz.map((s) => s.playerId)).toEqual([a]);
+    expect(repaint(back.log, plan, 9 * 60_000 + 1_000).buzz).toEqual([]);
+  });
+
+  it('buzzes nothing while switched off in Settings, and uses nothing up', () => {
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    const off = repaint(NO_BUZZES, plan, 7 * 60_000, { enabled: false });
+    expect(off.buzz).toEqual([]);
+    expect(off.log).toBe(NO_BUZZES);
+    // Switched back on with the sub still waiting: it has not buzzed yet.
+    expect(repaint(off.log, plan, 8 * 60_000).buzz).toHaveLength(1);
+  });
+
+  it('does not buzz again for a sub undone and due again', () => {
+    // The coach is looking at the screen: they have just pressed Undo.
+    const a = uuid() as UUID;
+    let plan = allScheduled([a], periodMs);
+    const first = repaint(NO_BUZZES, plan, due);
+    expect(first.buzz).toHaveLength(1);
+    plan = markDone(plan, a);
+    plan = plan.map((s) => (s.playerId === a ? { ...s, done: false } : s)); // as App.tsx undoes it
+    expect(repaint(first.log, plan, due + 5_000).buzz).toEqual([]);
+  });
+
+  it('starts each new period, and each new match, with nothing buzzed', () => {
+    // The same player at the same time next quarter is a new reminder.
+    const a = uuid() as UUID;
+    const plan = allScheduled([a], periodMs);
+    const q1 = repaint(NO_BUZZES, plan, due, { periodKey: 'match-1/q1' });
+    expect(q1.buzz).toHaveLength(1);
+    expect(repaint(q1.log, plan, due + 1_000, { periodKey: 'match-1/q1' }).buzz).toEqual([]);
+    const q2 = repaint(q1.log, plan, due, { periodKey: 'match-1/q2' });
+    expect(q2.buzz).toHaveLength(1);
+    expect(repaint(q2.log, plan, due, { periodKey: 'match-2/q1' }).buzz).toHaveLength(1);
+  });
+
+  it('follows the Test kit clock: due when the anchors say so, at ×1, ×5 and ×10 (AC2)', () => {
+    // Nothing is counted. Each repaint reads the elapsed time off the
+    // engine's anchors, which read the app clock.
+    for (const speed of CLOCK_SPEEDS) {
+      const T = 1_800_000_000_000;
+      let real = T;
+      const setting = withSpeed(NORMAL_CLOCK, speed, T);
+      const engine = new MatchEngine({ nowFn: () => new Date(virtualNowMs(setting, real)) });
+      const format = makeFormat();
+      const squadId = uuid();
+      const ids = Array.from({ length: 8 }, (_, i) => makePlayer(squadId, `P${i}`).id);
+      const state = engine.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 4 });
+      const quarter = state.quarters[0];
+      engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], format), format);
+      const plan = allScheduled([ids[7]], periodMs); // 6:15
+      const paint = (log: BuzzLog) =>
+        repaint(log, plan, engine.getQuarterElapsedMs(quarter), {
+          periodKey: `${state.match.id}/${quarter.id}`,
+        });
+
+      const realToDue = due / speed; // 375 s at ×1, 75 s at ×5, 37.5 s at ×10
+      real = T + realToDue - 1;
+      const early = paint(NO_BUZZES);
+      expect(early.buzz).toEqual([]);
+      real = T + realToDue;
+      const onTime = paint(early.log);
+      expect(onTime.buzz.map((s) => s.playerId)).toEqual([ids[7]]);
+      real = T + realToDue + 1_000;
+      expect(paint(onTime.log).buzz).toEqual([]);
+    }
   });
 });

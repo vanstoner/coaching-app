@@ -15,10 +15,11 @@
  * length. They are standing facts about a club, so they belong somewhere you
  * can go and change, not on a path you can only walk forwards.
  *
- * Nothing here adds to what is stored: `SavedSession` already carries
- * squadName, format, totalMinutes and periodCount. **No schema bump, so every
- * existing save still loads** — which matters more than it sounds, because a
- * coach mid-season losing their squad to a version bump is unforgivable.
+ * `SavedSession` already carried squadName, format, totalMinutes and
+ * periodCount. The one setting added since, the buzz (#137), is optional and
+ * reads as on when absent. **No schema bump, so every existing save still
+ * loads** — which matters more than it sounds, because a coach mid-season
+ * losing their squad to a version bump is unforgivable.
  */
 
 import { formatClock, periodNounPlural } from './matchClock';
@@ -57,6 +58,20 @@ export function describeDefaults(totalMinutes: number, periodCount: number): str
   }
   const periodMs = (totalMinutes * 60_000) / periodCount;
   return `${periodCount} × ${formatClock(periodMs)} ${periodNounPlural(periodCount).toLowerCase()}`;
+}
+
+/**
+ * "Buzz when a sub is due" (#137) starts on. The app is a substitution
+ * reminder, and a buzz a coach has to find and switch on reminds nobody.
+ */
+export const BUZZ_WHEN_SUB_DUE_DEFAULT = true;
+
+/**
+ * The stored buzz setting. Only an explicit yes or no is kept; anything else,
+ * including a save from before the setting existed, reads as the default.
+ */
+export function readBuzzWhenSubDue(raw: unknown): boolean {
+  return typeof raw === 'boolean' ? raw : BUZZ_WHEN_SUB_DUE_DEFAULT;
 }
 
 /** How long one period runs, in ms. The number the sub plan anchors to. */

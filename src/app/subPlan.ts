@@ -228,3 +228,83 @@ export function whoComesOff(
   }
   return [...onPitch].sort((a, b) => b.currentStintMs - a.currentStintMs)[0].playerId;
 }
+
+// ---------------------------------------------------------------------------
+// The buzz — #137, ruling 19 (R1): the phone buzzes once when a sub falls due
+// ---------------------------------------------------------------------------
+
+/**
+ * One planned moment: this player, at this time.
+ *
+ * The time is part of it on purpose. A sub moved to a later time is a new
+ * moment and buzzes again when that comes; the same moment never buzzes
+ * twice, however often the clock repaints.
+ */
+export function subMoment(sub: PlannedSub): string {
+  return `${sub.playerId}@${sub.atMs}`;
+}
+
+/**
+ * Which planned subs should buzz the phone now (#137 AC5).
+ *
+ * Exactly the subs the clock shows as due — `dueSubs`: planned, not made,
+ * their moment passed — less every moment that has already buzzed. A sub
+ * already made, or taken out of the plan, is not due, so it cannot buzz.
+ */
+export function subsToBuzz(
+  plan: PlannedSub[],
+  periodElapsedMs: number,
+  alreadyBuzzed: ReadonlySet<string>
+): PlannedSub[] {
+  return dueSubs(plan, periodElapsedMs).filter((s) => !alreadyBuzzed.has(subMoment(s)));
+}
+
+/**
+ * The moments that have buzzed in one period of one match.
+ *
+ * Screen state, never saved and never a record: it only stops the phone
+ * saying the same thing twice, so invariant 1 is untouched. The app shell
+ * holds it rather than the clock screen, so going to the chart or the plan
+ * and back does not repeat a buzz. A new period or a new match starts it
+ * empty: `periodKey` names both.
+ */
+export interface BuzzLog {
+  periodKey: string;
+  buzzed: ReadonlySet<string>;
+}
+
+export const NO_BUZZES: BuzzLog = { periodKey: '', buzzed: new Set() };
+
+/** What one repaint of the clock knows. */
+export interface BuzzCheck {
+  /** Settings: "Buzz when a sub is due". */
+  enabled: boolean;
+  /**
+   * The app is in the foreground. Android drops a vibration from an app in
+   * the background, so nothing is used up while away: a sub that fell due
+   * meanwhile buzzes once on the way back (#137 AC3).
+   */
+  foreground: boolean;
+  /** The period running now, timed from its anchors, or null if none is. */
+  running: { periodKey: string; elapsedMs: number } | null;
+  plan: PlannedSub[];
+}
+
+/**
+ * One repaint's decision: the subs to buzz for now, and the log to keep.
+ *
+ * Only detection. The elapsed time is read from the wall-clock anchors on
+ * every repaint (invariant 2) and nothing is counted. Subs falling due
+ * together come back together, for one buzz.
+ */
+export function checkBuzz(
+  log: BuzzLog,
+  check: BuzzCheck
+): { buzz: PlannedSub[]; log: BuzzLog } {
+  if (!check.enabled || !check.foreground || check.running === null) return { buzz: [], log };
+  const { periodKey, elapsedMs } = check.running;
+  const buzzed = log.periodKey === periodKey ? log.buzzed : new Set<string>();
+  const buzz = subsToBuzz(check.plan, elapsedMs, buzzed);
+  if (buzz.length === 0 && buzzed === log.buzzed) return { buzz, log };
+  return { buzz, log: { periodKey, buzzed: new Set([...buzzed, ...buzz.map(subMoment)]) } };
+}

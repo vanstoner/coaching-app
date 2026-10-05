@@ -594,6 +594,27 @@ describe('the match plan (#72, AC6)', () => {
   });
 });
 
+describe('Buzz when a sub is due (#137 AC4)', () => {
+  it('is saved with the other settings: off stays off after a relaunch', async () => {
+    const x = setUp();
+    const store = createMemoryStore();
+    await saveSession(store, sessionOf(x, { buzzWhenSubDue: false }));
+    expect((await loadSession(store))!.buzzWhenSubDue).toBe(false);
+    await saveSession(store, sessionOf(x, { buzzWhenSubDue: true }));
+    expect((await loadSession(store))!.buzzWhenSubDue).toBe(true);
+  });
+
+  it('reads as on from a save written before it existed, with no schema bump', () => {
+    const { buzzWhenSubDue: _absent, ...older } = toSavedSession(sessionOf(setUp()));
+    expect(older.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(parseSession(JSON.stringify(older))!.buzzWhenSubDue).toBe(true);
+  });
+
+  it('is written as on by a save that does not mention it', () => {
+    expect(toSavedSession(sessionOf(setUp())).buzzWhenSubDue).toBe(true);
+  });
+});
+
 describe('archiving (#76, AC4)', () => {
   it('survives a round trip and a live-match save, and changes no minute', () => {
     const x = setUp();
