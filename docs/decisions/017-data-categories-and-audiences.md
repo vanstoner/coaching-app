@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-10-05
-**Decision maker:** Architect, on the Product Owner's rulings of 2026-10-05 (#136 `approve 20a 20b 20c 20d`; #138 `approve 24, 25, 26`)
+**Decision maker:** Architect, on the Product Owner's rulings of 2026-10-05 (#136 `approve 20a 20b 20c 20d` and `Approve 27 28`; #138 `approve 24, 25, 26`)
 
 **Relationship:** refines [ADR-016](./016-charts-drawn-from-views.md) §3 (the
 numbers module reads the gate's view). ADR-011, 013, 014 and 015 stand; the
@@ -14,6 +14,9 @@ ledger format does not change.
 > should be enshrined so it can be a walled off feature in future versions,
 > i.e. if we create a parent distribution of the app that part of the ledger
 > should not be accessible."* — Product Owner, 2026-10-05 (#136)
+
+> *"I don't mind match level stats, it's aggregation of them that tends to get
+> sensitive."* — Product Owner, 2026-10-05 (#136, behind rulings 27 and 28)
 
 The ledger already holds individual performance, unwalled: each `goal`, `save`
 and `conceded` event carries the `playerId` it is credited to (`LedgerEvent`,
@@ -54,14 +57,16 @@ tell Coaching Beta from Coaching App: `APP_VARIANT` reaches only
    read that one match from the working document: the coach, one match. Only
    the gate reads the ceiling (5) and the switch (6).
 
-3. **Audiences.**
+3. **Audiences, by scope (27, 28).** Match-level stats are fine for every
+   audience; per-child aggregation across matches is what the gate walls. Team
+   totals across matches are team data, open to any audience that has team
+   data.
 
-   | Audience | Identity | Participation | Team | Individual performance |
-   |---|---|---|---|---|
-   | Coach, one match | yes | yes | yes | yes: a moment, not a running total (20c) |
-   | Coach, across matches | yes | yes | yes | only if the ceiling allows **and** the switch is on |
-   | Share/export | yes | yes | yes | no, provisionally (question 1) |
-   | Parent (future) | with #113 | with #113 | with #113 | never (20a) |
+   | Audience | Identity, participation, team | Individual performance, one match | Individual performance, across matches |
+   |---|---|---|---|
+   | Coach | yes | yes: who scored, each keeper's saves and goals conceded (20c, 28) | only if the ceiling allows **and** the switch is on |
+   | Share/export | yes | yes (27) | never (27) |
+   | Parent (future) | which matches and data: #113 | yes (27) | never (20a, 27) |
 
 4. **The coach's own backup is not a share.** The minutes file stays the whole
    chain (only that verifies and extends on import, ADR-014 §8–9): the gate's
@@ -75,7 +80,7 @@ tell Coaching Beta from Coaching App: `APP_VARIANT` reaches only
    for the build label (#52), and asserts it. It is checked in as `app`, so a
    missed write only removes the feature. Team figures are no secret from the
    coach (the match report shows the score), so this is a release gate, not a
-   wall. Parent's "never" is the gate's rule, not this file's.
+   wall. "Never across matches" for shares and parents is the gate's rule.
 
 6. **The per-child switch** (Settings, #138's design) is off by default,
    shown where the ceiling allows, and on only after an explanation and a
@@ -90,10 +95,11 @@ tell Coaching Beta from Coaching App: `APP_VARIANT` reaches only
      `matchClosing` and `testSeason`, the gate and `App.tsx`. It pins
      `talliesOf` and `timeStream`, which name a child per event, to
      `analysis.matchReport` and `ClockScreen`.
-   - *Never handed over:* no audience, distribution or switch state yields a
-     withheld or uncategorised field, or `entries`, in a view.
+   - *Never handed over:* no share or parent view across matches holds an
+     individual-performance field, and no view holds an uncategorised field
+     or `entries`.
    - *Ceiling:* Coaching App with a stored "on" gets no cross-match individual
-     performance; parent gets none, whatever the file says.
+     performance, and no ceiling line gives it to a share or parent view.
 
 ## Consequences
 
@@ -109,8 +115,9 @@ module; every new field brings its category.
 
 **Not protected, honestly.** Once the coach shares the backup file, who reads
 it is the coach's choice (ADR-011 §4), so its export screen should call it a
-full copy for the coach's own phones. Categories wall fields, not arithmetic:
-when one child keeps goal all match, the team's goals against are theirs.
+full copy for the coach's own phones. The gate stops the app aggregating, not
+a reader: someone with every match report could tally by hand (accepted, 27),
+and a whole-match keeper's goals against equal the team's, which 27 allows.
 
 **Forward path, v4 (#113).** The store and a parents' app read through the
 gate. Parents get a projection made where the whole ledger is verified, never
@@ -118,17 +125,9 @@ the chain; the store gets IDs and stats with identity withheld, as #113
 proposes. Parents' event streams are new record types, so they get categories
 first. Leaving the phone still needs the hosting ADR and DPIA (ADR-011 §3).
 
-**Not decided here.** Modes (dropped, 20d); which lenses exist (#138); what
-parents see beyond "never individual performance" (#113); whether free-text
-notes leave the coach (until ruled, no share or parent projection has them).
-Two questions for Rob:
-
-1. **What a share/export carries.** Recommend no individual performance, as
-   for parents: a shared file usually reaches them, and the backup moves
-   everything between the coach's phones. Reverse: one table line.
-2. **The match report's keeper line** (each keeper's saves and goals conceded,
-   #104). The ruling on designer question 4 names only scorers. Recommend it
-   stays: 20c's "a moment from one match" covers it. Reverse: low.
+**Not decided here.** Modes (dropped, 20d); which lenses exist (#138); which
+matches and data a parent sees (#113); whether free-text notes leave the coach
+(until ruled, no share or parent projection has them).
 
 ## Alternatives considered
 
@@ -136,5 +135,7 @@ Two questions for Rob:
 - **A separate performance ledger.** 20a keeps the ledger unchanged, and the
   score folds from the same events.
 - **Categorising whole records.** Team results would then need the switch.
+- **Walling by category alone.** It would withhold the match-level stats 27
+  allows, or let a share aggregate them; the gate walls by scope as well.
 - **`expo-constants` or an `EXPO_PUBLIC_` variable.** The first is not a direct
   dependency; #52 found the second did nothing on the Gradle path that ships.
