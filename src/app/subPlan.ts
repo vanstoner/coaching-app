@@ -26,7 +26,7 @@
  * "six minutes into this quarter", never "thirty-one minutes into the match".
  */
 
-import type { UUID } from '../types/index';
+import type { Appearance, Quarter, UUID } from '../types/index';
 
 /**
  * `atMs` when the coach has decided this player is NOT coming on this period.
@@ -307,4 +307,84 @@ export function checkBuzz(
   const buzz = subsToBuzz(check.plan, elapsedMs, buzzed);
   if (buzz.length === 0 && buzzed === log.buzzed) return { buzz, log };
   return { buzz, log: { periodKey, buzzed: new Set([...buzzed, ...buzz.map(subMoment)]) } };
+}
+
+// ---------------------------------------------------------------------------
+// Surviving a relaunch — #139: the running period's subs are saved with it
+// ---------------------------------------------------------------------------
+
+/** One planned sub as it is saved: the coach's intention, without `done`. */
+export type SavedSub = Pick<PlannedSub, 'playerId' | 'atMs' | 'forPlayerId'>;
+
+/**
+ * The planned subs of the period being played, saved with the match (#139
+ * AC1), so Android killing the app mid-period does not take the reminders
+ * with it.
+ *
+ * Intent, never a record: what the coach set on the lineup screen at
+ * kick-off. No minute is folded from it (#72 AC8), so invariant 1 is
+ * untouched. Which subs have been made is deliberately not saved: it is read
+ * back from the recorded appearances (`restoreSubPlan`), so the reminders
+ * and the record cannot disagree about who has come on.
+ */
+export interface PeriodSubs {
+  /** The period they were set for. They are only ever restored into it, while it runs. */
+  quarterId: UUID;
+  subs: SavedSub[];
+}
+
+/**
+ * What to save of the plan (#139 AC1): the intention for the period running
+ * now, without `done`. Null when no period is running, which clears it.
+ */
+export function periodSubsToSave(
+  quarters: readonly Pick<Quarter, 'id' | 'status'>[] | null | undefined,
+  plan: PlannedSub[]
+): PeriodSubs | null {
+  const running = quarters?.find((q) => q.status === 'running');
+  if (!running) return null;
+  return {
+    quarterId: running.id,
+    subs: plan.map(({ playerId, atMs, forPlayerId }) => ({ playerId, atMs, forPlayerId })),
+  };
+}
+
+/**
+ * The plan to put back when a match is rebuilt from its save (#139 AC2).
+ *
+ * Each sub keeps its planned time. That is an offset into the period, and
+ * the period's elapsed time comes from its wall-clock anchors (invariant 2),
+ * so after a relaunch each sub falls due when it always would have, and one
+ * that fell due while the app was gone is due at once.
+ *
+ * Made is read from the record, never from a saved flag: a sub is made when
+ * its player has an appearance in this period. Everyone in the plan was on
+ * the bench at kick-off, so any appearance of theirs is them coming on,
+ * including one who has since gone off again, as the live screen counts it.
+ *
+ * Nothing saved (a save from before #139), subs saved for another period, or
+ * no period running: no reminders, exactly as before (AC3).
+ *
+ * One difference from the live screen remains. Undo puts a sub's reminder
+ * back there, but the record holds an undone sub as two substitutions, so
+ * after a relaunch that sub counts as made.
+ */
+export function restoreSubPlan(
+  saved: PeriodSubs | null | undefined,
+  state: {
+    quarters: readonly Pick<Quarter, 'id' | 'status'>[];
+    appearances: readonly Pick<Appearance, 'quarterId' | 'playerId'>[];
+  }
+): PlannedSub[] {
+  const running = state.quarters.find((q) => q.status === 'running');
+  if (!saved || !running || saved.quarterId !== running.id) return [];
+  const cameOn = new Set(
+    state.appearances.filter((a) => a.quarterId === running.id).map((a) => a.playerId)
+  );
+  return saved.subs.map(({ playerId, atMs, forPlayerId }) => ({
+    playerId,
+    atMs,
+    forPlayerId,
+    done: cameOn.has(playerId),
+  }));
 }

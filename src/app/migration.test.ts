@@ -28,6 +28,7 @@ import {
   toSavedSession,
 } from './persistence';
 import { migrateDocument } from './schema';
+import { restoreSubPlan } from './subPlan';
 import type { PositionUnit } from '../types/index';
 
 const rawV1 = JSON.stringify(fixtureV1);
@@ -104,6 +105,16 @@ describe('a v1 save written by the released app', () => {
     expect(state.quarters.map((q) => q.runningSinceWallClock)).toEqual(
       fixtureV1.match.quarters.map((q) => q.runningSinceWallClock)
     );
+  });
+
+  it('resumes its running quarter with no sub reminders, as before: it holds none (#139 AC3)', () => {
+    const result = readSession(rawV1);
+    if (result.status !== 'ok') throw new Error(result.status);
+    const stored = result.session.matches[0];
+    expect(stored.periodSubs).toBeUndefined();
+    const state = toMatchState(result.session)!;
+    expect(state.quarters.find((q) => q.status === 'running')?.index).toBe(3);
+    expect(restoreSubPlan(stored.periodSubs, state)).toEqual([]);
   });
 });
 

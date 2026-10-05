@@ -33,6 +33,9 @@ import {
   subMoment,
   subsToBuzz,
   whoComesOff,
+  periodSubsToSave,
+  restoreSubPlan,
+  setSubFor,
   type BuzzLog,
   type PlannedSub,
 } from './subPlan';
@@ -705,5 +708,80 @@ describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
       real = T + realToDue + 1_000;
       expect(paint(onTime.log).buzz).toEqual([]);
     }
+  });
+});
+
+describe('the running period’s subs, saved and restored (#139)', () => {
+  const periodMs = 750_000;
+
+  /** Q1 kicked off with P0–P6; P7 planned at 3:00 for P6, P8 at 9:00. */
+  function kickedOff() {
+    const x = setUp();
+    const ids = x.players.map((p) => p.id);
+    const quarter = x.state.quarters[0];
+    x.engine.startQuarter(x.state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], x.format), x.format);
+    let plan = planSubs([ids[7], ids[8]], periodMs);
+    plan = setSubFor(setSubTime(plan, ids[7], 180_000, periodMs), ids[7], ids[6]);
+    plan = setSubTime(plan, ids[8], 540_000, periodMs);
+    return { ...x, ids, quarter, plan };
+  }
+
+  it('saves the intention for the running period, never whether a sub was made', () => {
+    const k = kickedOff();
+    const saved = periodSubsToSave(k.state.quarters, markDone(k.plan, k.ids[7]));
+    expect(saved).toEqual({
+      quarterId: k.quarter.id,
+      subs: [
+        { playerId: k.ids[7], atMs: 180_000, forPlayerId: k.ids[6] },
+        { playerId: k.ids[8], atMs: 540_000, forPlayerId: null },
+      ],
+    });
+    expect(JSON.stringify(saved)).not.toContain('done');
+  });
+
+  it('saves nothing when no period is running, which clears what was saved', () => {
+    const x = setUp();
+    const plan = allScheduled([x.players[7].id], periodMs);
+    expect(periodSubsToSave(x.state.quarters, plan)).toBeNull(); // before kick-off
+    expect(periodSubsToSave(null, plan)).toBeNull(); // no match held
+    const k = kickedOff();
+    k.clock.advance(periodMs);
+    k.engine.endQuarter(k.state, k.quarter);
+    expect(periodSubsToSave(k.state.quarters, k.plan)).toBeNull(); // between periods
+  });
+
+  it('restores every sub at its planned time, made only when the record shows that player came on', () => {
+    const k = kickedOff();
+    const saved = periodSubsToSave(k.state.quarters, k.plan);
+    expect(restoreSubPlan(saved, k.state)).toEqual(k.plan); // nobody on yet
+    k.clock.advance(200_000);
+    k.engine.substitute(k.state, k.quarter, k.ids[6], k.ids[7]);
+    expect(restoreSubPlan(saved, k.state)).toEqual(markDone(k.plan, k.ids[7]));
+  });
+
+  it('counts a sub made when that player has gone off again, as the live screen does', () => {
+    const k = kickedOff();
+    const saved = periodSubsToSave(k.state.quarters, k.plan);
+    k.clock.advance(200_000);
+    k.engine.substitute(k.state, k.quarter, k.ids[6], k.ids[7]);
+    k.clock.advance(100_000);
+    k.engine.substitute(k.state, k.quarter, k.ids[7], k.ids[6]);
+    const restored = restoreSubPlan(saved, k.state);
+    expect(restored.filter((s) => s.done).map((s) => s.playerId)).toEqual([k.ids[7]]);
+    expect(dueSubs(restored, 300_000)).toEqual([]);
+    expect(nextSub(restored, 300_000)?.playerId).toBe(k.ids[8]);
+  });
+
+  it('restores nothing from a save without subs, between periods, or into a later period (AC3)', () => {
+    const k = kickedOff();
+    const saved = periodSubsToSave(k.state.quarters, k.plan);
+    expect(restoreSubPlan(undefined, k.state)).toEqual([]); // saved before #139
+    expect(restoreSubPlan(null, k.state)).toEqual([]);
+    k.clock.advance(periodMs);
+    k.engine.endQuarter(k.state, k.quarter);
+    expect(restoreSubPlan(saved, k.state)).toEqual([]); // between periods
+    const ids = k.ids;
+    k.engine.startQuarter(k.state, k.state.quarters[1], teamSheetFor(ids.slice(0, 7), ids[0], k.format), k.format);
+    expect(restoreSubPlan(saved, k.state)).toEqual([]); // Q1's subs are never Q2's reminders
   });
 });

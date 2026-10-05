@@ -159,3 +159,7 @@ analysis, iOS". Entries are added as each release ships.
   of ruling 19: with the clock on screen, each planned sub buzzes the phone
   once as it falls due, or on coming back to the app if it fell due while
   away. Settings has "Buzz when a sub is due", on unless turned off.
+- **5 October — sub reminders survive Android closing the app (#139).** The
+  subs planned at kick-off are saved with the match, so after a relaunch
+  mid-period the ones still to come return at their planned times, and buzz.
+  Subs already made are read from the record and not offered again.

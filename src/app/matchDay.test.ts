@@ -23,13 +23,32 @@ import { fixtureList, inBucket, kickoffLabel } from './fixtures';
 import { periodsById, progressById, scoresById, withLiveMatch } from './liveMatch';
 import { scoreOf } from './matchEvents';
 import {
+  STORAGE_KEY,
   createMemoryStore,
+  hasMatchInProgress,
   loadSession,
   mergeCurrentMatch,
   saveSession,
+  savedMatchById,
   toMatchState,
   type SavedMatch,
 } from './persistence';
+import {
+  NO_BUZZES,
+  checkBuzz,
+  dueSubs,
+  markDone,
+  msUntilNextSub,
+  nextSub,
+  periodSubsToSave,
+  planSubs,
+  restoreSubPlan,
+  setSubFor,
+  setSubTime,
+  type BuzzLog,
+  type PeriodSubs,
+  type PlannedSub,
+} from './subPlan';
 
 const MIN = 60_000;
 const QUARTER = 12.5 * MIN;
@@ -45,7 +64,11 @@ function matchDay(kickoffAt: string | null) {
     (n) => makePlayer(squadId, n)
   );
   const store = createMemoryStore();
-  const session = (matches: SavedMatch[], state: MatchState | null) => ({
+  const session = (
+    matches: SavedMatch[],
+    state: MatchState | null,
+    periodSubs?: PeriodSubs | null
+  ) => ({
     squadName: 'Test FC',
     squadId,
     players,
@@ -56,6 +79,7 @@ function matchDay(kickoffAt: string | null) {
     matches,
     state,
     matchFormat: state ? format : null,
+    periodSubs,
     now: nowFn(),
   });
 
@@ -313,5 +337,167 @@ describe('simulated match scenarios (#95 AC6)', () => {
       0
     );
     expect(total).toBe(7 * QUARTER);
+  });
+});
+
+// --- #139: Android kills the app mid-period ---------------------------------
+
+describe('the sub reminders survive Android killing the app mid-period (#139)', () => {
+  /**
+   * Half of the first period, played the way the app plays it: the plan set
+   * on the lineup screen, a save after every action with the subs named as
+   * `persist` names them, each sub made through the engine and marked done
+   * as App.tsx marks it. Then, at 6:15, the app is killed: nothing more is
+   * saved.
+   */
+  async function halfAPeriod() {
+    const day = matchDay('2026-10-03T10:00:00Z');
+    const engine = new MatchEngine({ nowFn: day.nowFn });
+    const state = day.planned;
+    const ids = day.players.map((p) => p.id);
+    const quarter = currentQuarter(state)!;
+    const save = (plan: PlannedSub[]) =>
+      saveSession(
+        day.store,
+        day.session([day.fixture], state, periodSubsToSave(state.quarters, plan))
+      );
+
+    // Kick-off: Ava in goal, Ben to Gus out; Hal and Ivy on the bench. On the
+    // lineup screen the coach brings Hal on at 3:00 for Gus, and Ivy at 9:00.
+    engine.startQuarter(state, quarter, teamSheetFor(ids.slice(0, 7), ids[0], day.format), day.format);
+    let plan = planSubs([ids[7], ids[8]], QUARTER);
+    plan = setSubFor(setSubTime(plan, ids[7], 3 * MIN, QUARTER), ids[7], ids[6]);
+    plan = setSubTime(plan, ids[8], 9 * MIN, QUARTER);
+    await save(plan);
+
+    // 3:10: Hal's reminder is answered with Done (makeSub).
+    day.advance(3 * MIN + 10_000);
+    engine.substitute(state, quarter, ids[6], ids[7]);
+    plan = markDone(plan, ids[7]);
+    await save(plan);
+
+    // 5:00: Gus is dragged back on for Hal (liveMove; not an Undo). Hal's sub
+    // was still made, and Gus has no reminder to settle.
+    day.advance(MIN + 50_000);
+    engine.substitute(state, quarter, ids[7], ids[6]);
+    plan = markDone(plan, ids[6]);
+    await save(plan);
+
+    day.advance(QUARTER / 2 - 5 * MIN); // 6:15: killed
+    return { day, engine, state, plan, ids, quarter };
+  }
+
+  /** The relaunch, as App.tsx does it: read the save, rebuild the match, restore its subs. */
+  async function relaunch(day: ReturnType<typeof matchDay>) {
+    const saved = (await loadSession(day.store))!;
+    expect(hasMatchInProgress(saved)).toBe(true); // resume goes straight to the clock
+    const state = toMatchState(saved)!;
+    const stored = savedMatchById(saved, saved.currentMatchId)!;
+    return {
+      engine: new MatchEngine({ nowFn: day.nowFn }),
+      state,
+      plan: restoreSubPlan(stored.periodSubs, state),
+    };
+  }
+
+  /** What the clock shows about subs now, timed from the period's anchors. */
+  function reminders(engine: MatchEngine, state: MatchState, plan: PlannedSub[]) {
+    const elapsed = engine.getQuarterElapsedMs(currentQuarter(state)!);
+    const next = nextSub(plan, elapsed);
+    return {
+      next: next?.playerId ?? null,
+      dueAt: next?.atMs ?? null,
+      untilNext: msUntilNextSub(plan, elapsed),
+      due: dueSubs(plan, elapsed).map((s) => s.playerId),
+      made: plan.filter((s) => s.done).map((s) => s.playerId),
+    };
+  }
+
+  it('AC4: after half a period and a relaunch, the next sub, its due time and the subs made match the uninterrupted run', async () => {
+    const run = await halfAPeriod();
+    const after = await relaunch(run.day);
+
+    const uninterrupted = reminders(run.engine, run.state, run.plan);
+    expect(uninterrupted).toEqual({
+      next: run.ids[8],
+      dueAt: 9 * MIN,
+      untilNext: 9 * MIN - QUARTER / 2, // 2:45
+      due: [],
+      made: [run.ids[7]],
+    });
+    expect(reminders(after.engine, after.state, after.plan)).toEqual(uninterrupted);
+    // The whole plan, who comes off for whom included.
+    expect(after.plan).toEqual(run.plan);
+
+    // And they stay together: at 9:00 Ivy falls due on both.
+    run.day.advance(9 * MIN - QUARTER / 2);
+    expect(reminders(after.engine, after.state, after.plan)).toEqual(
+      reminders(run.engine, run.state, run.plan)
+    );
+    expect(reminders(after.engine, after.state, after.plan).due).toEqual([run.ids[8]]);
+  });
+
+  it('a sub that fell due while the app was dead is due on the relaunch, and buzzes once (#137 AC3)', async () => {
+    const run = await halfAPeriod();
+    run.day.advance(10 * MIN - QUARTER / 2); // dead until 10:00; Ivy fell due at 9:00
+    const after = await relaunch(run.day);
+    expect(reminders(after.engine, after.state, after.plan)).toEqual(
+      reminders(run.engine, run.state, run.plan)
+    );
+
+    // The clock's paints after the relaunch, from an empty buzz log.
+    const paint = (log: BuzzLog) =>
+      checkBuzz(log, {
+        enabled: true,
+        foreground: true,
+        running: {
+          periodKey: `${after.state.match.id}/${run.quarter.id}`,
+          elapsedMs: after.engine.getQuarterElapsedMs(currentQuarter(after.state)!),
+        },
+        plan: after.plan,
+      });
+    const first = paint(NO_BUZZES);
+    expect(first.buzz.map((s) => s.playerId)).toEqual([run.ids[8]]); // Ivy; Hal was made
+    run.day.advance(1_000);
+    expect(paint(first.log).buzz).toEqual([]);
+  });
+
+  it('AC3: a save from before #139, with no subs in it, resumes as it always did: the right clock, no reminders', async () => {
+    const run = await halfAPeriod();
+    // What an older build wrote: the same match, without the subs.
+    const doc = JSON.parse((await run.day.store.getItem(STORAGE_KEY))!);
+    expect(doc.matches[0].periodSubs).toBeDefined();
+    delete doc.matches[0].periodSubs;
+    await run.day.store.setItem(STORAGE_KEY, JSON.stringify(doc));
+
+    const after = await relaunch(run.day);
+    expect(after.engine.getQuarterElapsedMs(currentQuarter(after.state)!)).toBe(QUARTER / 2);
+    expect(after.plan).toEqual([]);
+    expect(reminders(after.engine, after.state, after.plan)).toEqual({
+      next: null,
+      dueAt: null,
+      untilNext: null,
+      due: [],
+      made: [],
+    });
+  });
+
+  it('clears them when the period ends, even after a relaunch, so none come back between periods', async () => {
+    const run = await halfAPeriod();
+    // Relaunched: the list the app now holds was read from the save, subs and all.
+    const loaded = (await loadSession(run.day.store))!.matches;
+    expect(loaded[0].periodSubs).toBeDefined();
+    const after = await relaunch(run.day);
+    run.day.advance(QUARTER / 2);
+    after.engine.endQuarter(after.state, currentQuarter(after.state)!);
+    // endQuarter's save: the plan in hand is the old one, and no period runs.
+    await saveSession(
+      run.day.store,
+      run.day.session(loaded, after.state, periodSubsToSave(after.state.quarters, after.plan))
+    );
+    const saved = (await loadSession(run.day.store))!;
+    const stored = savedMatchById(saved, saved.currentMatchId)!;
+    expect(stored.periodSubs).toBeUndefined();
+    expect(restoreSubPlan(stored.periodSubs, toMatchState(saved)!)).toEqual([]);
   });
 });
