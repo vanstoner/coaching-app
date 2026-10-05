@@ -10,6 +10,9 @@
  * not reach back into a fixture already saved — each match carries its own
  * length, period count and shape (ADR-012).
  *
+ * "Buzz when a sub is due" (#137) is not a match default: it is about the
+ * phone, and applies at once, to a match in play as well.
+ *
  * The squad moved out: it is a tab now, not a button here.
  */
 
@@ -42,6 +45,8 @@ export function SettingsScreen({
   onTotalMinutes,
   onPeriodCount,
   onShape,
+  buzzWhenSubDue,
+  onBuzzWhenSubDue,
   minutes,
   testKit,
   onForget,
@@ -55,6 +60,9 @@ export function SettingsScreen({
   onTotalMinutes: (n: number) => void;
   onPeriodCount: (n: number) => void;
   onShape: (shape: ShapeCode) => void;
+  /** "Buzz when a sub is due" (#137). */
+  buzzWhenSubDue: boolean;
+  onBuzzWhenSubDue: (on: boolean) => void;
   /** Player minutes: season, export, import (#75). Drawn by the caller. */
   minutes?: ReactNode;
   /** The Test kit (#95). Passed only in a Coaching Beta build. */
@@ -138,6 +146,15 @@ export function SettingsScreen({
           </ChipRow>
           <Text style={screen.hint}>
             You can still name the positions whatever you want on the day.
+          </Text>
+
+          <Text style={screen.fieldLabel}>Buzz when a sub is due</Text>
+          <ChipRow>
+            <Chip label="On" selected={buzzWhenSubDue} onPress={() => onBuzzWhenSubDue(true)} />
+            <Chip label="Off" selected={!buzzWhenSubDue} onPress={() => onBuzzWhenSubDue(false)} />
+          </ChipRow>
+          <Text style={screen.hint}>
+            The phone buzzes once for each planned sub, while the clock is on screen.
           </Text>
 
           {minutes}

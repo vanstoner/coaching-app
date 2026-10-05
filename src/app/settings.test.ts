@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BUZZ_WHEN_SUB_DUE_DEFAULT,
   MAX_TEAM_NAME_LENGTH,
   describeDefaults,
   normaliseTeamName,
   periodMsFor,
+  readBuzzWhenSubDue,
   teamNameIsClean,
 } from './settings';
+
+describe('Buzz when a sub is due (#137 AC4)', () => {
+  it('is on by default', () => {
+    expect(BUZZ_WHEN_SUB_DUE_DEFAULT).toBe(true);
+  });
+
+  it('keeps an explicit on or off', () => {
+    expect(readBuzzWhenSubDue(true)).toBe(true);
+    expect(readBuzzWhenSubDue(false)).toBe(false);
+  });
+
+  it('reads a save from before it existed, or anything else, as on', () => {
+    for (const raw of [undefined, null, 'false', 0, 1, {}, []]) {
+      expect(readBuzzWhenSubDue(raw)).toBe(true);
+    }
+  });
+});
 
 describe('normaliseTeamName', () => {
   it('keeps a normal name untouched', () => {

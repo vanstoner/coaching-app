@@ -39,7 +39,8 @@ import {
   squadReadiness,
 } from './src/app/squad';
 import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
-import { markDone, type PlannedSub } from './src/app/subPlan';
+import { NO_BUZZES, markDone, type BuzzLog, type PlannedSub } from './src/app/subPlan';
+import { BUZZ_WHEN_SUB_DUE_DEFAULT } from './src/app/settings';
 import { liveBaseline, planHasContent, type MatchPlan } from './src/app/matchPlan';
 import { foldPlayerMinutes } from './src/app/playerMinutes';
 import {
@@ -159,12 +160,21 @@ export default function App() {
   const [match, setMatch] = useState<LiveMatch | null>(null);
   const [pending, setPending] = useState<SavedSession | null>(null);
   const [subPlan, setSubPlan] = useState<PlannedSub[]>([]);
+  /**
+   * Which planned subs have buzzed this period (#137). Screen state, never
+   * saved. Held here, not on the clock, so leaving the clock and coming back
+   * does not buzz the same sub twice; keyed by match and period, so the next
+   * period or match starts empty (`checkBuzz` in src/app/subPlan.ts).
+   */
+  const subBuzzLog = useRef<BuzzLog>(NO_BUZZES);
 
   // --- the defaults. Settings owns these; a match copies them. --------------
   const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
   const [periodCount, setPeriodCount] = useState(DEFAULT_QUARTER_COUNT);
   /** The DEFAULT shape, as a format. The one in play is on `match`. */
   const [format, setFormat] = useState<Format>(() => makeSevenASideFormat());
+  /** Settings: buzz when a sub is due (#137). Not a default: it applies at once. */
+  const [buzzWhenSubDue, setBuzzWhenSubDue] = useState(BUZZ_WHEN_SUB_DUE_DEFAULT);
 
   /**
    * Why the squad editor is open. As a tab it is housekeeping; on the way to a
@@ -270,6 +280,7 @@ export default function App() {
       setSquadName(saved.squadName || PLACEHOLDER_SQUAD_NAME);
       setTotalMinutes(saved.totalMinutes);
       setPeriodCount(saved.periodCount);
+      setBuzzWhenSubDue(saved.buzzWhenSubDue);
       setPlayers(saved.players);
       setFormat(saved.format);
       setSquadId(saved.squadId);
@@ -305,6 +316,7 @@ export default function App() {
         format,
         totalMinutes,
         periodCount,
+        buzzWhenSubDue,
         plan: {},
         matches,
         state: match?.state ?? null,
@@ -331,7 +343,7 @@ export default function App() {
         );
       }
     },
-    [store, squadName, squadId, players, format, totalMinutes, periodCount, match, matches, commitLedger]
+    [store, squadName, squadId, players, format, totalMinutes, periodCount, buzzWhenSubDue, match, matches, commitLedger]
   );
 
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
@@ -1049,6 +1061,8 @@ export default function App() {
           onTotalMinutes={setTotalMinutes}
           onPeriodCount={setPeriodCount}
           onShape={setDefaultShape}
+          buzzWhenSubDue={buzzWhenSubDue}
+          onBuzzWhenSubDue={setBuzzWhenSubDue}
           minutes={
             <MinutesSection
               ledger={ledger}
@@ -1175,6 +1189,8 @@ export default function App() {
           squadName={squadName}
           format={match.format}
           subPlan={subPlan}
+          buzzOnDue={buzzWhenSubDue}
+          buzzLog={subBuzzLog}
           onMakeSub={makeSub}
           onLiveMove={liveMove}
           onRecord={recordEvent}

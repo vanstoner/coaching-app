@@ -47,6 +47,13 @@ describe('a v1 save written by the released app', () => {
     expect(result.status).toBe('ok');
   });
 
+  it('reads "Buzz when a sub is due" as on: it was saved before the setting existed (#137)', () => {
+    expect(fixtureV1).not.toHaveProperty('buzzWhenSubDue');
+    const result = readSession(rawV1);
+    if (result.status !== 'ok') throw new Error(result.status);
+    expect(result.session.buzzWhenSubDue).toBe(true);
+  });
+
   it('keeps every player, with their names intact', () => {
     const result = readSession(rawV1);
     if (result.status !== 'ok') throw new Error(result.status);

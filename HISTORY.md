@@ -155,3 +155,7 @@ analysis, iOS". Entries are added as each release ships.
   release of Coaching App. `npm run ios:beta` and `npm run android:beta`
   build the local copy as Coaching Beta, with its own id, name, icon and
   storage.
+- **5 October — the phone buzzes when a sub is due (#137).** The first step
+  of ruling 19: with the clock on screen, each planned sub buzzes the phone
+  once as it falls due, or on coming back to the app if it fell due while
+  away. Settings has "Buzz when a sub is due", on unless turned off.

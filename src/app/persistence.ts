@@ -50,6 +50,7 @@ import {
 } from './schema';
 import { inferUnit, unitOfRole } from './positions';
 import type { MatchPlan } from './matchPlan';
+import { readBuzzWhenSubDue } from './settings';
 
 /**
  * The shape this build writes.
@@ -122,6 +123,7 @@ const KNOWN_FIELDS = [
   'format',
   'totalMinutes',
   'periodCount',
+  'buzzWhenSubDue',
   'plan',
   'matches',
   'currentMatchId',
@@ -290,6 +292,15 @@ export interface SavedSession {
   format: Format;
   totalMinutes: number;
   periodCount: number;
+  /**
+   * Settings: "Buzz when a sub is due" (#137). A preference, never a record.
+   *
+   * Added without a schema bump, like `SavedMatch.archived` (#76). A save
+   * written before it existed reads as on (`readBuzzWhenSubDue`). An older
+   * build that drops it on write-back loses only a preference, and that
+   * reads back as on again.
+   */
+  buzzWhenSubDue: boolean;
   /** The mid-week plan: quarter index (1-based) → the players on the pitch. */
   plan: Record<string, UUID[]>;
   /**
@@ -312,6 +323,12 @@ export interface SessionInput {
   format: Format;
   totalMinutes: number;
   periodCount: number;
+  /**
+   * Omitted, it is written as the default, on. The app always passes it: the
+   * whole document is rewritten, so a save without it would turn a coach's
+   * "off" back on.
+   */
+  buzzWhenSubDue?: boolean;
   plan: Record<string, UUID[]>;
   /** Every match already on disk, other than the one being played. */
   matches?: SavedMatch[];
@@ -340,6 +357,7 @@ export function toSavedSession(input: SessionInput): SavedSession {
     format: input.format,
     totalMinutes: input.totalMinutes,
     periodCount: input.periodCount,
+    buzzWhenSubDue: readBuzzWhenSubDue(input.buzzWhenSubDue),
     plan: input.plan,
     matches: mergeCurrentMatch(input.matches ?? [], input.state, input.matchFormat ?? null),
     currentMatchId: input.state?.match.id ?? null,
@@ -511,6 +529,7 @@ function validate(doc: VersionedDocument): SavedSession | null {
     format: s.format as Format,
     totalMinutes: s.totalMinutes,
     periodCount: s.periodCount,
+    buzzWhenSubDue: readBuzzWhenSubDue(s.buzzWhenSubDue),
     plan: (s.plan ?? {}) as Record<string, UUID[]>,
     matches: s.matches.map((m) => ({
       ...m,

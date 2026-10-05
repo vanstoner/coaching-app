@@ -14,6 +14,10 @@
  * anyone on the pitch; Goal, Save and Conceded for the keeper; and "Move or
  * swap…" so every move is possible without dragging.
  *
+ * **A sub falling due buzzes the phone once** (#137, ruling 19 R1). Each paint
+ * only detects it: what is due is read from the anchors that paint used, and
+ * what has already buzzed is held by the shell.
+ *
  * Invariant 1: the score is folded from the events on every paint.
  * Invariant 2: the interval below is a REPAINT trigger and nothing else.
  * Invariant 3: fairness is total pitch time, goal plus outfield (ADR-015,
@@ -29,6 +33,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  Vibration,
   View,
 } from 'react-native';
 import { Text } from './Text';
@@ -47,7 +52,14 @@ import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
-import { dueSubs, msUntilNextSub, whoComesOff, type PlannedSub } from '../app/subPlan';
+import {
+  checkBuzz,
+  dueSubs,
+  msUntilNextSub,
+  whoComesOff,
+  type BuzzLog,
+  type PlannedSub,
+} from '../app/subPlan';
 import { UNDO_NOTE, UNDO_WINDOW_MS, scoreOf, timeStream } from '../app/matchEvents';
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
 import { opponentLabel } from '../app/fixtures';
@@ -57,6 +69,21 @@ import { colours, screen, TOUCH_TARGET } from './theme';
 
 type RecordKind = 'goal' | 'save' | 'conceded';
 
+/**
+ * Two short pulses (#137). Android reads it as wait, buzz, pause, buzz. iOS
+ * ignores the timing: each number becomes a pause before another pulse of
+ * its own fixed length.
+ */
+const SUB_DUE_BUZZ = [0, 400, 200, 400];
+
+function buzz() {
+  try {
+    Vibration.vibrate(SUB_DUE_BUZZ);
+  } catch {
+    // A phone that cannot buzz still shows the sub on screen.
+  }
+}
+
 export function ClockScreen({
   engine,
   state,
@@ -64,6 +91,8 @@ export function ClockScreen({
   players,
   squadName,
   subPlan,
+  buzzOnDue,
+  buzzLog,
   onMakeSub,
   onLiveMove,
   onRecord,
@@ -81,6 +110,13 @@ export function ClockScreen({
   players: Player[];
   squadName: string;
   subPlan: PlannedSub[];
+  /** Settings: "Buzz when a sub is due" (#137). */
+  buzzOnDue: boolean;
+  /**
+   * What has buzzed this period. Owned by the shell, so leaving this screen
+   * and coming back does not buzz the same sub again.
+   */
+  buzzLog: { current: BuzzLog };
   onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
   /** A swap or a substitution during play. False if the engine refused it. */
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
@@ -154,6 +190,23 @@ export function ClockScreen({
   const periodElapsedMs = running ? engine.getQuarterElapsedMs(quarter!) : 0;
   const due = running ? dueSubs(subPlan, periodElapsedMs) : [];
   const untilNext = running ? msUntilNextSub(subPlan, periodElapsedMs) : null;
+
+  // #137: after every paint, buzz for any sub this paint shows as newly due.
+  // Detection only: the elapsed time is the one just read from the anchors,
+  // so it follows the Test kit's ×5 and ×10 clock, and nothing is counted.
+  useEffect(() => {
+    const result = checkBuzz(buzzLog.current, {
+      enabled: buzzOnDue,
+      foreground: AppState.currentState === 'active',
+      running:
+        running && quarter
+          ? { periodKey: `${state.match.id}/${quarter.id}`, elapsedMs: periodElapsedMs }
+          : null,
+      plan: subPlan,
+    });
+    buzzLog.current = result.log;
+    if (result.buzz.length > 0) buzz();
+  });
 
   // The Undo toast goes away on its own once its ten seconds are up.
   const undoLive = undo !== null && appNow().getTime() < undo.until;
