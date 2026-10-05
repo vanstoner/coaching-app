@@ -5,7 +5,7 @@ import { uuid } from '../types/index';
 import { makeSevenASideFormat } from './placeholderSquad';
 import { makePlayer } from './squad';
 import { projectPlan } from './matchPlan';
-import { TEST_NAMES, addTestData, isBetaBuild } from './testKit';
+import { TEST_NAMES, addTestData, isBetaBuild, showTestKit } from './testKit';
 
 const root = resolve(__dirname, '../..');
 
@@ -17,6 +17,23 @@ function ciLabel(event: string, pr = ''): string {
   }).toString();
   return /BUILD_LABEL=(.*)/.exec(out)![1];
 }
+
+describe('the Test kit shows in betas and development builds (#134)', () => {
+  it('AC1: shows in a development build, whatever the label', () => {
+    expect(showTestKit('2026.10.05 · local dev', true)).toBe(true);
+    expect(showTestKit(ciLabel('push'), true)).toBe(true);
+  });
+
+  it('AC2: a release build with a non-PR label never shows it', () => {
+    expect(showTestKit(ciLabel('push'), false)).toBe(false);
+    expect(showTestKit('v2026.10.04-build.81', false)).toBe(false);
+    expect(showTestKit('2026.10.05 · local dev', false)).toBe(false);
+  });
+
+  it('AC4: a CI pull-request beta (a release build) still shows it', () => {
+    expect(showTestKit(ciLabel('pull_request', '97'), false)).toBe(true);
+  });
+});
 
 describe('the Test kit is beta only (#95 AC1)', () => {
   it('shows in a pull-request build (Coaching Beta), from the label CI really writes', () => {

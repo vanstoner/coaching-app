@@ -1,6 +1,6 @@
 /**
- * The Test kit — Coaching Beta only (#95). Drawn by Settings only when the
- * build is a beta; see `isBetaBuild` in testKit.ts.
+ * The Test kit — Coaching Beta and development builds (#95, #134). Drawn by
+ * Settings only when `showTestKit` in testKit.ts says so.
  */
 
 import { Pressable, StyleSheet, View } from 'react-native';

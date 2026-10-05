@@ -44,13 +44,53 @@ xcrun simctl install booted CoachingApp.app   # or drag the .app onto the simula
 xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coachingapp.beta
 ```
 
-**Route 2: build it yourself.** Needs Xcode and CocoaPods. CI uses Xcode 26.6
-on GitHub's `macos-26` image (the iOS job's Toolchain step prints it).
+The beta zip is the one with the **Test kit** (made-up players, a past season,
+a faster clock): install `CoachingBeta.app` and open Settings › Test kit.
 
-```bash
-npm ci
-npx expo run:ios      # generates ios/, installs pods, builds and opens the simulator
-```
+To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
+`npm run android:beta`) once route 2 below works. It builds **Coaching
+Beta**, with its own id, orange icon and storage, so test data never sits
+beside a real squad. Any development build shows the Test kit, and a release
+of Coaching App never does (#134).
+
+**Route 2: build it yourself.** A *development* build: it loads the app's code
+live from your Mac, so `npx expo start` must be running while you use it.
+Route 1 is standalone. Each step below is one that failed when skipped (#133):
+
+1. **Current code and packages.** `git pull`, then `npm ci`. Stale packages
+   fail with *Failed to resolve plugin for module "expo-font"*.
+2. **Xcode 26.6**, what CI uses. Xcode 26.0 fails with *'weak' must be a
+   mutable variable*; newer versions are untested. Several Xcodes can sit side
+   by side; install one with [`xcodes`](https://github.com/XcodesOrg/xcodes)
+   (`brew install xcodes && xcodes install 26.6`) and select it:
+   ```bash
+   ls -d /Applications/Xcode*.app                      # the real name, e.g. Xcode-26.6.0.app
+   sudo xcode-select -s /Applications/Xcode-26.6.0.app
+   xcodebuild -version                                 # Xcode 26.6
+   ```
+3. **That Xcode's iOS simulator.** Each Xcode needs its own: Xcode › Settings ›
+   Components, or `xcodebuild -downloadPlatform iOS`. Without it the build
+   stops with *iOS 26.5 is not installed* (error 70).
+4. **Regenerate the iOS project and run it:**
+   ```bash
+   npx expo prebuild --platform ios --clean   # a stale ios/ keeps an old app id
+   npx expo run:ios --device                  # pick an iPhone simulator
+   ```
+5. **Let Terminal control the Simulator.** System Settings › Privacy &
+   Security › Automation › Terminal › System Events. Without it the app
+   installs but the last step fails with an `osascript` error; then
+   `open -a Simulator` and `npx expo start` and tap the app.
+
+## On a real iPhone
+
+- **Coaches: TestFlight**, once Apple enrolment is done
+  ([#108](https://github.com/vanstoner/coaching-app/issues/108)). A
+  standalone install that works at the touchline.
+- **Development only: Expo Go.** Install Expo Go from the App Store, put the
+  phone on the same Wi-Fi as the Mac, run `npx expo start` and scan its QR
+  code with the Camera. It runs only while the Mac is serving it, keeps its
+  data inside Expo Go, and has not been tested against this project's Expo
+  SDK (57) and storage library — use the test squad, never the real one.
 
 ## The five things that must stay true
 
