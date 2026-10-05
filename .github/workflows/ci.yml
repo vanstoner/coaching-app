@@ -71,6 +71,11 @@ jobs:
       - name: Prove the release check gates before trusting it
         run: python3 .github/scripts/check_release.py --self-test
 
+      # #128: whether a merge's note may replace the current beta. Runs only
+      # on main, after merge, so its self-test runs here, healthy cases first.
+      - name: Prove the beta-replacement decision before trusting it
+        run: python3 .github/scripts/beta_decision.py --self-test
+
       # #128: the release and beta pages' PR summary. The release path only
       # runs after merge, so its self-test (healthy cases first, then every
       # degraded lookup) runs here on every PR.

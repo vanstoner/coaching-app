@@ -99,30 +99,10 @@ export function FixturesScreen({
           {squadName}
         </Text>
 
-        {rows.length === 0 ? (
-          <Text style={screen.caption}>
-            {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
-          </Text>
-        ) : (
-          <>
-            <Section title="Now" rows={current} {...cardProps} />
-            <Section title="Coming up" rows={future} {...cardProps} />
-            {/* Finished matches. One never started stays in Coming up
-                whatever its date, and can still be planned, played or
-                deleted (#76, match day 4). */}
-            <Section title="Played" rows={past} {...cardProps} />
-          </>
-        )}
+        {/* #131 (PO ruling 12): a live match stays on top; the two ways to
+            start one come next, so they never scroll away as Played grows. */}
+        <Section title="Now" rows={current} {...cardProps} />
 
-        {(housekeeping.archivedCount > 0 || housekeeping.showingArchived) && (
-          <Pressable onPress={housekeeping.onToggleArchived} style={screen.linkHit}>
-            <Text style={screen.link}>
-              {housekeeping.showingArchived
-                ? 'Hide archived'
-                : `Show archived (${housekeeping.archivedCount})`}
-            </Text>
-          </Pressable>
-        )}
         {onPlayNow && (
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
@@ -143,6 +123,30 @@ export function FixturesScreen({
         >
           <Text style={screen.buttonLabel}>Add a fixture</Text>
         </Pressable>
+
+        {rows.length === 0 ? (
+          <Text style={screen.caption}>
+            {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
+          </Text>
+        ) : (
+          <>
+            <Section title="Coming up" rows={future} {...cardProps} />
+            {/* Finished matches. One never started stays in Coming up
+                whatever its date, and can still be planned, played or
+                deleted (#76, match day 4). */}
+            <Section title="Played" rows={past} {...cardProps} />
+          </>
+        )}
+
+        {(housekeeping.archivedCount > 0 || housekeeping.showingArchived) && (
+          <Pressable onPress={housekeeping.onToggleArchived} style={screen.linkHit}>
+            <Text style={screen.link}>
+              {housekeeping.showingArchived
+                ? 'Hide archived'
+                : `Show archived (${housekeeping.archivedCount})`}
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
 
       <Text style={screen.buildLabel} numberOfLines={1}>

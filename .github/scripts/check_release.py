@@ -11,15 +11,20 @@ prerelease is replaced by a note, "Merged into Coaching App build N — install
 that instead", linking the release, with NO .apk, until the next PR's beta
 replaces it. (Until #128 this check asserted the beta was absent.)
 
+Except: when beta_decision.py chose `keep` because an open PR's newer beta
+published while this build ran, that beta (with its APK) must still be there,
+untouched. Only the kept case accepts a PR beta.
+
 Read back from GitHub after publishing, not assumed from the flags passed:
 
-    check_release.py RELEASE_JSON LATEST_TAG BETA_JSON EXPECTED_TAG
+    check_release.py RELEASE_JSON LATEST_TAG BETA_JSON EXPECTED_TAG [replace|keep]
     check_release.py --self-test
 
 RELEASE_JSON is `gh release view TAG --json tagName,isPrerelease,isDraft,assets`;
 LATEST_TAG is what /releases/latest reports; BETA_JSON is
-`gh release view beta --json tagName,isPrerelease,isDraft,assets,body`, or the
-word `none` when there is no beta release.
+`gh release view beta --json name,tagName,isPrerelease,isDraft,assets,body`, or
+the word `none` when there is no beta release. The last argument is
+beta_decision.py's verdict; it defaults to `replace`.
 
 The self-test runs in PR CI before the release job ever trusts this, and
 dry-runs the HEALTHY case first: five of six CI failures on this project were
@@ -27,10 +32,14 @@ gates rejecting a correct artifact.
 """
 
 import json
+import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from beta_decision import parse_title  # noqa: E402
 
-def check(release, latest_tag, beta, expected_tag):
+
+def check(release, latest_tag, beta, expected_tag, beta_action="replace"):
     """Return a list of problems; empty means main's build is the release."""
     problems = []
     if release.get("tagName") != expected_tag:
@@ -44,8 +53,31 @@ def check(release, latest_tag, beta, expected_tag):
     apks = [a.get("name", "") for a in release.get("assets", []) if a.get("name", "").endswith(".apk")]
     if len(apks) != 1:
         problems.append(f"expected exactly one .apk asset, found {len(apks)}")
-    problems.extend(beta_problems(beta, expected_tag))
+    if beta_action == "keep":
+        problems.extend(kept_beta_problems(beta))
+    else:
+        problems.extend(beta_problems(beta, expected_tag))
     return problems
+
+
+def kept_beta_problems(beta):
+    """The kept case only: a newer open PR's beta, left exactly as it was."""
+    if beta is None:
+        return ["the `beta` was to be kept, but there is no `beta` release"]
+    out = []
+    kind, n = parse_title(beta.get("name"))
+    if kind != "pr":
+        out.append(f"the kept `beta` is not a PR beta (title {beta.get('name')!r})")
+    if not beta.get("isPrerelease"):
+        out.append("the kept `beta` is not a prerelease, so it could compete with Coaching App")
+    if beta.get("isDraft"):
+        out.append("the kept `beta` is a draft")
+    apks = [a.get("name", "") for a in beta.get("assets", []) if a.get("name", "").endswith(".apk")]
+    if len(apks) != 1:
+        out.append(f"the kept `beta` should carry its PR's APK; found {len(apks)} .apk asset(s)")
+    if "Merged into Coaching App build" in (beta.get("body") or ""):
+        out.append("the kept `beta` is a merged note, not a PR beta")
+    return out
 
 
 def beta_problems(beta, expected_tag):
@@ -79,7 +111,15 @@ def note_of(tag, pre=True, draft=False, apk=False, body=None):
         body = (f"## Merged into Coaching App build 74 — install that instead\n\n"
                 f"[Coaching App build 74](https://github.com/vanstoner/coaching-app/releases/tag/{tag})")
     assets = [{"name": "coaching-beta_pr-127_abc1234.apk"}] if apk else []
-    return {"tagName": "beta", "isPrerelease": pre, "isDraft": draft, "assets": assets, "body": body}
+    return {"name": "Coaching Beta — merged into build 74", "tagName": "beta",
+            "isPrerelease": pre, "isDraft": draft, "assets": assets, "body": body}
+
+
+def pr_beta_of(pr=132, pre=True, draft=False, apk=True):
+    assets = [{"name": f"coaching-beta_pr-{pr}_def5678.apk"}] if apk else []
+    assets.append({"name": f"coaching-beta_pr-{pr}_def5678.apk.sha256"})
+    return {"name": f"Coaching Beta (PR #{pr})", "tagName": "beta", "isPrerelease": pre,
+            "isDraft": draft, "assets": assets, "body": f"## Coaching Beta — PR #{pr}"}
 
 
 def self_test():
@@ -87,8 +127,10 @@ def self_test():
     old = "v2026.10.03-build.69"
     note = note_of(t)
     cases = [
-        # (description, release, latest, beta, should pass)
+        # (description, release, latest, beta, should pass[, beta action])
         ("healthy: full release, Latest, beta replaced by a no-APK note", release_of(t), t, note, True),
+        ("healthy (kept): a newer open PR's beta left in place, APK and all",
+         release_of(t), t, pr_beta_of(), True, "keep"),
         ("healthy: a simulator zip on the release does not count as an APK",
          dict(release_of(t), assets=release_of(t)["assets"] + [{"name": "coaching-app-ios-simulator_2026.10.03_abc1234.zip"}]),
          t, note, True),
@@ -103,10 +145,16 @@ def self_test():
         ("note still carries the APK", release_of(t), t, note_of(t, apk=True), False),
         ("note not a prerelease", release_of(t), t, note_of(t, pre=False), False),
         ("note links an older build", release_of(t), t, note_of(old), False),
+        ("replace case: an open PR's beta is not accepted", release_of(t), t, pr_beta_of(), False),
+        ("kept beta gone", release_of(t), t, None, False, "keep"),
+        ("kept beta lost its APK", release_of(t), t, pr_beta_of(apk=False), False, "keep"),
+        ("kept beta is a merged note", release_of(t), t, note, False, "keep"),
+        ("kept beta not a prerelease", release_of(t), t, pr_beta_of(pre=False), False, "keep"),
+        ("kept beta, but the release is not Latest", release_of(t), old, pr_beta_of(), False, "keep"),
     ]
     failed = 0
-    for name, release, latest, beta, should_pass in cases:
-        passed = not check(release, latest, beta, t)
+    for name, release, latest, beta, should_pass, *action in cases:
+        passed = not check(release, latest, beta, t, *action)
         ok = passed == should_pass
         failed += not ok
         print(f"  {'ok' if ok else 'x '} {name} -> {'pass' if passed else 'fail'}")
@@ -117,7 +165,7 @@ def self_test():
 def main(argv):
     if argv[1:] == ["--self-test"]:
         return self_test()
-    if len(argv) != 5:
+    if len(argv) not in (5, 6) or (len(argv) == 6 and argv[5] not in ("replace", "keep")):
         print(__doc__)
         return 2
     with open(argv[1], encoding="utf-8") as f:
@@ -126,9 +174,10 @@ def main(argv):
     if argv[3] != "none":
         with open(argv[3], encoding="utf-8") as f:
             beta = json.load(f)
-    problems = check(release, argv[2], beta, argv[4])
+    action = argv[5] if len(argv) == 6 else "replace"
+    problems = check(release, argv[2], beta, argv[4], action)
     print(f"release {release.get('tagName')}: prerelease={release.get('isPrerelease')} "
-          f"draft={release.get('isDraft')}  Latest={argv[2]}  "
+          f"draft={release.get('isDraft')}  Latest={argv[2]}  beta action={action}  "
           f"beta={'none' if beta is None else 'prerelease=%s assets=%s' % (beta.get('isPrerelease'), [a.get('name') for a in beta.get('assets', [])])}")
     for p in problems:
         print(f"ASSERTION FAILED: {p}")
