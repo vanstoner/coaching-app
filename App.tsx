@@ -15,7 +15,7 @@ import {
   setAppClockSpeed,
   type ClockSpeed,
 } from './src/app/appClock';
-import { TEST_CLOCK_KEY, addTestData, isBetaBuild } from './src/app/testKit';
+import { TEST_CLOCK_KEY, addTestData, showTestKit } from './src/app/testKit';
 import { addTestSeason } from './src/app/testSeason';
 import {
   canArchiveFixture,
@@ -191,8 +191,8 @@ export default function App() {
   //
   // Player time, kept under its own key and written alongside every save. The
   // ref is the value; the state is only so Settings repaints.
-  // --- the Test kit (#95): Coaching Beta only ---------------------------------
-  const isBeta = useMemo(() => isBetaBuild(currentBuildLabel()), []);
+  // --- the Test kit (#95): Coaching Beta and dev builds (#134) ---------------
+  const testKitOn = useMemo(() => showTestKit(currentBuildLabel(), __DEV__), []);
   const [clockSpeed, setClockSpeed] = useState<ClockSpeed>(1);
   const [testKitMessage, setTestKitMessage] = useState('');
 
@@ -227,7 +227,7 @@ export default function App() {
     (async () => {
       // The beta's clock first (#95), before anything reads the time: its
       // stored offset keeps the clock from running backwards across a relaunch.
-      if (isBeta) {
+      if (testKitOn) {
         setAppClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
         setClockSpeed(appClockSetting().speed);
       }
@@ -1061,7 +1061,7 @@ export default function App() {
             />
           }
           testKit={
-            isBeta ? (
+            testKitOn ? (
               <TestKitSection
                 speed={clockSpeed}
                 onSpeed={(speed) => {

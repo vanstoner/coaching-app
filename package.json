@@ -5,6 +5,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "ios:beta": "APP_VARIANT=beta expo prebuild --platform ios --clean && APP_VARIANT=beta expo run:ios",
+    "android:beta": "APP_VARIANT=beta expo prebuild --platform android --clean && APP_VARIANT=beta expo run:android",
     "apk": "expo prebuild --platform android --clean && ./android/gradlew -p android assembleDebug",
     "test": "vitest",
     "test:ui": "vitest --ui",

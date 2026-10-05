@@ -1,5 +1,6 @@
 /**
- * The Test kit — Coaching Beta only (#95, PO ruling "approve 1").
+ * The Test kit — Coaching Beta and development builds (#95 "approve 1",
+ * #134 "approve 14").
  *
  * A fast clock (appClock.ts) and one-tap test data, so a whole match can be
  * played through the real screens in minutes before a beta is approved. Only
@@ -23,6 +24,18 @@ import { addSwap, emptyPlan, periodLengthMs, setSlot, updateSwap } from './match
  */
 export function isBetaBuild(buildLabel: string): boolean {
   return /\(pr \d+\)$/.test(buildLabel.trim());
+}
+
+/**
+ * Whether to show the Test kit (#134, PO ruling "approve 14"): in a CI
+ * pull-request beta, as before, and in a development build (`__DEV__`) —
+ * `expo start`, `expo run:ios`, `expo run:android`, `npm run ios:beta` — so a
+ * local copy can add sample data. A release build of Coaching App never shows
+ * it. The caller passes `__DEV__`; this module reads no platform global, so
+ * it stays testable in Node. Every Test-kit gate goes through this one call.
+ */
+export function showTestKit(buildLabel: string, isDev: boolean): boolean {
+  return isDev || isBetaBuild(buildLabel);
 }
 
 /** Made-up first names, so nothing in a beta looks like the real squad. */

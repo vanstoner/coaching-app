@@ -149,3 +149,9 @@ analysis, iOS". Entries are added as each release ships.
   pill on the pitch and bench now shows total pitch time, with "GK" on the
   child in goal, so a former keeper no longer reads 00:00. A Play now match
   reports the date and time its first period started instead of "Date TBC".
+- **5 October — the Test kit on a local build (#134).** Rob: "how do I run
+  the beta version, that lets me add sample data". The Test kit now shows in
+  any development build as well as a pull-request beta, and never in a
+  release of Coaching App. `npm run ios:beta` and `npm run android:beta`
+  build the local copy as Coaching Beta, with its own id, name, icon and
+  storage.
