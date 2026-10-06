@@ -9,6 +9,9 @@
  *          reads as, so a missed or garbled write only removes features.
  * - `beta` Heart FC Beta Coach, a pull request's build.
  * - `demo` Heart FC Beta Coach built from main by the demo workflow (#146).
+ * - `store` Heart FC Coach built for the App Store screenshots and preview
+ *          (#108 E): opens with the made-up season, never shows the Test kit,
+ *          and is never uploaded (TestFlight asserts `app`). Simulator only.
  *
  * This file keeps the prefix and the names apart and never joins them, so the
  * only full marker in a bundle is the one CI wrote.
@@ -16,7 +19,7 @@
 
 import { GENERATED_DISTRIBUTION } from './generated-distribution';
 
-export type Distribution = 'app' | 'beta' | 'demo';
+export type Distribution = 'app' | 'beta' | 'demo' | 'store';
 
 const PREFIX = 'distribution:';
 
@@ -24,7 +27,7 @@ const PREFIX = 'distribution:';
 export function parseDistribution(marker: string): Distribution {
   if (typeof marker !== 'string' || !marker.startsWith(PREFIX)) return 'app';
   const name = marker.slice(PREFIX.length);
-  return name === 'beta' || name === 'demo' ? name : 'app';
+  return name === 'beta' || name === 'demo' || name === 'store' ? name : 'app';
 }
 
 /** This build's distribution, from what CI wrote. */

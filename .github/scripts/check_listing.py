@@ -6,7 +6,7 @@
 
 The files are the source of truth; `asc_api.py listing` uploads them. Limits
 are Apple's, in characters: name 30, subtitle 30, keywords 100, promotional
-text 170, description 4,000; both URLs https. D1: keywords include "heart".
+text 170, description 4,000; both URLs https; a copyright line. D1: keywords include "heart".
 D4: the description claims nothing v1 does not do, so words for features it
 does not have (sync, a parent app, paid features) fail the check.
 """
@@ -24,6 +24,8 @@ FIELDS = {  # file -> (required, max characters or None)
     "description.txt": (True, 4000),
     "support_url.txt": (True, None),
     "privacy_url.txt": (True, None),
+    "copyright.txt": (True, None),
+    "review_notes.txt": (True, 4000),
 }
 NAME = "Heart of the Game: Coach"
 NOT_IN_V1 = ("sync", "cloud account", "parent app", "parents' app", "subscription", "premium",
@@ -101,7 +103,8 @@ def self_test():
     case("http privacy URL", write("privacy_url.txt", "http://example.com/privacy"), False)
     case("the wrong name", write("name.txt", "Heart FC"), False)
     case("no description", remove("description.txt"), False)
-    print(f"{11 - failed} expectation(s) passed, {failed} failed.")
+    case("no copyright (Apple requires it to submit)", remove("copyright.txt"), False)
+    print(f"{12 - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 

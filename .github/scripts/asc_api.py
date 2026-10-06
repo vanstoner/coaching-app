@@ -139,6 +139,11 @@ LISTING = {
     "keywords.txt": ("version", "keywords"),
     "promotional_text.txt": ("version", "promotionalText"),
     "support_url.txt": ("version", "supportUrl"),
+    # Not localised: an attribute of the version itself.
+    "copyright.txt": ("appversion", "copyright"),
+    # The Notes box under App Review Information. The contact details beside
+    # it are Rob's and are typed in App Store Connect, never kept here.
+    "review_notes.txt": ("review", "notes"),
 }
 
 
@@ -181,10 +186,18 @@ def listing(bundle_id, version, folder, dry_run=False):
             raise SystemExit(f"WHY THIS JOB FAILED: no {LOCALE} localisation on the app or on version {version}")
         have = {("info", k): v for k, v in info[0]["attributes"].items()}
         have.update({("version", k): v for k, v in ver[0]["attributes"].items()})
-        return info[0]["id"], ver[0]["id"], have
+        own = asc.call("GET", f"/appStoreVersions/{version_id}")["data"]["attributes"]
+        have.update({("appversion", k): v for k, v in own.items()})
+        review = asc.call("GET", f"/appStoreVersions/{version_id}/appStoreReviewDetail").get("data")
+        if review:
+            have.update({("review", k): v for k, v in review["attributes"].items()})
+        return info[0]["id"], ver[0]["id"], (review or {}).get("id"), have
 
-    info_loc, ver_loc, have = locs()
+    info_loc, ver_loc, review_id, have = locs()
     wanted = listing_wanted(folder)
+    if any(w == "review" for w, _ in wanted) and not review_id:
+        raise SystemExit("WHY THIS JOB FAILED: version " + version + " has no App Review Information yet. "
+                         "Save the contact details on its page in App Store Connect once, then re-run.")
     diff = listing_diff(wanted, have)
     for w, a, old, new in diff:
         print(f"{'would change' if dry_run else 'changing'} {w}.{a}: {len(old or '')} -> {len(new)} characters")
@@ -196,13 +209,21 @@ def listing(bundle_id, version, folder, dry_run=False):
         return 0
     info_attrs = {a: v for (w, a), v in wanted.items() if w == "info"}
     ver_attrs = {a: v for (w, a), v in wanted.items() if w == "version"}
+    own_attrs = {a: v for (w, a), v in wanted.items() if w == "appversion"}
+    review_attrs = {a: v for (w, a), v in wanted.items() if w == "review"}
     if info_attrs:
         asc.call("PATCH", f"/appInfoLocalizations/{info_loc}",
                  {"data": {"type": "appInfoLocalizations", "id": info_loc, "attributes": info_attrs}})
     if ver_attrs:
         asc.call("PATCH", f"/appStoreVersionLocalizations/{ver_loc}",
                  {"data": {"type": "appStoreVersionLocalizations", "id": ver_loc, "attributes": ver_attrs}})
-    _, _, back = locs()
+    if own_attrs:
+        asc.call("PATCH", f"/appStoreVersions/{version_id}",
+                 {"data": {"type": "appStoreVersions", "id": version_id, "attributes": own_attrs}})
+    if review_attrs:
+        asc.call("PATCH", f"/appStoreReviewDetails/{review_id}",
+                 {"data": {"type": "appStoreReviewDetails", "id": review_id, "attributes": review_attrs}})
+    _, _, _, back = locs()
     left = listing_diff(wanted, back)
     if left:
         for w, a, old, new in left:
@@ -313,13 +334,17 @@ def self_test():
     expect("a changed field is listed once, with both values",
            listing_diff(want, {("info", "name"): "Old"}) ==
            [("info", "name", "Old", "Heart of the Game: Coach"), ("version", "keywords", None, "heart,football")])
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "copyright.txt"), "w").write("2026 Someone\n")
+        expect("the copyright goes to the version itself, not a localisation",
+               listing_wanted(d) == {("appversion", "copyright"): "2026 Someone"})
     try:
         der_to_raw(b"\x31\x00")
         expect("a malformed signature is refused", False)
     except ValueError:
         expect("a malformed signature is refused", True)
 
-    print(f"{10 - failed} expectation(s) passed, {failed} failed.")
+    print(f"{11 - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 

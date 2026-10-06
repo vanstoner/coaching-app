@@ -63,8 +63,8 @@ async function launch(store: ReturnType<typeof createMemoryStore>, distribution:
   return { seeds, saved, ledger };
 }
 
-describe('only the demo auto-seeds (#146 AC6)', () => {
-  const distributions: Distribution[] = ['app', 'beta', 'demo'];
+describe('only the demo and the store build auto-seed (#146 AC6, #108 E)', () => {
+  const distributions: Distribution[] = ['app', 'beta', 'demo', 'store'];
   const nonEmpty: [string, StoreContents][] = [
     ['a player', { ...EMPTY, players: 1 }],
     ['a saved match', { ...EMPTY, matches: 1 }],
@@ -75,6 +75,16 @@ describe('only the demo auto-seeds (#146 AC6)', () => {
 
   it('healthy case: the demo seeds an empty store', () => {
     expect(shouldAutoSeed('demo', EMPTY)).toBe(true);
+  });
+
+  it('healthy case: the App Store media build (store) seeds an empty store (#108 E)', () => {
+    expect(shouldAutoSeed('store', EMPTY)).toBe(true);
+  });
+
+  it('the store build never seeds over existing data', () => {
+    for (const [what, store] of nonEmpty) {
+      expect(shouldAutoSeed('store', store), what).toBe(false);
+    }
   });
 
   it('a release (app) and a PR beta (beta) never auto-seed, whatever the store holds', () => {
@@ -91,7 +101,7 @@ describe('only the demo auto-seeds (#146 AC6)', () => {
   });
 
   it('a release and a PR beta open an empty phone empty, through the real store', async () => {
-    for (const d of distributions.filter((x) => x !== 'demo')) {
+    for (const d of distributions.filter((x) => x !== 'demo' && x !== 'store')) {
       const store = createMemoryStore();
       const first = await launch(store, d);
       expect(first.seeds).toBe(false);

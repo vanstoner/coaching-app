@@ -1,0 +1,253 @@
+name: App Store media
+
+# #108 E, PO ruling "approve 1 2 3": the App Store screenshots and the app
+# preview video, made in CI from the `store` build (ADR-017 amendment,
+# 2026-10-06). That build is Heart FC Coach, exactly what App Review sees, but
+# on an empty simulator it opens with the Test kit's made-up squad and season
+# (first names only, invariant 4) and shows no Test kit. It is built here
+# only, for the simulator only, and never uploaded: TestFlight and every
+# release assert distribution:app in the bundle.
+#
+# Maestro (pinned, checksummed) taps through store/app-store/maestro/*.yaml on
+# an iPhone 6.9" and an iPad 13" simulator. The screenshots and the 886x1920
+# preview are checked against Apple's rules (check_store_media.py) and kept as
+# this run's `store-media` artifact.
+#
+#   gh workflow run store-media.yml --ref main
+
+# By hand only (PO, 2026-10-06: "you're burning credits"). A run is about an
+# hour of macOS minutes, so it never starts on a push or a pull request.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: store-media-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MAESTRO_VERSION: 2.11.0
+  MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a
+  BUNDLE_ID: com.vanstoner.coachingapp
+  # Milliseconds: the XCTest driver's first start on a fresh simulator.
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+
+jobs:
+  media:
+    name: Screenshots and the preview video
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: write             # only to push the store-media-preview branch
+    env:
+      # Heart FC Coach's identity; the distribution is what makes it seed.
+      APP_VARIANT: ''
+      DISTRIBUTION: store
+      IOS_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the media checks before trusting them
+        run: python3 .github/scripts/check_store_media.py --self-test
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The label shows on Home, and a store screenshot must not read
+      # "(pr ?)" on a PR run (GitHub ignores an override of the event name).
+      - name: Compute the version
+        run: |
+          set -euo pipefail
+          .github/scripts/build-label.sh | sed 's/^\(BUILD_LABEL=.*\) (pr [^)]*)$/\1/' >> "$GITHUB_ENV"
+          grep '^BUILD_LABEL=' "$GITHUB_ENV"
+
+      - name: Write the build label and the store distribution into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-distribution.py --self-test
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
+          grep -qF "'distribution:store'" src/app/generated-distribution.ts \
+            || { echo "WHY THIS JOB FAILED: the generated module does not say distribution:store"; exit 1; }
+
+      # The newest runtime and the biggest display of each family Apple asks
+      # for, picked from what this image has rather than hardcoded. Before the
+      # build, so the simulators finish booting while it runs.
+      - name: Create the iPhone 6.9" and iPad 13" simulators
+        run: |
+          set -euo pipefail
+          RUNTIME="$(xcrun simctl list runtimes -j | python3 -c '
+          import json,sys
+          rs=[r for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]]
+          print(sorted(rs,key=lambda r:[int(x) for x in r["version"].split(".")])[-1]["identifier"])')"
+          pick() { xcrun simctl list devicetypes -j | python3 -c '
+          import json,re,sys
+          names=[d["name"] for d in json.load(sys.stdin)["devicetypes"]]
+          # The newest model: the highest number in the name, not the last
+          # in the Xcode list (run 2 got an iPhone 11 Pro Max, 1242x2688).
+          def key(n):
+              return [int(x) for x in re.findall(r"\d+", n)]
+          hits=sorted((n for n in names if re.search(sys.argv[1], n)), key=key)
+          print(hits[-1] if hits else "")' "$1"; }
+          IPHONE="$(pick '^iPhone \d+ Pro Max$')"
+          IPAD="$(pick '^iPad Pro 13-inch')"
+          [ -n "$IPHONE" ] && [ -n "$IPAD" ] || { echo "WHY THIS JOB FAILED: no iPhone Pro Max or iPad Pro 13-inch device type"; xcrun simctl list devicetypes; exit 1; }
+          echo "runtime $RUNTIME; iphone '$IPHONE'; ipad '$IPAD'"
+          IPHONE_UDID="$(xcrun simctl create store-iphone "$IPHONE" "$RUNTIME")"
+          IPAD_UDID="$(xcrun simctl create store-ipad "$IPAD" "$RUNTIME")"
+          # Boot both now: a new simulator's first boot spent nine minutes in
+          # data migration on this image, so it runs during the build.
+          xcrun simctl boot "$IPHONE_UDID"
+          xcrun simctl boot "$IPAD_UDID"
+          echo "IPHONE_UDID=$IPHONE_UDID" >> "$GITHUB_ENV"
+          echo "IPAD_UDID=$IPAD_UDID" >> "$GITHUB_ENV"
+
+      - name: Generate the native iOS project
+        env:
+          APP_VERSION_NAME: ${{ env.VERSION }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Build for the simulator, signing off
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          workspaces=(ios/*.xcworkspace)
+          [ "${#workspaces[@]}" -eq 1 ] || { echo "WHY THIS JOB FAILED: expected one .xcworkspace, found ${#workspaces[@]}"; exit 1; }
+          SCHEME="$(basename "${workspaces[0]}" .xcworkspace)"
+          if ! xcodebuild -workspace "${workspaces[0]}" -scheme "$SCHEME" -configuration Release \
+              -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > /tmp/xcodebuild.log 2>&1; then
+            tail -n 200 /tmp/xcodebuild.log
+            echo "WHY THIS JOB FAILED: xcodebuild did not compile the store build"
+            grep -E 'error:' /tmp/xcodebuild.log | sed -n '1,25p' || true
+            exit 1
+          fi
+          APP="build/Build/Products/Release-iphonesimulator/$SCHEME.app"
+          python3 .github/scripts/write-distribution.py --assert-bundle "$APP/main.jsbundle" store \
+            || { echo "WHY THIS JOB FAILED: the .app's bundle is not only distribution:store"; exit 1; }
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Install Maestro ${{ env.MAESTRO_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/maestro.zip \
+            "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-$MAESTRO_VERSION/maestro.zip"
+          echo "$MAESTRO_SHA256  /tmp/maestro.zip" | shasum -a 256 -c -
+          unzip -q /tmp/maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+
+      - name: Screenshots on each display, then the preview on the iPhone
+        run: |
+          set -uo pipefail
+          FLOWS="$GITHUB_WORKSPACE/store/app-store/maestro"
+          fail=0
+          prepare() {  # UDID
+            xcrun simctl boot "$1" 2>/dev/null || true
+            xcrun simctl bootstatus "$1" -b
+            xcrun simctl status_bar "$1" override --time 9:41 --dataNetwork wifi --wifiMode active \
+              --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+            xcrun simctl install "$1" "$APP"
+          }
+          shots() {  # UDID display
+            mkdir -p "media/raw-$2" "media/debug-$2"
+            ( cd "media/raw-$2" && maestro --device "$1" test --test-output-dir "$GITHUB_WORKSPACE/media/debug-$2" \
+                "$FLOWS/screenshots.yaml" ) || { echo "MEDIA PROBLEM: the $2 screenshot flow failed"; fail=1; }
+            mkdir -p "media/$2"
+            # Apple refuses alpha: re-encode each as plain RGB.
+            # Maestro writes takeScreenshot to the working directory or the
+            # output directory, by version: the NN-name.png files, from either.
+            find "media/raw-$2" "media/debug-$2" -name '[0-9][0-9]-*.png' | while read -r f; do
+              ffmpeg -loglevel error -y -i "$f" -pix_fmt rgb24 "media/$2/$(basename "$f")"
+            done
+            python3 .github/scripts/check_store_media.py shots "media/$2" "$2" || fail=1
+          }
+          prepare "$IPHONE_UDID"; shots "$IPHONE_UDID" iphone
+
+          # The preview: record the iPhone around the preview flow.
+          mkdir -p media/preview media/debug-preview
+          xcrun simctl io "$IPHONE_UDID" recordVideo --codec=h264 --force media/preview/raw.mov &
+          REC=$!
+          sleep 2
+          maestro --device "$IPHONE_UDID" test --test-output-dir media/debug-preview \
+            "$FLOWS/preview.yaml" || { echo "MEDIA PROBLEM: the preview flow failed"; fail=1; }
+          kill -INT "$REC"; wait "$REC" || true
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 media/preview/raw.mov || true
+          # To 886x1920: scale to cover, then crop the few spare rows;
+          # 30 fps; at most 29.5 s; a silent stereo track, as Apple expects.
+          ffmpeg -loglevel error -y -i media/preview/raw.mov \
+            -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
+            -t 29.5 -vf "scale=886:1920:force_original_aspect_ratio=increase,crop=886:1920,fps=30,format=yuv420p" \
+            -c:v libx264 -profile:v high -level 4.0 -crf 18 -c:a aac -b:a 256k -shortest \
+            -movflags +faststart media/preview/preview.mp4 || { echo "MEDIA PROBLEM: ffmpeg failed"; fail=1; }
+          rm -f media/preview/raw.mov
+          if [ -s media/preview/preview.mp4 ]; then
+            ffprobe -v error -show_streams -show_format -of json media/preview/preview.mp4 > media/preview/probe.json
+            python3 .github/scripts/check_store_media.py video media/preview/probe.json || fail=1
+          fi
+
+          # The iPad last, alone: with the iPhone still running, its launch
+          # hung for eight minutes (run 2). One retry, from a fresh launch.
+          xcrun simctl shutdown "$IPHONE_UDID" || true
+          prepare "$IPAD_UDID"
+          before=$fail
+          shots "$IPAD_UDID" ipad
+          if [ "$fail" != "$before" ]; then
+            echo "the iPad flow failed once; retrying"
+            fail=$before
+            rm -rf media/ipad media/raw-ipad
+            shots "$IPAD_UDID" ipad
+          fi
+          if [ "$fail" != 0 ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: a flow failed or the media is outside Apple's rules;"
+            echo "the MEDIA PROBLEM lines above say which. Maestro's own screenshots of"
+            echo "the failing step are in the store-media artifact under debug-*."
+            echo "=============================================================="
+          fi
+          exit $fail
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: store-media
+          path: media/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The artifact cannot be opened from Claude's cloud session, which
+      # reviews these images before Rob sees them; a branch can. Made-up first
+      # names only (invariant 4), nothing from a device. Replaced on each run.
+      - name: Publish the media to the store-media-preview branch for review
+        if: always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -d media ] || { echo "no media to publish"; exit 0; }
+          D="$RUNNER_TEMP/preview-branch"
+          rm -rf "$D" && mkdir -p "$D"
+          rsync -a --include='*/' --include='*.png' --include='*.mp4' --include='*.json' --exclude='*' media/ "$D/"
+          cd "$D"
+          git init -q -b store-media-preview
+          git add -A
+          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -q --allow-empty -m "App Store media from run $GITHUB_RUN_ID ($GITHUB_SHA)"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/store-media-preview
+          echo "media on branch store-media-preview:"; git ls-files | head -60

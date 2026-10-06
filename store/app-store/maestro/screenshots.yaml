@@ -1,0 +1,52 @@
+# App Store screenshots — #108 E. Run by store-media.yml against the `store`
+# build (ADR-017 amendment, 2026-10-06), which opens an empty simulator with
+# the Test kit's made-up squad and season: first names only (invariant 4).
+# Each takeScreenshot is NN-name.png; the workflow checks its size and
+# removes alpha. Maestro matches a pressable by its whole accessible text,
+# so a player's row is "Dee,.*" and a tile is "Fairness.*".
+appId: com.vanstoner.coachingapp
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Squad"
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 01-home
+
+- tapOn: "Squad"
+- waitForAnimationToEnd
+- takeScreenshot: 02-squad
+
+- tapOn: "Fairness.*"
+- waitForAnimationToEnd
+- takeScreenshot: 03-fairness
+- scrollUntilVisible:
+    element: "Back to Squad"
+- tapOn: "Back to Squad"
+
+- scrollUntilVisible:
+    element: "Dee,.*"
+- tapOn: "Dee,.*"
+- waitForAnimationToEnd
+- takeScreenshot: 04-child
+- scrollUntilVisible:
+    element: "Back to.*"
+- tapOn: "Back to.*"
+
+- tapOn: "Home"
+- tapOn: "Play now"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Use suggestion"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 05-lineup
+
+- tapOn: "Start .*"
+# Let the clock run so the figures move off zero.
+- extendedWaitUntil:
+    visible: "__never__"
+    timeout: 8000
+    optional: true
+- takeScreenshot: 06-clock

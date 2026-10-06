@@ -9,4 +9,4 @@ To try a match: Home > Play now, pick the starting seven, start the clock, tap a
 
 Settings > Forget everything empties the app again.
 
-Data: everything stays on the device. First names only. No account, server, analytics, advertising or tracking. Privacy policy: https://github.com/vanstoner/coaching-app/blob/main/PRIVACY.md
+Data: everything stays on the device. First names only. No account, server, analytics, advertising or tracking. Privacy policy: https://vanstoner.github.io/coaching-app/privacy.html
