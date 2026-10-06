@@ -69,12 +69,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # As a dispatch, even on a PR: the label shows on Home, and a store
-      # screenshot must not read "(pr ?)".
+      # The label shows on Home, and a store screenshot must not read
+      # "(pr ?)" on a PR run (GitHub ignores an override of the event name).
       - name: Compute the version
-        env:
-          GITHUB_EVENT_NAME: workflow_dispatch
-        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          .github/scripts/build-label.sh | sed 's/^\(BUILD_LABEL=.*\) (pr [^)]*)$/\1/' >> "$GITHUB_ENV"
+          grep '^BUILD_LABEL=' "$GITHUB_ENV"
 
       - name: Write the build label and the store distribution into the bundle
         run: |
@@ -99,7 +100,7 @@ jobs:
           import json,re,sys
           names=[d["name"] for d in json.load(sys.stdin)["devicetypes"]]
           # The newest model: the highest number in the name, not the last
-          # in Xcode's list (run 2 got an iPhone 11 Pro Max, 1242x2688).
+          # in the Xcode list (run 2 got an iPhone 11 Pro Max, 1242x2688).
           def key(n):
               return [int(x) for x in re.findall(r"\d+", n)]
           hits=sorted((n for n in names if re.search(sys.argv[1], n)), key=key)
