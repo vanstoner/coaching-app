@@ -88,6 +88,17 @@ jobs:
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # Straight after checkout, before three minutes of building: the key is
+      # repaired if a paste reshaped it, written to a file only this job can
+      # read, and parsed. It is removed at the end whatever happens. Its value
+      # is never printed, only its shape (A4). Run 37490079637 is why.
+      - name: Write and check the API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          .github/scripts/asc-key.sh "$RUNNER_TEMP/asc-key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-key.p8" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -99,8 +110,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compute the version
-        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+      # The version is build-label.sh's, as on Android (A6). The label is not:
+      # its tag form names a GitHub release by THIS workflow's run number,
+      # which no release has (run 37490079637 labelled itself
+      # "v1.0.0-build.2"). On TestFlight the label names the build Apple
+      # shows instead. No "(pr N)", so no Test kit (isBetaBuild).
+      - name: Compute the version and the label
+        run: |
+          set -euo pipefail
+          .github/scripts/build-label.sh >> "$GITHUB_ENV"
+          VERSION="$(.github/scripts/build-label.sh | sed -n 's/^VERSION=//p')"
+          echo "BUILD_LABEL=v$VERSION (iOS build $IOS_BUILD_NUMBER)" >> "$GITHUB_ENV"
+          echo "label: v$VERSION (iOS build $IOS_BUILD_NUMBER)"
 
       - name: Write the build label and the distribution into the bundle
         run: |
@@ -116,17 +137,6 @@ jobs:
       - name: Install CocoaPods
         working-directory: ios
         run: pod install
-
-      # The key goes to a file only this job can read, and is removed at the
-      # end whatever happens. Never echoed (A4).
-      - name: Write the API key to a private file
-        env:
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-        run: |
-          umask 077
-          KEY="$RUNNER_TEMP/asc-key.p8"
-          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
-          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
 
       - name: Archive for a device, signed
         env:
