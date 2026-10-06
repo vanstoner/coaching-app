@@ -8,6 +8,10 @@ as it writes the build label (#52, write-build-label.py):
     beta   a pull request's Heart FC Beta Coach (the same condition as APP_VARIANT)
     demo   the demo workflow's Heart FC Beta Coach (demo.yml), which seeds the
            Test kit squad and season on first open (#146 AC4)
+    store  Heart FC Coach for the App Store screenshots and preview video
+           (store-media.yml, #108 E): seeds the same made-up season, shows no
+           Test kit, runs only in a simulator. Never uploaded: TestFlight and
+           every release assert `app` in the bundle, so a store build fails them.
     app    everything else: main, and any other dispatch of android-apk.yml
 
 The module is checked in as `app`, so a missed write only removes features.
@@ -41,7 +45,7 @@ import sys
 import tempfile
 
 TARGET = pathlib.Path("src/app/generated-distribution.ts")
-DISTRIBUTIONS = ("app", "beta", "demo")
+DISTRIBUTIONS = ("app", "beta", "demo", "store")
 PREFIX = "distribution:"
 LINE = re.compile(r"^export const GENERATED_DISTRIBUTION = '[^'\n]*';$", re.MULTILINE)
 
@@ -54,8 +58,9 @@ def marker(dist):
 # with. The app cannot check its own application id, so `demo` written into
 # Heart FC Coach would show the Test kit and seed made-up children into the
 # real app. `beta` likewise only in Heart FC Beta Coach, and `app` only in Coaching
-# App. The APK's identity is then read back from the artifact (check_identity).
-IDENTITY = {"app": "", "beta": "beta", "demo": "beta"}
+# App. `store` is Heart FC Coach on purpose: the screenshots must show the app
+# App Review sees; it seeds made-up children only into an empty simulator. The APK's identity is then read back from the artifact (check_identity).
+IDENTITY = {"app": "", "beta": "beta", "demo": "beta", "store": ""}
 
 
 def pairing_problem(dist, variant):
@@ -138,13 +143,13 @@ def self_test():
     check("healthy: the bare prefix the app parses with is not a marker",
           not bundle_problems(b"distribution:" + marker("beta").encode(), "beta"))
 
-    for dist, variant in (("app", ""), ("beta", "beta"), ("demo", "beta")):
+    for dist, variant in (("app", ""), ("beta", "beta"), ("demo", "beta"), ("store", "")):
         check(f"healthy: '{dist}' with APP_VARIANT={variant!r} is allowed", pairing_problem(dist, variant) is None)
 
     # Wrong cases.
-    for dist, variant in (("demo", ""), ("beta", ""), ("app", "beta"), ("demo", "demo")):
+    for dist, variant in (("demo", ""), ("beta", ""), ("app", "beta"), ("demo", "demo"), ("store", "beta")):
         check(f"refuses '{dist}' with APP_VARIANT={variant!r}", pairing_problem(dist, variant) is not None)
-    for bad in ("", "gamma", "Demo", "beta "):
+    for bad in ("", "gamma", "Demo", "beta ", "Store"):
         try:
             rewrite(base, bad)
             check(f"refuses distribution {bad!r}", False)
@@ -161,6 +166,8 @@ def self_test():
           bool(bundle_problems(b"distribution:\x00apply", "demo")))
     check("fails: the checked-in 'app' survived beside the written 'demo'",
           bool(bundle_problems(marker("demo").encode() + marker("app").encode(), "demo")))
+    check("fails: a store build in a bundle the TestFlight check expects to be app",
+          bool(bundle_problems(marker("store").encode(), "app")))
     check("fails: a beta build that still says app",
           bool(bundle_problems(marker("app").encode(), "beta")))
     check("fails: another marker hidden as UTF-16LE",

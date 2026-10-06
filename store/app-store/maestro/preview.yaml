@@ -1,0 +1,34 @@
+# The App Store preview video — #108 E, storyboard on #108: Home, Play now,
+# the lineup, the clock running, the Squad's fair shares, one child's page.
+# store-media.yml records the screen around this flow and trims it to
+# 15–30 seconds. The `__never__` waits are pauses: nothing has that text.
+appId: com.vanstoner.coachingapp
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Squad"
+    timeout: 60000
+- waitForAnimationToEnd
+- extendedWaitUntil: { visible: "__never__", timeout: 3000, optional: true }
+
+- tapOn: "Play now"
+- tapOn:
+    text: "Use suggestion"
+    optional: true
+- tapOn:
+    text: "Use plan"
+    optional: true
+- extendedWaitUntil: { visible: "__never__", timeout: 2500, optional: true }
+
+- tapOn: "Start .*"
+- extendedWaitUntil: { visible: "__never__", timeout: 6000, optional: true }
+
+- tapOn: "Leave"
+- tapOn: "Squad"
+- extendedWaitUntil: { visible: "__never__", timeout: 3500, optional: true }
+- scrollUntilVisible:
+    element: "Dee"
+    optional: true
+- tapOn: "Dee"
+- extendedWaitUntil: { visible: "__never__", timeout: 4000, optional: true }

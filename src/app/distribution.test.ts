@@ -12,6 +12,7 @@ describe('the distribution CI writes (ADR-017 §5, #146 AC6)', () => {
     expect(parseDistribution('distribution:app')).toBe('app');
     expect(parseDistribution('distribution:beta')).toBe('beta');
     expect(parseDistribution('distribution:demo')).toBe('demo');
+    expect(parseDistribution('distribution:store')).toBe('store');
   });
 
   it('reads anything unrecognised as app, so a bad write only removes features', () => {
@@ -25,6 +26,8 @@ describe('the distribution CI writes (ADR-017 §5, #146 AC6)', () => {
       ' distribution:demo',
       'distribution:demo ',
       'distribution:demo\n',
+      'distribution:STORE',
+      'distribution:stores',
       'distribution:release',
       'distribution:beta:demo',
       'x-distribution:demo',
@@ -55,7 +58,7 @@ describe('the distribution CI writes (ADR-017 §5, #146 AC6)', () => {
   it('the full marker is in the generated module and in no other app file', () => {
     // CI asserts the marker it wrote is in the bundle; a second copy in app
     // code would make that assertion pass whatever CI wrote.
-    const marker = /distribution:(app|beta|demo)/;
+    const marker = /distribution:(app|beta|demo|store)/;
     const files = [join(root, 'App.tsx'), join(root, 'index.ts'), ...walk(join(root, 'src'))].filter(
       (f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f)
     );

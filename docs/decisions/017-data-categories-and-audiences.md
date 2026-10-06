@@ -139,3 +139,18 @@ matches and data a parent sees (#113); whether free-text notes leave the coach
   allows, or let a share aggregate them; the gate walls by scope as well.
 - **`expo-constants` or an `EXPO_PUBLIC_` variable.** The first is not a direct
   dependency; #52 found the second did nothing on the Gradle path that ships.
+
+## Amendment (2026-10-06, #108 E): a fourth distribution, `store`
+
+**PO ruling "approve 1 2 3"** on #108: App Store screenshots and the preview
+video are made in CI from a build that shows the app App Review sees, with a
+made-up season in it. This adds a value to the distribution of decision 5.
+
+- **`store`** is Heart FC Coach (`APP_VARIANT` empty, the release id), built
+  only by `store-media.yml` for an iOS simulator. On an empty store it seeds
+  the Test kit's made-up squad and season, as the demo does (#146), and it
+  never shows the Test kit. Its ceiling line (5) is the same as `app`'s.
+- **It cannot ship.** `write-distribution.py` refuses `store` with any other
+  identity, and TestFlight and every release assert `distribution:app` in the
+  bundle, so a store build fails them. Nothing it makes is uploaded except the
+  screenshots and the video, which hold synthetic first names only.

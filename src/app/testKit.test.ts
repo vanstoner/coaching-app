@@ -49,6 +49,11 @@ describe('the demo shows the Test kit (#146)', () => {
     expect(showTestKit(ciLabel('push'), false, 'app')).toBe(false);
     expect(showTestKit(ciLabel('push'), false, 'beta')).toBe(false);
   });
+
+  it('never in the App Store media build (store, #108 E): it shows the app App Review sees', () => {
+    expect(showTestKit(ciLabel('workflow_dispatch'), false, 'store')).toBe(false);
+    expect(showTestKit(ciLabel('push'), false, 'store')).toBe(false);
+  });
 });
 
 describe('the Test kit is beta only (#95 AC1)', () => {

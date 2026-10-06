@@ -108,6 +108,11 @@ jobs:
           python3 .github/scripts/check_listing.py --self-test
           python3 .github/scripts/check_listing.py store/app-store/en-GB
 
+      # #108 E: the screenshot and preview checks run on a Mac in
+      # store-media.yml; their self-test runs here on every PR, healthy first.
+      - name: Prove the App Store media checks
+        run: python3 .github/scripts/check_store_media.py --self-test
+
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.
       - name: Prove the beta-only check gates before trusting it

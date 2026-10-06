@@ -50,12 +50,13 @@ export function storeContents(
 }
 
 /**
- * Only the demo, and only an empty store: no squad, no saved match, nothing
- * in the ledger, and a ledger this build may write. Never over existing data.
+ * Only the demo and the App Store media build (`store`, #108 E), and only an
+ * empty store: no squad, no saved match, nothing in the ledger, and a ledger
+ * this build may write. Never over existing data.
  */
 export function shouldAutoSeed(distribution: Distribution, store: StoreContents): boolean {
   return (
-    distribution === 'demo' &&
+    (distribution === 'demo' || distribution === 'store') &&
     store.players === 0 &&
     store.matches === 0 &&
     store.ledgerPlayers === 0 &&

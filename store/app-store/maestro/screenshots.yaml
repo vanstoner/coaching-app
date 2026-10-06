@@ -1,0 +1,50 @@
+# App Store screenshots — #108 E. Run by store-media.yml against the `store`
+# build (ADR-017 amendment, 2026-10-06), which opens an empty simulator with
+# the Test kit's made-up squad and season: first names only (invariant 4).
+# Each takeScreenshot lands in the working directory as NN-name.png; the
+# workflow checks its size and removes alpha.
+appId: com.vanstoner.coachingapp
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Squad"
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 01-home
+
+- tapOn: "Squad"
+- waitForAnimationToEnd
+- takeScreenshot: 02-squad
+
+- scrollUntilVisible:
+    element: "Dee"
+    optional: true
+- tapOn: "Dee"
+- waitForAnimationToEnd
+- takeScreenshot: 03-child
+
+- back
+- tapOn: "Home"
+- tapOn: "Play now"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Use suggestion"
+    optional: true
+- tapOn:
+    text: "Use plan"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 04-lineup
+
+- tapOn: "Start .*"
+- extendedWaitUntil:
+    visible: "Longest on"
+    timeout: 15000
+    optional: true
+# Let the clock run so the figures move off zero.
+- extendedWaitUntil:
+    visible: "__never__"
+    timeout: 8000
+    optional: true
+- takeScreenshot: 05-clock
