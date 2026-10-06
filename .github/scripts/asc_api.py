@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""App Store Connect API, the two calls TestFlight uploads need — #160.
+
+    asc_api.py max-build BUNDLE_ID VERSION
+        Prints the highest build number Apple already has for VERSION of the
+        app (0 if none). The upload refuses a number that is not higher
+        (AC2): Apple would reject it after a full build.
+
+    asc_api.py what-to-test BUNDLE_ID VERSION BUILD TEXT_FILE [WAIT_MINUTES]
+        Waits for Apple to register that build, then sets its TestFlight
+        "What to Test" (en-GB) to the file's text (AC3). Exits 0 with a
+        warning if it cannot: the upload has already happened.
+
+    asc_api.py --self-test
+
+Credentials from the environment, as the workflow already holds them:
+ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 asc-key.sh wrote). The token
+is an ES256 JWT signed with `openssl`, so nothing is installed; it lives 15
+minutes and is never printed (AC5).
+"""
+
+import base64
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+API = "https://api.appstoreconnect.apple.com/v1"
+LOCALE = "en-GB"
+
+
+# ---------------------------------------------------------------------------
+# Pure
+# ---------------------------------------------------------------------------
+
+def b64url(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def der_to_raw(der):
+    """An ECDSA DER signature (openssl's output) as the 64-byte r||s a JWT carries."""
+    if len(der) < 8 or der[0] != 0x30:
+        raise ValueError("not a DER sequence")
+    i = 2 if der[1] < 0x80 else 2 + (der[1] & 0x7F)
+    parts = []
+    for _ in range(2):
+        if der[i] != 0x02:
+            raise ValueError("not a DER integer")
+        n = der[i + 1]
+        value = der[i + 2:i + 2 + n].lstrip(b"\x00")
+        if len(value) > 32:
+            raise ValueError("integer longer than 32 bytes")
+        parts.append(value.rjust(32, b"\x00"))
+        i += 2 + n
+    return parts[0] + parts[1]
+
+
+def highest(versions):
+    """The highest numeric build number among Apple's build `version` strings (0 if none)."""
+    best = 0
+    for v in versions:
+        head = str(v).split(".")[0]
+        if head.isdigit():
+            best = max(best, int(head))
+    return best
+
+
+# ---------------------------------------------------------------------------
+# Token and requests
+# ---------------------------------------------------------------------------
+
+def token(key_id, issuer, key_path, now=None):
+    now = int(now if now is not None else time.time())
+    header = b64url(json.dumps({"alg": "ES256", "kid": key_id, "typ": "JWT"}).encode())
+    payload = b64url(json.dumps({"iss": issuer, "iat": now, "exp": now + 900,
+                                 "aud": "appstoreconnect-v1"}).encode())
+    signing_input = f"{header}.{payload}".encode()
+    der = subprocess.run(["openssl", "dgst", "-sha256", "-sign", key_path], input=signing_input,
+                         capture_output=True, check=True).stdout
+    return f"{header}.{payload}.{b64url(der_to_raw(der))}"
+
+
+class Asc:
+    def __init__(self):
+        missing = [v for v in ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_PATH") if not os.environ.get(v)]
+        if missing:
+            raise SystemExit(f"WHY THIS JOB FAILED: not set: {' '.join(missing)}")
+        self.jwt = token(os.environ["ASC_KEY_ID"], os.environ["ASC_ISSUER_ID"], os.environ["ASC_KEY_PATH"])
+
+    def call(self, method, path, body=None):
+        url = path if path.startswith("http") else API + path
+        req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body else None,
+                                     headers={"Authorization": f"Bearer {self.jwt}",
+                                              "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                raw = r.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            raise RuntimeError(f"{method} {url.split('?')[0]}: HTTP {e.code} {detail}") from None
+
+    def app_id(self, bundle_id):
+        q = urllib.parse.urlencode({"filter[bundleId]": bundle_id, "limit": 1})
+        data = self.call("GET", f"/apps?{q}")["data"]
+        if not data:
+            raise RuntimeError(f"no App Store Connect app has bundle id {bundle_id}")
+        return data[0]["id"]
+
+    def builds(self, app, version, build=None):
+        q = {"filter[app]": app, "filter[preReleaseVersion.version]": version, "limit": 200}
+        if build is not None:
+            q["filter[version]"] = str(build)
+        return self.call("GET", "/builds?" + urllib.parse.urlencode(q))["data"]
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+def max_build(bundle_id, version):
+    asc = Asc()
+    app = asc.app_id(bundle_id)
+    print(highest(b["attributes"]["version"] for b in asc.builds(app, version)))
+    return 0
+
+
+def what_to_test(bundle_id, version, build, text_file, wait_minutes=20):
+    with open(text_file, encoding="utf-8") as f:
+        text = f.read()[:4000]
+    try:
+        asc = Asc()
+        app = asc.app_id(bundle_id)
+        found = []
+        deadline = time.time() + wait_minutes * 60
+        while not found and time.time() < deadline:
+            found = asc.builds(app, version, build)
+            if not found:
+                print(f"Apple has not registered {version} ({build}) yet; waiting 30s")
+                time.sleep(30)
+        if not found:
+            print(f"warning: {version} ({build}) did not appear within {wait_minutes} min; "
+                  "What to Test was not set. Paste it in App Store Connect › TestFlight.")
+            return 0
+        build_id = found[0]["id"]
+        existing = asc.call("GET", f"/builds/{build_id}/betaBuildLocalizations")["data"]
+        mine = [x for x in existing if x["attributes"].get("locale") == LOCALE]
+        if mine:
+            asc.call("PATCH", f"/betaBuildLocalizations/{mine[0]['id']}",
+                     {"data": {"type": "betaBuildLocalizations", "id": mine[0]["id"],
+                               "attributes": {"whatsNew": text}}})
+        else:
+            asc.call("POST", "/betaBuildLocalizations",
+                     {"data": {"type": "betaBuildLocalizations",
+                               "attributes": {"locale": LOCALE, "whatsNew": text},
+                               "relationships": {"build": {"data": {"type": "builds", "id": build_id}}}}})
+        back = asc.call("GET", f"/builds/{build_id}/betaBuildLocalizations")["data"]
+        ok = any(x["attributes"].get("locale") == LOCALE and x["attributes"].get("whatsNew") == text for x in back)
+        print(f"What to Test for {version} ({build}): {'set and read back' if ok else 'set, but the read-back differs'} "
+              f"({len(text)} characters, {LOCALE})")
+    except (RuntimeError, OSError, KeyError, subprocess.CalledProcessError) as e:
+        print(f"warning: What to Test was not set ({e}). The upload itself succeeded.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Self-test: healthy cases first
+# ---------------------------------------------------------------------------
+
+def self_test():
+    failed = 0
+
+    def expect(name, ok):
+        nonlocal failed
+        print(f"  {'ok' if ok else 'x '} {name}")
+        failed += not ok
+
+    with tempfile.TemporaryDirectory() as d:
+        key = os.path.join(d, "k.p8")
+        gen = subprocess.run("openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt",
+                             shell=True, capture_output=True, check=True).stdout
+        with open(key, "wb") as f:
+            f.write(gen)
+        jwt = token("KEYID12345", "issuer-uuid", key, now=1_000_000)
+        h, p, s = jwt.split(".")
+        pad = lambda x: x + "=" * (-len(x) % 4)  # noqa: E731
+        header = json.loads(base64.urlsafe_b64decode(pad(h)))
+        payload = json.loads(base64.urlsafe_b64decode(pad(p)))
+        sig = base64.urlsafe_b64decode(pad(s))
+        expect("healthy: the token is ES256 with the key id",
+               header == {"alg": "ES256", "kid": "KEYID12345", "typ": "JWT"})
+        expect("healthy: issuer, audience and a 15-minute life",
+               payload == {"iss": "issuer-uuid", "iat": 1_000_000, "exp": 1_000_900, "aud": "appstoreconnect-v1"})
+        expect("healthy: the signature is 64 raw bytes", len(sig) == 64)
+        # The raw signature verifies against the key, re-encoded as DER for openssl.
+        r, s_ = sig[:32], sig[32:]
+        enc = lambda x: b"\x02" + bytes([len(x)]) + x  # noqa: E731
+        norm = lambda x: (b"\x00" + x.lstrip(b"\x00")) if x.lstrip(b"\x00")[:1] >= b"\x80" else x.lstrip(b"\x00")  # noqa: E731
+        der = enc(norm(r)) + enc(norm(s_))
+        der = b"\x30" + bytes([len(der)]) + der
+        with open(os.path.join(d, "sig.der"), "wb") as f:
+            f.write(der)
+        pub = os.path.join(d, "pub.pem")
+        subprocess.run(["openssl", "pkey", "-in", key, "-pubout", "-out", pub], check=True, capture_output=True)
+        v = subprocess.run(["openssl", "dgst", "-sha256", "-verify", pub, "-signature", os.path.join(d, "sig.der")],
+                           input=f"{h}.{p}".encode(), capture_output=True)
+        expect("healthy: the signature verifies against the key", v.returncode == 0)
+
+    expect("healthy: highest of Apple's build numbers", highest(["301", "401", "99"]) == 401)
+    expect("no builds yet is 0", highest([]) == 0)
+    expect("dotted numbers compare by their first part", highest(["4.2", "130"]) == 130)
+    try:
+        der_to_raw(b"\x31\x00")
+        expect("a malformed signature is refused", False)
+    except ValueError:
+        expect("a malformed signature is refused", True)
+
+    print(f"{8 - failed} expectation(s) passed, {failed} failed.")
+    return 1 if failed else 0
+
+
+def main(argv):
+    if argv[1:] == ["--self-test"]:
+        return self_test()
+    if len(argv) == 4 and argv[1] == "max-build":
+        return max_build(argv[2], argv[3])
+    if len(argv) in (6, 7) and argv[1] == "what-to-test":
+        return what_to_test(argv[2], argv[3], argv[4], argv[5], int(argv[6]) if len(argv) == 7 else 20)
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

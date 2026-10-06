@@ -24,8 +24,12 @@ jobs never touch it and check so (`check_release.py --demo-untouched`).
 **TestFlight (#108 A).** `testflight.yml` signs and uploads the release
 build of `main`, in the `app-store` environment (Rob approves every run).
 It holds no certificate or profile: Apple's automatic signing with the API
-key, which needs Admin. The build number is `run_number * 100 + run_attempt`,
-so a re-run never repeats one. `-f dry_run=true` signs, exports and checks,
+key, which needs Admin. One build number per commit (#160): the iOS build is
+the N of the GitHub release built from the same commit (`v<version>-build.N`,
+the APK's versionCode), and the run first asks App Store Connect for the
+highest build it has for that version, failing before signing if ours is not
+higher (raise the version: a fix is a patch). It sets TestFlight's What to
+Test from the release note (`testflight_notes.py`, `asc_api.py`). `-f dry_run=true` signs, exports and checks,
 then uploads nothing. The unsigned device build is ios.yml's `device-build`,
 on every PR. Never add a `pull_request` trigger to it.
 
