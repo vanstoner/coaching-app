@@ -148,9 +148,7 @@ export function SquadScreen({
     return (
       <ChildScreen
         player={child}
-        season={seasonOf(child.id)}
-        squadAverageMs={season.squadAverageMs}
-        scaleMs={season.scaleMs}
+        views={views}
         everyone={everyone}
         onPlayers={onPlayers}
         backLabel={under?.kind === 'view' ? `Back to ${VIEW_TITLE[under.view]}` : 'Back to Squad'}

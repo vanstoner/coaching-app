@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet } from 'react-native';
 import { Text } from './Text';
 
-import { colours, screen } from './theme';
+import { CONTENT_MAX_WIDTH, colours, screen } from './theme';
 
 export function ActionSheet({
   visible,
@@ -72,7 +72,11 @@ export function SheetButton({
 
 const local = StyleSheet.create({
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  // #143 AC9: in the content column on a wide screen; the whole width on a phone.
   sheet: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
     backgroundColor: colours.pitchRaised,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,

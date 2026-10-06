@@ -102,7 +102,7 @@ function Empty({ children }: { children: string }) {
 }
 
 /** What a tapped cell or column says; tap it again to put it away. */
-function Picked({ text, onClear }: { text: string | null; onClear: () => void }) {
+export function Picked({ text, onClear }: { text: string | null; onClear: () => void }) {
   if (text === null) return null;
   return (
     <Pressable onPress={onClear} style={local.picked} accessibilityLiveRegion="polite">

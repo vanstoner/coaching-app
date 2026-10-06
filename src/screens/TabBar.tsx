@@ -11,6 +11,9 @@
  *
  * Drawn on Tuesday screens only. The Saturday clock is full-screen; see the
  * note in `tabs.ts` for why.
+ *
+ * On a wide screen (iPad Level 1, #143 AC9) the bar spans the screen and its
+ * tabs sit in the content column above it. On a phone that is the whole width.
  */
 
 import {
@@ -21,7 +24,7 @@ import {
 import { Text } from './Text';
 
 import { TABS, type Tab } from '../app/tabs';
-import { colours, TOUCH_TARGET } from './theme';
+import { CONTENT_MAX_WIDTH, colours, TOUCH_TARGET } from './theme';
 
 export function TabBar({
   active,
@@ -32,39 +35,41 @@ export function TabBar({
 }) {
   return (
     <View style={local.bar}>
-      {TABS.map((spec) => {
-        const on = spec.tab === active;
-        return (
-          <Pressable
-            key={spec.tab}
-            onPress={() => onSelect(spec.tab)}
-            style={({ pressed }) => [local.tab, on && local.tabOn, pressed && local.pressed]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-          >
-            {/*
-              Colour changes on selection; metrics never do. A bold active tab
-              is the same late Android re-measure that clipped the last glyph
-              off the choice boxes three times.
-            */}
-            <Text style={[local.label, on && local.labelOn]} numberOfLines={1}>
-              {spec.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+      <View style={local.row}>
+        {TABS.map((spec) => {
+          const on = spec.tab === active;
+          return (
+            <Pressable
+              key={spec.tab}
+              onPress={() => onSelect(spec.tab)}
+              style={({ pressed }) => [local.tab, on && local.tabOn, pressed && local.pressed]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+            >
+              {/*
+                Colour changes on selection; metrics never do. A bold active tab
+                is the same late Android re-measure that clipped the last glyph
+                off the choice boxes three times.
+              */}
+              <Text style={[local.label, on && local.labelOn]} numberOfLines={1}>
+                {spec.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const local = StyleSheet.create({
   bar: {
-    flexDirection: 'row',
     alignSelf: 'stretch',
     borderTopWidth: 1,
     borderTopColor: colours.line,
     backgroundColor: colours.pitchRaised,
   },
+  row: { flexDirection: 'row', width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' },
   tab: {
     flex: 1,
     alignItems: 'center',

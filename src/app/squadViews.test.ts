@@ -18,9 +18,12 @@ import { addTestSeason } from './testSeason';
 import { goalOutfieldLine } from './childSeason';
 import {
   AFTER_FIRST_MATCH,
+  LENS_TITLE,
   OWED_MIN,
   VIEW_TITLE,
   axisLabels,
+  childMatches,
+  lensCards,
   fairnessHeadline,
   fairnessTile,
   gridTile,
@@ -199,6 +202,32 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(offsetWords(0)).toBe('level with the squad average');
     expect(offsetWords(-4)).toBe('4 below the squad average');
     expect(offsetWords(3)).toBe('3 above the squad average');
+  });
+
+  it("the child page: Playing time first and always there, then match by match, positions, preference (AC6)", () => {
+    expect(lensCards(row(v.season.children, 'Ava')).map((c) => LENS_TITLE[c])).toEqual([
+      'Playing time',
+      'Match by match',
+      'Positions tried',
+      'Position preference',
+    ]);
+    // Before a closed match: Playing time (which says so) and the preferences.
+    expect(lensCards({ played: 0 })).toEqual(['playing', 'preference']);
+    expect(lensCards(undefined)).toEqual(['playing', 'preference']);
+  });
+
+  it("the child page's match by match: a column per match, a dash where not there, in goal and outfield adding up (AC6, AC10)", () => {
+    const ava = childMatches(v, row(v.season.children, 'Ava').playerId);
+    expect(ava).toHaveLength(9);
+    expect(ava[0]).toMatchObject({ day: '8', month: 'Aug', cell: { total: 50, goal: 38, outfield: 12 } });
+    expect(ava[0].label).toBe('Sat 8 Aug v Mock Albion, League: 50 min (38 in goal)');
+    expect(ava[5].cell).toBeNull();
+    expect(ava[5].label).toBe('Sat 12 Sep v Fixture Forest, Friendly: not there');
+    for (const m of ava) if (m.cell) expect(m.cell.goal + m.cell.outfield).toBe(m.cell.total);
+    const ivy = childMatches(v, row(v.season.children, 'Ivy').playerId);
+    expect(ivy[0].label).toMatch(/^Sat 8 Aug v Mock Albion, League: \d+ min$/);
+    // Someone not in the squad: every match a dash, nothing invented.
+    expect(childMatches(v, uuid()).every((m) => m.cell === null)).toBe(true);
   });
 
   it('a Main keeper changed to Back-up is back in the average straight away: 40, within 10', () => {
@@ -411,6 +440,23 @@ describe('which match is oldest', () => {
     const fromLedger = squadViews(ledger, sq.players);
     expect(fromLedger.matches.map((m) => m.day)).toEqual(['12 Sep', '26 Sep']);
     expect(fromLedger.matches[1].label).toBe('Sat 26 Sep · League · v Play now');
+  });
+
+  it('a match with no time anywhere sits after the dated ones, in ledger order, as "Date TBC"', () => {
+    const sq = squad();
+    const first = play(sq);
+    first.match.opponent = 'First undated';
+    const dated = play(sq, { kickoffAt: '2026-09-12T09:00:00.000Z' });
+    const second = play(sq);
+    second.match.opponent = 'Second undated';
+    const ledger = ledgerOf(sq, [first, dated, second]);
+    // An entry time that does not parse (a damaged or foreign file): nothing to date them by.
+    const undatable = { ...ledger, entries: ledger.entries.map((e) => ({ ...e, at: 'unknown' })) };
+    const v = squadViews(undatable, sq.players);
+    expect(v.matches.map((m) => m.opponent)).toEqual(['Rovers', 'First undated', 'Second undated']);
+    expect(v.matches.map((m) => m.day)).toEqual(['12 Sep', 'Date TBC', 'Date TBC']);
+    expect(v.matches[1].label).toBe('Date TBC · League · v First undated');
+    expect(gridTile(v.matches)).toBe('3 matches');
   });
 
   it('one match, or dates not known: the tile still reads', () => {

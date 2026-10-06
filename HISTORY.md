@@ -163,3 +163,14 @@ analysis, iOS". Entries are added as each release ships.
   subs planned at kick-off are saved with the match, so after a relaunch
   mid-period the ones still to come return at their planned times, and buzz.
   Subs already made are read from the record and not offered again.
+- **6 October — the squad views, and the iPad (#143).** The design Rob
+  approved on #138: four tiles above the Squad list, each showing its answer,
+  open a Season grid (each child's minutes in each match), Fairness at a
+  glance ("Everyone within 5 min a game of the squad average, 39", and how
+  that gap changed match by match), Going into Saturday (who is owed 5
+  minutes or more over the season) and Positions tried (a record, not a
+  target). A child's page is now a stack of cards, Playing time first. The
+  Main keeper stays outside the average, and every list keeps squad order.
+  Parts now add up to the total beside them (#142): a keeper's 38 in goal and
+  12 outfield beside 50, where it read 38 and 13. On an iPad the app runs
+  portrait and full screen, in a centred column; phones are unchanged.

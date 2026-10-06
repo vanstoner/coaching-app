@@ -503,6 +503,60 @@ export function squadViews(
   };
 }
 
+// ============================================================================
+// The child page's lens cards (AC6)
+// ============================================================================
+
+export type LensCard = 'playing' | 'matches' | 'positions' | 'preference';
+
+export const LENS_TITLE: Record<LensCard, string> = {
+  playing: 'Playing time',
+  matches: 'Match by match',
+  positions: 'Positions tried',
+  preference: 'Position preference',
+};
+
+/**
+ * The cards on a child's page, in order (AC6): Playing time first and always
+ * there; match by match and positions once they have played a closed match;
+ * their position preference last.
+ */
+export function lensCards(child: Pick<ChildSeason, 'played'> | undefined): LensCard[] {
+  return (child?.played ?? 0) > 0
+    ? ['playing', 'matches', 'positions', 'preference']
+    : ['playing', 'preference'];
+}
+
+export interface ChildMatch {
+  matchId: UUID;
+  day: string;
+  month: string;
+  /** Their minutes, in goal and outfield adding up to the total; null where they were not there. */
+  cell: GridCell | null;
+  /** "Sat 8 Aug v Mock Albion, League: 50 min (38 in goal)", or "…: not there". */
+  label: string;
+}
+
+/** One child's season match by match, oldest first: the child page's second lens card (AC6). */
+export function childMatches(v: SquadViews, playerId: UUID): ChildMatch[] {
+  const cells = v.grid.find((r) => r.playerId === playerId)?.cells ?? [];
+  const labels = axisLabels(v.matches);
+  return v.matches.map((m, j) => {
+    const cell = cells[j] ?? null;
+    const what = [`${m.date} v ${m.opponent}`, competitionLabel(m.competition)].filter((s) => s !== '').join(', ');
+    return {
+      matchId: m.matchId,
+      day: labels[j].day,
+      month: labels[j].month,
+      cell,
+      label:
+        cell === null
+          ? `${what}: not there`
+          : `${what}: ${cell.total} min${cell.goal > 0 ? ` (${cell.goal} in goal)` : ''}`,
+    };
+  });
+}
+
 /** The four tiles above the Squad list, each with its answer (AC1). */
 export function squadTiles(v: SquadViews): { view: SquadView; title: string; answer: string }[] {
   return [
