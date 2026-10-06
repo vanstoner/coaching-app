@@ -210,7 +210,7 @@ export default function App() {
   //
   // Player time, kept under its own key and written alongside every save. The
   // ref is the value; the state is only so Settings repaints.
-  // --- the Test kit (#95): Coaching Beta, the demo (#146) and dev builds (#134)
+  // --- the Test kit (#95): Heart FC Beta, the demo (#146) and dev builds (#134)
   const testKitOn = useMemo(() => showTestKit(currentBuildLabel(), __DEV__, currentDistribution()), []);
   const [clockSpeed, setClockSpeed] = useState<ClockSpeed>(1);
   const [testKitMessage, setTestKitMessage] = useState('');

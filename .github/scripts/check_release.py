@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Assert a build of main became THE release — #79, PO ruling "approve 1 2"; #128.
 
-The model: a pull request publishes Coaching Beta (one rolling `beta`
+The model: a pull request publishes Heart FC Beta (one rolling `beta`
 prerelease); Rob's approval merges it, and the build of main publishes the
-full Coaching App release, marked Latest. No in-between prerelease of the
-real app.
+full Heart FC Coach release, marked Latest. No in-between prerelease of the
+real app. (#108 Q1: "Coaching Beta" and "Coaching App" before v1. Releases
+made before the switch keep those titles, so every title and merge note is
+read under either name; the new one is what this pipeline writes.)
 
 #128 AC3 ("approve 11"): the merge no longer leaves the beta EMPTY. The `beta`
-prerelease is replaced by a note, "Merged into Coaching App build N — install
+prerelease is replaced by a note, "Merged into Heart FC Coach build N — install
 that instead", linking the release, with NO .apk, until the next PR's beta
 replaces it. (Until #128 this check asserted the beta was absent.)
 
@@ -26,14 +28,16 @@ LATEST_TAG is what /releases/latest reports; BETA_JSON is
 the word `none` when there is no beta release. The last argument is
 beta_decision.py's verdict; it defaults to `replace`.
 
-#146, the demo (tag `demo`, "Coaching Beta — demo"), two more modes:
+#146, the demo (tag `demo`, "Heart FC Beta — demo"), two more modes:
 
     check_release.py --demo-untouched BEFORE AFTER
         AC1/AC7: a job that is not demo.yml (main's release job, a PR's beta
         job) left `demo` alone. BEFORE and AFTER are
         `gh api repos/R/releases/tags/demo`, read before the job's first
         write and after its last, or `none`. Same release id, tag, title,
-        prerelease, not a draft, and no merged note written into it. Assets
+        prerelease, not a draft, and no merged note written into it. A title
+        change between the old and new demo titles (#108 Q1) is a refresh
+        racing this job, and is accepted; any other title change is not. Assets
         and body are NOT compared: a refresh demo.yml runs at the same time
         replaces them in place, and must not turn this job red.
     check_release.py --demo DEMO LATEST_TAG [NOTES_MD]
@@ -51,11 +55,18 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from beta_decision import DEMO_TAG, DEMO_TITLE, parse_title  # noqa: E402
-from release_notes import (DEMO_APK, DEMO_MADE_UP, DEMO_NEVER_TOUCHES,  # noqa: E402
+from beta_decision import DEMO_TAG, DEMO_TITLE, DEMO_TITLES, parse_title  # noqa: E402
+from release_notes import (APP_NAME, DEMO_APK, DEMO_MADE_UP, DEMO_NEVER_TOUCHES,  # noqa: E402
                            INSTALL_NOTE, REFRESHED)
 
-MERGED_NOTE = "Merged into Coaching App build"
+# #108 Q1: the merge note the release job writes now, then every older form a
+# live release may still carry.
+MERGED_NOTE = f"Merged into {APP_NAME} build"
+MERGED_NOTES = (MERGED_NOTE, "Merged into Coaching App build")
+
+
+def is_merged_note(body):
+    return any(n in (body or "") for n in MERGED_NOTES)
 
 
 def demo_untouched_problems(before, after):
@@ -73,8 +84,10 @@ def demo_untouched_problems(before, after):
         out.append(f"the `demo` release was deleted and re-created (id {before.get('id')} -> {after.get('id')})")
     for key in ("tag_name", "name", "prerelease", "draft"):
         if after.get(key) != before.get(key):
+            if key == "name" and before.get(key) in DEMO_TITLES and after.get(key) in DEMO_TITLES:
+                continue    # #108 Q1: a demo refresh retitling it, old -> new
             out.append(f"`demo`'s {key} changed: {before.get(key)!r} -> {after.get(key)!r}")
-    if MERGED_NOTE in (after.get("body") or "") and MERGED_NOTE not in (before.get("body") or ""):
+    if is_merged_note(after.get("body")) and not is_merged_note(before.get("body")):
         out.append("a merge note was written into `demo`")
     return out
 
@@ -84,13 +97,13 @@ def demo_shape_problems(demo):
     out = []
     if demo.get("tag_name") != DEMO_TAG:
         out.append(f"tag is {demo.get('tag_name')!r}, expected {DEMO_TAG!r}")
-    if demo.get("name") != DEMO_TITLE:
+    if demo.get("name") not in DEMO_TITLES:
         out.append(f"title is {demo.get('name')!r}, expected {DEMO_TITLE!r}")
     if not demo.get("prerelease"):
-        out.append("not a prerelease, so it could compete with Coaching App")
+        out.append(f"not a prerelease, so it could compete with {APP_NAME}")
     if demo.get("draft"):
         out.append("a draft, whose assets a phone cannot download")
-    if MERGED_NOTE in (demo.get("body") or ""):
+    if is_merged_note(demo.get("body")):
         out.append("its page is a merge note")
     return out
 
@@ -100,7 +113,7 @@ def demo_page_problems(body):
     out = []
     for phrase, why in ((DEMO_MADE_UP, "that it holds made-up data only"),
                         (INSTALL_NOTE, "how to install it (the beta's install note)"),
-                        (DEMO_NEVER_TOUCHES, "that it never touches Coaching App")):
+                        (DEMO_NEVER_TOUCHES, f"that it never touches {APP_NAME}")):
         if phrase not in body:
             out.append(f"the page does not say {why}")
     if not REFRESHED.search(body):
@@ -115,8 +128,11 @@ def demo_problems(demo, latest_tag, notes=None):
             return ["there is no `demo` release"]
         return demo_page_problems(notes)
     out = demo_shape_problems(demo)
+    # A demo this job has just published carries the new title (#108 Q1).
+    if demo.get("name") in DEMO_TITLES and demo.get("name") != DEMO_TITLE:
+        out.append(f"title is {demo.get('name')!r}, expected {DEMO_TITLE!r}: the refresh did not retitle it")
     if latest_tag == DEMO_TAG:
-        out.append("`demo` is marked Latest; Latest is always Coaching App")
+        out.append(f"`demo` is marked Latest; Latest is always {APP_NAME}")
     names = [a.get("name", "") for a in demo.get("assets", [])]
     apks = [n for n in names if n.endswith(".apk")]
     if apks != [DEMO_APK]:
@@ -156,13 +172,13 @@ def kept_beta_problems(beta):
     if kind != "pr":
         out.append(f"the kept `beta` is not a PR beta (title {beta.get('name')!r})")
     if not beta.get("isPrerelease"):
-        out.append("the kept `beta` is not a prerelease, so it could compete with Coaching App")
+        out.append(f"the kept `beta` is not a prerelease, so it could compete with {APP_NAME}")
     if beta.get("isDraft"):
         out.append("the kept `beta` is a draft")
     apks = [a.get("name", "") for a in beta.get("assets", []) if a.get("name", "").endswith(".apk")]
     if len(apks) != 1:
         out.append(f"the kept `beta` should carry its PR's APK; found {len(apks)} .apk asset(s)")
-    if "Merged into Coaching App build" in (beta.get("body") or ""):
+    if is_merged_note(beta.get("body")):
         out.append("the kept `beta` is a merged note, not a PR beta")
     return out
 
@@ -173,51 +189,55 @@ def beta_problems(beta, expected_tag):
         return ["there is no `beta` release; a merge replaces it with a note, not nothing"]
     out = []
     if not beta.get("isPrerelease"):
-        out.append("the `beta` note is not a prerelease, so it could compete with Coaching App")
+        out.append(f"the `beta` note is not a prerelease, so it could compete with {APP_NAME}")
     if beta.get("isDraft"):
         out.append("the `beta` note is a draft")
     apks = [a.get("name", "") for a in beta.get("assets", []) if a.get("name", "").endswith(".apk")]
     if apks:
         out.append(f"the `beta` note still carries an APK ({', '.join(apks)}); the merged beta must not be installable")
     body = beta.get("body") or ""
-    if "Merged into Coaching App build" not in body:
-        out.append("the `beta` body does not say \"Merged into Coaching App build N\"")
+    # The note this job has just written: the new wording only (#108 Q1).
+    if MERGED_NOTE not in body:
+        out.append(f"the `beta` body does not say \"{MERGED_NOTE} N\"")
     if f"/releases/tag/{expected_tag}" not in body:
         out.append(f"the `beta` note does not link the release {expected_tag}")
     return out
 
 
 def release_of(tag, pre=False, draft=False, apks=1):
-    assets = [{"name": f"coaching-app_2026.10.03_abc1234.apk"} for _ in range(apks)]
-    assets.append({"name": "coaching-app_2026.10.03_abc1234.apk.sha256"})
+    assets = [{"name": f"coaching-app_1.0.0_abc1234.apk"} for _ in range(apks)]
+    assets.append({"name": "coaching-app_1.0.0_abc1234.apk.sha256"})
     return {"tagName": tag, "isPrerelease": pre, "isDraft": draft, "assets": assets}
 
 
-def note_of(tag, pre=True, draft=False, apk=False, body=None):
+def note_of(tag, pre=True, draft=False, apk=False, body=None, app="Heart FC Coach", beta="Heart FC Beta"):
     if body is None:
-        body = (f"## Merged into Coaching App build 74 — install that instead\n\n"
-                f"[Coaching App build 74](https://github.com/vanstoner/coaching-app/releases/tag/{tag})")
+        body = (f"## Merged into {app} build 74 — install that instead\n\n"
+                f"[{app} build 74](https://github.com/vanstoner/coaching-app/releases/tag/{tag})")
     assets = [{"name": "coaching-beta_pr-127_abc1234.apk"}] if apk else []
-    return {"name": "Coaching Beta — merged into build 74", "tagName": "beta",
+    return {"name": f"{beta} — merged into build 74", "tagName": "beta",
             "isPrerelease": pre, "isDraft": draft, "assets": assets, "body": body}
 
 
-def pr_beta_of(pr=132, pre=True, draft=False, apk=True):
+def pr_beta_of(pr=132, pre=True, draft=False, apk=True, beta="Heart FC Beta"):
     assets = [{"name": f"coaching-beta_pr-{pr}_def5678.apk"}] if apk else []
     assets.append({"name": f"coaching-beta_pr-{pr}_def5678.apk.sha256"})
-    return {"name": f"Coaching Beta (PR #{pr})", "tagName": "beta", "isPrerelease": pre,
-            "isDraft": draft, "assets": assets, "body": f"## Coaching Beta — PR #{pr}"}
+    return {"name": f"{beta} (PR #{pr})", "tagName": "beta", "isPrerelease": pre,
+            "isDraft": draft, "assets": assets, "body": f"## {beta} — PR #{pr}"}
 
 
 def self_test():
-    t = "v2026.10.03-build.74"
-    old = "v2026.10.03-build.69"
+    t = "v1.0.0-build.74"
+    old = "v1.0.0-build.69"
     note = note_of(t)
+    old_note = note_of(t, app="Coaching App", beta="Coaching Beta")
     cases = [
         # (description, release, latest, beta, should pass[, beta action])
         ("healthy: full release, Latest, beta replaced by a no-APK note", release_of(t), t, note, True),
         ("healthy (kept): a newer open PR's beta left in place, APK and all",
          release_of(t), t, pr_beta_of(), True, "keep"),
+        ("healthy (kept, switch): an open PR's old-titled beta left in place",
+         release_of(t), t, pr_beta_of(beta="Coaching Beta"), True, "keep"),
         ("healthy: a simulator zip on the release does not count as an APK",
          dict(release_of(t), assets=release_of(t)["assets"] + [{"name": "coaching-app-ios-simulator_2026.10.03_abc1234.zip"}]),
          t, note, True),
@@ -228,7 +248,8 @@ def self_test():
         ("two APKs attached", release_of(t, apks=2), t, note, False),
         ("wrong release read back", release_of(old), t, note, False),
         ("beta left empty: no note at all (the build-100 confusion)", release_of(t), t, None, False),
-        ("old PR beta left in place, APK and all", release_of(t), t, note_of(t, apk=True, body="## Coaching Beta — PR #127"), False),
+        ("old PR beta left in place, APK and all", release_of(t), t, note_of(t, apk=True, body="## Heart FC Beta — PR #127"), False),
+        ("#108: the note this job wrote is in the old wording", release_of(t), t, old_note, False),
         ("note still carries the APK", release_of(t), t, note_of(t, apk=True), False),
         ("note not a prerelease", release_of(t), t, note_of(t, pre=False), False),
         ("note links an older build", release_of(t), t, note_of(old), False),
@@ -236,6 +257,7 @@ def self_test():
         ("kept beta gone", release_of(t), t, None, False, "keep"),
         ("kept beta lost its APK", release_of(t), t, pr_beta_of(apk=False), False, "keep"),
         ("kept beta is a merged note", release_of(t), t, note, False, "keep"),
+        ("kept beta is an old-worded merged note", release_of(t), t, old_note, False, "keep"),
         ("kept beta not a prerelease", release_of(t), t, pr_beta_of(pre=False), False, "keep"),
         ("kept beta, but the release is not Latest", release_of(t), old, pr_beta_of(), False, "keep"),
     ]
@@ -249,9 +271,10 @@ def self_test():
 
     # #146: the demo. Healthy cases first, each way it is read.
     from release_notes import demo_notes
-    page = demo_notes("abc1234def", "demo (2026.10.06, build 160)", "6 October 2026", "vanstoner/coaching-app",
-                      fetch=lambda path: [{"tag_name": "v2026.10.06-build.153", "target_commitish": "abc1234def", "prerelease": False,
+    page = demo_notes("abc1234def", "demo (1.0.0, build 160)", "6 October 2026", "vanstoner/coaching-app",
+                      fetch=lambda path: [{"tag_name": "v1.0.0-build.153", "target_commitish": "abc1234def", "prerelease": False,
                                            "draft": False, "html_url": "u"}])
+    old_demo_title = "Coaching Beta — demo"
 
     def demo_of(**kw):
         d = {"id": 7, "tag_name": "demo", "name": DEMO_TITLE, "prerelease": True, "draft": False,
@@ -267,12 +290,22 @@ def self_test():
         ("healthy: there is no `demo`, before or after", None, None, True),
         ("healthy: a demo refresh replaced its APK and page during this job", demo_of(), refreshed, True),
         ("healthy: demo.yml's first publish raced this job", None, demo_of(), True),
+        ("healthy (switch): the live old-titled demo, left alone",
+         demo_of(name=old_demo_title), demo_of(name=old_demo_title), True),
+        ("healthy (switch): a refresh retitled the demo old -> new during this job",
+         demo_of(name=old_demo_title), demo_of(name=DEMO_TITLE), True),
+        ("healthy (switch): the old-titled demo with an old-titled page, left alone",
+         demo_of(name=old_demo_title, body="## Coaching Beta — demo"),
+         demo_of(name=old_demo_title, body="## Coaching Beta — demo"), True),
         ("`demo` deleted (a run that touches demo)", demo_of(), None, False),
         ("`demo` deleted and re-created", demo_of(), demo_of(id=8), False),
-        ("`demo` retitled as a merged note", demo_of(), demo_of(name="Coaching Beta — merged into build 74"), False),
-        ("a merge note written into `demo`", demo_of(), demo_of(body="## Merged into Coaching App build 74"), False),
+        ("`demo` retitled as a merged note", demo_of(), demo_of(name="Heart FC Beta — merged into build 74"), False),
+        ("`demo` retitled as an old-worded merged note", demo_of(name=old_demo_title),
+         demo_of(name="Coaching Beta — merged into build 74"), False),
+        ("a merge note written into `demo`", demo_of(), demo_of(body="## Merged into Heart FC Coach build 74"), False),
+        ("an old-worded merge note written into `demo`", demo_of(), demo_of(body="## Merged into Coaching App build 74"), False),
         ("`demo` made a full release", demo_of(), demo_of(prerelease=False), False),
-        ("a `demo` that is not a demo appeared", None, demo_of(name="Coaching Beta (PR #147)"), False),
+        ("a `demo` that is not a demo appeared", None, demo_of(name="Heart FC Beta (PR #147)"), False),
     ]
     for name, before, after, should_pass in untouched:
         passed = not demo_untouched_problems(before, after)
@@ -289,7 +322,8 @@ def self_test():
          demo_of(body=page.replace("Refreshed from build 153", "Refreshed from main at `abc1234`")), t, None, True),
         ("demo marked Latest", demo_of(), "demo", None, False),
         ("demo published as a full release", demo_of(prerelease=False), t, None, False),
-        ("demo titled like a PR beta", demo_of(name="Coaching Beta (PR #147)"), t, None, False),
+        ("demo titled like a PR beta", demo_of(name="Heart FC Beta (PR #147)"), t, None, False),
+        ("#108: a refresh that left the old title", demo_of(name=old_demo_title), t, None, False),
         ("a refresh left the old APK beside the new",
          demo_of(assets=[{"name": DEMO_APK}, {"name": "coaching-beta-demo_old.apk"}, {"name": DEMO_APK + ".sha256"}]),
          t, None, False),
@@ -298,7 +332,9 @@ def self_test():
         ("page lost the install note", demo_of(body=page.replace(INSTALL_NOTE, "")), t, None, False),
         ("page lost 'refreshed from build N on date'",
          demo_of(body=page.replace("Refreshed from build 153 on 6 October 2026", "Refreshed")), t, None, False),
-        ("dry run: a page that says nothing", None, t, "## Coaching Beta — demo", False),
+        ("dry run: a page that says nothing", None, t, "## Heart FC Beta — demo", False),
+        ("dry run: the pre-v1 page, which never touched Coaching App", None, t,
+         page.replace(DEMO_NEVER_TOUCHES, "never touches Coaching App"), False),
         ("published, but there is no demo", None, t, None, False),
     ]
     for name, demo, latest, notes, should_pass in published:

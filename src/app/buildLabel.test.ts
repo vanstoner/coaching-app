@@ -49,12 +49,13 @@ describe('formatBuildLabel', () => {
 });
 
 describe('APP_VERSION', () => {
-  it('is a date, which is what a build is actually stamped with', () => {
-    // app.json is the LOCAL fallback; CI injects the build commit's date into
-    // the APK's versionName (#62). Both are YYYY.MM.DD — the trailing "-N"
-    // went when the hand-maintained version did, because nobody maintained it
-    // and every build for two days claimed to be the 18th.
-    expect(APP_VERSION).toMatch(/^\d{4}\.\d{2}\.\d{2}$/);
+  it('is a semantic version, MAJOR.MINOR.PATCH', () => {
+    // #108 ruling 42: this is v1. app.json's version is the marketing version
+    // on both stores and the releases page, and CI injects that same value
+    // into the APK's versionName and CFBundleShortVersionString
+    // (build-label.sh). It replaced the build commit's date (#62); what must
+    // only go up is the build number, which is still the run number.
+    expect(APP_VERSION).toMatch(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
   });
 });
 

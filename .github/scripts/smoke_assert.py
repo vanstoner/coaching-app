@@ -283,8 +283,10 @@ def normalise_words(text: str) -> list[str]:
 
     Word structure is kept rather than thrown away because it is what stops
     the assertion matching inside a longer token. `com.example.coachingapp` —
-    which Android puts on screen in a crash dialog, and React Native puts in
-    its red box — contains `examplec`, one edit from the needle. Without a
+    the package before #108, which Android puts on screen in a crash dialog,
+    and React Native puts in its red box — contains `examplec`, one edit from
+    the needle. (The package is now `com.vanstoner.coachingapp`; the case stays,
+    because any package-like token can sit that close to the needle.) Without a
     word boundary the gate would pass on exactly the screen it exists to
     catch. The self-test holds that case.
     """

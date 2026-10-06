@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-// #79 — the Coaching Beta must be a different app (its own id) that LOOKS
+// #79 — the beta (Heart FC Beta) must be a different app (its own id) that LOOKS
 // different (its own icon), and the released app must be untouched.
 const root = resolve(__dirname, '../..');
 const require = createRequire(import.meta.url);
@@ -26,8 +26,8 @@ describe('app identity per variant (#79)', () => {
   it('leaves the released app exactly as app.json says', () => {
     delete process.env.APP_VARIANT;
     const c = appConfig({ config: base() });
-    expect(c.android.package).toBe('com.example.coachingapp');
-    expect(c.name).toBe('Coaching App');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp');
+    expect(c.name).toBe('Heart FC Coach');
     expect(c.icon).toBe(base().icon);
     expect(c.android.adaptiveIcon).toEqual(base().android.adaptiveIcon);
   });
@@ -45,7 +45,7 @@ describe('app identity per variant (#79)', () => {
     }
   });
 
-  it('backs up Coaching App and never Coaching Beta (#112, PO ruling "backup b")', () => {
+  it('backs up the release and never the beta (#112, PO ruling "backup b")', () => {
     delete process.env.APP_VARIANT;
     const main = appConfig({ config: base() });
     expect(main.android.allowBackup).toBe(true);
@@ -59,8 +59,8 @@ describe('app identity per variant (#79)', () => {
   it('gives the beta its own id, name and icon', () => {
     process.env.APP_VARIANT = 'beta';
     const c = appConfig({ config: base() });
-    expect(c.android.package).toBe('com.example.coachingapp.beta');
-    expect(c.name).toBe('Coaching Beta');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp.beta');
+    expect(c.name).toBe('Heart FC Beta');
     expect(c.icon).toBeTruthy();
     expect(c.icon).not.toBe(base().icon);
     expect(c.android.adaptiveIcon.foregroundImage).toBeTruthy();
@@ -72,7 +72,8 @@ describe('app identity per variant (#79)', () => {
 });
 
 // #107 — iOS. Ruling (PO, 2026-10-04): com.vanstoner.coachingapp, and the
-// beta with the same `.beta` suffix as Android. Android ids stay unchanged.
+// beta with the same `.beta` suffix as Android. #108 ruling 41: Android's
+// package is renamed to match, so both platforms carry the same ids.
 describe('iOS identity, build number and backup exclusion (#107)', () => {
   const keys = ['APP_VARIANT', 'IOS_BUILD_NUMBER', 'ANDROID_VERSION_CODE', 'APP_VERSION_NAME'];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
@@ -89,7 +90,7 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     const c = appConfig({ config: base() });
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
     expect(c.ios.buildNumber).toBeUndefined();
-    expect(c.android.package).toBe('com.example.coachingapp');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp');
   });
 
   // #143 AC9, ruling 18 (iPad Level 1), replacing "phone only" from #107:
@@ -111,7 +112,7 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     process.env.APP_VARIANT = 'beta';
     const c = appConfig({ config: base() });
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp.beta');
-    expect(c.android.package).toBe('com.example.coachingapp.beta');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp.beta');
     // No ios.icon anywhere, so Expo uses the top-level icon for iOS.
     expect(c.ios.icon).toBeUndefined();
     expect(c.icon).toBe('./assets/images/beta-icon.png');
@@ -132,10 +133,10 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
   it('injects the iOS build number from IOS_BUILD_NUMBER, as a string', () => {
     clean();
     process.env.IOS_BUILD_NUMBER = '42';
-    process.env.APP_VERSION_NAME = '2026.10.04';
+    process.env.APP_VERSION_NAME = '1.0.0';
     const c = appConfig({ config: base() });
     expect(c.ios.buildNumber).toBe('42');
-    expect(c.version).toBe('2026.10.04');
+    expect(c.version).toBe('1.0.0');
     // The iOS counter does not leak into Android's.
     expect(c.android.versionCode).toBeUndefined();
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
@@ -144,11 +145,35 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
   it('keeps injecting Android versionCode and versionName as before', () => {
     clean();
     process.env.ANDROID_VERSION_CODE = '61';
-    process.env.APP_VERSION_NAME = '2026.10.03';
+    process.env.APP_VERSION_NAME = '1.0.1';
     const c = appConfig({ config: base() });
     expect(c.android.versionCode).toBe(61);
-    expect(c.version).toBe('2026.10.03');
+    expect(c.version).toBe('1.0.1');
     expect(c.ios.buildNumber).toBeUndefined();
+  });
+
+  // #108 ruling 42: this is v1. The marketing version is semantic, the same on
+  // both stores; the build numbers (versionCode, CFBundleVersion) stay the run
+  // number and are tested above.
+  it('is version 1.0.0 in app.json, which a local prebuild uses unchanged', () => {
+    clean();
+    expect(base().version).toBe('1.0.0');
+    expect(appConfig({ config: base() }).version).toBe('1.0.0');
+  });
+
+  it.each(['2026.10.06', '1.0', 'v1.0.0', '01.0.0', '1.0.0-beta'])('refuses APP_VERSION_NAME=%s', (bad) => {
+    clean();
+    process.env.APP_VERSION_NAME = bad;
+    expect(() => appConfig({ config: base() })).toThrow(/APP_VERSION_NAME/);
+  });
+
+  // #108 AC B1: no "Missing Compliance" hold at TestFlight. Set from the
+  // config in both variants, never patched by hand; check_ios_app.py asserts
+  // it on the built Info.plist.
+  it.each([undefined, 'beta'])('declares no non-exempt encryption (variant %s)', (variant) => {
+    clean();
+    if (variant) process.env.APP_VARIANT = variant;
+    expect(appConfig({ config: base() }).ios.infoPlist.ITSAppUsesNonExemptEncryption).toBe(false);
   });
 
   it.each(['0', '-1', '1.5', 'abc'])('refuses IOS_BUILD_NUMBER=%s', (bad) => {

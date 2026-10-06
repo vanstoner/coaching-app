@@ -174,3 +174,11 @@ analysis, iOS". Entries are added as each release ships.
   Parts now add up to the total beside them (#142): a keeper's 38 in goal and
   12 outfield beside 50, where it read 38 and 13. On an iPad the app runs
   portrait and full screen, in a centred column; phones are unchanged.
+- **6 October — version 1: Heart FC Coach (#108).** Rob's rulings 40–42 and Q1,
+  before the first real match. The app is "Heart FC Coach" under its icon, the
+  beta and the demo "Heart FC Beta", on Android and iPhone, and the releases
+  are titled the same. The Android ids became `com.vanstoner.coachingapp(.beta)`
+  to match iOS, so 1.0.0 installs fresh beside the old "Coaching App". The
+  version is 1.0.0, tagged `v1.0.0-build.N`, replacing the commit date; build
+  numbers stay the CI run number. iOS builds declare no non-exempt encryption,
+  ready for TestFlight.

@@ -26,7 +26,7 @@ describe('the Test kit shows in betas and development builds (#134)', () => {
 
   it('AC2: a release build with a non-PR label never shows it', () => {
     expect(showTestKit(ciLabel('push'), false, 'app')).toBe(false);
-    expect(showTestKit('v2026.10.04-build.81', false, 'app')).toBe(false);
+    expect(showTestKit('v1.0.0-build.81', false, 'app')).toBe(false);
     expect(showTestKit('2026.10.05 · local dev', false, 'app')).toBe(false);
   });
 
@@ -52,13 +52,13 @@ describe('the demo shows the Test kit (#146)', () => {
 });
 
 describe('the Test kit is beta only (#95 AC1)', () => {
-  it('shows in a pull-request build (Coaching Beta), from the label CI really writes', () => {
+  it('shows in a pull-request build (Heart FC Beta), from the label CI really writes', () => {
     expect(isBetaBuild(ciLabel('pull_request', '97'))).toBe(true);
   });
 
-  it('never shows in a build of main (Coaching App), or a local run', () => {
+  it('never shows in a build of main (Heart FC Coach), or a local run', () => {
     expect(isBetaBuild(ciLabel('push'))).toBe(false);
-    expect(isBetaBuild('v2026.10.04-build.81')).toBe(false);
+    expect(isBetaBuild('v1.0.0-build.81')).toBe(false);
     expect(isBetaBuild('2026.09.19 · local dev')).toBe(false);
   });
 });

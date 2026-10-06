@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'The main build to promote, e.g. v2026.10.03-build.64'
+        description: 'The main build to promote, e.g. v1.0.0-build.64'
         required: true
         type: string
       title:
@@ -49,7 +49,7 @@ jobs:
           why() { echo "WHY THIS JOB FAILED: $*"; exit 1; }
           case "$TAG" in
             v*-build.*) ;;
-            *) why "'$TAG' is not a main build tag (expected v<date>-build.<n>)" ;;
+            *) why "'$TAG' is not a main build tag (expected v<version>-build.<n>, e.g. v1.0.0-build.64)" ;;
           esac
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,assets \
             > /tmp/release.json 2>/tmp/err.txt || why "no release with tag '$TAG': $(cat /tmp/err.txt)"

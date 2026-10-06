@@ -1,5 +1,5 @@
 /**
- * A past season for the Test kit — Coaching Beta only (#106).
+ * A past season for the Test kit — Heart FC Beta only (#106).
  *
  * > *"would like more historical data in the beta so I can see averages"* — PO
  *

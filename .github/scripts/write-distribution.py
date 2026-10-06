@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Write which distribution a build is into the bundle, and prove it took — #146.
 
-ADR-017 §5: the app cannot tell Coaching Beta from Coaching App by itself, so
+ADR-017 §5: the app cannot tell Heart FC Beta from Heart FC Coach by itself, so
 CI writes the distribution into a checked-in module before bundling, exactly
 as it writes the build label (#52, write-build-label.py):
 
-    beta   a pull request's Coaching Beta (the same condition as APP_VARIANT)
-    demo   the demo workflow's Coaching Beta (demo.yml), which seeds the
+    beta   a pull request's Heart FC Beta (the same condition as APP_VARIANT)
+    demo   the demo workflow's Heart FC Beta (demo.yml), which seeds the
            Test kit squad and season on first open (#146 AC4)
     app    everything else: main, and any other dispatch of android-apk.yml
 
@@ -52,9 +52,9 @@ def marker(dist):
 
 # Which identity (APP_VARIANT, app.config.js) each distribution may be built
 # with. The app cannot check its own application id, so `demo` written into
-# Coaching App would show the Test kit and seed made-up children into the
-# real app. `beta` likewise only in Coaching Beta, and `app` only in Coaching
-# App. The APK's identity is then read back from the artifact (check_identity).
+# Heart FC Coach would show the Test kit and seed made-up children into the
+# real app. `beta` likewise only in Heart FC Beta, and `app` only in Heart FC
+# Coach. The APK's identity is then read back from the artifact (check_identity).
 IDENTITY = {"app": "", "beta": "beta", "demo": "beta"}
 
 

@@ -10,11 +10,11 @@ name: iOS
 # ruled bundle id (main vs beta) and ADR-011's backup exclusion key.
 #
 # What it does NOT prove: that the app launches or renders on a simulator, or
-# anything about signing, provisioning or TestFlight. Signing is off because
-# there is no Apple Developer enrolment yet; delivery is a separate issue.
+# anything about signing, provisioning or TestFlight. Signing is off here:
+# the signed TestFlight upload is its own workflow (#108 A), not this one.
 #
 # #128 AC5: the built .app is zipped and attached to the matching release
-# (Coaching App on main, Coaching Beta on a PR) by the `attach` job, so it can
+# (Heart FC Coach on main, Heart FC Beta on a PR) by the `attach` job, so it can
 # be run in the iPhone simulator on a Mac (README, "Run it on a Mac").
 
 on:
@@ -40,17 +40,17 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 75
     env:
-      # #79/#107: a PR build is Coaching Beta (com.vanstoner.coachingapp.beta);
-      # main is Coaching App (com.vanstoner.coachingapp). Job level, so the
+      # #79/#107: a PR build is Heart FC Beta (com.vanstoner.coachingapp.beta);
+      # main is Heart FC Coach (com.vanstoner.coachingapp). Job level, so the
       # prebuild and the assertion agree.
       APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
       # CFBundleVersion — this workflow's run number, read by app.config.js.
       IOS_BUILD_NUMBER: ${{ github.run_number }}
       # The build label says "(pr N)" on a PR build, which is what shows the
-      # Test kit in Coaching Beta (#95). Without it the label read "(pr ?)".
+      # Test kit in the beta (#95). Without it the label read "(pr ?)".
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      # #146, ADR-017 §5: the simulator build is Coaching Beta or Coaching
-      # App, so it carries the same distribution as the Android build of the
+      # #146, ADR-017 §5: the simulator build is the beta or the release,
+      # so it carries the same distribution as the Android build of the
       # same event. Never demo: the demo is Android only.
       DISTRIBUTION: ${{ github.event_name == 'pull_request' && 'beta' || 'app' }}
     steps:
@@ -71,7 +71,8 @@ jobs:
         run: npm ci
 
       # Same computation as the Android job, so CFBundleShortVersionString is
-      # the build commit's date, never app.json's stale value.
+      # app.json's marketing version (1.0.0, #108 ruling 42), the same as the
+      # APK's versionName. Asserted on the built Info.plist below.
       - name: Compute the version
         run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
 
@@ -112,8 +113,9 @@ jobs:
         run: pod install
 
       # Names are DERIVED from what prebuild generated, never hardcoded: the
-      # project is named after the display name (CoachingApp on main,
-      # CoachingBeta on a PR — seen in a local prebuild, 2026-10-04).
+      # project is named after the display name, non-alphanumerics dropped
+      # (HeartFCCoach on main, HeartFCBeta on a PR — #108; before it
+      # CoachingApp and CoachingBeta, seen in a local prebuild, 2026-10-04).
       - name: Build for the simulator, signing off
         run: |
           set -euo pipefail
@@ -157,7 +159,7 @@ jobs:
           fi
           grep -E '\*\* BUILD SUCCEEDED' /tmp/xcodebuild.log
 
-      - name: Assert the .app's identity, version and backup exclusion
+      - name: Assert the .app's identity, version, backup and encryption keys
         run: |
           set -uo pipefail
           fail=0
@@ -170,13 +172,13 @@ jobs:
           fi
           echo "app: $APP ($(du -sh "$APP" | cut -f1))"
 
-          echo "::group::#107 — bundle id, name, build number and ADR-011 key"
+          echo "::group::#107/#108 — bundle id, name, build number, version, ADR-011 key, encryption flag"
           # To a file, then printed: the specific ASSERTION lines are repeated
           # in the WHY block so the last forty lines say exactly what was wrong.
           # `|| check=$?`, not a bare call then `$?`: Actions runs this under
           # `bash -e`, which would end the step before the WHY block printed.
           check=0
-          python3 .github/scripts/check_ios_app.py "$APP/Info.plist" "$APP_VARIANT" "$IOS_BUILD_NUMBER" \
+          python3 .github/scripts/check_ios_app.py "$APP/Info.plist" "$APP_VARIANT" "$IOS_BUILD_NUMBER" "$VERSION" \
             > /tmp/ios-check.txt 2>&1 || check=$?
           cat /tmp/ios-check.txt
           if [ "$check" != "0" ]; then

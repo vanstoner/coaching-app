@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Assert android:allowBackup in the built APK matches the variant — #112.
 
-PO ruling "backup b": Coaching App is backed up by the phone's own backup, so
-a lost phone keeps the season; Coaching Beta is not, so test data never
+PO ruling "backup b": Heart FC Coach is backed up by the phone's own backup, so
+a lost phone keeps the season; Heart FC Beta is not, so test data never
 reaches a coach's cloud (ADR-011 amendment). Read from the ARTIFACT with
 `aapt2 dump xmltree --file AndroidManifest.xml`, not from config, because the
 APK is what reaches the phone.
@@ -62,7 +62,7 @@ def manifest_with(value):
         "N: android=http://schemas.android.com/apk/res/android (line=2)",
         "  E: manifest (line=2)",
         "      E: application (line=15)",
-        '        A: http://schemas.android.com/apk/res/android:name(0x01010003)="com.example.coachingapp.MainApplication"',
+        '        A: http://schemas.android.com/apk/res/android:name(0x01010003)="com.vanstoner.coachingapp.MainApplication"',
     ]
     if value is not None:
         lines.append(ATTR + value)
@@ -73,19 +73,19 @@ def manifest_with(value):
 def self_test():
     cases = [
         # (description, manifest dump, variant, should pass)
-        ("Coaching App, allowBackup=true, healthy", manifest_with("=true"), "", True),
-        ("Coaching Beta, allowBackup=false, healthy", manifest_with("=false"), "beta", True),
-        ("Coaching App, older build-tools true, healthy", manifest_with("=(type 0x12)0xffffffff"), "", True),
-        ("Coaching Beta, older build-tools false, healthy", manifest_with("=(type 0x12)0x0"), "beta", True),
-        ("Coaching App with backup off", manifest_with("=false"), "", False),
-        ("Coaching App with backup off, older build-tools", manifest_with("=(type 0x12)0x0"), "", False),
-        ("Coaching Beta with backup on", manifest_with("=true"), "beta", False),
-        ("Coaching Beta with backup on, older build-tools", manifest_with("=(type 0x12)0xffffffff"), "beta", False),
-        ("Coaching App, attribute missing", manifest_with(None), "", False),
-        ("Coaching Beta, attribute missing", manifest_with(None), "beta", False),
-        ("Coaching App, unreadable dump", "", "", False),
-        ("Coaching Beta, unreadable dump", "", "beta", False),
-        ("Coaching App, value unparseable", manifest_with("=@0x7f040001"), "", False),
+        ("Heart FC Coach, allowBackup=true, healthy", manifest_with("=true"), "", True),
+        ("Heart FC Beta, allowBackup=false, healthy", manifest_with("=false"), "beta", True),
+        ("Heart FC Coach, older build-tools true, healthy", manifest_with("=(type 0x12)0xffffffff"), "", True),
+        ("Heart FC Beta, older build-tools false, healthy", manifest_with("=(type 0x12)0x0"), "beta", True),
+        ("Heart FC Coach with backup off", manifest_with("=false"), "", False),
+        ("Heart FC Coach with backup off, older build-tools", manifest_with("=(type 0x12)0x0"), "", False),
+        ("Heart FC Beta with backup on", manifest_with("=true"), "beta", False),
+        ("Heart FC Beta with backup on, older build-tools", manifest_with("=(type 0x12)0xffffffff"), "beta", False),
+        ("Heart FC Coach, attribute missing", manifest_with(None), "", False),
+        ("Heart FC Beta, attribute missing", manifest_with(None), "beta", False),
+        ("Heart FC Coach, unreadable dump", "", "", False),
+        ("Heart FC Beta, unreadable dump", "", "beta", False),
+        ("Heart FC Coach, value unparseable", manifest_with("=@0x7f040001"), "", False),
     ]
     failed = 0
     for name, manifest, variant, should_pass in cases:

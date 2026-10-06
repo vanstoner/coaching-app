@@ -34,7 +34,7 @@ describe('the distribution CI writes (ADR-017 §5, #146 AC6)', () => {
     expect(parseDistribution(undefined as unknown as string)).toBe('app');
   });
 
-  it('is checked in as app, so a missed write is Coaching App', () => {
+  it('is checked in as app, so a missed write is Heart FC Coach', () => {
     // As buildLabel.test.ts holds the label empty: committed with anything
     // else, every local run and any build CI failed to write would claim it.
     expect(GENERATED_DISTRIBUTION).toBe('distribution:app');

@@ -2,7 +2,8 @@
 """Write the top of a release or beta page: which PR, which issues, what changed — #128.
 
 Rob, 4 October: "I see build 100, no beta and no idea what PR it contains".
-Every Coaching App and Coaching Beta page now opens with:
+Every Heart FC Coach and Heart FC Beta page (#108 Q1; "Coaching App" and
+"Coaching Beta" before v1) now opens with:
 
     Build N contains PR #M (linked)
     the issues that PR closes, with their titles
@@ -22,16 +23,17 @@ Lookups go through `gh api` with the job's GITHUB_TOKEN. Any lookup that fails
 DEGRADES: the page still publishes and says what could not be found. A notes
 step must never be the reason an APK is not released.
 
-    release_notes.py main SHA BUILD_NUMBER     # Coaching App, after a squash merge
+    release_notes.py main SHA BUILD_NUMBER     # Heart FC Coach, after a squash merge
     release_notes.py beta PR_NUMBER BUILD_NUMBER
     release_notes.py demo SHA BUILD_LABEL DATE # #146: the whole demo page
     release_notes.py --self-test
 
 #146 AC5, the demo page (`demo`): what it is (made-up data only), "Refreshed
-from build N on DATE", how to install it, and that it never touches Coaching
-App. Build N is the Coaching App release built from the same commit, found
+from build N on DATE", how to install it, and that it never touches Heart FC
+Coach. Build N is the Heart FC Coach release built from the same commit, found
 the way ios.yml's attach job finds it (a full `v*` release targeting that
-commit). The only listing of releases here, and it reads, never writes. With
+commit; by tag and commit, never by title, so old- and new-titled releases are
+both found). The only listing of releases here, and it reads, never writes. With
 none (main's build still running, or red), the page names the commit instead.
 
 Prints markdown on stdout; warnings on stderr. Exit 0 unless the arguments are
@@ -44,7 +46,13 @@ import re
 import subprocess
 import sys
 
-IPHONE_STATUS = "iPhone: waiting on Apple enrolment (#108)"
+# #108: Apple enrolment is complete; the TestFlight upload (#108 A) is not built.
+IPHONE_STATUS = "iPhone: coming through TestFlight (#108); no upload yet"
+# #108 G: the demo's iPhone counterpart is the TestFlight beta, which comes later.
+DEMO_IPHONE = "iPhone: there is no iPhone build of the demo yet (#108 G)."
+# #108 Q1: the GitHub release titles follow the home-screen names (ruling 40).
+APP_NAME = "Heart FC Coach"
+BETA_NAME = "Heart FC Beta"
 SIMULATOR_LINE = ("Mac: an iPhone-simulator build (`.zip`) is attached below by the iOS workflow "
                   "when its build finishes; see \"Run it on a Mac\" in the README.")
 CLOSES = re.compile(r"^\s*(?:closes|fixes|resolves)\s+#(\d+)\b", re.I | re.M)
@@ -210,10 +218,10 @@ def build_notes(kind, ref, build, repo, fetch=gh_json):
 # The demo page — #146 AC5. check_release.py --demo reads these phrases back.
 # ---------------------------------------------------------------------------
 
-DEMO_TITLE = "Coaching Beta — demo"
+DEMO_TITLE = f"{BETA_NAME} — demo"
 DEMO_APK = "coaching-beta-demo.apk"
 DEMO_MADE_UP = "Made-up data only."
-DEMO_NEVER_TOUCHES = "never touches Coaching App"
+DEMO_NEVER_TOUCHES = f"never touches {APP_NAME}"
 INSTALL_NOTE = ("Download the `.apk` below on an Android phone and open it.\n"
                 "Allow installation from this source when prompted — it is signed\n"
                 "with the Android debug key, not a Play Store key.")
@@ -242,10 +250,10 @@ def demo_notes(sha, label, date, repo, fetch=gh_json):
     if found:
         n, url = found
         source = f"Refreshed from build {n} on {date}"
-        detail = f"the code of [Coaching App build {n}]({url}), with the test season loaded on first open."
+        detail = f"the code of [{APP_NAME} build {n}]({url}), with the test season loaded on first open."
     else:
         source = f"Refreshed from main at `{sha[:7]}` on {date}"
-        detail = ("main's code at that commit, which had no Coaching App release when this "
+        detail = (f"main's code at that commit, which had no {APP_NAME} release when this "
                   "demo was refreshed, with the test season loaded on first open.")
     return "\n".join([
         f"## {DEMO_TITLE}",
@@ -262,15 +270,16 @@ def demo_notes(sha, label, date, repo, fetch=gh_json):
         "",
         INSTALL_NOTE,
         "",
-        f"It installs as **Coaching Beta** (the orange icon), next to Coaching App: it {DEMO_NEVER_TOUCHES}",
-        "or its data. It loads the test season only into an empty Coaching Beta. If",
-        "Coaching Beta is already on the phone, uninstall it first: Android will not",
-        "put an older build over a newer one, and a Coaching Beta with data keeps it.",
-        "Coaching Beta holds made-up test data only and has no backup.",
+        f"It installs as **{BETA_NAME}** (the orange icon), next to {APP_NAME}: it {DEMO_NEVER_TOUCHES}",
+        f"or its data. It loads the test season only into an empty {BETA_NAME}. If",
+        f"{BETA_NAME} is already on the phone, uninstall it first: Android will not",
+        f"put an older build over a newer one, and a {BETA_NAME} with data keeps it.",
+        f"{BETA_NAME} holds made-up test data only and has no backup. A demo installed",
+        "before v1 (#108) is a different app with the old name: uninstall it too.",
         "",
         f"On the phone, the label at the foot of the first screen reads `{label}`.",
         "",
-        f"**{IPHONE_STATUS}** There is no iPhone or simulator build of the demo.",
+        f"**{DEMO_IPHONE}** Nor is there a simulator build of it.",
     ])
 
 
@@ -393,8 +402,8 @@ def self_test():
 
     # #146 AC5: the demo page. Healthy first: main's release exists.
     sha = "abc1234def5678"
-    rel = {"tag_name": "v2026.10.06-build.153", "target_commitish": sha, "prerelease": False,
-           "draft": False, "html_url": f"https://github.com/{repo}/releases/tag/v2026.10.06-build.153"}
+    rel = {"tag_name": "v1.0.0-build.153", "target_commitish": sha, "prerelease": False,
+           "draft": False, "html_url": f"https://github.com/{repo}/releases/tag/v1.0.0-build.153"}
 
     def releases(*items, fail=False):
         def fetch(path):
@@ -403,14 +412,21 @@ def self_test():
             return list(items)
         return fetch
 
-    other = dict(rel, target_commitish="0000000", tag_name="v2026.10.05-build.150")
+    other = dict(rel, target_commitish="0000000", tag_name="v1.0.0-build.150")
+    # #108: a release from before v1, date-tagged, at the commit: still build N.
+    dated = dict(rel, tag_name="v2026.10.06-build.153",
+                 html_url=f"https://github.com/{repo}/releases/tag/v2026.10.06-build.153")
     demo_cases = [
-        ("healthy demo: names build N, made-up data, install note, never touches Coaching App",
+        ("healthy demo: names build N, made-up data, install note, never touches Heart FC Coach",
          releases(other, rel),
-         both(has("## Coaching Beta — demo", DEMO_MADE_UP, "Refreshed from build 153 on 6 October 2026",
-                  "[Coaching App build 153](https://github.com/vanstoner/coaching-app/releases/tag/v2026.10.06-build.153)",
-                  INSTALL_NOTE, DEMO_NEVER_TOUCHES, "`demo (2026.10.06, build 160)`", IPHONE_STATUS),
-              lambda md: REFRESHED.search(md) is not None)),
+         both(has("## Heart FC Beta — demo", DEMO_MADE_UP, "Refreshed from build 153 on 6 October 2026",
+                  "[Heart FC Coach build 153](https://github.com/vanstoner/coaching-app/releases/tag/v1.0.0-build.153)",
+                  INSTALL_NOTE, DEMO_NEVER_TOUCHES, "`demo (1.0.0, build 160)`", DEMO_IPHONE,
+                  "It installs as **Heart FC Beta**"),
+              both(lacks("waiting on Apple enrolment", "installs as **Coaching Beta**", "Coaching App"),
+                   lambda md: REFRESHED.search(md) is not None))),
+        ("healthy demo (switch): the build at the commit is an old date-tagged release",
+         releases(dated), has("Refreshed from build 153 on 6 October 2026", "releases/tag/v2026.10.06-build.153")),
         ("degraded demo: no release at the commit yet -> names the commit",
          releases(other),
          both(has("Refreshed from main at `abc1234` on 6 October 2026", DEMO_MADE_UP, INSTALL_NOTE),
@@ -424,7 +440,7 @@ def self_test():
          releases(dict(rel, tag_name="demo", prerelease=True)), lacks("build 153", "Refreshed from build")),
     ]
     for name, fetch, ok in demo_cases:
-        md = demo_notes(sha, "demo (2026.10.06, build 160)", "6 October 2026", repo, fetch=fetch)
+        md = demo_notes(sha, "demo (1.0.0, build 160)", "6 October 2026", repo, fetch=fetch)
         good = ok(md)
         failed += not good
         print(f"  {'ok' if good else 'x '} {name}")

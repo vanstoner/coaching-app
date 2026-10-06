@@ -5,7 +5,7 @@ title: "Match report YYYY-MM-DD: "
 labels: requirement, ux
 ---
 
-**Build:** <!-- the build label shown on the Home screen, e.g. v2026.10.03-build.60 -->
+**Build:** <!-- the build label shown on the Home screen, e.g. v1.0.0-build.160 -->
 
 <!--
 NO CHILDREN'S NAMES. The repository is public (invariant 4).

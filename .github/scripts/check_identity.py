@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Assert the built APK's identity matches the build it came from — #79.
 
-A pull-request build is Coaching Beta (`com.example.coachingapp.beta`) so it
-installs next to the released app; a build of main is Coaching App
-(`com.example.coachingapp`), unchanged. Read from the ARTIFACT with
-`aapt2 dump badging`, not from config, because the APK is what reaches the
-phone.
+A pull-request build (and the demo) is "Heart FC Beta"
+(`com.vanstoner.coachingapp.beta`) so it installs next to the released app; a
+build of main is "Heart FC Coach" (`com.vanstoner.coachingapp`). Read from the
+ARTIFACT with `aapt2 dump badging`, not from config, because the APK is what
+reaches the phone: the application label is the name under the icon.
+
+#108 ruling 41 renamed the package from `com.example.coachingapp(.beta)` to
+match iOS; ruling 40 (revised) set the home-screen names (AC F1).
 
     check_identity.py BADGING_FILE VARIANT   # VARIANT is 'beta' or ''
     check_identity.py --self-test
@@ -18,10 +21,13 @@ gates rejecting a correct artifact.
 import re
 import sys
 
-BASE_ID = "com.example.coachingapp"
-BASE_LABEL = "Coaching App"
+BASE_ID = "com.vanstoner.coachingapp"
+BASE_LABEL = "Heart FC Coach"
 BETA_ID = BASE_ID + ".beta"
-BETA_LABEL = "Coaching Beta"
+BETA_LABEL = "Heart FC Beta"
+# The identity before #108. A build carrying it is the wrong app, never a pass.
+OLD_BASE_ID, OLD_BASE_LABEL = "com.example.coachingapp", "Coaching App"
+OLD_BETA_ID, OLD_BETA_LABEL = OLD_BASE_ID + ".beta", "Coaching Beta"
 
 
 def expected(variant):
@@ -53,7 +59,7 @@ def check(badging, variant):
 def badging_of(app_id, label):
     # The shape build-tools 37 prints, trimmed to the lines that matter.
     return (
-        f"package: name='{app_id}' versionCode='61' versionName='2026.10.03'\n"
+        f"package: name='{app_id}' versionCode='61' versionName='1.0.0'\n"
         "minSdkVersion:'24'\n"
         f"application-label:'{label}'\n"
         f"application: label='{label}' icon='res/mipmap-mdpi-v4/ic_launcher.webp'\n"
@@ -68,6 +74,12 @@ def self_test():
         ("main build carrying the beta id", badging_of(BETA_ID, BETA_LABEL), "", False),
         ("beta build that kept the main id", badging_of(BASE_ID, BASE_LABEL), "beta", False),
         ("beta id with the main label", badging_of(BETA_ID, BASE_LABEL), "beta", False),
+        ("main id with the beta label", badging_of(BASE_ID, BETA_LABEL), "", False),
+        ("#108: main build still on the old package", badging_of(OLD_BASE_ID, BASE_LABEL), "", False),
+        ("#108: beta build still on the old package", badging_of(OLD_BETA_ID, BETA_LABEL), "beta", False),
+        ("#108: main build still named Coaching App", badging_of(BASE_ID, OLD_BASE_LABEL), "", False),
+        ("#108: beta build still named Coaching Beta", badging_of(BETA_ID, OLD_BETA_LABEL), "beta", False),
+        ("a shortened label is not the label", badging_of(BASE_ID, "Heart FC Co"), "", False),
         ("unreadable badging", "", "", False),
     ]
     failed = 0

@@ -6,8 +6,8 @@
  * generated-build-label.ts): `beta` for a pull request's build, `app` for a
  * build of main, `demo` for the demo workflow's build.
  *
- * Checked in as `app` on purpose. A missed or garbled write reads as Coaching
- * App, which only ever removes features (the Test kit, the demo's seed).
+ * Checked in as `app` on purpose. A missed or garbled write reads as Heart FC
+ * Coach, which only ever removes features (the Test kit, the demo's seed).
  *
  * The full marker is written here and nowhere else in the app, so CI can
  * assert the value it wrote is in the bundle and know it came from this line.

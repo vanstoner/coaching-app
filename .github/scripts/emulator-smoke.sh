@@ -11,7 +11,7 @@
 #   3. the expected text is on screen       (OCR finds it)
 #
 # and a fourth, PO ruling 29 (#145): it opens Settings, which must show every
-# beta-only feature on a pull request's Coaching Beta and none on a build of
+# beta-only feature on a pull request's Heart FC Beta and none on a build of
 # main (check_beta_only.py holds the list and the verdict).
 #
 # ---------------------------------------------------------------------------
@@ -347,7 +347,7 @@ SET_OUT="$OUT/settings-assertions.txt"
 mkdir -p "$SDIR"
 : > "$SET_OUT"
 snote() { echo "ASSERTION FAILED (#145): $*" >> "$SET_OUT"; fail=1; }
-# The demo (#146) is Coaching Beta too: the beta package, judged as a beta.
+# The demo (#146) is Heart FC Beta too: the beta package, judged as a beta.
 case "$VARIANT:$PKG" in
   beta:*.beta | demo:*.beta) ;;
   beta:* | demo:* | :*.beta) snote "SMOKE_VARIANT='$VARIANT' does not match SMOKE_PACKAGE=$PKG" ;;

@@ -22,23 +22,23 @@
 
 set -euo pipefail
 
-# The version is the DATE THIS BUILD'S COMMIT WAS MADE, not a number someone
-# remembers to bump.
+# The version is app.json's `expo.version` — #108 ruling 42: this is v1, and
+# the marketing version is semantic (1.0.0) on both stores and the releases
+# page. It replaces the build commit's date (#62), which existed because a
+# hand-kept version nobody bumped was worse than none. The difference now: the
+# version is a decision Rob makes per release, and the number that must only
+# ever go up is the build number (the run number, `-build.N` below, versionCode
+# and CFBundleVersion), which is still derived and cannot go stale.
 #
-# app.json carried "2026.09.18-4" as the version of record (D2, #47). Nobody
-# bumped it, so every build for two days claimed to be the 18th — including
-# build 42, cut on the 19th. A version of record that nobody maintains is not
-# a record, it is a lie with a process attached.
-#
-# The commit date is the one thing that is always true about a build and can
-# never go stale. Paired with the run number in the tag it is unique,
-# monotonic and needs no upkeep. Falls back to today for a local run outside
-# a git checkout.
-VERSION="$(git show -s --format=%cd --date=format-local:%Y.%m.%d HEAD 2>/dev/null || true)"
-if [ -z "$VERSION" ]; then
-  VERSION="$(date -u +%Y.%m.%d)"
+# Read from the file next to this script, not the working directory, so a run
+# from anywhere reads the same app.json. A version that is not MAJOR.MINOR.PATCH
+# fails here, in seconds, rather than as a store rejection.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["expo"]["version"])' "$ROOT/app.json" 2>/dev/null || true)"
+if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+  echo "app.json expo.version is '${VERSION}', not MAJOR.MINOR.PATCH (#108 ruling 42)" >&2
+  exit 1
 fi
-export TZ=UTC
 
 EVENT="${GITHUB_EVENT_NAME:-}"
 REF_TYPE="${GITHUB_REF_TYPE:-}"
@@ -57,9 +57,10 @@ elif [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
   # A tag push publishes under that exact tag. The release job refuses to
   # publish if it disagrees with app.json, so it is checked here too rather
   # than discovered eight minutes later after a Gradle build.
+  # With 1.0.0 that tag is exactly `v1.0.0`.
   TAG="$REF_NAME"
   if [ "$TAG" != "v$VERSION" ]; then
-    echo "tag $TAG does not match this commit's date $VERSION" >&2
+    echo "tag $TAG does not match app.json's version: expected v$VERSION" >&2
     exit 1
   fi
   LABEL="$TAG"

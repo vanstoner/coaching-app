@@ -1,7 +1,7 @@
 /**
  * The demo's first open — #146 AC4, AC6.
  *
- * The demo is Coaching Beta built from main by a manual run, to share with
+ * The demo is Heart FC Beta built from main by a manual run, to share with
  * made-up data in it (PO ruling 31). On first open with nothing on the phone
  * it adds the Test kit's squad and past season, through the buttons' own
  * calls in the order they sit in Settings (`addTestData`, then

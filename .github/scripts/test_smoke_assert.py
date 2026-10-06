@@ -236,12 +236,14 @@ def main() -> int:
             "Unable to load script. Make sure you are running Metro",
             "12:34 100% 5G",
             "unfortunately coaching app has stopped",
+            "unfortunately heart fc coach has stopped",
             "aslkdjf qwpeori zxcvmn 1029384756 ~~~ ,,, ;;;",
             "e x a m",
             "sample fee",
             "exemplify",
             "com.example.coachingapp",         # a crash dialog, not a rendered screen
             "com.example.coachingapp keeps stopping",
+            "com.vanstoner.coachingapp keeps stopping",   # the package since #108
             "Texample FCx",                    # the needle buried inside a token
             "theexamplefcorp",
         ):
