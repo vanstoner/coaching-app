@@ -664,3 +664,72 @@ describe('match events (#84)', () => {
     expect(third.matches[0].events).toHaveLength(1);
   });
 });
+
+describe('the running period’s planned subs (#139 AC1)', () => {
+  /** Q1 kicked off, P7 planned at 6:15, five minutes played. */
+  function kickedOff() {
+    const x = setUp();
+    x.engine.startQuarter(
+      x.state,
+      x.state.quarters[0],
+      teamSheetFor(x.players.slice(0, 7).map((p) => p.id), x.players[0].id, x.format),
+      x.format
+    );
+    x.clock.advance(5 * 60_000);
+    const periodSubs = {
+      quarterId: x.state.quarters[0].id,
+      subs: [{ playerId: x.players[7].id, atMs: 375_000, forPlayerId: null }],
+    };
+    return { x, periodSubs };
+  }
+
+  it('are saved with the match and come back after a relaunch, with no schema bump', async () => {
+    const { x, periodSubs } = kickedOff();
+    const store = createMemoryStore();
+    await saveSession(store, sessionOf(x, { periodSubs }));
+    const back = (await loadSession(store))!;
+    expect(back.matches[0].periodSubs).toEqual(periodSubs);
+    // Optional, as `archived` was: still v6, so every v6 build reads it.
+    expect(back.schemaVersion).toBe(6);
+    expect(back.minReaderVersion).toBe(6);
+  });
+
+  it('are an intention, never a record: no minute changes with them (invariant 1)', () => {
+    const { x, periodSubs } = kickedOff();
+    const without = parseSession(JSON.stringify(toSavedSession(sessionOf(x))))!;
+    const withSubs = parseSession(JSON.stringify(toSavedSession(sessionOf(x, { periodSubs }))))!;
+    expect(foldPlayerMinutes(x.engine, toMatchState(withSubs)!, x.players)).toEqual(
+      foldPlayerMinutes(x.engine, toMatchState(without)!, x.players)
+    );
+  });
+
+  it('are kept by a save that does not name them, and cleared by one that says no period runs', () => {
+    const { x, periodSubs } = kickedOff();
+    const first = toSavedSession(sessionOf(x, { periodSubs }));
+    const kept = toSavedSession(sessionOf(x, { matches: first.matches }));
+    expect(kept.matches[0].periodSubs).toEqual(periodSubs);
+    const cleared = toSavedSession(sessionOf(x, { matches: first.matches, periodSubs: null }));
+    expect(cleared.matches[0].periodSubs).toBeUndefined();
+    expect(JSON.stringify(cleared)).not.toContain('periodSubs');
+  });
+
+  it('are dropped when malformed, and the match they were on is kept', () => {
+    const { x, periodSubs } = kickedOff();
+    const saved = toSavedSession(sessionOf(x, { periodSubs }));
+    const sub = periodSubs.subs[0];
+    for (const rubbish of [
+      'soon',
+      { quarterId: 7, subs: [] },
+      { quarterId: periodSubs.quarterId, subs: 'all of them' },
+      { quarterId: periodSubs.quarterId, subs: [null] },
+      { quarterId: periodSubs.quarterId, subs: [{ ...sub, atMs: 'half time' }] },
+      { quarterId: periodSubs.quarterId, subs: [{ ...sub, forPlayerId: 3 }] },
+    ]) {
+      const tampered = { ...saved, matches: [{ ...saved.matches[0], periodSubs: rubbish }] };
+      const back = parseSession(JSON.stringify(tampered))!;
+      expect(back.matches).toHaveLength(1);
+      expect(back.matches[0].appearances).toHaveLength(7);
+      expect(back.matches[0].periodSubs).toBeUndefined();
+    }
+  });
+});

@@ -19,6 +19,7 @@ import { canDeleteFixture } from './fixtures';
 import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
 import { isActive } from './squad';
+import { restoreSubPlan, type PeriodSubs, type PlannedSub } from './subPlan';
 
 export interface NewMatchInput {
   squadId: UUID;
@@ -106,8 +107,11 @@ export function availabilityForOpening(
 export type OpenOutcome<T extends HeldMatch> =
   /** It IS the live match: go back to it as it is. */
   | { kind: 'already_held'; held: T }
-  /** Hold this, rebuilt from the stored copy. */
-  | { kind: 'open'; held: HeldMatch }
+  /**
+   * Hold this, rebuilt from the stored copy, with the planned subs of its
+   * running period, if one is running (#139).
+   */
+  | { kind: 'open'; held: HeldMatch; subPlan: PlannedSub[] }
   | { kind: 'not_found' };
 
 /**
@@ -140,7 +144,13 @@ export function openMatch<T extends HeldMatch>(
   // The shape THIS match is played in. A v3 save that somehow arrives
   // unmigrated has none, and the squad default is the only honest fallback:
   // it is the format that match was created against.
-  return { kind: 'open', held: { state, format: stored.format ?? defaultFormat } };
+  return {
+    kind: 'open',
+    held: { state, format: stored.format ?? defaultFormat },
+    // A match let go of mid-period and opened again is rebuilt from its save,
+    // as a relaunch is, and gets its reminders back the same way (#139).
+    subPlan: restoreSubPlan(stored.periodSubs, state),
+  };
 }
 
 /**
@@ -155,9 +165,14 @@ export function openMatch<T extends HeldMatch>(
 export function matchesOnRelease(
   matches: SavedMatch[],
   held: HeldMatch | null,
-  next: HeldMatch | null
+  next: HeldMatch | null,
+  /**
+   * The held match's running-period subs (#139), from the app's sub plan.
+   * The list holds them only as last loaded.
+   */
+  periodSubs?: PeriodSubs | null
 ): SavedMatch[] {
-  return held && held !== next ? withLiveMatch(matches, held) : matches;
+  return held && held !== next ? withLiveMatch(matches, held, periodSubs) : matches;
 }
 
 export type DeleteOutcome =

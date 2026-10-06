@@ -51,6 +51,7 @@ import {
 import { inferUnit, unitOfRole } from './positions';
 import type { MatchPlan } from './matchPlan';
 import { readBuzzWhenSubDue } from './settings';
+import type { PeriodSubs } from './subPlan';
 
 /**
  * The shape this build writes.
@@ -278,6 +279,20 @@ export interface SavedMatch {
    * Append-only records. The score is folded from them, never stored.
    */
   events?: MatchEvent[];
+  /**
+   * The planned subs of the period being played (#139): what the coach set
+   * on the lineup screen at kick-off, so a relaunch mid-period brings the
+   * reminders back (`restoreSubPlan`). Intent, never a record: no minute is
+   * folded from it (#72 AC8), and which subs were made is read from the
+   * appearances, never saved. Absent between periods, and in every save
+   * from before it, which resumes with no reminders as it always did.
+   *
+   * Added without a schema bump, as `archived` (#76) was. A v6 build keeps
+   * it on every match it does not rebuild, and drops it only from the match
+   * it is playing, on write-back: an intention lost, never a record. That
+   * is why v5 left `MIN_READER_VERSION` alone for the plan.
+   */
+  periodSubs?: PeriodSubs;
 }
 
 /** Everything worth surviving a relaunch. */
@@ -342,6 +357,13 @@ export interface SessionInput {
    * format it already had — so a save that forgot it cannot erase one.
    */
   matchFormat?: Format | null;
+  /**
+   * The running period's planned subs (#139), from the app's sub plan by
+   * `periodSubsToSave`. Omitted, the stored match keeps what it has, so a
+   * save that does not know them cannot erase them. Null clears them: no
+   * period is running.
+   */
+  periodSubs?: PeriodSubs | null;
   now?: Date;
 }
 
@@ -359,7 +381,12 @@ export function toSavedSession(input: SessionInput): SavedSession {
     periodCount: input.periodCount,
     buzzWhenSubDue: readBuzzWhenSubDue(input.buzzWhenSubDue),
     plan: input.plan,
-    matches: mergeCurrentMatch(input.matches ?? [], input.state, input.matchFormat ?? null),
+    matches: mergeCurrentMatch(
+      input.matches ?? [],
+      input.state,
+      input.matchFormat ?? null,
+      input.periodSubs
+    ),
     currentMatchId: input.state?.match.id ?? null,
   };
 }
@@ -375,10 +402,13 @@ export function toSavedSession(input: SessionInput): SavedSession {
 export function mergeCurrentMatch(
   existing: SavedMatch[],
   state: MatchState | null,
-  matchFormat: Format | null
+  matchFormat: Format | null,
+  /** The running period's planned subs (#139). Omitted: keep what is stored. Null: clear. */
+  periodSubs?: PeriodSubs | null
 ): SavedMatch[] {
   if (!state) return existing;
   const at = existing.findIndex((m) => m.match.id === state.match.id);
+  const storedSubs = at === -1 ? undefined : existing[at].periodSubs;
   const current: SavedMatch = {
     match: state.match,
     // elapsedMs zeroed: see the note at the top. The anchors are
@@ -399,6 +429,9 @@ export function mergeCurrentMatch(
     // Append-only, so the union is always right, and no save — one that
     // carries no list, or a list rebuilt short — can drop an event.
     events: unionEvents(at === -1 ? undefined : existing[at].events, state.events),
+    // Intent, like the plan: a save that does not name the subs keeps them,
+    // so only the app, which knows the period has ended, clears them.
+    periodSubs: periodSubs === undefined ? storedSubs : (periodSubs ?? undefined),
   };
   if (at === -1) return [...existing, current];
   return existing.map((m, i) => (i === at ? current : m));
@@ -538,6 +571,9 @@ function validate(doc: VersionedDocument): SavedSession | null {
       // losing it costs a re-plan, where losing the match loses its record.
       plan: isPlanShaped(m.plan) ? m.plan : undefined,
       events: Array.isArray(m.events) ? m.events : [],
+      // The same for saved subs (#139): dropped, they cost one period's
+      // reminders, which is how a save from before them resumes anyway.
+      periodSubs: isPeriodSubsShaped(m.periodSubs) ? m.periodSubs : undefined,
     })),
     // A currentMatchId naming a match that is not there is dropped rather
     // than trusted: it would send the app to a screen with nothing behind it.
@@ -572,6 +608,21 @@ function isPlanShaped(plan: unknown): plan is MatchPlan {
       (p as { slots?: unknown }).slots !== null &&
       Array.isArray((p as { subs?: unknown }).subs)
   );
+}
+
+function isPeriodSubsShaped(value: unknown): value is PeriodSubs {
+  if (typeof value !== 'object' || value === null) return false;
+  const { quarterId, subs } = value as { quarterId?: unknown; subs?: unknown };
+  if (typeof quarterId !== 'string' || !Array.isArray(subs)) return false;
+  return subs.every((s: unknown) => {
+    if (typeof s !== 'object' || s === null) return false;
+    const { playerId, atMs, forPlayerId } = s as Record<string, unknown>;
+    return (
+      typeof playerId === 'string' &&
+      Number.isFinite(atMs) &&
+      (forPlayerId === null || typeof forPlayerId === 'string')
+    );
+  });
 }
 
 /**

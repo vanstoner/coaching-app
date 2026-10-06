@@ -16,15 +16,23 @@ import type { Format, UUID } from '../types/index';
 import { matchProgress, type MatchProgress, type StartedPeriod } from './fixtures';
 import { scoreOf, type Score } from './matchEvents';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
+import type { PeriodSubs } from './subPlan';
 
 export interface HeldMatch {
   state: MatchState;
   format: Format;
 }
 
-/** The stored list with the live match's latest state in it. */
-export function withLiveMatch(matches: SavedMatch[], live: HeldMatch | null): SavedMatch[] {
-  return live ? mergeCurrentMatch(matches, live.state, live.format) : matches;
+/**
+ * The stored list with the live match's latest state in it. The running
+ * period's planned subs (#139) go in when given; omitted, the stored ones stay.
+ */
+export function withLiveMatch(
+  matches: SavedMatch[],
+  live: HeldMatch | null,
+  periodSubs?: PeriodSubs | null
+): SavedMatch[] {
+  return live ? mergeCurrentMatch(matches, live.state, live.format, periodSubs) : matches;
 }
 
 /** How far each match has got, the live one read from its live state. */

@@ -17,6 +17,7 @@ import { currentQuarter } from './matchClock';
 import { scoreOf } from './matchEvents';
 import { addTestData } from './testKit';
 import { createMemoryStore, loadSession, mergeCurrentMatch, saveSession, type SavedMatch } from './persistence';
+import { markDone, periodSubsToSave, planSubs, setSubTime } from './subPlan';
 import {
   availabilityForOpening,
   deleteMatch,
@@ -273,6 +274,36 @@ describe('letting go of the live match', () => {
     const list = [stored];
     expect(matchesOnRelease(list, null, held)).toBe(list);
     expect(matchesOnRelease(list, held, held)).toBe(list);
+  });
+
+  it('keeps the running period’s subs, so a match opened again mid-period gets its reminders back (#139)', () => {
+    const day = squadDay();
+    const a = day.create({ opponent: 'Rovers' });
+    const b = day.create({ opponent: 'United' });
+    const ids = day.players.map((p) => p.id);
+    const engine = day.kickOff(a.held.state);
+    const periodMs = 12.5 * MIN;
+    let plan = planSubs([ids[7], ids[8]], periodMs);
+    plan = setSubTime(setSubTime(plan, ids[7], 3 * MIN, periodMs), ids[8], 9 * MIN, periodMs);
+    day.advance(4 * MIN);
+    engine.substitute(a.held.state, a.held.state.quarters[0], ids[6], ids[7]);
+    plan = markDone(plan, ids[7]);
+
+    // Mid-period the coach opens another fixture, letting go of this one...
+    const list = matchesOnRelease(
+      [a.stored, b.stored],
+      a.held,
+      b.held,
+      periodSubsToSave(a.held.state.quarters, plan)
+    );
+    const other = openMatch(list, a.held, b.held.state.match.id, day.players, day.format);
+    if (other.kind !== 'open') throw new Error(other.kind);
+    expect(other.subPlan).toEqual([]); // not kicked off: nothing to remind
+
+    // ...and opens it again: rebuilt from the list, the plan as it was.
+    const back = openMatch(list, b.held, a.held.state.match.id, day.players, day.format);
+    if (back.kind !== 'open') throw new Error(back.kind);
+    expect(back.subPlan).toEqual(plan);
   });
 });
 

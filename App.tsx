@@ -39,7 +39,14 @@ import {
   squadReadiness,
 } from './src/app/squad';
 import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
-import { NO_BUZZES, markDone, type BuzzLog, type PlannedSub } from './src/app/subPlan';
+import {
+  NO_BUZZES,
+  markDone,
+  periodSubsToSave,
+  restoreSubPlan,
+  type BuzzLog,
+  type PlannedSub,
+} from './src/app/subPlan';
 import { BUZZ_WHEN_SUB_DUE_DEFAULT } from './src/app/settings';
 import { liveBaseline, planHasContent, type MatchPlan } from './src/app/matchPlan';
 import { foldPlayerMinutes } from './src/app/playerMinutes';
@@ -323,6 +330,9 @@ export default function App() {
         // The shape the live match is played in, which is no longer the same
         // thing as the squad default.
         matchFormat: match?.format ?? null,
+        // The running period's planned subs, so a relaunch mid-period brings
+        // the reminders back (#139). Null between periods, which clears them.
+        periodSubs: periodSubsToSave(match?.state.quarters, subPlan),
         ...overrides,
       });
 
@@ -343,7 +353,7 @@ export default function App() {
         );
       }
     },
-    [store, squadName, squadId, players, format, totalMinutes, periodCount, buzzWhenSubDue, match, matches, commitLedger]
+    [store, squadName, squadId, players, format, totalMinutes, periodCount, buzzWhenSubDue, match, matches, subPlan, commitLedger]
   );
 
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
@@ -470,11 +480,14 @@ export default function App() {
     (next: LiveMatch | null) => {
       if (match && match !== next) {
         const held = match;
-        setMatches((prev) => matchesOnRelease(prev, held, next));
+        // With its running period's subs (#139): a match let go of mid-period
+        // and opened again is rebuilt from this, and gets its reminders back.
+        const subs = periodSubsToSave(held.state.quarters, subPlan);
+        setMatches((prev) => matchesOnRelease(prev, held, next, subs));
       }
       setMatch(next);
     },
-    [match]
+    [match, subPlan]
   );
 
   // --- actions --------------------------------------------------------------
@@ -602,7 +615,8 @@ export default function App() {
       const { state, format: matchFormat } = outcome.held;
       if (outcome.kind === 'open') {
         releaseMatch({ engine: new MatchEngine({ nowFn: appNow }), state, format: matchFormat });
-        setSubPlan([]);
+        // Its running period's subs, if one is running (#139); else none.
+        setSubPlan(outcome.subPlan);
       }
 
       // The rule lives in fixtures.ts and is tested there: two defects lived
@@ -674,6 +688,10 @@ export default function App() {
       state,
       format: stored?.format ?? pending.format,
     });
+    // The running period's subs come back, those already made read from the
+    // record (#139). The buzz log is empty after a relaunch, so a sub that
+    // fell due while the app was gone buzzes once on the clock (#137 AC3).
+    setSubPlan(restoreSubPlan(stored?.periodSubs, state));
     // A quarter still running goes straight to the clock; between quarters the
     // coach is owed the lineup screen, which is the whole point of the app.
     setStep(state.quarters.some((q) => q.status === 'running') ? 'playing' : 'lineup');
@@ -700,6 +718,9 @@ export default function App() {
         state,
         format: stored?.format ?? pending.format,
       });
+      // As resume does (#139): the clock is one tap away from Home, and the
+      // next save writes these back rather than an empty plan over them.
+      setSubPlan(restoreSubPlan(stored?.periodSubs, state));
     }
     setPending(null);
     setSquadErrand('home');
@@ -819,7 +840,8 @@ export default function App() {
       match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
       setSubPlan(plan);
       setStep('playing');
-      persist();
+      // Named here: this save still holds the last period's plan (#139).
+      persist({ periodSubs: periodSubsToSave(match.state.quarters, plan) });
     },
     [match, persist, squad]
   );
