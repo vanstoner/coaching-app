@@ -2,7 +2,7 @@
  * The squad — REQ-09 (#9).
  *
  * First names only, enforced in `src/app/squad.ts` at entry (invariant 4).
- * Nothing leaves the phone (ADR-011).
+ * Kept on the phone (ADR-011); only the phone's own backup and the coach's own export move it.
  *
  * ---------------------------------------------------------------------------
  * One screen, two errands
@@ -165,7 +165,7 @@ export function SquadScreen({
       >
         <View style={screen.pane}>
           <Text style={screen.title}>Squad</Text>
-          <Text style={screen.hint}>First names only. Nothing leaves this phone.</Text>
+          <Text style={screen.hint}>First names only. Kept on this phone.</Text>
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
