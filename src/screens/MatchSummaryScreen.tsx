@@ -28,7 +28,7 @@ import { Text } from './Text';
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import type { Ledger } from '../app/ledger';
-import { matchChart, matchReport, wholeMinuteParts, wholeMinutes } from '../app/analysis';
+import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
@@ -153,7 +153,7 @@ export function MatchSummaryScreen({
         </View>
         {report.players.map((row) => {
           // #142: GK and Out add up to the Total beside them.
-          const [goal, outfield] = wholeMinuteParts([row.goalMs, row.outfieldMs], row.totalMs);
+          const { goal, outfield } = goalOutfieldSplit(row.goalMs, row.outfieldMs, row.totalMs);
           return (
             <View
               key={row.playerId}

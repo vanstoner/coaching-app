@@ -30,6 +30,7 @@ import {
   mainKeeperWords,
   offsetWords,
   owedText,
+  positionsLine,
   positionsTile,
   saturdayTile,
   squadTiles,
@@ -235,6 +236,40 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(back.fairness).toMatchObject({ average: 40, gap: 10, mainKeepers: [] });
     expect(row(back.owed, 'Ava').owed).not.toBeNull();
   });
+
+  it('owed is rounded once, from unrounded averages: Hal had 42 more, not 43 (QA D1)', () => {
+    // The prototype's compute() gives -42.4999…; rounding the averages to the ms first gave -43.
+    const back = squadViews(ledger, withKeeper(players, 'Ava', 'backup'));
+    expect(row(back.owed, 'Hal').owed).toBe(-42);
+    expect(owedText(-42)).toBe('Had 42 min more');
+  });
+
+  it('ruling 24: exactly 5 min owed is named (5 or more, not more than 5)', () => {
+    const back = squadViews(ledger, withKeeper(players, 'Ava', 'backup'));
+    expect(row(back.owed, 'Cal')).toMatchObject({ owed: 5, named: true });
+    expect(OWED_MIN).toBe(5);
+    expect(saturdayTile(back.owed, back.fairness)).toContain('Cal');
+    // 4 is not named.
+    expect(back.owed.filter((r) => r.owed !== null && r.owed < 5).every((r) => !r.named)).toBe(true);
+  });
+
+  it('Going into Saturday keeps the squad order the coach set, whatever the figures (AC4, AC7)', () => {
+    const order = ['Jo', 'Ivy', 'Ava', 'Gus', 'Ben', 'Hal', 'Dee', 'Cal', 'Fay', 'Eli'];
+    const reordered = order.map((n) => players.find((p) => p.firstName === n)!);
+    const r = squadViews(ledger, reordered);
+    expect(r.owed.map((x) => x.name)).toEqual(order);
+    expect(r.owed.filter((x) => x.named).map((x) => x.name)).toEqual(['Jo', 'Ivy', 'Gus', 'Dee']);
+    expect(saturdayTile(r.owed, r.fairness)).toBe('Owed time: Jo, Ivy, Gus, Dee');
+  });
+
+  it('a retired child never enters the trend or the headline (T3)', () => {
+    const retired = players.map((p) => (p.firstName === 'Hal' ? { ...p, active: false } : p));
+    const r = squadViews(ledger, retired);
+    expect(r.grid.map((x) => x.name)).not.toContain('Hal');
+    // Hal (the most minutes) set the widest gap; without him the trend is recomputed without him.
+    expect(r.trend[r.trend.length - 1]).toMatchObject({ average: r.fairness!.average, gap: r.fairness!.gap });
+    expect(r.trend.map((t) => t.gap)).not.toEqual(v.trend.map((t) => t.gap));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -410,6 +445,34 @@ describe('the rules that hold in every view (AC7)', () => {
     expect(v.trend.map((t) => t.gap)).toEqual([null]);
     expect(v.owed.every((r) => r.owed === null)).toBe(true);
     expect(v.grid[0].cells[0]).not.toBeNull();
+  });
+});
+
+describe('time with no position recorded (QA D2)', () => {
+  it('is shown and named, never read as "no time on the pitch"', () => {
+    expect(positionsLine({ text: '', unplacedMs: 0 })).toBe('No time on the pitch yet');
+    expect(positionsLine({ text: '', unplacedMs: 24 * MIN })).toBe('24 min with no position recorded');
+    expect(positionsLine({ text: 'GK 38 · DEF 12', unplacedMs: 0 })).toBe('GK 38 · DEF 12 min');
+    expect(positionsLine({ text: 'DEF 20', unplacedMs: 6 * MIN })).toBe('DEF 20 min · 6 min with no position recorded');
+    expect(positionsLine({ text: '', unplacedMs: 20_000 })).toBe('Under a minute with no position recorded');
+  });
+
+  it('a child who played only in a position with no unit: their time is unplaced, not lost', () => {
+    const sq = squad();
+    const ledger = ledgerOf(sq, [play(sq)]);
+    // An old match: every outfield interval without a unit.
+    const old = {
+      ...ledger,
+      matches: ledger.matches.map((m) => ({
+        ...m,
+        intervals: m.intervals.map((i) => (i.kind === 'outfield' ? { ...i, unit: null } : i)),
+      })),
+    };
+    const gus = row(squadViews(old, sq.players).positions, 'Gus');
+    expect(gus).toMatchObject({ played: 1, total: 0, text: '', unplacedMs: 24 * MIN });
+    expect(positionsLine(gus)).toBe('24 min with no position recorded');
+    // The keeper's goal time is still GK: the kind says so.
+    expect(row(squadViews(old, sq.players).positions, 'Ava').minutes.GK).toBe(50);
   });
 });
 

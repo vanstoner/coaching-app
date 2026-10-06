@@ -26,7 +26,7 @@
 
 import type { Competition, KeeperPreference, Player, PositionUnit, UUID } from '../types/index';
 import { UNIT_LABEL, type Ledger } from './ledger';
-import { isCounted, wholeMinuteParts, wholeMinutes, type SeasonOptions } from './analysis';
+import { goalOutfieldSplit, isCounted, wholeMinuteParts, wholeMinutes, type SeasonOptions } from './analysis';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import { squadAverage, squadSeason, type ChildSeason, type SquadSeason } from './childSeason';
 import { competitionLabel } from './fixtures';
@@ -197,8 +197,7 @@ export interface GridRow {
 
 /** One child's minutes in one match, as a cell and its words. */
 export function gridCell(name: string, match: Pick<SeasonMatch, 'date' | 'opponent'>, m: MatchMinutes): GridCell {
-  const total = wholeMinutes(m.pitchMs);
-  const [goal, outfield] = wholeMinuteParts([m.goalMs, m.pitchMs - m.goalMs], m.pitchMs);
+  const { total, goal, outfield } = goalOutfieldSplit(m.goalMs, m.pitchMs - m.goalMs);
   const split = goal > 0 ? ` (${goal} in goal, ${outfield} outfield)` : '';
   return { total, goal, outfield, text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}` };
 }
@@ -341,17 +340,37 @@ export interface OwedRow {
 }
 
 /**
- * (squad average − their average) × matches played, from the averages
- * themselves and rounded once at the end, as the approved prototype works it
- * out. Squad order, everyone listed.
+ * (squad average − their average) × matches played, rounded once at the end
+ * from unrounded averages, as the approved prototype's compute() does it.
+ * The averages are refolded here from the matches, not taken from `season`,
+ * whose figures are already rounded to the millisecond: rounding twice can
+ * cross a .5 boundary (QA D1 on #143). Squad order, everyone listed.
  */
-export function owedTime(season: SquadSeason): OwedRow[] {
-  const avg = season.squadAverageMs;
+export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): OwedRow[] {
+  const exact = new Map<UUID, number>();
+  for (const c of season.children) {
+    let ms = 0;
+    let played = 0;
+    for (const match of matches) {
+      const m = match.minutes.get(c.playerId);
+      if (!m) continue;
+      ms += m.pitchMs;
+      played++;
+    }
+    if (played > 0) exact.set(c.playerId, ms / played);
+  }
+  const anyMain = season.children.some((c) => c.mainKeeper);
+  const counted = season.children
+    .filter((c) => !(anyMain && c.mainKeeper))
+    .map((c) => exact.get(c.playerId))
+    .filter((ms): ms is number => ms !== undefined);
+  const avg = counted.length === 0 ? null : counted.reduce((sum, ms) => sum + ms, 0) / counted.length;
   return season.children.map((c) => {
+    const own = exact.get(c.playerId);
     const owed =
-      avg === null || c.averageMs === null || c.mainKeeper
+      avg === null || own === undefined || c.mainKeeper
         ? null
-        : Math.round(((avg - c.averageMs) * c.played) / MIN) || 0; // never "-0"
+        : Math.round(((avg - own) * c.played) / MIN) || 0; // never "-0"
     return {
       playerId: c.playerId,
       name: c.name,
@@ -427,6 +446,18 @@ export function positionsTried(
   });
 }
 
+/**
+ * The words under a child's position bar: "GK 38 · DEF 59 min". Time with no
+ * position recorded (an old match, or a position since deleted from the
+ * format) is said as such, never lost as "no time" (QA D2 on #143).
+ */
+export function positionsLine(r: Pick<PositionsRow, 'text' | 'unplacedMs'>): string {
+  const m = wholeMinutes(r.unplacedMs);
+  const unplaced = r.unplacedMs <= 0 ? '' : `${m > 0 ? `${m} min` : 'under a minute'} with no position recorded`;
+  if (r.text === '') return unplaced === '' ? 'No time on the pitch yet' : `${unplaced[0].toUpperCase()}${unplaced.slice(1)}`;
+  return unplaced === '' ? `${r.text} min` : `${r.text} min · ${unplaced}`;
+}
+
 // ============================================================================
 // The tiles on Squad (AC1): each answer before it is tapped
 // ============================================================================
@@ -498,7 +529,7 @@ export function squadViews(
     grid: seasonGrid(matches, season.children),
     fairness: fairnessOf(season),
     trend: fairnessTrend(matches, season.children),
-    owed: owedTime(season),
+    owed: owedTime(season, matches),
     positions: positionsTried(matches, season.children, players),
   };
 }

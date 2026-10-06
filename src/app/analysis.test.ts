@@ -15,6 +15,7 @@ import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { mergeCurrentMatch } from './persistence';
 import {
   competitionBucket,
+  goalOutfieldSplit,
   largestRemainder,
   matchChart,
   matchReport,
@@ -351,12 +352,40 @@ describe('parts that add up to the total shown beside them (#142, #143 AC10)', (
     }
   });
 
-  it("the match report's GK and Out add up to its Total", () => {
+  it("the match report's GK and Out add up to its Total: a keeper 10.6 in goal and 10.6 outfield reads 11 + 10 of 21", () => {
+    // Through the engine: Ava keeps goal 10.6 min, swaps out to the field,
+    // and is subbed off 10.6 min later. Rounded one by one: 11 + 11 beside 21.
     const sq = squad();
-    const { engine, state } = play(sq, { goals: true });
+    const ids = sq.players.map((p) => p.id);
+    let now = Date.parse('2026-10-03T09:00:00Z');
+    const engine = new MatchEngine({ nowFn: () => new Date(now) });
+    const state = engine.createMatch(sq.squadId, sq.format.id, {
+      opponent: 'Rovers',
+      totalMinutes: 50,
+      quarterCount: 4,
+      availablePlayerIds: ids,
+    });
+    const q1 = currentQuarter(state)!;
+    engine.startQuarter(state, q1, teamSheetFor(ids.slice(0, 7), ids[0], sq.format), sq.format);
+    now += 10.6 * MIN;
+    engine.swapPositions(state, q1, ids[0], ids[1]);
+    now += QUARTER - 10.6 * MIN;
+    engine.endQuarter(state, q1);
+    const q2 = currentQuarter(state)!;
+    engine.startQuarter(state, q2, teamSheetFor(ids.slice(0, 7), ids[1], sq.format), sq.format);
+    now += 8.7 * MIN; // 1.9 + 8.7 = 10.6 outfield
+    engine.substitute(state, q2, ids[0], ids[7]);
+    now += QUARTER - 8.7 * MIN;
+    engine.endQuarter(state, q2);
+
+    const ava = matchReport(engine, state, sq.players).players.find((p) => p.playerId === ids[0])!;
+    expect(ava.goalMs).toBe(10.6 * MIN);
+    expect(ava.outfieldMs).toBe(10.6 * MIN);
+    expect(wholeMinutes(ava.goalMs) + wholeMinutes(ava.outfieldMs)).toBe(22);
+    expect(goalOutfieldSplit(ava.goalMs, ava.outfieldMs, ava.totalMs)).toEqual({ total: 21, goal: 11, outfield: 10 });
     for (const row of matchReport(engine, state, sq.players).players) {
-      const [goal, outfield] = wholeMinuteParts([row.goalMs, row.outfieldMs], row.totalMs);
-      expect(goal + outfield).toBe(wholeMinutes(row.totalMs));
+      const s = goalOutfieldSplit(row.goalMs, row.outfieldMs, row.totalMs);
+      expect(s.goal + s.outfield).toBe(s.total);
     }
   });
 

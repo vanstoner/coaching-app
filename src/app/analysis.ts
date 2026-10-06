@@ -94,6 +94,21 @@ export function wholeMinuteParts(partsMs: readonly number[], totalMs: number): n
 }
 
 /**
+ * In goal and outfield beside their total, in whole minutes that add up
+ * (#142): the one split the match report, the season grid and a child's page
+ * all draw. `totalMs` defaults to the two parts' sum; the child page passes
+ * its minutes a game, which is rounded from slightly different ms.
+ */
+export function goalOutfieldSplit(
+  goalMs: number,
+  outfieldMs: number,
+  totalMs: number = goalMs + outfieldMs
+): { total: number; goal: number; outfield: number } {
+  const [goal, outfield] = wholeMinuteParts([goalMs, outfieldMs], totalMs);
+  return { total: wholeMinutes(totalMs), goal, outfield };
+}
+
+/**
  * Whole-second parts that add up to the seconds `formatClock(totalMs)` shows
  * (it floors), for a table of mm:ss parts beside their total.
  */

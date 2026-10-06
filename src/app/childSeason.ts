@@ -27,7 +27,7 @@ import {
   competitionBucket,
   isCounted,
   seasonStats,
-  wholeMinuteParts,
+  goalOutfieldSplit,
   wholeMinutes,
   type CompetitionBucket,
   type SeasonOptions,
@@ -110,8 +110,9 @@ export function goalOutfieldLine(
   c: Pick<ChildSeason, 'averageMs' | 'goalMsPerGame' | 'outfieldMsPerGame'>
 ): string | null {
   if (c.goalMsPerGame === null || c.outfieldMsPerGame === null) return null;
-  const [goal, outfield] = wholeMinuteParts(
-    [c.goalMsPerGame, c.outfieldMsPerGame],
+  const { goal, outfield } = goalOutfieldSplit(
+    c.goalMsPerGame,
+    c.outfieldMsPerGame,
     c.averageMs ?? c.goalMsPerGame + c.outfieldMsPerGame
   );
   return `In goal ${goal} min a game, outfield ${outfield}`;

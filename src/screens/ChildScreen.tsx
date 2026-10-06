@@ -28,7 +28,7 @@ import { Text } from './Text';
 import type { Player } from '../types/index';
 import { wholeMinutes } from '../app/analysis';
 import { MAIN_KEEPER_NOTE, goalOutfieldLine, type ChildSeason } from '../app/childSeason';
-import { LENS_TITLE, childMatches, lensCards, type LensCard, type SquadViews } from '../app/squadViews';
+import { LENS_TITLE, childMatches, lensCards, positionsLine, type LensCard, type SquadViews } from '../app/squadViews';
 import {
   KEEPER_LABEL,
   UNIT_PREF_LABEL,
@@ -234,18 +234,14 @@ function MatchByMatch({ views, player, s }: { views: SquadViews; player: Player;
 
 function PositionsCard({ views, player, name }: { views: SquadViews; player: Player; name: string }) {
   const r = views.positions.find((p) => p.playerId === player.id);
-  if (!r || r.total === 0) {
-    return <Text style={[screen.hint, local.left]}>No time on the pitch yet.</Text>;
-  }
+  if (!r) return <Text style={[screen.hint, local.left]}>No time on the pitch yet.</Text>;
+  // QA D2: time with no position recorded is shown and named, never read as "no time".
   return (
     <>
-      <UnitKey />
-      <UnitStack minutes={r.minutes} />
-      <Text style={local.unitText}>{r.text} min</Text>
+      {r.total > 0 && <UnitKey />}
+      {r.total > 0 && <UnitStack minutes={r.minutes} />}
+      <Text style={local.unitText}>{positionsLine(r)}</Text>
       <Text style={[screen.hint, local.left]}>Where {name} has played this season. A record, not a target.</Text>
-      {r.unplacedMs > 0 && (
-        <Text style={[screen.hint, local.left]}>Time from early matches with no position recorded is not shown.</Text>
-      )}
     </>
   );
 }

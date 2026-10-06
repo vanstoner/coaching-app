@@ -29,6 +29,7 @@ import {
   mainKeeperWords,
   offsetWords,
   owedText,
+  positionsLine,
   squadTiles,
   trendLabel,
   type SquadView,
@@ -488,7 +489,7 @@ export function PositionsView({ views, onChild, onBack }: ViewProps) {
             onPress={() => onChild(r.playerId)}
             style={local.prow}
             accessibilityRole="button"
-            accessibilityLabel={r.text === '' ? `${r.name}: no time on the pitch yet` : `${r.name}: ${r.text} minutes`}
+            accessibilityLabel={`${r.name}: ${positionsLine(r)}`}
           >
             <View style={local.pLine}>
               <Text style={local.pName} numberOfLines={1}>
@@ -499,7 +500,7 @@ export function PositionsView({ views, onChild, onBack }: ViewProps) {
               </Text>
             </View>
             {r.total > 0 && <UnitStack minutes={r.minutes} />}
-            <Text style={local.pText}>{r.text === '' ? 'No time on the pitch yet' : `${r.text} min`}</Text>
+            <Text style={local.pText}>{positionsLine(r)}</Text>
           </Pressable>
         );
       })}
