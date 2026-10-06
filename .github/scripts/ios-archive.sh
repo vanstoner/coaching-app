@@ -123,6 +123,9 @@ if [ -n "${GITHUB_ENV:-}" ]; then
   {
     echo "SCHEME=$SCHEME"
     echo "APP=$APP"
-    [ -n "$PATH_TAKEN" ] && echo "SIGNING_PATH=$PATH_TAKEN"
+    # An `if`, not `[ ] && echo`: as the last command, a false test made the
+    # whole script exit 1 after a good unsigned archive (run 37486638326).
+    if [ -n "$PATH_TAKEN" ]; then echo "SIGNING_PATH=$PATH_TAKEN"; fi
   } >> "$GITHUB_ENV"
 fi
+exit 0
