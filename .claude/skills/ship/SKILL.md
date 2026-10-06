@@ -21,6 +21,14 @@ main only and is refreshed in place (same release, tag moved, APK replaced);
 `-f dry_run=true` proves any branch without publishing. The release and beta
 jobs never touch it and check so (`check_release.py --demo-untouched`).
 
+**TestFlight (#108 A).** `testflight.yml` signs and uploads the release
+build of `main`, in the `app-store` environment (Rob approves every run).
+It holds no certificate or profile: Apple's automatic signing with the API
+key, which needs Admin. The build number is `run_number * 100 + run_attempt`,
+so a re-run never repeats one. `-f dry_run=true` signs, exports and checks,
+then uploads nothing. The unsigned device build is ios.yml's `device-build`,
+on every PR. Never add a `pull_request` trigger to it.
+
 ## Produce
 
 - Workflows, build scripts, gates, release plumbing.

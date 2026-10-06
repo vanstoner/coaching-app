@@ -214,9 +214,18 @@ jobs:
           NDK_VERSION=27.1.12297006
           echo "NDKs already on the runner:"
           ls "$ANDROID_HOME/ndk" 2>/dev/null || echo "(none)"
-          if [ -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then
+          # Judged by source.properties, not the directory: run 37484486146
+          # found the directory on the runner image without that file, skipped
+          # the install, and Gradle failed with CXX1101. A partial NDK is
+          # removed and installed again.
+          NDK_DIR="$ANDROID_HOME/ndk/$NDK_VERSION"
+          if [ -f "$NDK_DIR/source.properties" ]; then
             echo "ndk;$NDK_VERSION already installed — nothing to download"
             exit 0
+          fi
+          if [ -d "$NDK_DIR" ]; then
+            echo "ndk;$NDK_VERSION is present but has no source.properties — removing the partial copy"
+            rm -rf "$NDK_DIR" 2>/dev/null || sudo rm -rf "$NDK_DIR"
           fi
           SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | sed -n '$p')"
           echo "sdkmanager: $SDKMANAGER"
@@ -228,7 +237,7 @@ jobs:
             # and the step still failed. Success is judged by the installed
             # directory, not by an exit code.
             "$SDKMANAGER" "ndk;$NDK_VERSION" < /dev/null > /tmp/sdkmanager.log 2>&1 || true
-            if [ -d "$ANDROID_HOME/ndk/$NDK_VERSION" ]; then
+            if [ -f "$NDK_DIR/source.properties" ]; then
               echo "installed ndk;$NDK_VERSION"
               exit 0
             fi
@@ -236,7 +245,7 @@ jobs:
             tail -n 20 /tmp/sdkmanager.log
             sleep 15
           done
-          echo "could not install ndk;$NDK_VERSION after 3 attempts"
+          echo "WHY THIS JOB FAILED: could not install ndk;$NDK_VERSION after 3 attempts (no source.properties)"
           exit 1
 
       # assembleRelease, NOT assembleDebug — #46. A debug APK does not embed

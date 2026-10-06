@@ -1,0 +1,198 @@
+name: TestFlight
+
+# #108 A: the release build of Heart FC Coach, signed and uploaded to
+# TestFlight. Rob's approval gates every run: the job runs in the `app-store`
+# environment, whose required reviewer is Rob, and only that environment holds
+# the four secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID).
+#
+# A2: no pull_request trigger, ever. A push to main queues a run that waits
+# for Rob; a newer push cancels a waiting one. By hand:
+#
+#   gh workflow run testflight.yml --ref main                  # sign and upload
+#   gh workflow run testflight.yml --ref main -f dry_run=true  # sign, export, stop
+#
+# The unsigned healthy case (A7) is ios.yml's device-build job, on every PR.
+# No certificate or provisioning profile is held anywhere (A1): Apple's
+# automatic signing makes them, with a cloud-managed distribution
+# certificate (ios-archive.sh).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Sign and export the .ipa, run every check, and upload nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: testflight
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: Sign and upload to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: app-store
+    env:
+      # The release variant only (A1): Heart FC Coach, distribution app.
+      APP_VARIANT: ''
+      DISTRIBUTION: app
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+    steps:
+      # A2: before anything is built or signed.
+      - name: Refuse anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "WHY THIS JOB FAILED: TestFlight uploads come from main only; this run is on $GITHUB_REF (#108 A2)."
+            echo "For an unsigned check of a branch, see ios.yml's 'Archive for a device' job on its PR."
+            exit 1
+          fi
+          # A5: CFBundleVersion always increases. The run number alone repeats
+          # on a re-run, and Apple refuses a build number it has already seen,
+          # so the attempt is folded in: run 7 is 701, its re-run 702.
+          if [ "$GITHUB_RUN_ATTEMPT" -ge 100 ]; then
+            echo "WHY THIS JOB FAILED: re-run 100 times; start a new run so the build number still increases (#108 A5)."
+            exit 1
+          fi
+          IOS_BUILD_NUMBER=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
+          echo "IOS_BUILD_NUMBER=$IOS_BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "ref: $GITHUB_REF  dry run: $DRY_RUN  build number: $IOS_BUILD_NUMBER"
+
+      # A4: a missing secret fails here and is named; a value is never printed.
+      - name: Check the four secrets are present
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "WHY THIS JOB FAILED: missing from the app-store environment:$missing"
+            exit 1
+          fi
+          case "$ASC_KEY_P8" in
+            *"-----BEGIN PRIVATE KEY-----"*"-----END PRIVATE KEY-----"*) ;;
+            *) echo "WHY THIS JOB FAILED: ASC_KEY_P8 is not the whole .p8 file (the BEGIN and END lines are missing)"; exit 1 ;;
+          esac
+          echo "all four secrets are present"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Self-test the .app assertion
+        run: python3 .github/scripts/check_ios_app.py --self-test
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute the version
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      - name: Write the build label and the distribution into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
+
+      - name: Generate the native iOS project
+        env:
+          APP_VERSION_NAME: ${{ env.VERSION }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      # The key goes to a file only this job can read, and is removed at the
+      # end whatever happens. Never echoed (A4).
+      - name: Write the API key to a private file
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          umask 077
+          KEY="$RUNNER_TEMP/asc-key.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+
+      - name: Archive for a device, signed
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: .github/scripts/ios-archive.sh signed build-device/App.xcarchive
+
+      - name: Export the signed .ipa
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: .github/scripts/ios-export.sh export build-device/App.xcarchive build-device/export
+
+      # A8 on the SIGNED artifact, before any upload.
+      - name: Assert the signed app (A8)
+        run: |
+          set -uo pipefail
+          IPA="$(ls build-device/export/*.ipa)"
+          rm -rf /tmp/ipa && mkdir /tmp/ipa && unzip -q "$IPA" -d /tmp/ipa
+          SIGNED_APP="$(ls -d /tmp/ipa/Payload/*.app)"
+          check=0
+          python3 .github/scripts/check_ios_app.py "$SIGNED_APP/Info.plist" "$APP_VARIANT" "$IOS_BUILD_NUMBER" "$VERSION" \
+            > /tmp/ios-check.txt 2>&1 || check=$?
+          cat /tmp/ios-check.txt
+          bundle=0
+          python3 .github/scripts/assert_label_in_bundle.py "$SIGNED_APP/main.jsbundle" "$BUILD_LABEL" || bundle=1
+          python3 .github/scripts/write-distribution.py --assert-bundle "$SIGNED_APP/main.jsbundle" "$DISTRIBUTION" || bundle=1
+          codesign --verify --deep --strict "$SIGNED_APP" || check=1
+          codesign -dv "$SIGNED_APP" 2>&1 | grep -E '^(Authority|TeamIdentifier)=' | sed 's/TeamIdentifier=.*/TeamIdentifier=(present)/' || true
+          if [ "$check" != 0 ] || [ "$bundle" != 0 ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED"
+            echo "=============================================================="
+            grep -E '^ASSERTION FAILED' /tmp/ios-check.txt || true
+            [ "$bundle" = 0 ] || echo "the bundle lacks the label '$BUILD_LABEL' or is not only distribution:$DISTRIBUTION"
+            echo "or the signature did not verify (codesign --verify)"
+            echo "=============================================================="
+            exit 1
+          fi
+          echo "signed .ipa: Heart FC Coach $VERSION ($IOS_BUILD_NUMBER), signing path $SIGNING_PATH"
+
+      - name: Upload to TestFlight
+        if: env.DRY_RUN != 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: .github/scripts/ios-export.sh upload build-device/App.xcarchive build-device/upload
+
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo "### TestFlight"
+            echo "Heart FC Coach ${VERSION:-?} (build $IOS_BUILD_NUMBER), signing path ${SIGNING_PATH:-not reached}."
+            if [ "$DRY_RUN" = true ]; then
+              echo "**Dry run: nothing was uploaded.**"
+            elif [ "${{ job.status }}" = success ]; then
+              echo "Uploaded. Apple processes it before it appears in TestFlight."
+            else
+              echo "Not uploaded: see WHY THIS JOB FAILED above."
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/asc-key.p8"
