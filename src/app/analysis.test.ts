@@ -11,11 +11,12 @@ import { makePlayer } from './squad';
 import { makeSevenASideFormat } from './placeholderSquad';
 import { teamSheetFor } from './lineup';
 import { currentQuarter } from './matchClock';
-import { emptyLedger, recordMatches, type Ledger } from './ledger';
+import { emptyLedger, recordMatches, seasonRows, type Ledger } from './ledger';
 import { mergeCurrentMatch } from './persistence';
 import {
   competitionBucket,
   goalOutfieldSplit,
+  inSquadOrder,
   largestRemainder,
   matchChart,
   matchReport,
@@ -127,8 +128,9 @@ describe('matchReport (#104)', () => {
     const ivyRow = r.players.find((p) => p.playerId === ivy.id)!;
     expect(ivyRow.totalMs).toBe(0);
     expect(ivyRow.deltaMs).toBe(-r.fairShareMs);
-    // Least pitch time first.
-    expect(r.players[0].playerId).toBe(ivy.id);
+    // Squad order, never by minutes (PO ruling Q1, #143 AC7; it was least
+    // pitch time first, which put Ivy at 0 at the top).
+    expect(r.players.map((p) => p.name)).toEqual(['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy']);
     // Goal and outfield add up to the total; Ava kept goal all match.
     const avaRow = r.players.find((p) => p.playerId === ava.id)!;
     expect(avaRow).toMatchObject({ goalMs: 50 * MIN, outfieldMs: 0, totalMs: 50 * MIN });
@@ -312,6 +314,40 @@ describe('matchChart (#105 AC1)', () => {
     expect(chart.rows.every((r) => r.shadowMs === null)).toBe(true);
     // Least played first when nobody has an average.
     expect(chart.rows[0].thisMatchMs).toBe(0);
+  });
+});
+
+describe('squad order, never ranked (PO ruling Q1, #143 AC7)', () => {
+  it("the match report follows the squad's own order, whatever the minutes", () => {
+    const sq = squad();
+    const { engine, state } = play(sq);
+    // A squad order that is neither alphabetical nor by minutes.
+    const order = ['Ivy', 'Ava', 'Hal', 'Jo', 'Gus', 'Ben', 'Fin', 'Cal', 'Eve', 'Dan'];
+    const players = order.map((n) => sq.players.find((p) => p.firstName === n)!);
+    const names = matchReport(engine, state, players).players.map((p) => p.name);
+    expect(names).toEqual(order);
+    const byMinutes = [...matchReport(engine, state, players).players]
+      .sort((a, b) => a.totalMs - b.totalMs)
+      .map((p) => p.name);
+    expect(names).not.toEqual(byMinutes);
+  });
+
+  it('the Settings minutes table: seasonRows comes most outfield first; inSquadOrder puts it back in squad order', () => {
+    const sq = squad();
+    const ledger = ledgerOf(sq, [play(sq).state]);
+    const rows = seasonRows(ledger);
+    const order = ['Jo', 'Gus', 'Ava', 'Ivy', 'Hal', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin'];
+    const players = order.map((n) => sq.players.find((p) => p.firstName === n)!);
+    const ordered = inSquadOrder(rows, players).map((r) => r.name);
+    expect(ordered).toEqual(order);
+    expect(rows.map((r) => r.name)).not.toEqual(order);
+  });
+
+  it('anyone not in the squad follows, in the order given; nothing is dropped', () => {
+    const [a, b, c] = squad().players;
+    const rows = [{ playerId: c.id }, { playerId: uuid() }, { playerId: a.id }, { playerId: b.id }];
+    expect(inSquadOrder(rows, [a, b, c])).toEqual([rows[2], rows[3], rows[0], rows[1]]);
+    expect(inSquadOrder([], [a])).toEqual([]);
   });
 });
 

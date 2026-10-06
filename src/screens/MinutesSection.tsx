@@ -8,8 +8,9 @@
  * The export warning is the PO's ruling 3A in words the coach reads at the
  * moment it matters: the file carries children's first names.
  *
- * Invariant 3 (ADR-015, #101): the season list is ordered on Total, goal plus
- * outfield, the fairness figure. Out and GK are its breakdown. A player's
+ * Invariant 3 (ADR-015, #101): Total, goal plus outfield, is the fairness
+ * figure; Out and GK are its breakdown. The list is in squad order, never
+ * ranked by minutes (PO ruling Q1, #143 AC7). A player's
  * outfield-share target is shown under their name as on track or below, and
  * is never a fairness input.
  */
@@ -22,7 +23,7 @@ import {
 import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
-import { minutesRowSeconds } from '../app/analysis';
+import { inSquadOrder, minutesRowSeconds } from '../app/analysis';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
@@ -49,15 +50,9 @@ export function MinutesSection({
   onExport: () => void;
   onImport: () => void;
 }) {
-  // Most pitch time first (goal + outfield); ties as the ledger orders them.
-  const rows = (ledger ? seasonRows(ledger) : [])
-    .map((row, i) => ({ row, i }))
-    .sort(
-      (a, b) =>
-        b.row.outfieldMs + b.row.goalkeeperMs - (a.row.outfieldMs + a.row.goalkeeperMs) ||
-        a.i - b.i
-    )
-    .map(({ row }) => row);
+  // PO ruling Q1 (#143 AC7): squad order, never by minutes. Anyone the
+  // ledger knows who is not in this squad follows.
+  const rows = inSquadOrder(ledger ? seasonRows(ledger) : [], players);
   const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
   // #102 AC3, AC4: derived from the ledger every time, never stored.
