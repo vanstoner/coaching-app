@@ -4,12 +4,13 @@
  *
  * A fast clock (appClock.ts) and one-tap test data, so a whole match can be
  * played through the real screens in minutes before a beta is approved. Only
- * ever in a pull-request build, which is Coaching Beta: its own app id and its
- * own storage (#79), so test data and fast-clock matches cannot reach the
- * real squad. Synthetic first names only.
+ * ever in Coaching Beta — a pull-request build, or the demo (#146) — which has
+ * its own app id and its own storage (#79), so test data and fast-clock
+ * matches cannot reach the real squad. Synthetic first names only.
  */
 
 import type { Format, Player, UUID } from '../types/index';
+import type { Distribution } from './distribution';
 import { makePlayer } from './squad';
 import { kickoffIso, nextSaturday } from './kickoff';
 import { newMatch } from './matchLifecycle';
@@ -17,25 +18,28 @@ import type { SavedMatch } from './persistence';
 import { addSwap, emptyPlan, periodLengthMs, setSlot, updateSwap } from './matchPlan';
 
 /**
- * True for a Coaching Beta build. CI bakes the build label into the bundle,
- * and only a pull-request build — the only build that is Coaching Beta
- * (APP_VARIANT=beta is set on exactly that event) — labels itself "(pr N)".
- * A build of main, or a local run, never shows the kit.
+ * True for a pull-request build of Coaching Beta. CI bakes the build label
+ * into the bundle, and only a pull-request build labels itself "(pr N)". A
+ * build of main never does — including the demo (#146), a Coaching Beta built
+ * from main, which `showTestKit` tells apart by its distribution instead.
  */
 export function isBetaBuild(buildLabel: string): boolean {
   return /\(pr \d+\)$/.test(buildLabel.trim());
 }
 
 /**
- * Whether to show the Test kit (#134, PO ruling "approve 14"): in a CI
- * pull-request beta, as before, and in a development build (`__DEV__`) —
- * `expo start`, `expo run:ios`, `expo run:android`, `npm run ios:beta` — so a
- * local copy can add sample data. A release build of Coaching App never shows
- * it. The caller passes `__DEV__`; this module reads no platform global, so
- * it stays testable in Node. Every Test-kit gate goes through this one call.
+ * Whether to show the Test kit (#134, PO ruling "approve 14"; #146): in a CI
+ * pull-request beta, as before; in the demo (#146), which installs as Coaching
+ * Beta but is built from main, so it carries no "(pr N)" and is known by the
+ * distribution CI writes (`distribution.ts`); and in a development build
+ * (`__DEV__`) — `expo start`, `expo run:ios`, `expo run:android`,
+ * `npm run ios:beta` — so a local copy can add sample data. A release build of
+ * Coaching App never shows it. The caller passes `__DEV__` and the
+ * distribution; this module reads no platform global, so it stays testable in
+ * Node. Every Test-kit gate goes through this one call.
  */
-export function showTestKit(buildLabel: string, isDev: boolean): boolean {
-  return isDev || isBetaBuild(buildLabel);
+export function showTestKit(buildLabel: string, isDev: boolean, distribution: Distribution): boolean {
+  return isDev || isBetaBuild(buildLabel) || distribution === 'demo';
 }
 
 /** Made-up first names, so nothing in a beta looks like the real squad. */

@@ -15,6 +15,8 @@ name: Android APK
 #           renders (issue #43). It consumes the `apk` job's artifact rather
 #           than rebuilding, so the ~6-minute build happens once per run.
 #   release / beta  publish, and only after the jobs they need succeeded.
+#   demo    #146: on a dispatch with distribution=demo, publishes the
+#           `demo` release, from main only, after the same three jobs.
 
 on:
   pull_request:
@@ -23,10 +25,36 @@ on:
     # A tag cuts a release. The release job below is gated on this.
     tags: ['v*']
   # AC-A7: a rebuild needs no new commit.
+  #
+  # #146, the demo. "Refresh the demo" is a dispatch of THIS workflow on main
+  # with distribution=demo: the same checks, apk and smoke jobs build and
+  # prove it, then the `demo` job publishes it. A mode of this workflow, not
+  # a separate file, because the versionCode is the run number and run
+  # numbers are per workflow: a separate file would restart at 1, and Android
+  # refuses to install a lower versionCode over a newer PR beta.
+  #
+  #   gh workflow run android-apk.yml --ref main -f distribution=demo
+  #   gh workflow run android-apk.yml --ref <branch> -f distribution=demo -f dry_run=true
+  #
+  # dry_run builds, smoke-tests and checks the page it would publish, on any
+  # ref, and publishes nothing. A plain dispatch is still Coaching App (app).
   workflow_dispatch:
+    inputs:
+      distribution:
+        description: "app: rebuild Coaching App. demo: build and publish the demo (#146)"
+        type: choice
+        options: [app, demo]
+        default: app
+      dry_run:
+        description: "demo only: build and smoke-test, publish nothing (any branch)"
+        type: boolean
+        default: false
 
+# A demo build gets its own group. Without it, a demo refresh dispatched on
+# main would share main's group and, with cancel-in-progress, cancel main's
+# release build (or be cancelled by it).
 concurrency:
-  group: android-apk-${{ github.ref }}
+  group: android-apk-${{ inputs.distribution == 'demo' && 'demo-' || '' }}${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -114,8 +142,24 @@ jobs:
       # #79: a PR build is Coaching Beta, with its own application ID, so it
       # installs NEXT TO the released app. Empty on main: app.json applies
       # unchanged. Set at job level so prebuild and the assertions agree.
-      APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
+      # #146 AC3: the demo is Coaching Beta too (orange icon, beta id and
+      # storage), so it never touches anyone's Coaching App.
+      APP_VARIANT: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'beta' || '' }}
+      # #146 AC6, ADR-017 §5: what CI writes into the bundle. beta on a pull
+      # request (the same condition as APP_VARIANT), demo on a demo dispatch,
+      # app on main and on any other dispatch. build-label.sh reads it too.
+      DISTRIBUTION: ${{ inputs.distribution == 'demo' && 'demo' || (github.event_name == 'pull_request' && 'beta' || 'app') }}
     steps:
+      # #146 AC2: the demo publishes from main only. A real (not dry-run)
+      # demo dispatch anywhere else stops here, in seconds, rather than
+      # building for twenty minutes and then quietly publishing nothing.
+      - name: A demo publishes from main only
+        if: ${{ inputs.distribution == 'demo' && !inputs.dry_run && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "WHY THIS JOB FAILED: the demo is published from main only (#146 AC2), and this run is on $GITHUB_REF."
+          echo "To prove a branch, dispatch it with dry_run=true: it builds and smoke-tests, and publishes nothing."
+          exit 1
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # AC-E5: Node and JDK are pinned explicitly, Node to the same major as ci.yml.
@@ -220,6 +264,21 @@ jobs:
           # not eight minutes later after a Gradle build.
           grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
             || { echo "the generated module does not contain the label"; exit 1; }
+
+      # #146 AC6, ADR-017 §5: the same pattern for the distribution. Self-test
+      # first (each distribution written to a copy of the checked-in module,
+      # and a packed Hermes-like bundle read back, before any wrong case),
+      # then the real write. The bundle is asserted after Gradle, below.
+      - name: Write the distribution into the bundle, and prove it took
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-distribution.py --self-test
+          # The pair is refused unless demo/beta go with APP_VARIANT=beta and
+          # app with Coaching App: a demo marker in Coaching App would seed it.
+          python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
+          grep -n 'GENERATED_DISTRIBUTION =' src/app/generated-distribution.ts
+          grep -qF "'distribution:$DISTRIBUTION'" src/app/generated-distribution.ts \
+            || { echo "WHY THIS JOB FAILED: the generated module does not say distribution:$DISTRIBUTION"; exit 1; }
 
       - name: Build release APK with the bundle embedded
         run: ./gradlew assembleRelease --no-daemon
@@ -377,6 +436,19 @@ jobs:
           fi
           echo "::endgroup::"
 
+          echo "::group::#146 — the distribution is baked into the bundle, and only it"
+          # ADR-017 §5, the way the label is asserted: the exact marker in
+          # either Hermes encoding, and no other `distribution:` marker. The
+          # app parses the suffix and never repeats a full marker, so this one
+          # can only have come from the written module.
+          if [ -s /tmp/bundle.bin ]; then
+            python3 .github/scripts/write-distribution.py --assert-bundle /tmp/bundle.bin "$DISTRIBUTION" \
+              || note "the bundle is not only distribution:$DISTRIBUTION (#146, ADR-017 §5)"
+          else
+            note "no bundle was read out of the APK, so the distribution cannot be checked"
+          fi
+          echo "::endgroup::"
+
           exit $fail
 
       # AC-A1: exactly one .apk in the artifact.
@@ -410,7 +482,8 @@ jobs:
     timeout-minutes: 45
     env:
       # #79: the beta package on a PR build, the released one on main.
-      SMOKE_PACKAGE: ${{ github.event_name == 'pull_request' && 'com.example.coachingapp.beta' || 'com.example.coachingapp' }}
+      # #146: the demo is Coaching Beta too.
+      SMOKE_PACKAGE: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'com.example.coachingapp.beta' || 'com.example.coachingapp' }}
       SMOKE_APK: apk-under-test/app-release.apk
       # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
       # Data protection. If the screen changes, this moves with it.
@@ -436,12 +509,21 @@ jobs:
       # frame's dominant colour drops to 91.1%, which is the button occupying
       # most of the rest). Asserting on it rejects a correct artifact — the
       # failure mode that accounts for five of this project's six CI failures.
-      SMOKE_EXPECT: Example FC|No fixtures yet
+      #
+      # #146 AC4 on the built artifact: the demo seeds the Test kit squad and
+      # season on first open, so its first screen is NOT the empty state.
+      # "Test Rovers" is the Test kit's first fixture (TEST_OPPONENTS in
+      # src/app/testKit.ts, kicking off 30 minutes after the seed), so it is
+      # on screen only if the seed ran and saved: proof the seed happened.
+      # Chosen from the source, NOT yet from OCR output: the first demo run's
+      # frame-assertions.txt is the evidence to confirm or move it by.
+      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Example FC|Test Rovers' || 'Example FC|No fixtures yet' }}
       SMOKE_OUT: smoke-evidence
       # #145: what Settings must show. 'beta' on a PR: every beta-only
       # feature. Empty on main: none. The same condition as APP_VARIANT in
       # the apk job, so the rule always matches the build under test.
-      SMOKE_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
+      # #146: 'demo' from demo.yml, judged as a beta (the Test kit shows).
+      SMOKE_VARIANT: ${{ inputs.distribution == 'demo' && 'demo' || (github.event_name == 'pull_request' && 'beta' || '') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -706,6 +788,9 @@ jobs:
       - name: Publish the release
         run: |
           set -uo pipefail
+          # #146 AC1/AC7: `demo` as it stood before this job's first write;
+          # compared after its last, below.
+          DEMO_BEFORE="$(.github/scripts/demo_snapshot.sh /tmp/demo-before.json)"
           # --target creates the tag at this commit, which is the whole point:
           # nothing outside CI has to be able to push a tag.
           if gh release create "$TAG" \
@@ -776,6 +861,14 @@ jobs:
             echo "WHY THIS JOB FAILED: the release check failed its own self-test"; exit 1; }
           python3 .github/scripts/check_release.py /tmp/release.json "$LATEST" "$BETA" "$TAG" "$BETA_ACTION" || {
             echo "WHY THIS JOB FAILED: main's build is not the Latest full release, or the beta is neither its no-APK note nor a kept open PR's beta (above)"; exit 1; }
+          # #146 AC1/AC7: neither the release nor the merge note touched `demo`.
+          DEMO_AFTER="$(.github/scripts/demo_snapshot.sh /tmp/demo-after.json)"
+          if [ "$DEMO_BEFORE" = unreadable ] || [ "$DEMO_AFTER" = unreadable ]; then
+            echo "warning: the demo release could not be read, so 'demo untouched' was not checked (above)"
+          else
+            python3 .github/scripts/check_release.py --demo-untouched "$DEMO_BEFORE" "$DEMO_AFTER" || {
+              echo "WHY THIS JOB FAILED: main's release job changed the demo release; only a demo dispatch may (#146)"; exit 1; }
+          fi
 
           IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
           IS_PRE="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
@@ -869,6 +962,9 @@ jobs:
             echo '```'
           } > notes.md
 
+          # #146 AC1/AC7: `demo` before this job's first write.
+          DEMO_BEFORE="$(.github/scripts/demo_snapshot.sh /tmp/demo-before.json)"
+
           # Replace, not append: `beta` is always the newest PR build. A
           # missing release on the first run is fine.
           gh release delete beta --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null \
@@ -887,10 +983,172 @@ jobs:
             exit 1
           fi
 
+          # #146 AC1/AC7: a PR's beta never touches `demo`.
+          DEMO_AFTER="$(.github/scripts/demo_snapshot.sh /tmp/demo-after.json)"
+          if [ "$DEMO_BEFORE" = unreadable ] || [ "$DEMO_AFTER" = unreadable ]; then
+            echo "warning: the demo release could not be read, so 'demo untouched' was not checked (above)"
+          else
+            python3 .github/scripts/check_release.py --demo-untouched "$DEMO_BEFORE" "$DEMO_AFTER" || {
+              echo "WHY THIS JOB FAILED: the beta job changed the demo release; only a demo dispatch may (#146)"; exit 1; }
+          fi
+
           URL="$(gh release view beta --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
           echo "beta: $URL"
           {
             echo "### Coaching Beta"
             echo
             echo "**[Install from the beta release]($URL)** — PR #${PR_NUMBER}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Publish the demo — #146
+  # ---------------------------------------------------------------------------
+  #
+  # PO ruling 31: a Coaching Beta Rob can share, that opens with the made-up
+  # Test kit squad and season loaded. A dispatch of this workflow with
+  # distribution=demo ("Refresh the demo"): the apk job built Coaching Beta
+  # (APP_VARIANT=beta, AC3) with distribution:demo written in (AC6), and the
+  # smoke job proved on that APK that the seed ran (SMOKE_EXPECT, AC4) and
+  # that Settings shows the Test kit.
+  #
+  # One release, tag `demo`, titled "Coaching Beta — demo", with its own
+  # link (AC1). A prerelease, never Latest. A refresh edits it IN PLACE: the
+  # same release (same id and link), the tag moved to this commit, the page
+  # rewritten and the APK replaced under the same name, so
+  # releases/download/demo/coaching-beta-demo.apk is a permanent link too.
+  # Main's release job and a PR's beta job never touch it, and prove so
+  # (check_release.py --demo-untouched).
+  #
+  # dry_run (any ref) runs everything up to publishing, including writing
+  # the page and checking it, and publishes nothing.
+  #
+  # Data protection: the APK holds no squad. The test season is made on the
+  # phone the first time it opens; no data file, screenshot or log is
+  # attached (the smoke evidence stays on the run, as for every build).
+  demo:
+    name: Publish the demo
+    needs: [checks, apk, smoke]   # never publish a demo whose tests or smoke test failed (#99)
+    if: github.event_name == 'workflow_dispatch' && inputs.distribution == 'demo'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: coaching-demo        # one writer to the `demo` release at a time
+      cancel-in-progress: false
+    permissions:
+      contents: write             # least privilege: this job only
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DISTRIBUTION: demo
+      PUBLISH: ${{ github.ref == 'refs/heads/main' && !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: coaching-app-apk
+          path: demo-apk
+
+      # Runs on a dry run too: the page is written and checked exactly as it
+      # would be published, so the healthy case is proven before merge.
+      - name: Write the demo page, and check it says what it is
+        run: |
+          set -uo pipefail
+          # The SAME script the apk job used to bake the label (#52).
+          if ! LABEL_ENV="$(.github/scripts/build-label.sh)"; then
+            echo "WHY THIS JOB FAILED: build-label.sh failed"; exit 1
+          fi
+          # Parsed, NOT eval'd: the demo label has spaces and parentheses,
+          # which `eval` reads as shell syntax (the release job can eval only
+          # because main's labels have neither). Found by a local dry run.
+          TAG="$(printf '%s\n' "$LABEL_ENV" | sed -n 's/^TAG=//p')"
+          BUILD_LABEL="$(printf '%s\n' "$LABEL_ENV" | sed -n 's/^BUILD_LABEL=//p')"
+          [ "$TAG" = demo ] || { echo "WHY THIS JOB FAILED: build-label.sh named tag '$TAG', not demo"; exit 1; }
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "label: $BUILD_LABEL"
+
+          SRC="$(find demo-apk -name '*.apk' -print -quit)"
+          test -n "$SRC" || { echo "WHY THIS JOB FAILED: no APK in the artifact"; exit 1; }
+          # One fixed name, so a refresh replaces it and the link never moves.
+          NAME=coaching-beta-demo.apk
+          cp "$SRC" "$NAME"
+          sha256sum "$NAME" > "$NAME.sha256"
+          cat "$NAME.sha256"
+          echo "ASSET=$NAME" >> "$GITHUB_ENV"
+
+          python3 .github/scripts/release_notes.py --self-test > /dev/null 2>&1 || {
+            echo "WHY THIS JOB FAILED: release_notes.py failed its own self-test"; exit 1; }
+          python3 .github/scripts/check_release.py --self-test > /dev/null || {
+            echo "WHY THIS JOB FAILED: check_release.py failed its own self-test"; exit 1; }
+          REFRESHED_ON="$(date -u '+%-d %B %Y')"
+          python3 .github/scripts/release_notes.py demo "$GITHUB_SHA" "$BUILD_LABEL" "$REFRESHED_ON" > notes.md
+          {
+            echo
+            echo "## Artifact"
+            echo
+            echo '```'
+            cat "$NAME.sha256"
+            echo '```'
+            echo
+            echo "Built by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) from \`${GITHUB_SHA}\`."
+            echo "The emulator smoke test passed on this exact artifact, with the test season loaded."
+          } >> notes.md
+          cat notes.md
+          python3 .github/scripts/check_release.py --demo none none notes.md || {
+            echo "WHY THIS JOB FAILED: the demo page does not say what it is (#146 AC5, above)"; exit 1; }
+          if [ "$PUBLISH" != true ]; then
+            echo "dry run (or not main): built, smoke-tested and the page checked; nothing published"
+            {
+              echo "### Demo: dry run, nothing published"
+              echo
+              echo "Built \`$BUILD_LABEL\` from \`${GITHUB_SHA:0:7}\`; smoke test and page check passed."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish the demo, in place
+        if: env.PUBLISH == 'true'
+        run: |
+          set -uo pipefail
+          why() { echo "WHY THIS JOB FAILED: $*"; exit 1; }
+          TITLE="Coaching Beta — demo"
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/demo" > /tmp/demo.json 2> /tmp/demo.err; then
+            echo "refreshing demo release $(jq .id /tmp/demo.json) in place"
+            # The tag follows the build, so the page names the commit the APK
+            # is from. Moved first: if it is refused, nothing has changed yet.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/demo" \
+                -f sha="$GITHUB_SHA" -F force=true > /dev/null 2> /tmp/err.txt \
+              || why "could not move the demo tag to ${GITHUB_SHA:0:7}: $(cat /tmp/err.txt)"
+            gh release edit demo --title "$TITLE" --notes-file notes.md \
+                --prerelease --latest=false --draft=false 2> /tmp/err.txt \
+              || why "gh release edit demo was refused: $(cat /tmp/err.txt)"
+            # Anything the new upload will not replace (an older asset name)
+            # goes, so the page never offers two APKs.
+            jq -r --arg a "$ASSET" '.assets[] | select(.name != $a and .name != ($a + ".sha256")) | "\(.id) \(.name)"' \
+                /tmp/demo.json > /tmp/stale.txt
+            while read -r id name; do
+              [ -n "$id" ] || continue
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" && echo "removed stale asset $name"
+            done < /tmp/stale.txt
+            gh release upload demo "$ASSET" "$ASSET.sha256" --clobber 2> /tmp/err.txt \
+              || why "uploading the demo APK was refused: $(cat /tmp/err.txt)"
+          elif grep -q -e 404 -e 'Not Found' /tmp/demo.err /tmp/demo.json; then
+            echo "no demo release yet; creating it"
+            gh release create demo --target "$GITHUB_SHA" --title "$TITLE" --notes-file notes.md \
+                --prerelease --latest=false "$ASSET" "$ASSET.sha256" 2> /tmp/err.txt \
+              || why "gh release create demo was refused: $(cat /tmp/err.txt)"
+          else
+            why "could not read the demo release: $(cat /tmp/demo.err)"
+          fi
+
+          # Read the outcome back from GitHub rather than trusting the flags.
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/demo" > /tmp/demo-after.json || why "cannot read the demo back"
+          LATEST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          python3 .github/scripts/check_release.py --demo /tmp/demo-after.json "$LATEST" \
+            || why "the demo is not a prerelease with one APK and the whole page, or is Latest (above)"
+          TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/demo" --jq .object.sha)"
+          [ "$TAG_SHA" = "$GITHUB_SHA" ] || why "the demo tag is at ${TAG_SHA:0:7}, not this build's ${GITHUB_SHA:0:7}"
+          URL="$(jq -r .html_url /tmp/demo-after.json)"
+          echo "demo: $URL"
+          {
+            echo "### Coaching Beta — demo"
+            echo
+            echo "**[Open the demo]($URL)** — refreshed from \`${GITHUB_SHA:0:7}\`"
           } >> "$GITHUB_STEP_SUMMARY"

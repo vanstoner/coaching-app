@@ -20,18 +20,34 @@ function ciLabel(event: string, pr = ''): string {
 
 describe('the Test kit shows in betas and development builds (#134)', () => {
   it('AC1: shows in a development build, whatever the label', () => {
-    expect(showTestKit('2026.10.05 · local dev', true)).toBe(true);
-    expect(showTestKit(ciLabel('push'), true)).toBe(true);
+    expect(showTestKit('2026.10.05 · local dev', true, 'app')).toBe(true);
+    expect(showTestKit(ciLabel('push'), true, 'app')).toBe(true);
   });
 
   it('AC2: a release build with a non-PR label never shows it', () => {
-    expect(showTestKit(ciLabel('push'), false)).toBe(false);
-    expect(showTestKit('v2026.10.04-build.81', false)).toBe(false);
-    expect(showTestKit('2026.10.05 · local dev', false)).toBe(false);
+    expect(showTestKit(ciLabel('push'), false, 'app')).toBe(false);
+    expect(showTestKit('v2026.10.04-build.81', false, 'app')).toBe(false);
+    expect(showTestKit('2026.10.05 · local dev', false, 'app')).toBe(false);
   });
 
   it('AC4: a CI pull-request beta (a release build) still shows it', () => {
-    expect(showTestKit(ciLabel('pull_request', '97'), false)).toBe(true);
+    expect(showTestKit(ciLabel('pull_request', '97'), false, 'app')).toBe(true);
+    expect(showTestKit(ciLabel('pull_request', '97'), false, 'beta')).toBe(true);
+  });
+});
+
+describe('the demo shows the Test kit (#146)', () => {
+  it('shows it in the demo, whose label from a manual run of main has no "(pr N)"', () => {
+    const label = ciLabel('workflow_dispatch');
+    expect(isBetaBuild(label)).toBe(false);
+    expect(showTestKit(label, false, 'demo')).toBe(true);
+  });
+
+  it('never in a release: the same label with any other distribution hides it', () => {
+    const label = ciLabel('workflow_dispatch');
+    expect(showTestKit(label, false, 'app')).toBe(false);
+    expect(showTestKit(ciLabel('push'), false, 'app')).toBe(false);
+    expect(showTestKit(ciLabel('push'), false, 'beta')).toBe(false);
   });
 });
 

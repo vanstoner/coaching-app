@@ -21,6 +21,10 @@ only when:
 Titles come from android-apk.yml: the beta job's
 "Coaching Beta (PR #N)" and the release job's
 "Coaching Beta — merged into build N".
+
+#146 AC1/AC7: the demo ("Coaching Beta — demo", tag `demo`) is a separate
+release this decision never acts on. It reads only the `beta` tag; and if
+that tag ever carried the demo's title, the answer is still `keep`.
 """
 
 import json
@@ -30,13 +34,18 @@ import sys
 
 PR_TITLE = re.compile(r"^Coaching Beta \(PR #(\d+)\)$")
 NOTE_TITLE = re.compile(r"^Coaching Beta — merged into build \d+$")
+# #146: demo.yml's release, under the tag DEMO_TAG. Never replaced from here.
+DEMO_TAG = "demo"
+DEMO_TITLE = "Coaching Beta — demo"
 
 
 def parse_title(title):
-    """('none', None) | ('note', None) | ('pr', N) | ('unknown', None)."""
+    """('none', None) | ('note', None) | ('pr', N) | ('demo', None) | ('unknown', None)."""
     if title is None:
         return ("none", None)
     t = title.strip()
+    if t == DEMO_TITLE:
+        return ("demo", None)
     if NOTE_TITLE.match(t):
         return ("note", None)
     m = PR_TITLE.match(t)
@@ -53,6 +62,8 @@ def decide(beta_title, merged_pr, beta_pr_state):
         return ("replace", "there is no beta; create the note")
     if kind == "note":
         return ("replace", "the beta is already a merged note")
+    if kind == "demo":
+        return ("keep", "that is the demo release (#146), which a merge never touches")
     if kind == "unknown":
         return ("keep", f"cannot parse the beta title {beta_title!r}; leaving it alone")
     if merged_pr is not None and n == merged_pr:
@@ -75,7 +86,7 @@ def gh(*args):
     return r.stdout
 
 
-def lookup(repo, sha):
+def lookup(repo, sha, gh=gh):
     try:
         title = json.loads(gh("api", f"repos/{repo}/releases/tags/beta"))["name"]
     except Exception as e:
@@ -111,6 +122,8 @@ def self_test():
         ("healthy: existing merged note -> replace", note, 129, None, "replace"),
         ("healthy: merged PR unknown, beta's PR closed -> replace", "Coaching Beta (PR #129)", None, "closed", "replace"),
         ("open newer PR's beta -> keep (the #132 race)", "Coaching Beta (PR #132)", 129, "open", "keep"),
+        ("#146: the demo's title is never replaced by a merge note", "Coaching Beta — demo", 129, None, "keep"),
+        ("#146: nor when it looks like the merged PR's", "Coaching Beta — demo", None, "closed", "keep"),
         ("closed PR's beta -> replace", "Coaching Beta (PR #120)", 129, "closed", "replace"),
         ("unparseable title -> keep", "Coaching Beta", 129, None, "keep"),
         ("unreadable beta release -> keep", "(unreadable)", 129, None, "keep"),
@@ -122,7 +135,40 @@ def self_test():
         ok = got == want
         failed += not ok
         print(f"  {'ok' if ok else 'x '} {name} -> {got} ({why})")
-    print(f"{len(cases) - failed} expectation(s) passed, {failed} failed.")
+
+    # #146 AC7: the lookups themselves. A fake gh records every call; the
+    # healthy run reads only `beta`, and a lookup naming `demo` is caught.
+    def recording(beta_title):
+        calls = []
+
+        def fake(*args):
+            calls.append(" ".join(args))
+            if args[1].endswith("/releases/tags/beta"):
+                return json.dumps({"name": beta_title})
+            if "/commits/" in args[1]:
+                return json.dumps([{"number": 129, "merge_commit_sha": "abc"}])
+            return json.dumps({"state": "open"})
+        return calls, fake
+
+    def touches_demo(calls):
+        # Any argument that is the tag, or a path ending in it or through it.
+        return any(a == DEMO_TAG or a.endswith(f"/{DEMO_TAG}") or f"/{DEMO_TAG}/" in a
+                   for c in calls for a in c.split())
+
+    extra = 0
+    for name, title in (("healthy: the lookup reads `beta` and never names `demo`", "Coaching Beta (PR #132)"),
+                        ("healthy: nor when `beta` carries the demo's title", DEMO_TITLE)):
+        calls, fake = recording(title)
+        lookup("o/r", "abc", gh=fake)
+        ok = bool(calls) and not touches_demo(calls)
+        failed += not ok
+        extra += 1
+        print(f"  {'ok' if ok else 'x '} {name} ({len(calls)} call(s))")
+    caught = touches_demo(["api repos/o/r/releases/tags/beta", f"release delete {DEMO_TAG} --yes"])
+    failed += not caught
+    extra += 1
+    print(f"  {'ok' if caught else 'x '} a run that names `demo` is caught")
+    print(f"{len(cases) + extra - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 

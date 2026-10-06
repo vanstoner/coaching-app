@@ -17,6 +17,8 @@
 #   GITHUB_REF_NAME     the tag or branch name
 #   GITHUB_RUN_NUMBER   the run number, which is also the versionCode (D2, #47)
 #   PR_NUMBER           the pull request number, when there is one
+#   DISTRIBUTION        #146: `demo` for the demo workflow's build; anything
+#                       else (app, beta, unset) leaves this script as it was
 
 set -euo pipefail
 
@@ -43,7 +45,15 @@ REF_TYPE="${GITHUB_REF_TYPE:-}"
 REF_NAME="${GITHUB_REF_NAME:-}"
 RUN="${GITHUB_RUN_NUMBER:-}"
 
-if [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
+if [ "${DISTRIBUTION:-}" = "demo" ]; then
+  # #146: the demo is published under the fixed tag `demo`, refreshed in
+  # place, so a version-shaped `v...-build.N` would name a release page that
+  # does not exist. The label starts with the tag it is published under, so it
+  # still pastes into the releases page, then says which build: N is this
+  # run's number, the same counter as every other build of this workflow.
+  TAG="demo"
+  LABEL="demo (${VERSION}, build ${RUN:-?})"
+elif [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
   # A tag push publishes under that exact tag. The release job refuses to
   # publish if it disagrees with app.json, so it is checked here too rather
   # than discovered eight minutes later after a Gradle build.

@@ -14,6 +14,9 @@ reads those dumps:
 
     beta     a pull request's Coaching Beta: every BETA_ONLY entry a beta
              must show (the Test kit) is on Settings
+    demo     the demo workflow's Coaching Beta (#146): the same rule as a
+             beta. Its label has no "(pr N)"; the distribution CI writes
+             into it (ADR-017 §5) is what shows the Test kit
     release  a build of main: NO BETA_ONLY entry is on Settings (not the
              Test kit, not a "(pr N)" build label), AND Settings was read to
              its end. An absence on a page that was never fully read proves
@@ -24,7 +27,7 @@ absence, and OCR misses text it cannot read, such as small type or white on
 green. "OCR did not see it" is no evidence. The view tree holds the exact
 text of every node on screen.
 
-    check_beta_only.py --variant beta|'' DUMP...  the verdict: exit 0 pass, 1 fail, 2 misuse
+    check_beta_only.py --variant beta|demo|'' DUMP...  the verdict: exit 0 pass, 1 fail, 2 misuse
     check_beta_only.py --tab-centre DUMP          "X Y" of the Settings tab, to tap
     check_beta_only.py --swipe DUMP               "X1 Y1 X2 Y2", a swipe up inside the scrolling view
     check_beta_only.py --same A B                 exit 0 if two dumps show the same screen
@@ -63,6 +66,13 @@ BETA_ONLY = (
     # hidden. Not required in a beta: the Test kit already proves the switch.
     ("a pull-request build label '(pr N)'", re.compile(r"\(pr \d+\)"), False),
 )
+
+# The builds that are Coaching Beta and must show every required BETA_ONLY
+# entry. #146: the demo is a Coaching Beta too, so it is judged the same way.
+BETA_VARIANTS = {
+    "beta": "a pull request's Coaching Beta",
+    "demo": "the demo Coaching Beta (#146)",
+}
 
 # The tab that opens Settings (src/app/tabs.ts, TABS). Only two things in the
 # app draw this word: the tab and the Settings title (SettingsScreen.tsx).
@@ -156,9 +166,9 @@ def swipe(nodes):
 
 def verdict(dumps, variant):
     """dumps: [node lists or None], in the order read. -> (ok, [lines])."""
-    want_all = variant == "beta"
+    want_all = variant in BETA_VARIANTS
     required = [name for name, _, must in BETA_ONLY if must]
-    lines = [f"build: a pull request's Coaching Beta, which must show {required}" if want_all else
+    lines = [f"build: {BETA_VARIANTS[variant]}, which must show {required}" if want_all else
              f"build: a release of main, which must show none of {[name for name, _, _ in BETA_ONLY]}"]
     if not dumps:
         return False, lines + ["ASSERTION FAILED (#145): no view tree was read from Settings"]
@@ -196,7 +206,8 @@ def verdict(dumps, variant):
             lines.append(
                 f"ASSERTION FAILED (#145): this Coaching Beta does not show {missing} anywhere on Settings. "
                 "The beta's Test kit switch did not turn on: see showTestKit in src/app/testKit.ts, "
-                "and the build label, which must end '(pr N)'.")
+                "the build label, which must end '(pr N)' on a PR, and the distribution "
+                "CI wrote (src/app/generated-distribution.ts, #146).")
             return False, lines
         lines.append(f"settings assertion passed: this beta shows {required}")
         return True, lines
@@ -258,6 +269,7 @@ END_RELEASE = ["Export the minutes file", "Forget everything"]
 END_BETA = ["Add a past season", "Forget everything"]
 RELEASE_LABEL = "v2026.10.06-build.124"          # build-label.sh on main
 BETA_LABEL = "v2026.10.06-build.123 (pr 146)"    # build-label.sh on a pull request
+DEMO_LABEL = "demo (2026.10.06, build 160)"          # build-label.sh in demo.yml (#146)
 
 
 def pages(texts_list, label):
@@ -267,6 +279,7 @@ def pages(texts_list, label):
 def self_test():
     release = pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), RELEASE_LABEL)
     beta = pages((TOP, MID_BETA, END_BETA, END_BETA), BETA_LABEL)
+    demo = pages((TOP, MID_BETA, END_BETA, END_BETA), DEMO_LABEL)
     home = [fake_dump(["Example FC", "No fixtures yet. Add your first match."], tab="home")]
     # Another tab that scrolls and has no Test kit: read to its end, it would
     # pass as a release unless the check knows it is not Settings.
@@ -277,6 +290,7 @@ def self_test():
         # (description, dumps, variant, should pass)
         ("healthy beta: the Test kit is on Settings", beta, "beta", True),
         ("healthy release: Settings read to its end, no Test kit", release, "", True),
+        ("healthy demo (#146): the Test kit is on Settings, with no '(pr N)' label", demo, "demo", True),
         ("healthy release, tab selected but title scrolled off at the start",
          [fake_dump(TOP[1:])] + release[1:], "", True),
         ("healthy release, title shown but the tab not reported as selected",
@@ -286,6 +300,9 @@ def self_test():
         ("healthy beta: its label missing from the view tree is fine, the Test kit proves it",
          pages((TOP, MID_BETA, END_BETA, END_BETA), None), "beta", True),
         ("wrong build, beta: the switch stayed off (a beta without its Test kit)", release, "beta", False),
+        ("wrong build, demo: the switch stayed off (a demo without its Test kit)",
+         pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), DEMO_LABEL), "demo", False),
+        ("wrong build, release: the demo's Test kit in Coaching App", demo, "", False),
         ("wrong build, release: the Test kit shows in Coaching App", beta, "", False),
         ("wrong build, release: a pull-request label '(pr 146)', the Test kit hidden",
          pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), BETA_LABEL), "", False),
@@ -360,8 +377,8 @@ def main(argv):
             return 2
         return 0 if signature(a) == signature(b) else 1
     if len(args) >= 2 and args[0] == "--variant":
-        if args[1] not in ("beta", ""):
-            print(f"--variant must be 'beta' or '' (a release), not {args[1]!r}", file=sys.stderr)
+        if args[1] not in ("", *BETA_VARIANTS):
+            print(f"--variant must be 'beta', 'demo' or '' (a release), not {args[1]!r}", file=sys.stderr)
             return 2
         ok, lines = verdict([load(p) for p in args[2:]], args[1])
         print("\n".join(lines))

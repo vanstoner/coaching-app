@@ -75,9 +75,10 @@ set -u
 PKG="${SMOKE_PACKAGE:?SMOKE_PACKAGE is not set}"
 APK="${SMOKE_APK:?SMOKE_APK is not set}"
 EXPECT="${SMOKE_EXPECT:?SMOKE_EXPECT is not set}"
-# #145: 'beta' on a pull request, empty on main. Required, never defaulted:
-# a missing value would quietly judge a beta by the release's rule.
-VARIANT="${SMOKE_VARIANT?SMOKE_VARIANT is not set: 'beta' on a pull request, empty on main (#145)}"
+# #145: 'beta' on a pull request, 'demo' in the demo workflow (#146), empty
+# on main. Required, never defaulted: a missing value would quietly judge a
+# beta by the release's rule.
+VARIANT="${SMOKE_VARIANT?SMOKE_VARIANT is not set: 'beta' on a pull request, 'demo' in demo.yml, empty on main (#145, #146)}"
 
 # SMOKE_EXPECT is a `|`-separated list, and EVERY entry must appear on screen.
 # One entry proves the app drew its title; a second proves the feature under
@@ -328,6 +329,7 @@ echo "::endgroup::"
 # every build opens Settings and reads it top to bottom:
 #
 #   beta     (a pull request)  every word in BETA_ONLY must be on Settings
+#   demo     (demo.yml, #146)  the same as a beta
 #   release  (main)            none may be, and Settings must have been read
 #                              to its end, or finding none proves nothing
 #
@@ -345,11 +347,12 @@ SET_OUT="$OUT/settings-assertions.txt"
 mkdir -p "$SDIR"
 : > "$SET_OUT"
 snote() { echo "ASSERTION FAILED (#145): $*" >> "$SET_OUT"; fail=1; }
+# The demo (#146) is Coaching Beta too: the beta package, judged as a beta.
 case "$VARIANT:$PKG" in
-  beta:*.beta) ;;
-  beta:* | :*.beta) snote "SMOKE_VARIANT='$VARIANT' does not match SMOKE_PACKAGE=$PKG" ;;
+  beta:*.beta | demo:*.beta) ;;
+  beta:* | demo:* | :*.beta) snote "SMOKE_VARIANT='$VARIANT' does not match SMOKE_PACKAGE=$PKG" ;;
   :*) ;;
-  *) snote "SMOKE_VARIANT must be 'beta' or empty, not '$VARIANT'" ;;
+  *) snote "SMOKE_VARIANT must be 'beta', 'demo' or empty, not '$VARIANT'" ;;
 esac
 if [ "$fail" != "0" ]; then
   echo "Settings not checked: an assertion above already failed" >> "$SET_OUT"

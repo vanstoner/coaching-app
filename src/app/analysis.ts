@@ -143,6 +143,23 @@ export function minutesRowSeconds(row: {
   return { outfield, goal, total: outfield + goal, byUnit: { DEF, MID, ATT } };
 }
 
+/**
+ * Rows in squad order: the order of `players`, as the Squad list and the
+ * squad views show them (#143 AC7, PO ruling Q1: nothing is ranked). Anyone
+ * not in `players` (known to the ledger only) follows, in the order given.
+ * Never by minutes.
+ */
+export function inSquadOrder<T extends { playerId: UUID }>(
+  rows: readonly T[],
+  players: readonly Pick<Player, 'id'>[]
+): T[] {
+  const at = new Map(players.map((p, i) => [p.id, i]));
+  return rows
+    .map((row, i) => ({ row, i, k: at.get(row.playerId) ?? players.length }))
+    .sort((a, b) => a.k - b.k || a.i - b.i)
+    .map(({ row }) => row);
+}
+
 function nameOf(players: Player[], ledgerPlayers: LedgerPlayer[], id: UUID): string {
   const p = players.find((x) => x.id === id);
   if (p) return displayName(p);
@@ -188,7 +205,7 @@ export interface MatchReport {
   keepers: { playerId: UUID; name: string; saves: number; conceded: number }[];
   saves: number;
   conceded: number;
-  /** Everyone available at kick-off, least pitch time first. */
+  /** Everyone available at kick-off, in squad order (PO ruling Q1, #143). */
   players: ReportPlayer[];
   /**
    * Total pitch time this match ÷ the players who attended it: what each
@@ -231,7 +248,8 @@ export function matchReport(
   const totalPitch = minutes.reduce((sum, m) => sum + m.outfieldMs + m.goalkeeperMs, 0);
   const fairShareMs = minutes.length === 0 ? 0 : Math.round(totalPitch / minutes.length);
 
-  const rows: ReportPlayer[] = minutes
+  // PO ruling Q1 (#143 AC7): squad order, never by minutes.
+  const rows: ReportPlayer[] = inSquadOrder(minutes, players)
     .map((m) => {
       const totalMs = m.outfieldMs + m.goalkeeperMs;
       return {
@@ -242,8 +260,7 @@ export function matchReport(
         outfieldMs: m.outfieldMs,
         deltaMs: totalMs - fairShareMs,
       };
-    })
-    .sort((a, b) => a.totalMs - b.totalMs || a.name.localeCompare(b.name));
+    });
 
   const tallies = talliesOf(state.events);
   const score = scoreOf(state.events);
