@@ -17,6 +17,8 @@ import {
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, showTestKit } from './src/app/testKit';
 import { addTestSeason } from './src/app/testSeason';
+import { currentDistribution } from './src/app/distribution';
+import { seedDemo, shouldAutoSeed, storeContents } from './src/app/demoSeed';
 import {
   canArchiveFixture,
   canDeleteFixture,
@@ -208,8 +210,8 @@ export default function App() {
   //
   // Player time, kept under its own key and written alongside every save. The
   // ref is the value; the state is only so Settings repaints.
-  // --- the Test kit (#95): Coaching Beta and dev builds (#134) ---------------
-  const testKitOn = useMemo(() => showTestKit(currentBuildLabel(), __DEV__), []);
+  // --- the Test kit (#95): Coaching Beta, the demo (#146) and dev builds (#134)
+  const testKitOn = useMemo(() => showTestKit(currentBuildLabel(), __DEV__, currentDistribution()), []);
   const [clockSpeed, setClockSpeed] = useState<ClockSpeed>(1);
   const [testKitMessage, setTestKitMessage] = useState('');
 
@@ -251,7 +253,7 @@ export default function App() {
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
-      const saved = await loadSession(store);
+      let saved = await loadSession(store);
       // A ledger that will not read is set aside intact, never written over;
       // one this build may not write is left alone (#99, QA on #110).
       const opened = await openStoredLedger(store, appNow());
@@ -279,6 +281,21 @@ export default function App() {
           ? recordMatches(base, saved.matches, saved.players, saved.squadName, appNow())
           : base
       );
+
+      // #146 AC4: the demo's first open, on an empty store, gets the Test
+      // kit's squad and past season (demoSeed.ts). The season is recorded
+      // into the ledger here as it is played; the session goes on as if it
+      // had been loaded, and the save after launch writes it.
+      if (shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
+        const seeded = seedDemo(
+          saved,
+          ledgerRef.current,
+          { squadName, squadId, format, totalMinutes, periodCount, buzzWhenSubDue },
+          appNow()
+        );
+        if (seeded.ledger) commitLedger(seeded.ledger);
+        saved = seeded.session;
+      }
 
       if (!saved) {
         setStep('fixtures');
