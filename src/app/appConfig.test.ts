@@ -26,7 +26,7 @@ describe('app identity per variant (#79)', () => {
   it('leaves the released app exactly as app.json says', () => {
     delete process.env.APP_VARIANT;
     const c = appConfig({ config: base() });
-    expect(c.android.package).toBe('com.example.coachingapp');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp');
     expect(c.name).toBe('Coaching App');
     expect(c.icon).toBe(base().icon);
     expect(c.android.adaptiveIcon).toEqual(base().android.adaptiveIcon);
@@ -59,7 +59,7 @@ describe('app identity per variant (#79)', () => {
   it('gives the beta its own id, name and icon', () => {
     process.env.APP_VARIANT = 'beta';
     const c = appConfig({ config: base() });
-    expect(c.android.package).toBe('com.example.coachingapp.beta');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp.beta');
     expect(c.name).toBe('Coaching Beta');
     expect(c.icon).toBeTruthy();
     expect(c.icon).not.toBe(base().icon);
@@ -89,7 +89,7 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     const c = appConfig({ config: base() });
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
     expect(c.ios.buildNumber).toBeUndefined();
-    expect(c.android.package).toBe('com.example.coachingapp');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp');
   });
 
   // #143 AC9, ruling 18 (iPad Level 1), replacing "phone only" from #107:
@@ -111,7 +111,7 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     process.env.APP_VARIANT = 'beta';
     const c = appConfig({ config: base() });
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp.beta');
-    expect(c.android.package).toBe('com.example.coachingapp.beta');
+    expect(c.android.package).toBe('com.vanstoner.coachingapp.beta');
     // No ios.icon anywhere, so Expo uses the top-level icon for iOS.
     expect(c.ios.icon).toBeUndefined();
     expect(c.icon).toBe('./assets/images/beta-icon.png');

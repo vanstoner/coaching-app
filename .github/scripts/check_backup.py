@@ -62,7 +62,7 @@ def manifest_with(value):
         "N: android=http://schemas.android.com/apk/res/android (line=2)",
         "  E: manifest (line=2)",
         "      E: application (line=15)",
-        '        A: http://schemas.android.com/apk/res/android:name(0x01010003)="com.example.coachingapp.MainApplication"',
+        '        A: http://schemas.android.com/apk/res/android:name(0x01010003)="com.vanstoner.coachingapp.MainApplication"',
     ]
     if value is not None:
         lines.append(ATTR + value)

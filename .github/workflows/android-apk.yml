@@ -402,7 +402,7 @@ jobs:
             [ -n "$perm" ] || continue
             case "$perm" in
               android.permission.INTERNET|android.permission.VIBRATE) ;;
-              com.example.coachingapp.*)
+              com.vanstoner.coachingapp.*)
                 echo "app-scoped self-permission (allowed): $perm" ;;
               *) note "unexpected permission in the APK: $perm" ;;
             esac
@@ -483,7 +483,7 @@ jobs:
     env:
       # #79: the beta package on a PR build, the released one on main.
       # #146: the demo is Coaching Beta too.
-      SMOKE_PACKAGE: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'com.example.coachingapp.beta' || 'com.example.coachingapp' }}
+      SMOKE_PACKAGE: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'com.vanstoner.coachingapp.beta' || 'com.vanstoner.coachingapp' }}
       SMOKE_APK: apk-under-test/app-release.apk
       # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
       # Data protection. If the screen changes, this moves with it.

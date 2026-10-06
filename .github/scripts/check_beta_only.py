@@ -232,7 +232,7 @@ def verdict(dumps, variant):
 def _node(text="", desc="", bounds=(0, 0, 0, 0), cls="android.widget.TextView",
           scrollable=False, selected=False, children=""):
     b = "[%d,%d][%d,%d]" % bounds
-    return (f'<node index="0" text="{text}" resource-id="" class="{cls}" package="com.example.coachingapp" '
+    return (f'<node index="0" text="{text}" resource-id="" class="{cls}" package="com.vanstoner.coachingapp" '
             f'content-desc="{desc}" checkable="false" checked="false" clickable="false" enabled="true" '
             f'focusable="false" focused="false" scrollable="{str(scrollable).lower()}" long-clickable="false" '
             f'password="false" selected="{str(selected).lower()}" bounds="{b}">{children}</node>')
