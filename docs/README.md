@@ -10,6 +10,7 @@ it wrong (#123). Anything not listed here is either code or archive.
 | Know what shipped, when and why | [HISTORY.md](../HISTORY.md) |
 | Know why a load-bearing choice was made | [Decision log (ADRs)](./decisions/README.md) |
 | Read the v1 domain, engine and fairness specs | [Specifications](./specs/) |
+| Know what the app does with children's data (the App Store's privacy link) | [Privacy policy](./privacy.md) |
 | Know who does what | [Squad roles](./roles/README.md), and each skill in `.claude/skills/` |
 | See the delivery slice plan | [Delivery slices](./process/delivery-slices.md) |
 | Hand the project to a new team | [Handover prompt](./HANDOVER-PROMPT.md) |

@@ -92,6 +92,11 @@ jobs:
       - name: Prove the beta-only check gates before trusting it
         run: python3 .github/scripts/check_beta_only.py --self-test
 
+      # #108 D2: the App Store listing text fits Apple's limits. The self-test
+      # checks the listing in the repo first, healthy, then each field over.
+      - name: Prove the listing check gates before trusting it
+        run: python3 .github/scripts/check_listing.py --self-test
+
       # #146: the distribution writer and its bundle assertion (ADR-017 §5)
       # run in the Android and iOS jobs; the self-test also runs here, in
       # seconds, healthy cases first.
