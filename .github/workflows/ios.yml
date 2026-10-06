@@ -49,6 +49,10 @@ jobs:
       # The build label says "(pr N)" on a PR build, which is what shows the
       # Test kit in Coaching Beta (#95). Without it the label read "(pr ?)".
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      # #146, ADR-017 §5: the simulator build is Coaching Beta or Coaching
+      # App, so it carries the same distribution as the Android build of the
+      # same event. Never demo: the demo is Android only.
+      DISTRIBUTION: ${{ github.event_name == 'pull_request' && 'beta' || 'app' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -79,6 +83,16 @@ jobs:
           python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
           grep -qF "$BUILD_LABEL" src/app/generated-build-label.ts \
             || { echo "WHY THIS JOB FAILED: the generated module does not contain the label"; exit 1; }
+
+      # #146: as the Android job does, self-test first, then the real write
+      # (refused unless the distribution matches APP_VARIANT).
+      - name: Write the distribution into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-distribution.py --self-test
+          python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
+          grep -qF "'distribution:$DISTRIBUTION'" src/app/generated-distribution.ts \
+            || { echo "WHY THIS JOB FAILED: the generated module does not say distribution:$DISTRIBUTION"; exit 1; }
 
       - name: Toolchain
         run: |
@@ -178,6 +192,8 @@ jobs:
             # (#95): checked in both encodings Hermes may use (#52).
             python3 .github/scripts/assert_label_in_bundle.py "$APP/main.jsbundle" "$BUILD_LABEL" \
               || note "the build label '$BUILD_LABEL' is not in the .app's bundle"
+            python3 .github/scripts/write-distribution.py --assert-bundle "$APP/main.jsbundle" "$DISTRIBUTION" \
+              || note "the .app's bundle is not only distribution:$DISTRIBUTION (#146, ADR-017 §5)"
           else
             note "no main.jsbundle in the .app — it could not run without a Metro server"
           fi

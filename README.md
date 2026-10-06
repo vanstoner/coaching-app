@@ -23,6 +23,11 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
   so testing never touches the real squad. Its Test kit adds made-up players, a
   past season and a faster clock. After a merge, `beta` holds no APK, just a
   note pointing at the new Coaching App build, until the next pull request.
+- **Coaching Beta — demo** — the [`demo` prerelease](https://github.com/vanstoner/coaching-app/releases/tag/demo),
+  for sharing. It is Coaching Beta, built from `main` when asked, and it opens
+  with the made-up Test kit squad and past season already loaded (on a phone
+  with no Coaching Beta data). Its link never changes; each refresh replaces it.
+  Android only.
 
 Each page opens with the pull request it contains, the issues that closes and
 what changed; the beta also lists its test steps.

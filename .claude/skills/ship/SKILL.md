@@ -12,6 +12,15 @@ still open (`beta_decision.py`). Each page opens with the PR it contains and the
 issues it closes (`release_notes.py`); iOS CI attaches a simulator zip to it.
 If a session produces no installable APK, it produced nothing.
 
+**The demo (#146).** A third release, tag `demo`, "Coaching Beta — demo": a
+Coaching Beta (beta id and icon) with `distribution:demo` written in, which
+seeds the made-up Test kit squad and season on first open. "Refresh the demo"
+means `gh workflow run android-apk.yml --ref main -f distribution=demo`, best
+after main's release is green so the page names that build. It publishes from
+main only and is refreshed in place (same release, tag moved, APK replaced);
+`-f dry_run=true` proves any branch without publishing. The release and beta
+jobs never touch it and check so (`check_release.py --demo-untouched`).
+
 ## Produce
 
 - Workflows, build scripts, gates, release plumbing.

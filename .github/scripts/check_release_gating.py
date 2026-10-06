@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert a red `checks` job stops the release AND the beta — #99 AC6.
+"""Assert a red `checks` job stops the release, the beta AND the demo — #99 AC6, #146.
 
 GitHub skips a job whose `needs` did not all succeed, unless its `if:` uses
 a status function (always(), failure(), cancelled(), success() with `||`)
@@ -20,7 +20,7 @@ import sys
 
 import yaml
 
-GATED = ("release", "beta")
+GATED = ("release", "beta", "demo")
 STATUS_FN = re.compile(r"\b(always|failure|cancelled|success)\s*\(")
 
 
@@ -45,12 +45,16 @@ def problems(doc):
 
 
 def self_test():
-    def wf(release_needs, beta_needs, release_if="github.event_name == 'push'", beta_if="github.event_name == 'pull_request'", checks=True):
+    def wf(release_needs, beta_needs, release_if="github.event_name == 'push'", beta_if="github.event_name == 'pull_request'",
+           checks=True, demo_needs=("checks", "apk", "smoke"), demo_if="inputs.distribution == 'demo'"):
         jobs = {
             "apk": {}, "smoke": {"needs": "apk"},
             "release": {"needs": release_needs, "if": release_if},
             "beta": {"needs": beta_needs, "if": beta_if},
+            "demo": {"needs": list(demo_needs or ()), "if": demo_if},
         }
+        if demo_needs is None:
+            del jobs["demo"]
         if checks:
             jobs["checks"] = {}
         return {"jobs": jobs}
@@ -63,6 +67,9 @@ def self_test():
         ("release runs always()", wf(ok, ok, release_if="always() && github.ref == 'refs/heads/main'"), False),
         ("beta runs on failure()", wf(ok, ok, beta_if="failure() || github.event_name == 'pull_request'"), False),
         ("no checks job at all", wf(ok, ok, checks=False), False),
+        ("#146: demo forgot checks", wf(ok, ok, demo_needs=("apk", "smoke")), False),
+        ("#146: demo runs always()", wf(ok, ok, demo_if="always() && inputs.distribution == 'demo'"), False),
+        ("#146: no demo job at all", wf(ok, ok, demo_needs=None), False),
     ]
     failed = 0
     for name, doc, should_pass in cases:
@@ -85,9 +92,9 @@ def main(argv):
     for p in found:
         print(f"ASSERTION FAILED: {p}")
     if found:
-        print("WHY THIS JOB FAILED: a red `checks` job would no longer stop a release or a beta (#99 AC6).")
+        print("WHY THIS JOB FAILED: a red `checks` job would no longer stop a release, a beta or the demo (#99 AC6, #146).")
         return 1
-    print("release and beta both need `checks`, with no status function in their if: — a red `checks` stops both.")
+    print("release, beta and demo all need `checks`, with no status function in their if: — a red `checks` stops each.")
     return 0
 
 
