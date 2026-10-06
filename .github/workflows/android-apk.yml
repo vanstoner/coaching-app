@@ -397,6 +397,9 @@ jobs:
   #   1. the app launches and does not crash
   #   2. the screen is not blank
   #   3. OCR finds "Example FC" on it
+  # and, PO ruling 29 (#145):
+  #   4. Settings shows every beta-only feature on a PR's Coaching Beta, and
+  #      none on a build of main (check_beta_only.py, BETA_ONLY)
   #
   # What this job proves and what it does not is written out in full in the
   # header of .github/scripts/emulator-smoke.sh and in the PR that added it.
@@ -435,6 +438,10 @@ jobs:
       # failure mode that accounts for five of this project's six CI failures.
       SMOKE_EXPECT: Example FC|No fixtures yet
       SMOKE_OUT: smoke-evidence
+      # #145: what Settings must show. 'beta' on a PR: every beta-only
+      # feature. Empty on main: none. The same condition as APP_VARIANT in
+      # the apk job, so the rule always matches the build under test.
+      SMOKE_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -473,6 +480,11 @@ jobs:
       # wrong text and on noise. A gate nobody has seen fail is not a gate.
       - name: Prove the screen assertions gate before trusting them
         run: python3 .github/scripts/test_smoke_assert.py
+
+      # #145 AC2: the Settings check, dry-run before the emulator boots. A
+      # healthy beta and a healthy release first, then a wrong build each way.
+      - name: Prove the beta-only check gates before trusting it
+        run: python3 .github/scripts/check_beta_only.py --self-test
 
       # Issue #43 names this as the single unverified assumption. If it turns
       # out to be wrong, this is where the job stops — in seconds, with a

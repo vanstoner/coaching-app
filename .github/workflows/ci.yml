@@ -87,6 +87,11 @@ jobs:
       - name: Prove the allowBackup check gates before trusting it
         run: python3 .github/scripts/check_backup.py --self-test
 
+      # #145: the emulator's Settings check (beta-only features) runs in the
+      # Android job; its self-test also runs here, in seconds, healthy first.
+      - name: Prove the beta-only check gates before trusting it
+        run: python3 .github/scripts/check_beta_only.py --self-test
+
       # #99 AC6: a red `checks` job must stop the release AND the beta. The
       # release path only runs after merge, so the wiring that guarantees it
       # is checked here, on every PR — self-test first, healthy case included.
