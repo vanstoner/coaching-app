@@ -11,6 +11,13 @@
         "What to Test" (en-GB) to the file's text (AC3). Exits 0 with a
         warning if it cannot: the upload has already happened.
 
+    asc_api.py listing BUNDLE_ID VERSION FOLDER [--dry-run]
+        #108 D3: the listing text from FOLDER (check_listing.py's files) to the
+        app's en-GB App Information (name, subtitle, privacy URL) and to that
+        VERSION's en-GB page (description, keywords, promotional text, support
+        URL), then read back and compared. --dry-run prints the differences
+        and changes nothing.
+
     asc_api.py --self-test
 
 Credentials from the environment, as the workflow already holds them:
@@ -120,6 +127,92 @@ class Asc:
 
 
 # ---------------------------------------------------------------------------
+# Listing (#108 D3)
+# ---------------------------------------------------------------------------
+
+# file -> (where, API attribute)
+LISTING = {
+    "name.txt": ("info", "name"),
+    "subtitle.txt": ("info", "subtitle"),
+    "privacy_url.txt": ("info", "privacyPolicyUrl"),
+    "description.txt": ("version", "description"),
+    "keywords.txt": ("version", "keywords"),
+    "promotional_text.txt": ("version", "promotionalText"),
+    "support_url.txt": ("version", "supportUrl"),
+}
+
+
+def listing_wanted(folder):
+    """{(where, attribute): text} from the folder's files that exist."""
+    out = {}
+    for f, key in LISTING.items():
+        path = os.path.join(folder, f)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                out[key] = fh.read().strip()
+    return out
+
+
+def listing_diff(wanted, have):
+    """[(where, attribute, have, wanted)] for every field that differs."""
+    return [(w, a, have.get((w, a)), v) for (w, a), v in sorted(wanted.items()) if have.get((w, a)) != v]
+
+
+def listing(bundle_id, version, folder, dry_run=False):
+    asc = Asc()
+    app = asc.app_id(bundle_id)
+    infos = asc.call("GET", f"/apps/{app}/appInfos")["data"]
+    editable = [i for i in infos if i["attributes"].get("appStoreState", i["attributes"].get("state"))
+                not in ("READY_FOR_SALE", "READY_FOR_DISTRIBUTION")] or infos
+    info_id = editable[0]["id"]
+    q = urllib.parse.urlencode({"filter[versionString]": version, "filter[platform]": "IOS"})
+    versions = asc.call("GET", f"/apps/{app}/appStoreVersions?{q}")["data"]
+    if not versions:
+        raise SystemExit(f"WHY THIS JOB FAILED: App Store Connect has no iOS version {version}; "
+                         "its version page must read exactly this (#108).")
+    version_id = versions[0]["id"]
+
+    def locs():
+        info = [x for x in asc.call("GET", f"/appInfos/{info_id}/appInfoLocalizations")["data"]
+                if x["attributes"]["locale"] == LOCALE]
+        ver = [x for x in asc.call("GET", f"/appStoreVersions/{version_id}/appStoreVersionLocalizations")["data"]
+               if x["attributes"]["locale"] == LOCALE]
+        if not info or not ver:
+            raise SystemExit(f"WHY THIS JOB FAILED: no {LOCALE} localisation on the app or on version {version}")
+        have = {("info", k): v for k, v in info[0]["attributes"].items()}
+        have.update({("version", k): v for k, v in ver[0]["attributes"].items()})
+        return info[0]["id"], ver[0]["id"], have
+
+    info_loc, ver_loc, have = locs()
+    wanted = listing_wanted(folder)
+    diff = listing_diff(wanted, have)
+    for w, a, old, new in diff:
+        print(f"{'would change' if dry_run else 'changing'} {w}.{a}: {len(old or '')} -> {len(new)} characters")
+    if not diff:
+        print("App Store Connect already matches the listing files")
+        return 0
+    if dry_run:
+        print("Dry run: nothing was changed.")
+        return 0
+    info_attrs = {a: v for (w, a), v in wanted.items() if w == "info"}
+    ver_attrs = {a: v for (w, a), v in wanted.items() if w == "version"}
+    if info_attrs:
+        asc.call("PATCH", f"/appInfoLocalizations/{info_loc}",
+                 {"data": {"type": "appInfoLocalizations", "id": info_loc, "attributes": info_attrs}})
+    if ver_attrs:
+        asc.call("PATCH", f"/appStoreVersionLocalizations/{ver_loc}",
+                 {"data": {"type": "appStoreVersionLocalizations", "id": ver_loc, "attributes": ver_attrs}})
+    _, _, back = locs()
+    left = listing_diff(wanted, back)
+    if left:
+        for w, a, old, new in left:
+            print(f"READ-BACK DIFFERS: {w}.{a}")
+        raise SystemExit("WHY THIS JOB FAILED: App Store Connect does not hold the listing files after the update")
+    print(f"read back: all {len(wanted)} fields match the listing files")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -214,13 +307,19 @@ def self_test():
     expect("healthy: highest of Apple's build numbers", highest(["301", "401", "99"]) == 401)
     expect("no builds yet is 0", highest([]) == 0)
     expect("dotted numbers compare by their first part", highest(["4.2", "130"]) == 130)
+    want = {("info", "name"): "Heart of the Game: Coach", ("version", "keywords"): "heart,football"}
+    expect("healthy: nothing to change when App Store Connect matches",
+           listing_diff(want, dict(want)) == [])
+    expect("a changed field is listed once, with both values",
+           listing_diff(want, {("info", "name"): "Old"}) ==
+           [("info", "name", "Old", "Heart of the Game: Coach"), ("version", "keywords", None, "heart,football")])
     try:
         der_to_raw(b"\x31\x00")
         expect("a malformed signature is refused", False)
     except ValueError:
         expect("a malformed signature is refused", True)
 
-    print(f"{8 - failed} expectation(s) passed, {failed} failed.")
+    print(f"{10 - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 
@@ -229,6 +328,8 @@ def main(argv):
         return self_test()
     if len(argv) == 4 and argv[1] == "max-build":
         return max_build(argv[2], argv[3])
+    if len(argv) in (5, 6) and argv[1] == "listing":
+        return listing(argv[2], argv[3], argv[4], dry_run=argv[5:] == ["--dry-run"])
     if len(argv) in (6, 7) and argv[1] == "what-to-test":
         return what_to_test(argv[2], argv[3], argv[4], argv[5], int(argv[6]) if len(argv) == 7 else 20)
     print(__doc__)

@@ -29,6 +29,15 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
   with no Heart FC Beta Coach data). Its link never changes; each refresh replaces it.
   Android only.
 
+### The App Store listing
+
+The listing text lives in `store/app-store/en-GB/` (name, subtitle,
+description, keywords, promotional text, support and privacy links, and the
+notes for App Review). `ci.yml` checks it against Apple's limits on every pull
+request; `store-listing.yml`, run by hand from `main` and approved in the
+`app-store` environment, sends it to App Store Connect and reads it back. The
+privacy policy is [PRIVACY.md](PRIVACY.md).
+
 ### Test data for a TestFlight build
 
 A TestFlight build is the exact build App Review sees, so it has no Test kit.

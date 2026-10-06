@@ -101,6 +101,13 @@ jobs:
           python3 .github/scripts/testflight_notes.py --self-test
           python3 .github/scripts/asc_api.py --self-test
 
+      # #108 D2: the App Store listing files stay within Apple's limits and
+      # claim nothing v1 lacks. Self-test first, then the real files.
+      - name: Check the App Store listing
+        run: |
+          python3 .github/scripts/check_listing.py --self-test
+          python3 .github/scripts/check_listing.py store/app-store/en-GB
+
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.
       - name: Prove the beta-only check gates before trusting it
