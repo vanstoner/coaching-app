@@ -4,16 +4,16 @@ description: Own CI, the build, the APK and the release. Use when touching .gith
 ---
 
 Every session ends with a releasable artifact. Every pull request
-publishes **Coaching Beta** (its own app id; one rolling `beta` release). A
+publishes **Heart FC Beta Coach** (its own app id; one rolling `beta` release). A
 merge is Rob's approval, so a green build of `main` publishes the full
-**Coaching App** release, marked Latest, and replaces the beta with a no-APK
+**Heart FC Coach** release, marked Latest, and replaces the beta with a no-APK
 note pointing at it (#128), unless the beta belongs to a newer PR that is
 still open (`beta_decision.py`). Each page opens with the PR it contains and the
 issues it closes (`release_notes.py`); iOS CI attaches a simulator zip to it.
 If a session produces no installable APK, it produced nothing.
 
-**The demo (#146).** A third release, tag `demo`, "Coaching Beta — demo": a
-Coaching Beta (beta id and icon) with `distribution:demo` written in, which
+**The demo (#146).** A third release, tag `demo`, "Heart FC Beta Coach — demo": a
+Heart FC Beta Coach (beta id and icon) with `distribution:demo` written in, which
 seeds the made-up Test kit squad and season on first open. "Refresh the demo"
 means `gh workflow run android-apk.yml --ref main -f distribution=demo`, best
 after main's release is green so the page names that build. It publishes from
@@ -61,14 +61,17 @@ Write the self-test first. Run it in CI **before** the gate is trusted.
   `expo export` and Gradle's embed path are different bundlers.
 - **Anything derived from a value someone must remember to update will be
   wrong.** `app.json` said `2026.09.18` for two days. Derive it — the commit
-  date cannot go stale.
+  date cannot go stale. The exception since v1 (ruling 42, #108): the store
+  version in `app.json` is semantic (`1.0.0`) and changes only when Rob calls
+  a new version. `build-label.sh` reads it and refuses anything not
+  MAJOR.MINOR.PATCH; the run number still tells every build apart.
 - **Make a failure readable from the last forty lines.** Print a
   `WHY THIS JOB FAILED` block. Three log fetches found nothing before this
   existed.
 - **Never route around an organisation policy denial.** Report it. Tag pushes
   are blocked through the proxy; the release fires on `main` instead.
 - Android refuses a lower `versionCode`, and uninstalling to force a downgrade
-  clears app-private storage. Coaching Beta has no backup at all, and Coaching
+  clears app-private storage. Heart FC Beta Coach has no backup at all, and Coaching
   App's phone backup is not a restore you control. Treat
   "install last week's APK" as destructive until tested.
 

@@ -5,16 +5,16 @@ PO ruling 29 (5 October). Rob: "betas allow functionality not available in
 the full release (e.g. test data etc)". One switch hides the Test kit in a
 release (`showTestKit`, src/app/testKit.ts). A unit test proves the switch,
 but nothing proved it on the built app: the smoke test read only the first
-screen. The worst case is the Test kit in Coaching App, whose "Add test squad
+screen. The worst case is the Test kit in Heart FC Coach, whose "Add test squad
 and fixtures" puts made-up children into the real squad and ledger.
 
 So emulator-smoke.sh opens Settings on every build and scrolls it top to
 bottom, saving the view tree (`uiautomator dump`) at each step. This script
 reads those dumps:
 
-    beta     a pull request's Coaching Beta: every BETA_ONLY entry a beta
+    beta     a pull request's Heart FC Beta Coach: every BETA_ONLY entry a beta
              must show (the Test kit) is on Settings
-    demo     the demo workflow's Coaching Beta (#146): the same rule as a
+    demo     the demo workflow's Heart FC Beta Coach (#146): the same rule as a
              beta. Its label has no "(pr N)"; the distribution CI writes
              into it (ADR-017 §5) is what shows the Test kit
     release  a build of main: NO BETA_ONLY entry is on Settings (not the
@@ -50,7 +50,7 @@ def word_pattern(words):
 
 # --- The one list (#145 AC3) -------------------------------------------------
 #
-# Everything only a pull request's Coaching Beta may show. A release of main
+# Everything only a pull request's Heart FC Beta Coach may show. A release of main
 # must show NONE of it. Each entry: (name, pattern, a beta must show it too).
 # Patterns are matched in each node's text and content description.
 #
@@ -67,11 +67,11 @@ BETA_ONLY = (
     ("a pull-request build label '(pr N)'", re.compile(r"\(pr \d+\)"), False),
 )
 
-# The builds that are Coaching Beta and must show every required BETA_ONLY
-# entry. #146: the demo is a Coaching Beta too, so it is judged the same way.
+# The builds that are Heart FC Beta Coach and must show every required BETA_ONLY
+# entry. #146: the demo is a Heart FC Beta Coach too, so it is judged the same way.
 BETA_VARIANTS = {
-    "beta": "a pull request's Coaching Beta",
-    "demo": "the demo Coaching Beta (#146)",
+    "beta": "a pull request's Heart FC Beta Coach",
+    "demo": "the demo Heart FC Beta Coach (#146)",
 }
 
 # The tab that opens Settings (src/app/tabs.ts, TABS). Only two things in the
@@ -204,7 +204,7 @@ def verdict(dumps, variant):
     if want_all:
         if missing:
             lines.append(
-                f"ASSERTION FAILED (#145): this Coaching Beta does not show {missing} anywhere on Settings. "
+                f"ASSERTION FAILED (#145): this Heart FC Beta Coach does not show {missing} anywhere on Settings. "
                 "The beta's Test kit switch did not turn on: see showTestKit in src/app/testKit.ts, "
                 "the build label, which must end '(pr N)' on a PR, and the distribution "
                 "CI wrote (src/app/generated-distribution.ts, #146).")
@@ -214,7 +214,7 @@ def verdict(dumps, variant):
 
     if seen:
         lines.append(
-            f"ASSERTION FAILED (#145): this release of Coaching App shows {list(seen)} on Settings. "
+            f"ASSERTION FAILED (#145): this release of Heart FC Coach shows {list(seen)} on Settings. "
             "A release must never show what only a beta may: its Test kit can put made-up children "
             "into the real squad. See showTestKit in src/app/testKit.ts and build-label.sh.")
         return False, lines
@@ -232,7 +232,7 @@ def verdict(dumps, variant):
 def _node(text="", desc="", bounds=(0, 0, 0, 0), cls="android.widget.TextView",
           scrollable=False, selected=False, children=""):
     b = "[%d,%d][%d,%d]" % bounds
-    return (f'<node index="0" text="{text}" resource-id="" class="{cls}" package="com.example.coachingapp" '
+    return (f'<node index="0" text="{text}" resource-id="" class="{cls}" package="com.vanstoner.coachingapp" '
             f'content-desc="{desc}" checkable="false" checked="false" clickable="false" enabled="true" '
             f'focusable="false" focused="false" scrollable="{str(scrollable).lower()}" long-clickable="false" '
             f'password="false" selected="{str(selected).lower()}" bounds="{b}">{children}</node>')
@@ -302,8 +302,8 @@ def self_test():
         ("wrong build, beta: the switch stayed off (a beta without its Test kit)", release, "beta", False),
         ("wrong build, demo: the switch stayed off (a demo without its Test kit)",
          pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), DEMO_LABEL), "demo", False),
-        ("wrong build, release: the demo's Test kit in Coaching App", demo, "", False),
-        ("wrong build, release: the Test kit shows in Coaching App", beta, "", False),
+        ("wrong build, release: the demo's Test kit in Heart FC Coach", demo, "", False),
+        ("wrong build, release: the Test kit shows in Heart FC Coach", beta, "", False),
         ("wrong build, release: a pull-request label '(pr 146)', the Test kit hidden",
          pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), BETA_LABEL), "", False),
         ("release: the Test kit only in a content description", release[:-2]

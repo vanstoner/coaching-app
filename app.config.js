@@ -13,8 +13,10 @@
 // injection fails the build rather than shipping versionCode 1.
 //
 // `versionName` IS injected here, from APP_VERSION_NAME — on its own, so the
-// iOS job (#107), which sets no ANDROID_VERSION_CODE, gets the same
-// commit-date version as CFBundleShortVersionString. iOS's build number comes
+// iOS job (#107), which sets no ANDROID_VERSION_CODE, gets the same version
+// as CFBundleShortVersionString. Since v1 (ruling 42 on #108) that version is
+// app.json's semantic version, read by build-label.sh; the commit-date history
+// below is why it is still passed through one script. iOS's build number comes
 // from IOS_BUILD_NUMBER, below.
 //
 // D2 originally put the version of record in app.json. Nobody bumped it, so
@@ -28,14 +30,14 @@
 // disagree. With the variable unset — any local prebuild — app.json's value
 // applies unchanged.
 
-// #79 — Coaching Beta. With APP_VARIANT=beta (set by CI on pull-request
+// #79 — Heart FC Beta Coach. With APP_VARIANT=beta (set by CI on pull-request
 // builds only) the app gets its own application ID and name, so a PR build
 // installs NEXT TO the released app instead of replacing it. Android keys
 // everything on the application ID, including the app's private storage, so
 // the beta also starts empty and never sees the real squad. Unset — every
 // build of main, and any local prebuild — the identity is exactly app.json's.
 const BETA_SUFFIX = '.beta';
-const BETA_NAME = 'Coaching Beta';
+const BETA_NAME = 'Heart FC Beta Coach';
 // Its own launcher icon too, so the two apps are told apart at a glance on
 // the home screen and in the installer (Rob, match day 4). The released app
 // keeps whatever app.json gives it.
@@ -45,8 +47,8 @@ const BETA_ADAPTIVE_BACKGROUND = './assets/images/beta-adaptive-background.png';
 // Both drawn by assets/icon/generate_icons.py: the whistle's cord as a heart
 // around the ball, on orange-mown grass for the beta (PO, 2026-10-04).
 
-// #112 (PO ruling "backup b"): Coaching App is backed up by the phone's own
-// backup so a lost phone keeps the season; Coaching Beta is NOT, so test
+// #112 (PO ruling "backup b"): Heart FC Coach is backed up by the phone's own
+// backup so a lost phone keeps the season; Heart FC Beta Coach is NOT, so test
 // data never reaches a coach's cloud.
 
 function withVariant(config) {
@@ -94,9 +96,9 @@ module.exports = ({ config: base }) => {
 
   const versionName = process.env.APP_VERSION_NAME;
   if (versionName !== undefined && versionName !== '') {
-    if (!/^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$/.test(versionName)) {
+    if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(versionName)) {
       throw new Error(
-        `APP_VERSION_NAME must look like YYYY.MM.DD, got ${JSON.stringify(versionName)}`
+        `APP_VERSION_NAME must be MAJOR.MINOR.PATCH (ruling 42), got ${JSON.stringify(versionName)}`
       );
     }
     config = { ...config, version: versionName };

@@ -37,11 +37,11 @@ on:
   #   gh workflow run android-apk.yml --ref <branch> -f distribution=demo -f dry_run=true
   #
   # dry_run builds, smoke-tests and checks the page it would publish, on any
-  # ref, and publishes nothing. A plain dispatch is still Coaching App (app).
+  # ref, and publishes nothing. A plain dispatch is still Heart FC Coach (app).
   workflow_dispatch:
     inputs:
       distribution:
-        description: "app: rebuild Coaching App. demo: build and publish the demo (#146)"
+        description: "app: rebuild Heart FC Coach. demo: build and publish the demo (#146)"
         type: choice
         options: [app, demo]
         default: app
@@ -139,11 +139,11 @@ jobs:
       APK: android/app/build/outputs/apk/release/app-release.apk
       # D2 (#47): versionCode is the Actions run number. app.config.js reads it.
       ANDROID_VERSION_CODE: ${{ github.run_number }}
-      # #79: a PR build is Coaching Beta, with its own application ID, so it
+      # #79: a PR build is Heart FC Beta Coach, with its own application ID, so it
       # installs NEXT TO the released app. Empty on main: app.json applies
       # unchanged. Set at job level so prebuild and the assertions agree.
-      # #146 AC3: the demo is Coaching Beta too (orange icon, beta id and
-      # storage), so it never touches anyone's Coaching App.
+      # #146 AC3: the demo is Heart FC Beta Coach too (orange icon, beta id and
+      # storage), so it never touches anyone's Heart FC Coach.
       APP_VARIANT: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'beta' || '' }}
       # #146 AC6, ADR-017 §5: what CI writes into the bundle. beta on a pull
       # request (the same condition as APP_VARIANT), demo on a demo dispatch,
@@ -274,7 +274,7 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/write-distribution.py --self-test
           # The pair is refused unless demo/beta go with APP_VARIANT=beta and
-          # app with Coaching App: a demo marker in Coaching App would seed it.
+          # app with Heart FC Coach: a demo marker in Heart FC Coach would seed it.
           python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
           grep -n 'GENERATED_DISTRIBUTION =' src/app/generated-distribution.ts
           grep -qF "'distribution:$DISTRIBUTION'" src/app/generated-distribution.ts \
@@ -286,13 +286,13 @@ jobs:
 
       # Every assertion below gates the job: the build is only a deliverable if
       # the APK is structurally valid, debug-signed, and backs up only as
-      # Coaching App (#112): never as Coaching Beta.
+      # Heart FC Coach (#112): never as Heart FC Beta Coach.
       #
       # Tool output goes to files rather than through pipes: `grep ... | head -1`
       # under `pipefail` can exit 141 on SIGPIPE and kill the step with no
       # diagnostic at all, which is exactly what happened on run 35263505469.
       # Failures accumulate so one missing assertion does not hide the rest.
-      - name: Assert the APK is valid, signed, and backed up only if it is Coaching App
+      - name: Assert the APK is valid, signed, and backed up only if it is Heart FC Coach
         run: |
           set -uo pipefail
           fail=0
@@ -364,7 +364,7 @@ jobs:
           if ! "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt 2>&1; then
             note "aapt2 dump xmltree failed — cannot read the built manifest"
           fi
-          # #112 (PO ruling "backup b"): Coaching App is backed up by the
+          # #112 (PO ruling "backup b"): Heart FC Coach is backed up by the
           # phone's own backup, so a lost phone keeps the season; Coaching
           # Beta is not, so test data never reaches a coach's cloud.
           # Self-test first: the check is dry-run against BOTH healthy cases
@@ -402,7 +402,7 @@ jobs:
             [ -n "$perm" ] || continue
             case "$perm" in
               android.permission.INTERNET|android.permission.VIBRATE) ;;
-              com.example.coachingapp.*)
+              com.vanstoner.coachingapp.*)
                 echo "app-scoped self-permission (allowed): $perm" ;;
               *) note "unexpected permission in the APK: $perm" ;;
             esac
@@ -470,7 +470,7 @@ jobs:
   #   2. the screen is not blank
   #   3. OCR finds "Example FC" on it
   # and, PO ruling 29 (#145):
-  #   4. Settings shows every beta-only feature on a PR's Coaching Beta, and
+  #   4. Settings shows every beta-only feature on a PR's Heart FC Beta Coach, and
   #      none on a build of main (check_beta_only.py, BETA_ONLY)
   #
   # What this job proves and what it does not is written out in full in the
@@ -482,8 +482,8 @@ jobs:
     timeout-minutes: 45
     env:
       # #79: the beta package on a PR build, the released one on main.
-      # #146: the demo is Coaching Beta too.
-      SMOKE_PACKAGE: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'com.example.coachingapp.beta' || 'com.example.coachingapp' }}
+      # #146: the demo is Heart FC Beta Coach too.
+      SMOKE_PACKAGE: ${{ (github.event_name == 'pull_request' || inputs.distribution == 'demo') && 'com.vanstoner.coachingapp.beta' || 'com.vanstoner.coachingapp' }}
       SMOKE_APK: apk-under-test/app-release.apk
       # The squad name App.tsx renders. Not a real club — see CLAUDE.md,
       # Data protection. If the screen changes, this moves with it.
@@ -639,7 +639,7 @@ jobs:
   # authenticated session, which makes them useless on a phone.
   #
   # Why a full release (#79, PO ruling "approve 1 2", 2026-10-03). Betas are
-  # the try-it step: every PR publishes Coaching Beta. Rob's approval merges
+  # the try-it step: every PR publishes Heart FC Beta Coach. Rob's approval merges
   # the PR, so a build of main is an approved beta and publishes the FULL
   # release, marked Latest, and deletes the `beta` prerelease. It used to
   # publish a prerelease of the real app that then needed promoting, which
@@ -711,7 +711,7 @@ jobs:
           # #79, PO ruling "approve 1 2": a merge to main IS the approval, so
           # its build is the full release, marked Latest. Betas come from pull
           # requests only. There is no in-between prerelease of the real app.
-          TITLE="Coaching App — build ${GITHUB_RUN_NUMBER} (${VERSION})"
+          TITLE="Heart FC Coach — build ${GITHUB_RUN_NUMBER} (${VERSION})"
           echo "tag: $TAG   version: $VERSION   title: $TITLE"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "TITLE=$TITLE" >> "$GITHUB_ENV"
@@ -827,17 +827,17 @@ jobs:
             gh release delete beta --cleanup-tag --yes 2>/dev/null \
               && echo "previous beta removed" || echo "no previous beta"
             {
-              echo "## Merged into Coaching App build ${GITHUB_RUN_NUMBER} — install that instead"
+              echo "## Merged into Heart FC Coach build ${GITHUB_RUN_NUMBER} — install that instead"
               echo
-              echo "[Coaching App build ${GITHUB_RUN_NUMBER} (${VERSION})](${URL}) is the release marked Latest."
+              echo "[Heart FC Coach build ${GITHUB_RUN_NUMBER} (${VERSION})](${URL}) is the release marked Latest."
               echo "The beta it came from was approved and merged, so there is nothing to test here."
-              echo "The next pull request's Coaching Beta replaces this note."
+              echo "The next pull request's Heart FC Beta Coach replaces this note."
               echo
               echo "**iPhone: waiting on Apple enrolment (#108)**"
             } > beta-note.md
             if ! gh release create beta \
                 --target "$GITHUB_SHA" \
-                --title "Coaching Beta — merged into build ${GITHUB_RUN_NUMBER}" \
+                --title "Heart FC Beta Coach — merged into build ${GITHUB_RUN_NUMBER}" \
                 --notes-file beta-note.md \
                 --prerelease \
                 --latest=false 2>/tmp/gh-err.txt; then
@@ -884,14 +884,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # Publish Coaching Beta — #79
+  # Publish Heart FC Beta Coach — #79
   # ---------------------------------------------------------------------------
   #
   # PR builds only. The latest one replaces a single prerelease named `beta`,
   # so the PO can install it from a phone as a plain .apk, next to the released
   # app (its own application ID). Never marked latest: the newest main release
   # stays the default download. When the PR merges, the release job replaces
-  # it with a no-APK "Merged into Coaching App build N" note (#128 AC3),
+  # it with a no-APK "Merged into Heart FC Coach build N" note (#128 AC3),
   # unless a newer open PR's beta has replaced it first.
   #
   # The `beta` tag points at the PR's head commit, which a squash merge never
@@ -901,7 +901,7 @@ jobs:
   # Same data-protection footing as the main release: the APK contains no
   # player data (ADR-011). Nothing captured from a phone is ever attached.
   beta:
-    name: Publish Coaching Beta
+    name: Publish Heart FC Beta Coach
     needs: [checks, apk, smoke]   # never publish a beta whose tests or smoke test failed (#99)
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -946,11 +946,11 @@ jobs:
           {
             cat summary.md
             echo
-            echo "## Coaching Beta — PR #${PR_NUMBER}"
+            echo "## Heart FC Beta Coach — PR #${PR_NUMBER}"
             echo
             echo "**${PR_TITLE}**"
             echo
-            echo "Installs NEXT TO Coaching App, not over it, and keeps its own data:"
+            echo "Installs NEXT TO Heart FC Coach, not over it, and keeps its own data:"
             echo "it starts empty and never sees the real squad. Use made-up names."
             echo
             echo "Built by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
@@ -973,7 +973,7 @@ jobs:
           if ! gh release create beta \
               --repo "$GITHUB_REPOSITORY" \
               --target "$HEAD_SHA" \
-              --title "Coaching Beta (PR #${PR_NUMBER})" \
+              --title "Heart FC Beta Coach (PR #${PR_NUMBER})" \
               --notes-file notes.md \
               --prerelease \
               --latest=false \
@@ -995,7 +995,7 @@ jobs:
           URL="$(gh release view beta --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
           echo "beta: $URL"
           {
-            echo "### Coaching Beta"
+            echo "### Heart FC Beta Coach"
             echo
             echo "**[Install from the beta release]($URL)** — PR #${PR_NUMBER}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1004,14 +1004,14 @@ jobs:
   # Publish the demo — #146
   # ---------------------------------------------------------------------------
   #
-  # PO ruling 31: a Coaching Beta Rob can share, that opens with the made-up
+  # PO ruling 31: a Heart FC Beta Coach Rob can share, that opens with the made-up
   # Test kit squad and season loaded. A dispatch of this workflow with
-  # distribution=demo ("Refresh the demo"): the apk job built Coaching Beta
+  # distribution=demo ("Refresh the demo"): the apk job built Heart FC Beta Coach
   # (APP_VARIANT=beta, AC3) with distribution:demo written in (AC6), and the
   # smoke job proved on that APK that the seed ran (SMOKE_EXPECT, AC4) and
   # that Settings shows the Test kit.
   #
-  # One release, tag `demo`, titled "Coaching Beta — demo", with its own
+  # One release, tag `demo`, titled "Heart FC Beta Coach — demo", with its own
   # link (AC1). A prerelease, never Latest. A refresh edits it IN PLACE: the
   # same release (same id and link), the tag moved to this commit, the page
   # rewritten and the APK replaced under the same name, so
@@ -1108,7 +1108,7 @@ jobs:
         run: |
           set -uo pipefail
           why() { echo "WHY THIS JOB FAILED: $*"; exit 1; }
-          TITLE="Coaching Beta — demo"
+          TITLE="Heart FC Beta Coach — demo"
           if gh api "repos/$GITHUB_REPOSITORY/releases/tags/demo" > /tmp/demo.json 2> /tmp/demo.err; then
             echo "refreshing demo release $(jq .id /tmp/demo.json) in place"
             # The tag follows the build, so the page names the commit the APK
@@ -1148,7 +1148,7 @@ jobs:
           URL="$(jq -r .html_url /tmp/demo-after.json)"
           echo "demo: $URL"
           {
-            echo "### Coaching Beta — demo"
+            echo "### Heart FC Beta Coach — demo"
             echo
             echo "**[Open the demo]($URL)** — refreshed from \`${GITHUB_SHA:0:7}\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Assert the built APK's identity matches the build it came from — #79.
 
-A pull-request build is Coaching Beta (`com.example.coachingapp.beta`) so it
-installs next to the released app; a build of main is Coaching App
-(`com.example.coachingapp`), unchanged. Read from the ARTIFACT with
+A pull-request build is Heart FC Beta Coach (`com.vanstoner.coachingapp.beta`) so it
+installs next to the released app; a build of main is Heart FC Coach
+(`com.vanstoner.coachingapp`), unchanged. Read from the ARTIFACT with
 `aapt2 dump badging`, not from config, because the APK is what reaches the
 phone.
 
@@ -18,10 +18,10 @@ gates rejecting a correct artifact.
 import re
 import sys
 
-BASE_ID = "com.example.coachingapp"
-BASE_LABEL = "Coaching App"
+BASE_ID = "com.vanstoner.coachingapp"
+BASE_LABEL = "Heart FC Coach"
 BETA_ID = BASE_ID + ".beta"
-BETA_LABEL = "Coaching Beta"
+BETA_LABEL = "Heart FC Beta Coach"
 
 
 def expected(variant):

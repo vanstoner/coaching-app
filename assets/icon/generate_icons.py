@@ -5,7 +5,7 @@ coaching passion. Color it and beta it as appropriate.", 2026-10-04).
 
 The whistle's cord tied into a heart around the ball, on a mown pitch with
 chalk lines: coaching and passion as one line, grassroots football at the
-centre. Coaching Beta is the same picture on orange-mown grass with a BETA
+centre. Heart FC Beta Coach is the same picture on orange-mown grass with a BETA
 tag — orange has meant "beta" since #91.
 
     python3 assets/icon/generate_icons.py      # rewrites assets/images/*icon*.png
@@ -25,7 +25,7 @@ GRASS_B = (45, 140, 72)
 CHALK = (244, 246, 240)
 INK = (24, 32, 28)
 HEART = (232, 72, 60)
-BETA_GRASS = ((214, 96, 18), (232, 112, 28))   # orange mown grass: Coaching Beta (#91)       # passion: warm red, also the lanyard
+BETA_GRASS = ((214, 96, 18), (232, 112, 28))   # orange mown grass: Heart FC Beta Coach (#91)       # passion: warm red, also the lanyard
 METAL_HI, METAL_LO = (236, 240, 244), (150, 160, 170)
 
 def stripes(img, n=7, angle=-28, colours=(GRASS_A, GRASS_B)):
@@ -159,7 +159,7 @@ def render(beta=False, size=1024, safe=1.0, background=True):
     return img.resize((size, size), Image.LANCZOS)
 
 def write_all(out_dir):
-    """Every icon file the app config names, for Coaching App and Coaching Beta."""
+    """Every icon file the app config names, for Heart FC Coach and Heart FC Beta Coach."""
     for beta in (False, True):
         tag = 'beta-' if beta else ''
         render(beta=beta).convert('RGB').save(os.path.join(out_dir, f'{tag}icon.png'))

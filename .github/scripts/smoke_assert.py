@@ -282,7 +282,7 @@ def normalise_words(text: str) -> list[str]:
     """Lower-case, fold OCR confusions, split into runs of a-z0-9.
 
     Word structure is kept rather than thrown away because it is what stops
-    the assertion matching inside a longer token. `com.example.coachingapp` —
+    the assertion matching inside a longer token. `com.vanstoner.coachingapp` —
     which Android puts on screen in a crash dialog, and React Native puts in
     its red box — contains `examplec`, one edit from the needle. Without a
     word boundary the gate would pass on exactly the screen it exists to

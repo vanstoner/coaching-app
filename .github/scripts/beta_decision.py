@@ -19,10 +19,10 @@ only when:
     beta_decision.py --self-test
 
 Titles come from android-apk.yml: the beta job's
-"Coaching Beta (PR #N)" and the release job's
-"Coaching Beta — merged into build N".
+"Heart FC Beta Coach (PR #N)" and the release job's
+"Heart FC Beta Coach — merged into build N".
 
-#146 AC1/AC7: the demo ("Coaching Beta — demo", tag `demo`) is a separate
+#146 AC1/AC7: the demo ("Heart FC Beta Coach — demo", tag `demo`) is a separate
 release this decision never acts on. It reads only the `beta` tag; and if
 that tag ever carried the demo's title, the answer is still `keep`.
 """
@@ -32,11 +32,15 @@ import re
 import subprocess
 import sys
 
-PR_TITLE = re.compile(r"^Coaching Beta \(PR #(\d+)\)$")
-NOTE_TITLE = re.compile(r"^Coaching Beta — merged into build \d+$")
+# Ruling Q1 on #108: the titles moved from "Coaching Beta" to "Heart FC Beta
+# Coach". A `beta` published before the switch still carries the old name, so
+# both parse until no release under the old name can be the current `beta`.
+BETA_TITLE_NAMES = r"(?:Heart FC Beta Coach|Coaching Beta)"
+PR_TITLE = re.compile(rf"^{BETA_TITLE_NAMES} \(PR #(\d+)\)$")
+NOTE_TITLE = re.compile(rf"^{BETA_TITLE_NAMES} — merged into build \d+$")
 # #146: demo.yml's release, under the tag DEMO_TAG. Never replaced from here.
 DEMO_TAG = "demo"
-DEMO_TITLE = "Coaching Beta — demo"
+DEMO_TITLE = "Heart FC Beta Coach — demo"
 
 
 def parse_title(title):
@@ -114,20 +118,25 @@ def lookup(repo, sha, gh=gh):
 
 
 def self_test():
-    note = "Coaching Beta — merged into build 101"
+    note = "Heart FC Beta Coach — merged into build 101"
     cases = [
         # (description, title, merged PR, beta PR state, expected action)
-        ("healthy: beta of the PR merged now -> replace", "Coaching Beta (PR #129)", 129, None, "replace"),
+        ("healthy: beta of the PR merged now -> replace", "Heart FC Beta Coach (PR #129)", 129, None, "replace"),
         ("healthy: no beta -> create the note", None, 129, None, "replace"),
         ("healthy: existing merged note -> replace", note, 129, None, "replace"),
-        ("healthy: merged PR unknown, beta's PR closed -> replace", "Coaching Beta (PR #129)", None, "closed", "replace"),
-        ("open newer PR's beta -> keep (the #132 race)", "Coaching Beta (PR #132)", 129, "open", "keep"),
-        ("#146: the demo's title is never replaced by a merge note", "Coaching Beta — demo", 129, None, "keep"),
-        ("#146: nor when it looks like the merged PR's", "Coaching Beta — demo", None, "closed", "keep"),
-        ("closed PR's beta -> replace", "Coaching Beta (PR #120)", 129, "closed", "replace"),
-        ("unparseable title -> keep", "Coaching Beta", 129, None, "keep"),
+        ("healthy: merged PR unknown, beta's PR closed -> replace", "Heart FC Beta Coach (PR #129)", None, "closed", "replace"),
+        ("open newer PR's beta -> keep (the #132 race)", "Heart FC Beta Coach (PR #132)", 129, "open", "keep"),
+        ("#146: the demo's title is never replaced by a merge note", "Heart FC Beta Coach — demo", 129, None, "keep"),
+        ("#146: nor when it looks like the merged PR's", "Heart FC Beta Coach — demo", None, "closed", "keep"),
+        ("closed PR's beta -> replace", "Heart FC Beta Coach (PR #120)", 129, "closed", "replace"),
+        ("unparseable title -> keep", "Heart FC Beta Coach", 129, None, "keep"),
         ("unreadable beta release -> keep", "(unreadable)", 129, None, "keep"),
-        ("other PR, state unknown -> keep", "Coaching Beta (PR #132)", 129, None, "keep"),
+        ("other PR, state unknown -> keep", "Heart FC Beta Coach (PR #132)", 129, None, "keep"),
+        # Q1: a `beta` published before the rename still parses.
+        ("healthy: pre-rename note -> replace", "Coaching Beta — merged into build 123", 150, None, "replace"),
+        ("healthy: pre-rename beta of the merged PR -> replace", "Coaching Beta (PR #150)", 150, None, "replace"),
+        ("pre-rename open PR's beta -> keep", "Coaching Beta (PR #151)", 150, "open", "keep"),
+        ("pre-rename demo title is not the demo -> keep", "Coaching Beta — demo", 150, None, "keep"),
     ]
     failed = 0
     for name, title, merged, state, want in cases:
@@ -156,7 +165,7 @@ def self_test():
                    for c in calls for a in c.split())
 
     extra = 0
-    for name, title in (("healthy: the lookup reads `beta` and never names `demo`", "Coaching Beta (PR #132)"),
+    for name, title in (("healthy: the lookup reads `beta` and never names `demo`", "Heart FC Beta Coach (PR #132)"),
                         ("healthy: nor when `beta` carries the demo's title", DEMO_TITLE)):
         calls, fake = recording(title)
         lookup("o/r", "abc", gh=fake)

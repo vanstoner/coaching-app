@@ -240,8 +240,8 @@ def main() -> int:
             "e x a m",
             "sample fee",
             "exemplify",
-            "com.example.coachingapp",         # a crash dialog, not a rendered screen
-            "com.example.coachingapp keeps stopping",
+            "com.vanstoner.coachingapp",         # a crash dialog, not a rendered screen
+            "com.vanstoner.coachingapp keeps stopping",
             "Texample FCx",                    # the needle buried inside a token
             "theexamplefcorp",
         ):
