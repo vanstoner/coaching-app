@@ -1,8 +1,8 @@
 /**
  * The one clock the app reads time from — #95.
  *
- * Real time plus an offset. In Coaching App the offset is always zero and
- * this is the device clock. In Coaching Beta the Test kit can run it ×5 or
+ * Real time plus an offset. In Heart FC Coach the offset is always zero and
+ * this is the device clock. In Heart FC Beta Coach the Test kit can run it ×5 or
  * ×10, so a 50-minute match can be played through the real screens in five
  * minutes.
  *

@@ -22,21 +22,23 @@
 
 set -euo pipefail
 
-# The version is the DATE THIS BUILD'S COMMIT WAS MADE, not a number someone
-# remembers to bump.
+# The version is app.json's `expo.version`, a semantic version (ruling 42 on
+# #108: "this is version 1"; 1.0.0 on both stores and on the GitHub releases).
 #
-# app.json carried "2026.09.18-4" as the version of record (D2, #47). Nobody
-# bumped it, so every build for two days claimed to be the 18th — including
-# build 42, cut on the 19th. A version of record that nobody maintains is not
-# a record, it is a lie with a process attached.
+# Until v1 it was the build commit's date, because a hand-kept version nobody
+# bumped had claimed the 18th for two days (D2, #47). A store version is
+# different: it changes only when Rob calls a release a new version, so it is
+# a decision, not a value to remember. The build number, which is the run
+# number, still tells every build apart and always increases.
 #
-# The commit date is the one thing that is always true about a build and can
-# never go stale. Paired with the run number in the tag it is unique,
-# monotonic and needs no upkeep. Falls back to today for a local run outside
-# a git checkout.
-VERSION="$(git show -s --format=%cd --date=format-local:%Y.%m.%d HEAD 2>/dev/null || true)"
-if [ -z "$VERSION" ]; then
-  VERSION="$(date -u +%Y.%m.%d)"
+# Read here, by the one script both jobs call, so the versionName in the APK,
+# the label on screen and the tag on the releases page still come from one
+# computation. A malformed version fails here, not after a Gradle build.
+APP_JSON="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/app.json"
+VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["expo"]["version"])' "$APP_JSON")"
+if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+  echo "app.json expo.version must be MAJOR.MINOR.PATCH (ruling 42), got '$VERSION'" >&2
+  exit 1
 fi
 export TZ=UTC
 
@@ -59,7 +61,7 @@ elif [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
   # than discovered eight minutes later after a Gradle build.
   TAG="$REF_NAME"
   if [ "$TAG" != "v$VERSION" ]; then
-    echo "tag $TAG does not match this commit's date $VERSION" >&2
+    echo "tag $TAG does not match app.json's version $VERSION" >&2
     exit 1
   fi
   LABEL="$TAG"

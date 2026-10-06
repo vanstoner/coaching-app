@@ -1,5 +1,5 @@
 /**
- * The Test kit — Coaching Beta and development builds (#95, #134). Drawn by
+ * The Test kit — Heart FC Beta Coach and development builds (#95, #134). Drawn by
  * Settings only when `showTestKit` in testKit.ts says so.
  */
 
@@ -27,7 +27,7 @@ export function TestKitSection({
     <View style={local.section}>
       <Text style={screen.fieldLabel}>Test kit (beta only)</Text>
       <Text style={screen.hint}>
-        For trying a build before approving it. Only in Coaching Beta, which keeps its own data, so
+        For trying a build before approving it. Only in Heart FC Beta Coach, which keeps its own data, so
         nothing here reaches the real squad.
       </Text>
 

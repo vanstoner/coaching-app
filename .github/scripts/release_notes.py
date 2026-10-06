@@ -2,7 +2,7 @@
 """Write the top of a release or beta page: which PR, which issues, what changed — #128.
 
 Rob, 4 October: "I see build 100, no beta and no idea what PR it contains".
-Every Coaching App and Coaching Beta page now opens with:
+Every Heart FC Coach and Heart FC Beta Coach page now opens with:
 
     Build N contains PR #M (linked)
     the issues that PR closes, with their titles
@@ -22,14 +22,14 @@ Lookups go through `gh api` with the job's GITHUB_TOKEN. Any lookup that fails
 DEGRADES: the page still publishes and says what could not be found. A notes
 step must never be the reason an APK is not released.
 
-    release_notes.py main SHA BUILD_NUMBER     # Coaching App, after a squash merge
+    release_notes.py main SHA BUILD_NUMBER     # Heart FC Coach, after a squash merge
     release_notes.py beta PR_NUMBER BUILD_NUMBER
     release_notes.py demo SHA BUILD_LABEL DATE # #146: the whole demo page
     release_notes.py --self-test
 
 #146 AC5, the demo page (`demo`): what it is (made-up data only), "Refreshed
 from build N on DATE", how to install it, and that it never touches Coaching
-App. Build N is the Coaching App release built from the same commit, found
+App. Build N is the Heart FC Coach release built from the same commit, found
 the way ios.yml's attach job finds it (a full `v*` release targeting that
 commit). The only listing of releases here, and it reads, never writes. With
 none (main's build still running, or red), the page names the commit instead.
@@ -210,10 +210,10 @@ def build_notes(kind, ref, build, repo, fetch=gh_json):
 # The demo page — #146 AC5. check_release.py --demo reads these phrases back.
 # ---------------------------------------------------------------------------
 
-DEMO_TITLE = "Coaching Beta — demo"
+DEMO_TITLE = "Heart FC Beta Coach — demo"
 DEMO_APK = "coaching-beta-demo.apk"
 DEMO_MADE_UP = "Made-up data only."
-DEMO_NEVER_TOUCHES = "never touches Coaching App"
+DEMO_NEVER_TOUCHES = "never touches Heart FC Coach"
 INSTALL_NOTE = ("Download the `.apk` below on an Android phone and open it.\n"
                 "Allow installation from this source when prompted — it is signed\n"
                 "with the Android debug key, not a Play Store key.")
@@ -242,10 +242,10 @@ def demo_notes(sha, label, date, repo, fetch=gh_json):
     if found:
         n, url = found
         source = f"Refreshed from build {n} on {date}"
-        detail = f"the code of [Coaching App build {n}]({url}), with the test season loaded on first open."
+        detail = f"the code of [Heart FC Coach build {n}]({url}), with the test season loaded on first open."
     else:
         source = f"Refreshed from main at `{sha[:7]}` on {date}"
-        detail = ("main's code at that commit, which had no Coaching App release when this "
+        detail = ("main's code at that commit, which had no Heart FC Coach release when this "
                   "demo was refreshed, with the test season loaded on first open.")
     return "\n".join([
         f"## {DEMO_TITLE}",
@@ -262,11 +262,11 @@ def demo_notes(sha, label, date, repo, fetch=gh_json):
         "",
         INSTALL_NOTE,
         "",
-        f"It installs as **Coaching Beta** (the orange icon), next to Coaching App: it {DEMO_NEVER_TOUCHES}",
-        "or its data. It loads the test season only into an empty Coaching Beta. If",
-        "Coaching Beta is already on the phone, uninstall it first: Android will not",
-        "put an older build over a newer one, and a Coaching Beta with data keeps it.",
-        "Coaching Beta holds made-up test data only and has no backup.",
+        f"It installs as **Heart FC Beta Coach** (the orange icon), next to Heart FC Coach: it {DEMO_NEVER_TOUCHES}",
+        "or its data. It loads the test season only into an empty Heart FC Beta Coach. If",
+        "Heart FC Beta Coach is already on the phone, uninstall it first: Android will not",
+        "put an older build over a newer one, and a Heart FC Beta Coach with data keeps it.",
+        "Heart FC Beta Coach holds made-up test data only and has no backup.",
         "",
         f"On the phone, the label at the foot of the first screen reads `{label}`.",
         "",
@@ -405,10 +405,10 @@ def self_test():
 
     other = dict(rel, target_commitish="0000000", tag_name="v2026.10.05-build.150")
     demo_cases = [
-        ("healthy demo: names build N, made-up data, install note, never touches Coaching App",
+        ("healthy demo: names build N, made-up data, install note, never touches Heart FC Coach",
          releases(other, rel),
-         both(has("## Coaching Beta — demo", DEMO_MADE_UP, "Refreshed from build 153 on 6 October 2026",
-                  "[Coaching App build 153](https://github.com/vanstoner/coaching-app/releases/tag/v2026.10.06-build.153)",
+         both(has("## Heart FC Beta Coach — demo", DEMO_MADE_UP, "Refreshed from build 153 on 6 October 2026",
+                  "[Heart FC Coach build 153](https://github.com/vanstoner/coaching-app/releases/tag/v2026.10.06-build.153)",
                   INSTALL_NOTE, DEMO_NEVER_TOUCHES, "`demo (2026.10.06, build 160)`", IPHONE_STATUS),
               lambda md: REFRESHED.search(md) is not None)),
         ("degraded demo: no release at the commit yet -> names the commit",

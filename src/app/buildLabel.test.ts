@@ -49,12 +49,11 @@ describe('formatBuildLabel', () => {
 });
 
 describe('APP_VERSION', () => {
-  it('is a date, which is what a build is actually stamped with', () => {
-    // app.json is the LOCAL fallback; CI injects the build commit's date into
-    // the APK's versionName (#62). Both are YYYY.MM.DD — the trailing "-N"
-    // went when the hand-maintained version did, because nobody maintained it
-    // and every build for two days claimed to be the 18th.
-    expect(APP_VERSION).toMatch(/^\d{4}\.\d{2}\.\d{2}$/);
+  it('is a semantic version, the one the stores and releases carry (ruling 42)', () => {
+    // build-label.sh reads this same field into the APK's versionName, the
+    // iOS CFBundleShortVersionString and the release tag. Until v1 it was the
+    // build commit's date; ruling 42 on #108 made it 1.0.0.
+    expect(APP_VERSION).toMatch(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
   });
 });
 

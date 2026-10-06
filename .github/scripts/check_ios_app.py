@@ -8,13 +8,16 @@ app.json, because the .app is what would reach a phone. Three things:
      com.vanstoner.coachingapp.beta on a pull request (PO ruling on #107),
      and the display name matches.
   2. RCTAsyncStorageExcludeFromBackup is present and explicit: FALSE for
-     Coaching App (backed up by the phone's own iCloud backup, #112 PO ruling
-     "backup b"), TRUE for Coaching Beta (test data never reaches a cloud).
+     Heart FC Coach (backed up by the phone's own iCloud backup, #112 PO ruling
+     "backup b"), TRUE for Heart FC Beta Coach (test data never reaches a cloud).
      This is the key @react-native-async-storage/async-storage 3.1.1 reads in
      apple/legacy_storage/RNCAsyncStorage.mm:529 before setting
      NSURLIsExcludedFromBackupKey on its storage directory. Absent means
      excluded in that version, so the gate requires it explicitly either way.
-  3. CFBundleVersion is the build number CI injected (the run number), when
+  3. ITSAppUsesNonExemptEncryption is present and FALSE in both variants
+     (#108 B1): the app uses no encryption beyond the OS's own, and saying so
+     in the build keeps TestFlight from holding it at "Missing Compliance".
+  4. CFBundleVersion is the build number CI injected (the run number), when
      one is given — a silently missing injection would ship build 1.
 
     check_ios_app.py INFO_PLIST VARIANT [BUILD_NUMBER]   # VARIANT 'beta' or ''
@@ -29,10 +32,11 @@ import plistlib
 import sys
 
 BASE_ID = "com.vanstoner.coachingapp"
-BASE_NAME = "Coaching App"
+BASE_NAME = "Heart FC Coach"
 BETA_ID = BASE_ID + ".beta"
-BETA_NAME = "Coaching Beta"
+BETA_NAME = "Heart FC Beta Coach"
 BACKUP_KEY = "RCTAsyncStorageExcludeFromBackup"
+ENCRYPTION_KEY = "ITSAppUsesNonExemptEncryption"
 
 
 def expected(variant):
@@ -68,7 +72,13 @@ def check(plist, variant, build_number=None):
     if plist.get(BACKUP_KEY) is not want_excluded:
         problems.append(
             f"{BACKUP_KEY} is {plist.get(BACKUP_KEY, '<absent>')!r}, expected {want_excluded} "
-            "(#112: Coaching App is backed up, Coaching Beta is not)"
+            "(#112: Heart FC Coach is backed up, Heart FC Beta Coach is not)"
+        )
+    # #108 B1: explicit false in both variants. Absent makes TestFlight ask by
+    # hand on every build; true declares encryption the app does not use.
+    if plist.get(ENCRYPTION_KEY) is not False:
+        problems.append(
+            f"{ENCRYPTION_KEY} is {plist.get(ENCRYPTION_KEY, '<absent>')!r}, expected False (#108 B1)"
         )
     if build_number:
         got_build = plist.get("CFBundleVersion")
@@ -77,13 +87,13 @@ def check(plist, variant, build_number=None):
     return problems
 
 
-def plist_of(app_id, name, backup="auto", build="42"):
+def plist_of(app_id, name, backup="auto", build="42", encryption=False):
     # The keys that matter, in the shape Xcode writes into a built .app.
     p = {
         "CFBundleIdentifier": app_id,
         "CFBundleDisplayName": name,
         "CFBundleName": name.replace(" ", ""),
-        "CFBundleShortVersionString": "2026.10.04",
+        "CFBundleShortVersionString": "1.0.0",
         "CFBundleVersion": build,
         "CFBundleExecutable": name.replace(" ", ""),
     }
@@ -91,6 +101,8 @@ def plist_of(app_id, name, backup="auto", build="42"):
         backup = app_id == BETA_ID
     if backup is not None:
         p[BACKUP_KEY] = backup
+    if encryption is not None:
+        p[ENCRYPTION_KEY] = encryption
     return p
 
 
@@ -107,6 +119,11 @@ def self_test():
         ("main app excluded from backup", plist_of(BASE_ID, BASE_NAME, backup=True), "", "42", False),
         ("beta backed up", plist_of(BETA_ID, BETA_NAME, backup=False), "beta", "42", False),
         ("backup key the string 'YES'", plist_of(BETA_ID, BETA_NAME, backup="YES"), "beta", "42", False),
+        ("encryption key absent (B1)", plist_of(BASE_ID, BASE_NAME, encryption=None), "", "42", False),
+        ("encryption key true (B1)", plist_of(BASE_ID, BASE_NAME, encryption=True), "", "42", False),
+        ("beta: encryption key absent (B1)", plist_of(BETA_ID, BETA_NAME, encryption=None), "beta", "42", False),
+        ("beta: encryption key true (B1)", plist_of(BETA_ID, BETA_NAME, encryption=True), "beta", "42", False),
+        ("encryption key the string 'NO'", plist_of(BASE_ID, BASE_NAME, encryption="NO"), "", "42", False),
         ("build number not injected", plist_of(BASE_ID, BASE_NAME, build="1"), "", "42", False),
         ("empty plist", {}, "", None, False),
     ]

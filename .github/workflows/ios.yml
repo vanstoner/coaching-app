@@ -14,7 +14,7 @@ name: iOS
 # there is no Apple Developer enrolment yet; delivery is a separate issue.
 #
 # #128 AC5: the built .app is zipped and attached to the matching release
-# (Coaching App on main, Coaching Beta on a PR) by the `attach` job, so it can
+# (Heart FC Coach on main, Heart FC Beta Coach on a PR) by the `attach` job, so it can
 # be run in the iPhone simulator on a Mac (README, "Run it on a Mac").
 
 on:
@@ -40,16 +40,16 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 75
     env:
-      # #79/#107: a PR build is Coaching Beta (com.vanstoner.coachingapp.beta);
-      # main is Coaching App (com.vanstoner.coachingapp). Job level, so the
+      # #79/#107: a PR build is Heart FC Beta Coach (com.vanstoner.coachingapp.beta);
+      # main is Heart FC Coach (com.vanstoner.coachingapp). Job level, so the
       # prebuild and the assertion agree.
       APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
       # CFBundleVersion — this workflow's run number, read by app.config.js.
       IOS_BUILD_NUMBER: ${{ github.run_number }}
       # The build label says "(pr N)" on a PR build, which is what shows the
-      # Test kit in Coaching Beta (#95). Without it the label read "(pr ?)".
+      # Test kit in Heart FC Beta Coach (#95). Without it the label read "(pr ?)".
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      # #146, ADR-017 §5: the simulator build is Coaching Beta or Coaching
+      # #146, ADR-017 §5: the simulator build is Heart FC Beta Coach or Coaching
       # App, so it carries the same distribution as the Android build of the
       # same event. Never demo: the demo is Android only.
       DISTRIBUTION: ${{ github.event_name == 'pull_request' && 'beta' || 'app' }}
@@ -112,8 +112,8 @@ jobs:
         run: pod install
 
       # Names are DERIVED from what prebuild generated, never hardcoded: the
-      # project is named after the display name (CoachingApp on main,
-      # CoachingBeta on a PR — seen in a local prebuild, 2026-10-04).
+      # project is named after the display name (HeartFCCoach on main,
+      # HeartFCBetaCoach on a PR — seen in a local prebuild, 2026-10-04).
       - name: Build for the simulator, signing off
         run: |
           set -euo pipefail

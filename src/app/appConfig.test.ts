@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-// #79 — the Coaching Beta must be a different app (its own id) that LOOKS
+// #79 — the Heart FC Beta Coach must be a different app (its own id) that LOOKS
 // different (its own icon), and the released app must be untouched.
 const root = resolve(__dirname, '../..');
 const require = createRequire(import.meta.url);
@@ -27,7 +27,7 @@ describe('app identity per variant (#79)', () => {
     delete process.env.APP_VARIANT;
     const c = appConfig({ config: base() });
     expect(c.android.package).toBe('com.vanstoner.coachingapp');
-    expect(c.name).toBe('Coaching App');
+    expect(c.name).toBe('Heart FC Coach');
     expect(c.icon).toBe(base().icon);
     expect(c.android.adaptiveIcon).toEqual(base().android.adaptiveIcon);
   });
@@ -45,7 +45,7 @@ describe('app identity per variant (#79)', () => {
     }
   });
 
-  it('backs up Coaching App and never Coaching Beta (#112, PO ruling "backup b")', () => {
+  it('backs up Heart FC Coach and never Heart FC Beta Coach (#112, PO ruling "backup b")', () => {
     delete process.env.APP_VARIANT;
     const main = appConfig({ config: base() });
     expect(main.android.allowBackup).toBe(true);
@@ -60,7 +60,7 @@ describe('app identity per variant (#79)', () => {
     process.env.APP_VARIANT = 'beta';
     const c = appConfig({ config: base() });
     expect(c.android.package).toBe('com.vanstoner.coachingapp.beta');
-    expect(c.name).toBe('Coaching Beta');
+    expect(c.name).toBe('Heart FC Beta Coach');
     expect(c.icon).toBeTruthy();
     expect(c.icon).not.toBe(base().icon);
     expect(c.android.adaptiveIcon.foregroundImage).toBeTruthy();
@@ -129,13 +129,22 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     }
   });
 
+  it('declares no non-exempt encryption in both variants (#108 B1)', () => {
+    for (const variant of [undefined, 'beta']) {
+      clean();
+      if (variant) process.env.APP_VARIANT = variant;
+      const c = appConfig({ config: base() });
+      expect(c.ios.infoPlist.ITSAppUsesNonExemptEncryption).toBe(false);
+    }
+  });
+
   it('injects the iOS build number from IOS_BUILD_NUMBER, as a string', () => {
     clean();
     process.env.IOS_BUILD_NUMBER = '42';
-    process.env.APP_VERSION_NAME = '2026.10.04';
+    process.env.APP_VERSION_NAME = '1.0.0';
     const c = appConfig({ config: base() });
     expect(c.ios.buildNumber).toBe('42');
-    expect(c.version).toBe('2026.10.04');
+    expect(c.version).toBe('1.0.0');
     // The iOS counter does not leak into Android's.
     expect(c.android.versionCode).toBeUndefined();
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
@@ -144,10 +153,10 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
   it('keeps injecting Android versionCode and versionName as before', () => {
     clean();
     process.env.ANDROID_VERSION_CODE = '61';
-    process.env.APP_VERSION_NAME = '2026.10.03';
+    process.env.APP_VERSION_NAME = '1.2.3';
     const c = appConfig({ config: base() });
     expect(c.android.versionCode).toBe(61);
-    expect(c.version).toBe('2026.10.03');
+    expect(c.version).toBe('1.2.3');
     expect(c.ios.buildNumber).toBeUndefined();
   });
 
@@ -155,5 +164,13 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
     clean();
     process.env.IOS_BUILD_NUMBER = bad;
     expect(() => appConfig({ config: base() })).toThrow(/IOS_BUILD_NUMBER/);
+  });
+
+  // Ruling 42: the version is MAJOR.MINOR.PATCH. The pre-v1 date form, and
+  // anything a store would reject or sort wrongly, fails before a build.
+  it.each(['2026.10.06', '1.0', '01.0.0', '1.0.0-beta'])('refuses APP_VERSION_NAME=%s', (bad) => {
+    clean();
+    process.env.APP_VERSION_NAME = bad;
+    expect(() => appConfig({ config: base() })).toThrow(/APP_VERSION_NAME/);
   });
 });

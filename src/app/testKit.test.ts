@@ -52,11 +52,11 @@ describe('the demo shows the Test kit (#146)', () => {
 });
 
 describe('the Test kit is beta only (#95 AC1)', () => {
-  it('shows in a pull-request build (Coaching Beta), from the label CI really writes', () => {
+  it('shows in a pull-request build (Heart FC Beta Coach), from the label CI really writes', () => {
     expect(isBetaBuild(ciLabel('pull_request', '97'))).toBe(true);
   });
 
-  it('never shows in a build of main (Coaching App), or a local run', () => {
+  it('never shows in a build of main (Heart FC Coach), or a local run', () => {
     expect(isBetaBuild(ciLabel('push'))).toBe(false);
     expect(isBetaBuild('v2026.10.04-build.81')).toBe(false);
     expect(isBetaBuild('2026.09.19 · local dev')).toBe(false);

@@ -1,14 +1,14 @@
 /**
  * Which distribution is this build? — ADR-017 §5, #146.
  *
- * The bundle cannot otherwise tell Coaching Beta from Coaching App (ADR-017,
+ * The bundle cannot otherwise tell Heart FC Beta Coach from Heart FC Coach (ADR-017,
  * Context), so CI writes the answer into `generated-distribution.ts` before
  * bundling, and this module is its only reader. Pure, tested in Node.
  *
- * - `app`  Coaching App, a build of main. Also what anything unrecognised
+ * - `app`  Heart FC Coach, a build of main. Also what anything unrecognised
  *          reads as, so a missed or garbled write only removes features.
- * - `beta` Coaching Beta, a pull request's build.
- * - `demo` Coaching Beta built from main by the demo workflow (#146).
+ * - `beta` Heart FC Beta Coach, a pull request's build.
+ * - `demo` Heart FC Beta Coach built from main by the demo workflow (#146).
  *
  * This file keeps the prefix and the names apart and never joins them, so the
  * only full marker in a bundle is the one CI wrote.

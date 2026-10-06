@@ -1,10 +1,10 @@
 /**
- * The Test kit — Coaching Beta and development builds (#95 "approve 1",
+ * The Test kit — Heart FC Beta Coach and development builds (#95 "approve 1",
  * #134 "approve 14").
  *
  * A fast clock (appClock.ts) and one-tap test data, so a whole match can be
  * played through the real screens in minutes before a beta is approved. Only
- * ever in Coaching Beta — a pull-request build, or the demo (#146) — which has
+ * ever in Heart FC Beta Coach — a pull-request build, or the demo (#146) — which has
  * its own app id and its own storage (#79), so test data and fast-clock
  * matches cannot reach the real squad. Synthetic first names only.
  */
@@ -18,9 +18,9 @@ import type { SavedMatch } from './persistence';
 import { addSwap, emptyPlan, periodLengthMs, setSlot, updateSwap } from './matchPlan';
 
 /**
- * True for a pull-request build of Coaching Beta. CI bakes the build label
+ * True for a pull-request build of Heart FC Beta Coach. CI bakes the build label
  * into the bundle, and only a pull-request build labels itself "(pr N)". A
- * build of main never does — including the demo (#146), a Coaching Beta built
+ * build of main never does — including the demo (#146), a Heart FC Beta Coach built
  * from main, which `showTestKit` tells apart by its distribution instead.
  */
 export function isBetaBuild(buildLabel: string): boolean {
@@ -34,7 +34,7 @@ export function isBetaBuild(buildLabel: string): boolean {
  * distribution CI writes (`distribution.ts`); and in a development build
  * (`__DEV__`) — `expo start`, `expo run:ios`, `expo run:android`,
  * `npm run ios:beta` — so a local copy can add sample data. A release build of
- * Coaching App never shows it. The caller passes `__DEV__` and the
+ * Heart FC Coach never shows it. The caller passes `__DEV__` and the
  * distribution; this module reads no platform global, so it stays testable in
  * Node. Every Test-kit gate goes through this one call.
  */

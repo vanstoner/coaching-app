@@ -65,7 +65,7 @@ export function SettingsScreen({
   onBuzzWhenSubDue: (on: boolean) => void;
   /** Player minutes: season, export, import (#75). Drawn by the caller. */
   minutes?: ReactNode;
-  /** The Test kit (#95). Passed only in a Coaching Beta build. */
+  /** The Test kit (#95). Passed only in a Heart FC Beta Coach build. */
   testKit?: ReactNode;
   onForget: () => void;
 }) {

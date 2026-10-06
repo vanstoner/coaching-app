@@ -1,4 +1,4 @@
-# Coaching App
+# Heart FC Coach
 
 A junior football coaching app for one under-10s squad. It answers one question
 at the touchline: **who comes off next, and is everyone getting a fair share?**
@@ -16,17 +16,17 @@ story of how it got here is in [HISTORY.md](./HISTORY.md).
 
 From the [releases page](https://github.com/vanstoner/coaching-app/releases):
 
-- **Coaching App** — the release marked **Latest**. Every merge to `main` that
+- **Heart FC Coach** — the release marked **Latest**. Every merge to `main` that
   builds green publishes one.
-- **Coaching Beta** — the `beta` prerelease, rebuilt from each open pull
+- **Heart FC Beta Coach** — the `beta` prerelease, rebuilt from each open pull
   request. It installs as a separate app (its own id, storage and orange icon),
   so testing never touches the real squad. Its Test kit adds made-up players, a
   past season and a faster clock. After a merge, `beta` holds no APK, just a
-  note pointing at the new Coaching App build, until the next pull request.
-- **Coaching Beta — demo** — the [`demo` prerelease](https://github.com/vanstoner/coaching-app/releases/tag/demo),
-  for sharing. It is Coaching Beta, built from `main` when asked, and it opens
+  note pointing at the new Heart FC Coach build, until the next pull request.
+- **Heart FC Beta Coach — demo** — the [`demo` prerelease](https://github.com/vanstoner/coaching-app/releases/tag/demo),
+  for sharing. It is Heart FC Beta Coach, built from `main` when asked, and it opens
   with the made-up Test kit squad and past season already loaded (on a phone
-  with no Coaching Beta data). Its link never changes; each refresh replaces it.
+  with no Heart FC Beta Coach data). Its link never changes; each refresh replaces it.
   Android only.
 
 Each page opens with the pull request it contains, the issues that closes and
@@ -43,20 +43,20 @@ needs that enrolment.
 added by the iOS workflow a while after the APK.
 
 ```bash
-unzip coaching-app-ios-simulator_*.zip        # gives CoachingApp.app (beta: CoachingBeta.app)
+unzip coaching-app-ios-simulator_*.zip        # gives HeartFCCoach.app (beta: HeartFCBetaCoach.app)
 open -a Simulator                             # boots the default iPhone
-xcrun simctl install booted CoachingApp.app   # or drag the .app onto the simulator window
+xcrun simctl install booted HeartFCCoach.app   # or drag the .app onto the simulator window
 xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coachingapp.beta
 ```
 
 The beta zip is the one with the **Test kit** (made-up players, a past season,
-a faster clock): install `CoachingBeta.app` and open Settings › Test kit.
+a faster clock): install `HeartFCBetaCoach.app` and open Settings › Test kit.
 
 To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
 `npm run android:beta`) once route 2 below works. It builds **Coaching
 Beta**, with its own id, orange icon and storage, so test data never sits
 beside a real squad. Any development build shows the Test kit, and a release
-of Coaching App never does (#134).
+of Heart FC Coach never does (#134).
 
 **Route 2: build it yourself.** A *development* build: it loads the app's code
 live from your Mac, so `npx expo start` must be running while you use it.
@@ -115,8 +115,8 @@ The app holds children's participation data: first names only, and no
 surnames, dates of birth, contact details or photographs. **Real squad data is
 never committed to this repository** and never attached to a release.
 
-Data stays on the phone. **Coaching App** is included in the phone's own
-backup, so a lost or replaced phone keeps the season; **Coaching Beta** is not.
+Data stays on the phone. **Heart FC Coach** is included in the phone's own
+backup, so a lost or replaced phone keeps the season; **Heart FC Beta Coach** is not.
 CI checks both against the built APK. See
 [ADR-011](./docs/decisions/011-player-data-stays-on-device.md) and its
 amendment.

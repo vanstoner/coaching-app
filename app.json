@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Coaching App",
+    "name": "Heart FC Coach",
     "slug": "coaching-app",
-    "version": "2026.09.19",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/images/icon.png",
@@ -11,7 +11,8 @@
       "supportsTablet": true,
       "requireFullScreen": true,
       "infoPlist": {
-        "RCTAsyncStorageExcludeFromBackup": false
+        "RCTAsyncStorageExcludeFromBackup": false,
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
