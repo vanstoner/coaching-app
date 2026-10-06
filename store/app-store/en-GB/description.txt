@@ -1,24 +1,32 @@
-Heart of the Game: Coach answers one question at the touchline: who comes off next, and is everyone getting a fair share?
+Heart of the Game: Coach is the substitutions planner, match-day assistant and season tracker for grassroots and junior football. Plan who plays when, run the match from the touchline, and know that every child is getting a fair share of time on the pitch.
 
-It is made for grassroots and junior football coaches running small-sided matches in quarters or halves.
+Made for small-sided matches played in quarters or halves.
 
-BEFORE THE MATCH
-• Add your squad by first name.
+PLAN BEFORE KICK-OFF
+• Build your squad by first name, with each child's position preferences and who likes to go in goal.
 • Add fixtures, or just press Play now.
-• Plan every period: who starts, who comes off and when, with each child's projected minutes before kick-off.
+• Plan every period: the starting line-up, each substitution and when it happens, with every child's projected minutes shown before a ball is kicked.
+• Suggested line-ups put the children who are owed time on first and share the goalkeeping round. The app suggests; you decide.
 
-DURING THE MATCH
-• A match clock that keeps the right time even if the phone locks or the app is closed.
-• The pitch view: drag a player to swap positions or to make a substitution.
-• The phone buzzes when a planned substitution is due, while the app is open.
-• Record goals, saves and goals conceded, and the score follows.
+RUN THE MATCH
+• A match clock that keeps true time even if the phone locks or the app is closed.
+• Drag and drop players on the pitch to swap positions or make a substitution.
+• While the app is open, the phone buzzes when a planned substitution is due, so nobody is left on the bench.
+• Plans change: re-plan the rest of the match in a few taps.
+• Record goals, saves and goals conceded, and the score keeps itself. Slipped? Undo.
 
-AFTER THE MATCH
-• A match report with every child's time on the pitch, in goal and outfield.
-• Season views: each child's minutes match by match, how close everyone is to the squad average, who is owed time going into the next match, and the positions each child has tried.
+SEE THE SEASON
+• A match report at the final whistle: every child's time on the pitch, in goal and outfield, against their own average.
+• Match analysis: this match's minutes for each child, set against the season so far.
+• Squad views: everyone's minutes match by match, how close the squad is to an even share, who is owed time going into the next match, and the positions each child has tried.
+• A page for every child: playing time, match by match, positions tried and preferences.
 
 FAIR BY DESIGN
 Fairness is total time on the pitch, in goal and outfield together. Positions are a record, never a target.
+
+RECORDS YOU CAN TRUST
+• Every minute is worked out from what happened in the match, so a total and its record can never disagree.
+• Mistakes are fixed with a correction and a note, never by rewriting what happened.
 
 PRIVATE BY DESIGN
 • First names only: no surnames, dates of birth, contact details or photos.
