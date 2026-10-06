@@ -29,6 +29,25 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
   with no Heart FC Beta Coach data). Its link never changes; each refresh replaces it.
   Android only.
 
+### Test data for a TestFlight build
+
+A TestFlight build is the exact build App Review sees, so it has no Test kit.
+To test it with a season in it ([#157](https://github.com/vanstoner/coaching-app/issues/157)):
+
+1. On the iPhone, download
+   [`test-season.json`](https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json)
+   and save it to Files. It is the Test kit's made-up squad (Ava to Jo) and past season.
+2. In Heart FC Coach: **Settings › Import minutes file**, and pick it.
+3. Test. Then **Settings › Forget everything** to empty the phone again.
+
+Import brings in the players and the minutes, so the Squad tab, its views,
+each child's page and the Settings minutes table fill. It does not bring in
+saved fixtures, so **Fixtures › Played** stays empty, keeper preferences are
+not carried, and a missed match does not count as missed (an imported player
+counts as joining the squad on the day of the import).
+`npm run test-season-file` remakes the file; a test fails until it is remade
+if the minutes format changes.
+
 Each page opens with the pull request it contains, the issues that closes and
 what changed; the beta also lists its test steps.
 

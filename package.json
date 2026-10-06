@@ -15,7 +15,8 @@
     "type-check": "tsc --noEmit",
     "bundle:check": "expo export --platform android --output-dir .expo-bundle-check",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test-season-file": "vite-node scripts/test-season-file.ts"
   },
   "keywords": [
     "coaching",
