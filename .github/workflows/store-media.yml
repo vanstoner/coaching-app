@@ -11,18 +11,14 @@ name: App Store media
 # Maestro (pinned, checksummed) taps through store/app-store/maestro/*.yaml on
 # an iPhone 6.9" and an iPad 13" simulator. The screenshots and the 886x1920
 # preview are checked against Apple's rules (check_store_media.py) and kept as
-# this run's `store-media` artifact. On a PR touching this media, the same run
-# proves the healthy case before anything is merged.
+# this run's `store-media` artifact.
 #
 #   gh workflow run store-media.yml --ref main
 
+# By hand only (PO, 2026-10-06: "you're burning credits"). A run is about an
+# hour of macOS minutes, so it never starts on a push or a pull request.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .github/workflows/store-media.yml
-      - .github/scripts/check_store_media.py
-      - store/app-store/maestro/**
 
 concurrency:
   group: store-media-${{ github.ref }}
