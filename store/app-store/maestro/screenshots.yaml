@@ -24,7 +24,9 @@ appId: com.vanstoner.coachingapp
 - waitForAnimationToEnd
 - takeScreenshot: 03-child
 
-- back
+- tapOn:
+    text: "Back to.*"
+    optional: true
 - tapOn: "Home"
 - tapOn: "Play now"
 - waitForAnimationToEnd

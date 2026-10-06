@@ -24,7 +24,7 @@ appId: com.vanstoner.coachingapp
 - tapOn: "Start .*"
 - extendedWaitUntil: { visible: "__never__", timeout: 6000, optional: true }
 
-- tapOn: "Leave"
+- tapOn: "Leave.*"
 - tapOn: "Squad"
 - extendedWaitUntil: { visible: "__never__", timeout: 3500, optional: true }
 - scrollUntilVisible:

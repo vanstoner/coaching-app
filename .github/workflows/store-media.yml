@@ -35,12 +35,16 @@ env:
   MAESTRO_VERSION: 2.11.0
   MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a
   BUNDLE_ID: com.vanstoner.coachingapp
+  # Milliseconds: the XCTest driver's first start on a fresh simulator.
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
 
 jobs:
   media:
     name: Screenshots and the preview video
     runs-on: macos-26
     timeout-minutes: 90
+    permissions:
+      contents: write             # only to push the store-media-preview branch
     env:
       # Heart FC Coach's identity; the distribution is what makes it seed.
       APP_VARIANT: ''
@@ -76,6 +80,34 @@ jobs:
           python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
           grep -qF "'distribution:store'" src/app/generated-distribution.ts \
             || { echo "WHY THIS JOB FAILED: the generated module does not say distribution:store"; exit 1; }
+
+      # The newest runtime and the biggest display of each family Apple asks
+      # for, picked from what this image has rather than hardcoded. Before the
+      # build, so the simulators finish booting while it runs.
+      - name: Create the iPhone 6.9" and iPad 13" simulators
+        run: |
+          set -euo pipefail
+          RUNTIME="$(xcrun simctl list runtimes -j | python3 -c '
+          import json,sys
+          rs=[r for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]]
+          print(sorted(rs,key=lambda r:[int(x) for x in r["version"].split(".")])[-1]["identifier"])')"
+          pick() { xcrun simctl list devicetypes -j | python3 -c '
+          import json,re,sys
+          names=[d["name"] for d in json.load(sys.stdin)["devicetypes"]]
+          hits=[n for n in names if re.search(sys.argv[1], n)]
+          print(hits[-1] if hits else "")' "$1"; }
+          IPHONE="$(pick '^iPhone \d+ Pro Max$')"
+          IPAD="$(pick '^iPad Pro 13-inch')"
+          [ -n "$IPHONE" ] && [ -n "$IPAD" ] || { echo "WHY THIS JOB FAILED: no iPhone Pro Max or iPad Pro 13-inch device type"; xcrun simctl list devicetypes; exit 1; }
+          echo "runtime $RUNTIME; iphone '$IPHONE'; ipad '$IPAD'"
+          IPHONE_UDID="$(xcrun simctl create store-iphone "$IPHONE" "$RUNTIME")"
+          IPAD_UDID="$(xcrun simctl create store-ipad "$IPAD" "$RUNTIME")"
+          # Boot both now: a new simulator's first boot spent nine minutes in
+          # data migration on this image, so it runs during the build.
+          xcrun simctl boot "$IPHONE_UDID"
+          xcrun simctl boot "$IPAD_UDID"
+          echo "IPHONE_UDID=$IPHONE_UDID" >> "$GITHUB_ENV"
+          echo "IPAD_UDID=$IPAD_UDID" >> "$GITHUB_ENV"
 
       - name: Generate the native iOS project
         env:
@@ -116,27 +148,6 @@ jobs:
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
           brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
 
-      # The newest runtime and the biggest display of each family Apple asks
-      # for, picked from what this image has rather than hardcoded.
-      - name: Create the iPhone 6.9" and iPad 13" simulators
-        run: |
-          set -euo pipefail
-          RUNTIME="$(xcrun simctl list runtimes -j | python3 -c '
-          import json,sys
-          rs=[r for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]]
-          print(sorted(rs,key=lambda r:[int(x) for x in r["version"].split(".")])[-1]["identifier"])')"
-          pick() { xcrun simctl list devicetypes -j | python3 -c '
-          import json,re,sys
-          names=[d["name"] for d in json.load(sys.stdin)["devicetypes"]]
-          hits=[n for n in names if re.search(sys.argv[1], n)]
-          print(hits[-1] if hits else "")' "$1"; }
-          IPHONE="$(pick '^iPhone \d+ Pro Max$')"
-          IPAD="$(pick '^iPad Pro 13-inch')"
-          [ -n "$IPHONE" ] && [ -n "$IPAD" ] || { echo "WHY THIS JOB FAILED: no iPhone Pro Max or iPad Pro 13-inch device type"; xcrun simctl list devicetypes; exit 1; }
-          echo "runtime $RUNTIME; iphone '$IPHONE'; ipad '$IPAD'"
-          echo "IPHONE_UDID=$(xcrun simctl create store-iphone "$IPHONE" "$RUNTIME")" >> "$GITHUB_ENV"
-          echo "IPAD_UDID=$(xcrun simctl create store-ipad "$IPAD" "$RUNTIME")" >> "$GITHUB_ENV"
-
       - name: Screenshots on each display, then the preview on the iPhone
         run: |
           set -uo pipefail
@@ -174,11 +185,12 @@ jobs:
           maestro --device "$IPHONE_UDID" test --test-output-dir media/debug-preview \
             "$FLOWS/preview.yaml" || { echo "MEDIA PROBLEM: the preview flow failed"; fail=1; }
           kill -INT "$REC"; wait "$REC" || true
-          # 1320x2868 to 886x1920: scale the width, crop the 4 spare rows;
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 media/preview/raw.mov || true
+          # To 886x1920: scale to cover, then crop the few spare rows;
           # 30 fps; at most 29.5 s; a silent stereo track, as Apple expects.
           ffmpeg -loglevel error -y -i media/preview/raw.mov \
             -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
-            -t 29.5 -vf "scale=886:-2,crop=886:1920,fps=30,format=yuv420p" \
+            -t 29.5 -vf "scale=886:1920:force_original_aspect_ratio=increase,crop=886:1920,fps=30,format=yuv420p" \
             -c:v libx264 -profile:v high -level 4.0 -crf 18 -c:a aac -b:a 256k -shortest \
             -movflags +faststart media/preview/preview.mp4 || { echo "MEDIA PROBLEM: ffmpeg failed"; fail=1; }
           rm -f media/preview/raw.mov
@@ -202,3 +214,24 @@ jobs:
           path: media/
           if-no-files-found: warn
           retention-days: 30
+
+      # The artifact cannot be opened from Claude's cloud session, which
+      # reviews these images before Rob sees them; a branch can. Made-up first
+      # names only (invariant 4), nothing from a device. Replaced on each run.
+      - name: Publish the media to the store-media-preview branch for review
+        if: always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -d media ] || { echo "no media to publish"; exit 0; }
+          D="$RUNNER_TEMP/preview-branch"
+          rm -rf "$D" && mkdir -p "$D"
+          rsync -a --include='*/' --include='*.png' --include='*.mp4' --include='*.json' --exclude='*' media/ "$D/"
+          cd "$D"
+          git init -q -b store-media-preview
+          git add -A
+          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -q --allow-empty -m "App Store media from run $GITHUB_RUN_ID ($GITHUB_SHA)"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/store-media-preview
+          echo "media on branch store-media-preview:"; git ls-files | head -60
