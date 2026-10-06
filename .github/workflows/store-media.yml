@@ -69,7 +69,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # As a dispatch, even on a PR: the label shows on Home, and a store
+      # screenshot must not read "(pr ?)".
       - name: Compute the version
+        env:
+          GITHUB_EVENT_NAME: workflow_dispatch
         run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
 
       - name: Write the build label and the store distribution into the bundle
@@ -94,7 +98,11 @@ jobs:
           pick() { xcrun simctl list devicetypes -j | python3 -c '
           import json,re,sys
           names=[d["name"] for d in json.load(sys.stdin)["devicetypes"]]
-          hits=[n for n in names if re.search(sys.argv[1], n)]
+          # The newest model: the highest number in the name, not the last
+          # in Xcode's list (run 2 got an iPhone 11 Pro Max, 1242x2688).
+          def key(n):
+              return [int(x) for x in re.findall(r"\d+", n)]
+          hits=sorted((n for n in names if re.search(sys.argv[1], n)), key=key)
           print(hits[-1] if hits else "")' "$1"; }
           IPHONE="$(pick '^iPhone \d+ Pro Max$')"
           IPAD="$(pick '^iPad Pro 13-inch')"
@@ -174,8 +182,6 @@ jobs:
             python3 .github/scripts/check_store_media.py shots "media/$2" "$2" || fail=1
           }
           prepare "$IPHONE_UDID"; shots "$IPHONE_UDID" iphone
-          prepare "$IPAD_UDID";   shots "$IPAD_UDID" ipad
-          xcrun simctl shutdown "$IPAD_UDID" || true
 
           # The preview: record the iPhone around the preview flow.
           mkdir -p media/preview media/debug-preview
@@ -197,6 +203,19 @@ jobs:
           if [ -s media/preview/preview.mp4 ]; then
             ffprobe -v error -show_streams -show_format -of json media/preview/preview.mp4 > media/preview/probe.json
             python3 .github/scripts/check_store_media.py video media/preview/probe.json || fail=1
+          fi
+
+          # The iPad last, alone: with the iPhone still running, its launch
+          # hung for eight minutes (run 2). One retry, from a fresh launch.
+          xcrun simctl shutdown "$IPHONE_UDID" || true
+          prepare "$IPAD_UDID"
+          before=$fail
+          shots "$IPAD_UDID" ipad
+          if [ "$fail" != "$before" ]; then
+            echo "the iPad flow failed once; retrying"
+            fail=$before
+            rm -rf media/ipad media/raw-ipad
+            shots "$IPAD_UDID" ipad
           fi
           if [ "$fail" != 0 ]; then
             echo "=============================================================="

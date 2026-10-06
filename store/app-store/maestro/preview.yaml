@@ -10,25 +10,28 @@ appId: com.vanstoner.coachingapp
     visible: "Squad"
     timeout: 60000
 - waitForAnimationToEnd
-- extendedWaitUntil: { visible: "__never__", timeout: 3000, optional: true }
+- extendedWaitUntil: { visible: "__never__", timeout: 2500, optional: true }
 
 - tapOn: "Play now"
 - tapOn:
     text: "Use suggestion"
     optional: true
-- tapOn:
-    text: "Use plan"
-    optional: true
-- extendedWaitUntil: { visible: "__never__", timeout: 2500, optional: true }
+- extendedWaitUntil: { visible: "__never__", timeout: 2000, optional: true }
 
 - tapOn: "Start .*"
-- extendedWaitUntil: { visible: "__never__", timeout: 6000, optional: true }
+- extendedWaitUntil: { visible: "__never__", timeout: 5000, optional: true }
 
+- scrollUntilVisible:
+    element: "Leave.*"
 - tapOn: "Leave.*"
 - tapOn: "Squad"
-- extendedWaitUntil: { visible: "__never__", timeout: 3500, optional: true }
+- extendedWaitUntil: { visible: "__never__", timeout: 2000, optional: true }
+- tapOn: "Fairness.*"
+- extendedWaitUntil: { visible: "__never__", timeout: 3000, optional: true }
 - scrollUntilVisible:
-    element: "Dee"
-    optional: true
-- tapOn: "Dee"
-- extendedWaitUntil: { visible: "__never__", timeout: 4000, optional: true }
+    element: "Back to Squad"
+- tapOn: "Back to Squad"
+- scrollUntilVisible:
+    element: "Dee,.*"
+- tapOn: "Dee,.*"
+- extendedWaitUntil: { visible: "__never__", timeout: 3500, optional: true }
