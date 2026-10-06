@@ -25,6 +25,7 @@ FIELDS = {  # file -> (required, max characters or None)
     "support_url.txt": (True, None),
     "privacy_url.txt": (True, None),
     "copyright.txt": (True, None),
+    "review_notes.txt": (True, 4000),
 }
 NAME = "Heart of the Game: Coach"
 NOT_IN_V1 = ("sync", "cloud account", "parent app", "parents' app", "subscription", "premium",

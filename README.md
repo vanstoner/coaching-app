@@ -32,8 +32,9 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
 ### The App Store listing
 
 The listing text lives in `store/app-store/en-GB/` (name, subtitle,
-description, keywords, promotional text, support and privacy links, and the
-notes for App Review). `ci.yml` checks it against Apple's limits on every pull
+description, keywords, promotional text, support and privacy links,
+copyright, and the notes for App Review; the review contact details are typed
+in App Store Connect, never kept here). `ci.yml` checks it against Apple's limits on every pull
 request; `store-listing.yml`, run by hand from `main` and approved in the
 `app-store` environment, sends it to App Store Connect and reads it back. The
 privacy policy is [PRIVACY.md](PRIVACY.md).
