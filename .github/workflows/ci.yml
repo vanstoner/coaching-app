@@ -111,7 +111,10 @@ jobs:
       # #108 E: the screenshot and preview checks run on a Mac in
       # store-media.yml; their self-test runs here on every PR, healthy first.
       - name: Prove the App Store media checks
-        run: python3 .github/scripts/check_store_media.py --self-test
+        run: |
+          python3 .github/scripts/check_store_media.py --self-test
+          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/iphone iphone
+          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/ipad ipad
 
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.

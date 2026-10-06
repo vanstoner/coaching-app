@@ -18,6 +18,12 @@
         URL), then read back and compared. --dry-run prints the differences
         and changes nothing.
 
+    asc_api.py screenshots BUNDLE_ID VERSION FOLDER [--dry-run]
+        #108 E: FOLDER/iphone/*.png and FOLDER/ipad/*.png (store-media.yml's
+        shots, checked by check_store_media.py) to that VERSION's en-GB page,
+        in file-name order, replacing what each display's set held. Then read
+        back: the count, and no screenshot Apple marked FAILED.
+
     asc_api.py --self-test
 
 Credentials from the environment, as the workflow already holds them:
@@ -27,6 +33,7 @@ minutes and is never printed (AC5).
 """
 
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -234,6 +241,95 @@ def listing(bundle_id, version, folder, dry_run=False):
 
 
 # ---------------------------------------------------------------------------
+# Screenshots (#108 E)
+# ---------------------------------------------------------------------------
+
+# folder -> App Store Connect display type. APP_IPHONE_67 is the 6.9" and
+# 6.7" set (1320x2868, 1290x2796); APP_IPAD_PRO_3GEN_129 the 13" iPad set.
+DISPLAYS = {"iphone": "APP_IPHONE_67", "ipad": "APP_IPAD_PRO_3GEN_129"}
+
+
+def screenshot_plan(folder):
+    """{display type: [png path, ...]} in file-name order, for each folder present."""
+    plan = {}
+    for sub, display in DISPLAYS.items():
+        d = os.path.join(folder, sub)
+        if os.path.isdir(d):
+            files = sorted(f for f in os.listdir(d) if f.lower().endswith(".png"))
+            if files:
+                plan[display] = [os.path.join(d, f) for f in files]
+    return plan
+
+
+def chunks(data, operations):
+    """(operation, bytes) for each of Apple's upload operations."""
+    return [(op, data[op["offset"]:op["offset"] + op["length"]]) for op in operations]
+
+
+def put_part(op, part):
+    headers = {h["name"]: h["value"] for h in op.get("requestHeaders", [])}
+    req = urllib.request.Request(op["url"], method=op.get("method", "PUT"), data=part, headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as r:
+        r.read()
+
+
+def version_localization(asc, bundle_id, version):
+    app = asc.app_id(bundle_id)
+    q = urllib.parse.urlencode({"filter[versionString]": version, "filter[platform]": "IOS"})
+    versions = asc.call("GET", f"/apps/{app}/appStoreVersions?{q}")["data"]
+    if not versions:
+        raise SystemExit(f"WHY THIS JOB FAILED: App Store Connect has no iOS version {version}")
+    locs = [x for x in asc.call("GET", f"/appStoreVersions/{versions[0]['id']}/appStoreVersionLocalizations")["data"]
+            if x["attributes"]["locale"] == LOCALE]
+    if not locs:
+        raise SystemExit(f"WHY THIS JOB FAILED: version {version} has no {LOCALE} page")
+    return locs[0]["id"]
+
+
+def screenshots(bundle_id, version, folder, dry_run=False):
+    plan = screenshot_plan(folder)
+    if not plan:
+        raise SystemExit(f"WHY THIS JOB FAILED: no iphone/ or ipad/ screenshots in {folder}")
+    asc = Asc()
+    loc = version_localization(asc, bundle_id, version)
+    sets = {s["attributes"]["screenshotDisplayType"]: s["id"]
+            for s in asc.call("GET", f"/appStoreVersionLocalizations/{loc}/appScreenshotSets")["data"]}
+    for display, files in plan.items():
+        print(f"{display}: {len(files)} screenshot(s): {', '.join(os.path.basename(f) for f in files)}")
+        if dry_run:
+            continue
+        set_id = sets.get(display)
+        if set_id is None:
+            set_id = asc.call("POST", "/appScreenshotSets", {"data": {
+                "type": "appScreenshotSets", "attributes": {"screenshotDisplayType": display},
+                "relationships": {"appStoreVersionLocalization": {
+                    "data": {"type": "appStoreVersionLocalizations", "id": loc}}}}})["data"]["id"]
+        for old in asc.call("GET", f"/appScreenshotSets/{set_id}/appScreenshots")["data"]:
+            asc.call("DELETE", f"/appScreenshots/{old['id']}")
+        for path in files:
+            with open(path, "rb") as fh:
+                data = fh.read()
+            shot = asc.call("POST", "/appScreenshots", {"data": {
+                "type": "appScreenshots",
+                "attributes": {"fileName": os.path.basename(path), "fileSize": len(data)},
+                "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})["data"]
+            for op, part in chunks(data, shot["attributes"]["uploadOperations"]):
+                put_part(op, part)
+            asc.call("PATCH", f"/appScreenshots/{shot['id']}", {"data": {
+                "type": "appScreenshots", "id": shot["id"],
+                "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+        back = asc.call("GET", f"/appScreenshotSets/{set_id}/appScreenshots")["data"]
+        failed = [b["attributes"].get("fileName") for b in back
+                  if (b["attributes"].get("assetDeliveryState") or {}).get("state") == "FAILED"]
+        if len(back) != len(files) or failed:
+            raise SystemExit(f"WHY THIS JOB FAILED: {display} holds {len(back)} of {len(files)}; failed: {failed}")
+        print(f"read back: {display} holds all {len(files)}")
+    if dry_run:
+        print("Dry run: nothing was changed.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -338,13 +434,25 @@ def self_test():
         open(os.path.join(d, "copyright.txt"), "w").write("2026 Someone\n")
         expect("the copyright goes to the version itself, not a localisation",
                listing_wanted(d) == {("appversion", "copyright"): "2026 Someone"})
+    with tempfile.TemporaryDirectory() as d:
+        for sub, names in (("iphone", ["02-b.png", "01-a.png", "notes.txt"]), ("ipad", ["01-a.png"])):
+            os.makedirs(os.path.join(d, sub))
+            for n in names:
+                open(os.path.join(d, sub, n), "w").close()
+        plan = screenshot_plan(d)
+        expect("healthy: screenshots go to the 6.9\" and 13\" sets, in file-name order, PNGs only",
+               [os.path.basename(f) for f in plan.get("APP_IPHONE_67", [])] == ["01-a.png", "02-b.png"]
+               and len(plan.get("APP_IPAD_PRO_3GEN_129", [])) == 1 and len(plan) == 2)
+    ops = [{"offset": 0, "length": 3}, {"offset": 3, "length": 2}]
+    expect("healthy: the upload is cut exactly as Apple's operations say",
+           [p for _, p in chunks(b"abcde", ops)] == [b"abc", b"de"])
     try:
         der_to_raw(b"\x31\x00")
         expect("a malformed signature is refused", False)
     except ValueError:
         expect("a malformed signature is refused", True)
 
-    print(f"{11 - failed} expectation(s) passed, {failed} failed.")
+    print(f"{13 - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 
@@ -355,6 +463,8 @@ def main(argv):
         return max_build(argv[2], argv[3])
     if len(argv) in (5, 6) and argv[1] == "listing":
         return listing(argv[2], argv[3], argv[4], dry_run=argv[5:] == ["--dry-run"])
+    if len(argv) in (5, 6) and argv[1] == "screenshots":
+        return screenshots(argv[2], argv[3], argv[4], dry_run=argv[5:] == ["--dry-run"])
     if len(argv) in (6, 7) and argv[1] == "what-to-test":
         return what_to_test(argv[2], argv[3], argv[4], argv[5], int(argv[6]) if len(argv) == 7 else 20)
     print(__doc__)
