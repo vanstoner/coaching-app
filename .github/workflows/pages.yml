@@ -1,0 +1,63 @@
+name: Website
+
+# The marketing site at https://vanstoner.github.io/coaching-app/ (#108, PO
+# "approve site"): site/ plus the app icon, with privacy.html made from
+# PRIVACY.md by GitHub's own Markdown renderer, so there is one privacy
+# policy. A PR builds and checks it (the healthy case, before merge); a push
+# to main publishes it. The App Store's support and privacy links point here.
+# Needs Settings › Pages › Source: GitHub Actions, once.
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**, PRIVACY.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+  pull_request:
+    paths: [site/**, PRIVACY.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the site check
+        run: python3 .github/scripts/build_site.py --self-test
+
+      - name: Render PRIVACY.md and build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST markdown -f mode=gfm -f context="$GITHUB_REPOSITORY" -F text=@PRIVACY.md > /tmp/privacy.html
+          test -s /tmp/privacy.html || { echo "WHY THIS JOB FAILED: GitHub rendered PRIVACY.md as nothing"; exit 1; }
+          python3 .github/scripts/build_site.py /tmp/privacy.html _site
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Publish
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

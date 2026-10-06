@@ -47,6 +47,20 @@ jobs:
           python3 .github/scripts/check_listing.py --self-test
           python3 .github/scripts/check_listing.py store/app-store/en-GB
 
+      # Apple shows these links on the listing: never send one that is down.
+      - name: Check the support and privacy pages are live
+        run: |
+          set -uo pipefail
+          for f in support_url.txt privacy_url.txt; do
+            url="$(tr -d '[:space:]' < "store/app-store/en-GB/$f")"
+            code="$(curl -sS -o /dev/null -w '%{http_code}' -L "$url" || echo 000)"
+            echo "$f: $url -> $code"
+            if [ "$code" != 200 ]; then
+              echo "WHY THIS JOB FAILED: $url answers $code, not 200. Is the website (pages.yml) published?"
+              exit 1
+            fi
+          done
+
       - name: Write and check the API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}

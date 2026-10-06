@@ -38,6 +38,12 @@ request; `store-listing.yml`, run by hand from `main` and approved in the
 `app-store` environment, sends it to App Store Connect and reads it back. The
 privacy policy is [PRIVACY.md](PRIVACY.md).
 
+The website, [vanstoner.github.io/coaching-app](https://vanstoner.github.io/coaching-app/),
+is `site/` with the privacy page made from PRIVACY.md; `pages.yml` checks it
+on a pull request and publishes it from `main`. The listing's support and
+privacy links point there, and `store-listing.yml` refuses to send them unless
+both pages answer.
+
 ### Test data for a TestFlight build
 
 A TestFlight build is the exact build App Review sees, so it has no Test kit.

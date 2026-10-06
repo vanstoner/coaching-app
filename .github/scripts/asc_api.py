@@ -139,6 +139,8 @@ LISTING = {
     "keywords.txt": ("version", "keywords"),
     "promotional_text.txt": ("version", "promotionalText"),
     "support_url.txt": ("version", "supportUrl"),
+    # Not localised: an attribute of the version itself.
+    "copyright.txt": ("appversion", "copyright"),
 }
 
 
@@ -181,6 +183,8 @@ def listing(bundle_id, version, folder, dry_run=False):
             raise SystemExit(f"WHY THIS JOB FAILED: no {LOCALE} localisation on the app or on version {version}")
         have = {("info", k): v for k, v in info[0]["attributes"].items()}
         have.update({("version", k): v for k, v in ver[0]["attributes"].items()})
+        own = asc.call("GET", f"/appStoreVersions/{version_id}")["data"]["attributes"]
+        have.update({("appversion", k): v for k, v in own.items()})
         return info[0]["id"], ver[0]["id"], have
 
     info_loc, ver_loc, have = locs()
@@ -196,12 +200,16 @@ def listing(bundle_id, version, folder, dry_run=False):
         return 0
     info_attrs = {a: v for (w, a), v in wanted.items() if w == "info"}
     ver_attrs = {a: v for (w, a), v in wanted.items() if w == "version"}
+    own_attrs = {a: v for (w, a), v in wanted.items() if w == "appversion"}
     if info_attrs:
         asc.call("PATCH", f"/appInfoLocalizations/{info_loc}",
                  {"data": {"type": "appInfoLocalizations", "id": info_loc, "attributes": info_attrs}})
     if ver_attrs:
         asc.call("PATCH", f"/appStoreVersionLocalizations/{ver_loc}",
                  {"data": {"type": "appStoreVersionLocalizations", "id": ver_loc, "attributes": ver_attrs}})
+    if own_attrs:
+        asc.call("PATCH", f"/appStoreVersions/{version_id}",
+                 {"data": {"type": "appStoreVersions", "id": version_id, "attributes": own_attrs}})
     _, _, back = locs()
     left = listing_diff(wanted, back)
     if left:
@@ -313,13 +321,17 @@ def self_test():
     expect("a changed field is listed once, with both values",
            listing_diff(want, {("info", "name"): "Old"}) ==
            [("info", "name", "Old", "Heart of the Game: Coach"), ("version", "keywords", None, "heart,football")])
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "copyright.txt"), "w").write("2026 Someone\n")
+        expect("the copyright goes to the version itself, not a localisation",
+               listing_wanted(d) == {("appversion", "copyright"): "2026 Someone"})
     try:
         der_to_raw(b"\x31\x00")
         expect("a malformed signature is refused", False)
     except ValueError:
         expect("a malformed signature is refused", True)
 
-    print(f"{10 - failed} expectation(s) passed, {failed} failed.")
+    print(f"{11 - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 
