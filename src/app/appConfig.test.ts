@@ -84,13 +84,26 @@ describe('iOS identity, build number and backup exclusion (#107)', () => {
   });
   const clean = () => keys.forEach((k) => delete process.env[k]);
 
-  it('gives the released app the ruled bundle id, phone only', () => {
+  it('gives the released app the ruled bundle id', () => {
     clean();
     const c = appConfig({ config: base() });
     expect(c.ios.bundleIdentifier).toBe('com.vanstoner.coachingapp');
-    expect(c.ios.supportsTablet).toBe(false);
     expect(c.ios.buildNumber).toBeUndefined();
     expect(c.android.package).toBe('com.example.coachingapp');
+  });
+
+  // #143 AC9, ruling 18 (iPad Level 1), replacing "phone only" from #107:
+  // tablet on, portrait only, full screen. requireFullScreen is what keeps
+  // the iPad in portrait: without it, Expo adds every iPad orientation so
+  // that Split View can be offered (@expo/config-plugins RequiresFullScreen).
+  it.each([undefined, 'beta'])('runs on an iPad, portrait and full screen (variant %s)', (variant) => {
+    clean();
+    if (variant) process.env.APP_VARIANT = variant;
+    const c = appConfig({ config: base() });
+    expect(c.ios.supportsTablet).toBe(true);
+    expect(c.ios.requireFullScreen).toBe(true);
+    expect(c.orientation).toBe('portrait');
+    expect(c.ios.isTabletOnly).toBeUndefined();
   });
 
   it('gives the beta the .beta bundle id and the orange icon, on iOS too', () => {

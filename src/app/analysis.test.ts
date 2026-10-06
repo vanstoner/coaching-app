@@ -15,9 +15,13 @@ import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { mergeCurrentMatch } from './persistence';
 import {
   competitionBucket,
+  goalOutfieldSplit,
+  largestRemainder,
   matchChart,
   matchReport,
+  minutesRowSeconds,
   seasonStats,
+  wholeMinuteParts,
   wholeMinutes,
 } from './analysis';
 
@@ -308,5 +312,94 @@ describe('matchChart (#105 AC1)', () => {
     expect(chart.rows.every((r) => r.shadowMs === null)).toBe(true);
     // Least played first when nobody has an average.
     expect(chart.rows[0].thisMatchMs).toBe(0);
+  });
+});
+
+describe('parts that add up to the total shown beside them (#142, #143 AC10)', () => {
+  it('37.6 and 12.6 beside a total of 50 read 38 and 12; rounded one by one they read 38 and 13', () => {
+    expect([37.6, 12.6].map((m) => Math.round(m))).toEqual([38, 13]);
+    expect(largestRemainder([37.6, 12.6], 50)).toEqual([38, 12]);
+    expect(wholeMinuteParts([37.6 * MIN, 12.6 * MIN], 50.2 * MIN)).toEqual([38, 12]);
+  });
+
+  it('gives the missing units to the largest fractions, the earlier part first on a tie', () => {
+    expect(largestRemainder([37.5, 12.5], 50)).toEqual([38, 12]);
+    expect(largestRemainder([1.2, 1.7, 1.1], 4)).toEqual([1, 2, 1]);
+    expect(largestRemainder([0.4, 0.4, 0.4], 1)).toEqual([1, 0, 0]);
+    expect(largestRemainder([10, 20], 30)).toEqual([10, 20]);
+  });
+
+  it('still adds up when the total is a unit away from the parts, never below zero, never stuck', () => {
+    // Floors 10 + 9 = 19 beside 18: the smallest fraction gives one back.
+    expect(largestRemainder([10.1, 9.2], 18)).toEqual([9, 9]);
+    expect(largestRemainder([1, 0], 0)).toEqual([0, 0]);
+    expect(largestRemainder([0.2, 0.3], -1)).toEqual([0, 0]);
+    expect(largestRemainder([], 5)).toEqual([]);
+    // A part that is not a number counts as nothing; a total that is not a number as zero.
+    expect(largestRemainder([Number.NaN, 2.6], 3)).toEqual([0, 3]);
+    expect(largestRemainder([1.5], Number.NaN)).toEqual([0]);
+  });
+
+  it('over 500 made-up splits: always adds up, every part within a minute of its own value', () => {
+    let seed = 42;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let n = 0; n < 500; n++) {
+      const partsMs = Array.from({ length: 2 + (n % 3) }, () => Math.floor(rand() * 50 * MIN));
+      const totalMs = partsMs.reduce((sum, ms) => sum + ms, 0);
+      const parts = wholeMinuteParts(partsMs, totalMs);
+      expect(parts.reduce((sum, m) => sum + m, 0)).toBe(wholeMinutes(totalMs));
+      parts.forEach((m, i) => expect(Math.abs(m - partsMs[i] / MIN)).toBeLessThan(1));
+    }
+  });
+
+  it("the match report's GK and Out add up to its Total: a keeper 10.6 in goal and 10.6 outfield reads 11 + 10 of 21", () => {
+    // Through the engine: Ava keeps goal 10.6 min, swaps out to the field,
+    // and is subbed off 10.6 min later. Rounded one by one: 11 + 11 beside 21.
+    const sq = squad();
+    const ids = sq.players.map((p) => p.id);
+    let now = Date.parse('2026-10-03T09:00:00Z');
+    const engine = new MatchEngine({ nowFn: () => new Date(now) });
+    const state = engine.createMatch(sq.squadId, sq.format.id, {
+      opponent: 'Rovers',
+      totalMinutes: 50,
+      quarterCount: 4,
+      availablePlayerIds: ids,
+    });
+    const q1 = currentQuarter(state)!;
+    engine.startQuarter(state, q1, teamSheetFor(ids.slice(0, 7), ids[0], sq.format), sq.format);
+    now += 10.6 * MIN;
+    engine.swapPositions(state, q1, ids[0], ids[1]);
+    now += QUARTER - 10.6 * MIN;
+    engine.endQuarter(state, q1);
+    const q2 = currentQuarter(state)!;
+    engine.startQuarter(state, q2, teamSheetFor(ids.slice(0, 7), ids[1], sq.format), sq.format);
+    now += 8.7 * MIN; // 1.9 + 8.7 = 10.6 outfield
+    engine.substitute(state, q2, ids[0], ids[7]);
+    now += QUARTER - 8.7 * MIN;
+    engine.endQuarter(state, q2);
+
+    const ava = matchReport(engine, state, sq.players).players.find((p) => p.playerId === ids[0])!;
+    expect(ava.goalMs).toBe(10.6 * MIN);
+    expect(ava.outfieldMs).toBe(10.6 * MIN);
+    expect(wholeMinutes(ava.goalMs) + wholeMinutes(ava.outfieldMs)).toBe(22);
+    expect(goalOutfieldSplit(ava.goalMs, ava.outfieldMs, ava.totalMs)).toEqual({ total: 21, goal: 11, outfield: 10 });
+    for (const row of matchReport(engine, state, sq.players).players) {
+      const s = goalOutfieldSplit(row.goalMs, row.outfieldMs, row.totalMs);
+      expect(s.goal + s.outfield).toBe(s.total);
+    }
+  });
+
+  it('the Settings minutes table: Out and GK add up to Total, and DEF, MID and FWD to Out', () => {
+    // 10:00.7 outfield and 5:00.6 in goal: floored one by one, 10:00 + 5:00 beside 15:01.
+    const row = { outfieldMs: 600_700, goalkeeperMs: 300_600, byUnit: { DEF: 200_300, MID: 200_200, ATT: 200_200 } };
+    expect(minutesRowSeconds(row)).toEqual({ outfield: 601, goal: 300, total: 901, byUnit: { DEF: 201, MID: 200, ATT: 200 } });
+    // Outfield time with no unit (an early match) cannot be shared out: each unit is floored, as before.
+    expect(minutesRowSeconds({ ...row, byUnit: { DEF: 300_900, MID: 0, ATT: 0 } }).byUnit).toEqual({ DEF: 300, MID: 0, ATT: 0 });
+    expect(minutesRowSeconds({ outfieldMs: 0, goalkeeperMs: 0, byUnit: { DEF: 0, MID: 0, ATT: 0 } })).toEqual({
+      outfield: 0,
+      goal: 0,
+      total: 0,
+      byUnit: { DEF: 0, MID: 0, ATT: 0 },
+    });
   });
 });

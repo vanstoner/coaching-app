@@ -138,3 +138,5 @@ Rob is the Product Owner and the only approver. Work is an issue with
 acceptance criteria, built on a branch, released as a beta from its pull
 request and merged on Rob's approval. The rules are in [CLAUDE.md](./CLAUDE.md);
 the docs are indexed in [`docs/README.md`](./docs/README.md).
+
+Copyright (c) 2026 Stephen Robert Vanstone. All rights reserved. See [LICENSE](./LICENSE).

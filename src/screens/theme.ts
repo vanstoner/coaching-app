@@ -44,8 +44,17 @@ export const colours = {
  */
 export const TOUCH_TARGET = 44;
 
+/**
+ * iPad Level 1 — #143 AC9, ruling 18. On a wide screen the content sits in
+ * a centred column this wide, in the same layouts as a phone. Every phone is
+ * narrower, so on a phone the column is the whole width and nothing changes.
+ */
+export const CONTENT_MAX_WIDTH = 600;
+
 export const screen = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colours.pitch },
+  /** The content column (AC9): full width on a phone, centred on a wide screen. */
+  column: { flex: 1, width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' },
   flex: { flex: 1 },
   /** A screen that fills the space and manages its own scrolling inside. */
   pane: { flex: 1, paddingHorizontal: 18, paddingVertical: 14 },

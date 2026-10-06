@@ -10,6 +10,10 @@
 #   2. the screen is not blank              (not uniformly one colour)
 #   3. the expected text is on screen       (OCR finds it)
 #
+# and a fourth, PO ruling 29 (#145): it opens Settings, which must show every
+# beta-only feature on a pull request's Coaching Beta and none on a build of
+# main (check_beta_only.py holds the list and the verdict).
+#
 # ---------------------------------------------------------------------------
 # What changed for #46, and why it is the whole point
 # ---------------------------------------------------------------------------
@@ -71,6 +75,9 @@ set -u
 PKG="${SMOKE_PACKAGE:?SMOKE_PACKAGE is not set}"
 APK="${SMOKE_APK:?SMOKE_APK is not set}"
 EXPECT="${SMOKE_EXPECT:?SMOKE_EXPECT is not set}"
+# #145: 'beta' on a pull request, empty on main. Required, never defaulted:
+# a missing value would quietly judge a beta by the release's rule.
+VARIANT="${SMOKE_VARIANT?SMOKE_VARIANT is not set: 'beta' on a pull request, empty on main (#145)}"
 
 # SMOKE_EXPECT is a `|`-separated list, and EVERY entry must appear on screen.
 # One entry proves the app drew its title; a second proves the feature under
@@ -86,6 +93,8 @@ ATTEMPTS="${SMOKE_ATTEMPTS:-18}"
 ATTEMPT_GAP="${SMOKE_ATTEMPT_GAP:-5}"
 ADB="${SMOKE_ADB:-adb}"
 ASSERT="$(dirname "$0")/smoke_assert.py"
+CHECK="$(dirname "$0")/check_beta_only.py"
+SWIPES="${SMOKE_SETTINGS_SWIPES:-12}"
 
 mkdir -p "$OUT"
 fail=0
@@ -125,6 +134,25 @@ bail() {
   "$ADB" logcat -d -v time > "$OUT/logcat.txt" 2>&1 || true
   say "evidence in $OUT: $(ls "$OUT" | tr '\n' ' ')"
   exit 1
+}
+
+# #145: the app window's view tree as XML, written to $1. uiautomator can
+# refuse while the UI is still settling ("could not get idle state"), so it
+# is retried; the device copy is deleted first, so a stale dump is never read
+# as a fresh one.
+ui_dump() {
+  local f="$1" i
+  for i in 1 2 3 4 5; do
+    "$ADB" shell rm -f /sdcard/window_dump.xml > /dev/null 2>&1
+    "$ADB" shell uiautomator dump /sdcard/window_dump.xml > "$f.log" 2>&1
+    "$ADB" exec-out cat /sdcard/window_dump.xml > "$f" 2>> "$f.log"
+    if grep -q '<hierarchy' "$f" 2>/dev/null; then
+      return 0
+    fi
+    say "uiautomator dump attempt $i gave no view tree; retrying"
+    sleep 2
+  done
+  return 1
 }
 
 # --- The emulator is up and settled ----------------------------------------
@@ -293,6 +321,85 @@ elif [ "$rc" != "0" ]; then
 fi
 echo "::endgroup::"
 
+# --- Assertion 4: Settings — beta-only features in a beta, never in a release
+#
+# PO ruling 29 (#145). One switch (showTestKit) hides the Test kit in a
+# release. A unit test proves the switch; nothing proved it on this APK. So
+# every build opens Settings and reads it top to bottom:
+#
+#   beta     (a pull request)  every word in BETA_ONLY must be on Settings
+#   release  (main)            none may be, and Settings must have been read
+#                              to its end, or finding none proves nothing
+#
+# Settings is reached by TAPPING ITS TAB, found by its label in the view tree,
+# never at a fixed coordinate, so a new screen size or tab order cannot make
+# it tap the wrong thing. Not by a deep link: the app has deliberately no
+# linking surface (TabBar.tsx), and adding one would be product work. The text
+# is read from the view tree (`uiautomator dump`), not by OCR, because the
+# release check is an absence and an OCR miss is not one. Each Settings
+# screen is also kept as a PNG, as evidence.
+
+echo "::group::Assertion 4 — Settings shows beta-only features in a beta, never in a release (#145)"
+SDIR="$OUT/settings"
+SET_OUT="$OUT/settings-assertions.txt"
+mkdir -p "$SDIR"
+: > "$SET_OUT"
+snote() { echo "ASSERTION FAILED (#145): $*" >> "$SET_OUT"; fail=1; }
+case "$VARIANT:$PKG" in
+  beta:*.beta) ;;
+  beta:* | :*.beta) snote "SMOKE_VARIANT='$VARIANT' does not match SMOKE_PACKAGE=$PKG" ;;
+  :*) ;;
+  *) snote "SMOKE_VARIANT must be 'beta' or empty, not '$VARIANT'" ;;
+esac
+if [ "$fail" != "0" ]; then
+  echo "Settings not checked: an assertion above already failed" >> "$SET_OUT"
+elif ! ui_dump "$SDIR/first-screen.xml"; then
+  snote "could not read the first screen's view tree to find the Settings tab: $(cat "$SDIR/first-screen.xml.log")"
+elif ! TAB="$(python3 "$CHECK" --tab-centre "$SDIR/first-screen.xml" 2> "$SDIR/tab.err")"; then
+  snote "could not find the Settings tab: $(cat "$SDIR/tab.err")"
+else
+  say "tapping the Settings tab at $TAB"
+  # shellcheck disable=SC2086 # "X Y", split on purpose
+  "$ADB" shell input tap $TAB > /dev/null 2>&1
+  sleep 3
+  dumps=()
+  if ! ui_dump "$SDIR/screen-00.xml"; then
+    snote "could not read the view tree after tapping the Settings tab"
+  else
+    dumps+=("$SDIR/screen-00.xml")
+    "$ADB" exec-out screencap -p > "$SDIR/screen-00.png" 2> /dev/null || true
+    if SWIPE="$(python3 "$CHECK" --swipe "$SDIR/screen-00.xml" 2> "$SDIR/swipe.err")"; then
+      for n in $(seq 1 "$SWIPES"); do
+        # shellcheck disable=SC2086 # "X1 Y1 X2 Y2", split on purpose
+        "$ADB" shell input swipe $SWIPE 600 > /dev/null 2>&1
+        sleep 2
+        f="$SDIR/screen-$(printf '%02d' "$n").xml"
+        if ! ui_dump "$f"; then
+          echo "no view tree after swipe $n; judging the screens read so far" >> "$SET_OUT"
+          break
+        fi
+        dumps+=("$f")
+        "$ADB" exec-out screencap -p > "${f%.xml}.png" 2> /dev/null || true
+        if python3 "$CHECK" --same "${dumps[-2]}" "$f"; then
+          break  # the swipe moved nothing: this is the end of Settings
+        fi
+      done
+    else
+      echo "no swipe could be planned: $(cat "$SDIR/swipe.err")" >> "$SET_OUT"
+    fi
+    if ! python3 "$CHECK" --variant "$VARIANT" "${dumps[@]}" >> "$SET_OUT" 2>&1; then
+      fail=1
+    fi
+    PID_AFTER="$("$ADB" shell pidof "$PKG" 2>/dev/null | tr -d '\r\n ')"
+    if [ -z "$PID_AFTER" ]; then
+      "$ADB" logcat -d -v time > "$SDIR/logcat.txt" 2>&1 || true
+      snote "$PKG stopped running while Settings was open (logcat: $SDIR/logcat.txt)"
+    fi
+  fi
+fi
+cat "$SET_OUT"
+echo "::endgroup::"
+
 # Diagnosability, learned the hard way on run 35374171616. The logcat dump used
 # to be the LAST thing printed, so `tail` of the job log showed 200 lines of
 # GMS chatter and not one line of why the job failed. Three separate log
@@ -319,6 +426,11 @@ if [ "$fail" != "0" ]; then
   if [ -s "$OUT/bundle-errors.txt" ]; then
     echo "--- bundle errors ---"
     sed -n '1,20p' "$OUT/bundle-errors.txt"
+  fi
+  # Last, so a #145 verdict is never pushed out of the final 40 lines.
+  if [ -s "$SET_OUT" ]; then
+    echo "--- Settings: beta-only features (#145), SMOKE_VARIANT='$VARIANT' ---"
+    cat "$SET_OUT"
   fi
   echo "=============================================================="
 fi

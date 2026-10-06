@@ -28,7 +28,7 @@ import { Text } from './Text';
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import type { Ledger } from '../app/ledger';
-import { matchChart, matchReport, wholeMinutes } from '../app/analysis';
+import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
@@ -151,30 +151,34 @@ export function MatchSummaryScreen({
           <Text style={[local.figure, local.headText]}>Out</Text>
           <Text style={[local.figure, local.headText]}>vs fair</Text>
         </View>
-        {report.players.map((row) => (
-          <View
-            key={row.playerId}
-            style={local.row}
-            accessible
-            accessibilityLabel={`${row.name}, ${wholeMinutes(row.totalMs)} minutes, ${signed(row.deltaMs)} against the fair share`}
-          >
-            <Text style={local.name} numberOfLines={1}>
-              {row.name}
-            </Text>
-            <Text style={local.figure} numberOfLines={1}>
-              {wholeMinutes(row.totalMs)}
-            </Text>
-            <Text style={[local.figure, row.goalMs === 0 && local.faint]} numberOfLines={1}>
-              {row.goalMs === 0 ? '—' : wholeMinutes(row.goalMs)}
-            </Text>
-            <Text style={[local.figure, row.outfieldMs === 0 && local.faint]} numberOfLines={1}>
-              {row.outfieldMs === 0 ? '—' : wholeMinutes(row.outfieldMs)}
-            </Text>
-            <Text style={local.figure} numberOfLines={1}>
-              {signed(row.deltaMs)}
-            </Text>
-          </View>
-        ))}
+        {report.players.map((row) => {
+          // #142: GK and Out add up to the Total beside them.
+          const { goal, outfield } = goalOutfieldSplit(row.goalMs, row.outfieldMs, row.totalMs);
+          return (
+            <View
+              key={row.playerId}
+              style={local.row}
+              accessible
+              accessibilityLabel={`${row.name}, ${wholeMinutes(row.totalMs)} minutes, ${signed(row.deltaMs)} against the fair share`}
+            >
+              <Text style={local.name} numberOfLines={1}>
+                {row.name}
+              </Text>
+              <Text style={local.figure} numberOfLines={1}>
+                {wholeMinutes(row.totalMs)}
+              </Text>
+              <Text style={[local.figure, row.goalMs === 0 && local.faint]} numberOfLines={1}>
+                {row.goalMs === 0 ? '—' : goal}
+              </Text>
+              <Text style={[local.figure, row.outfieldMs === 0 && local.faint]} numberOfLines={1}>
+                {row.outfieldMs === 0 ? '—' : outfield}
+              </Text>
+              <Text style={local.figure} numberOfLines={1}>
+                {signed(row.deltaMs)}
+              </Text>
+            </View>
+          );
+        })}
 
         <Text style={screen.fieldLabel}>Against their average</Text>
         <Text style={screen.hint}>

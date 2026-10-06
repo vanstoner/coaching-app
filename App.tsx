@@ -1286,7 +1286,8 @@ export default function App() {
    */
   return (
     <SafeAreaView style={screen.safe}>
-      {body}
+      {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
+      <View style={screen.column}>{body}</View>
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>

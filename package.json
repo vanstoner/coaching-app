@@ -1,6 +1,7 @@
 {
   "name": "coaching-app",
   "version": "0.0.1",
+  "private": true,
   "description": "Junior football coaching app with match management and fairness tracking",
   "main": "index.ts",
   "scripts": {
@@ -22,8 +23,8 @@
     "match-management",
     "fairness-tracking"
   ],
-  "author": "Rob van Stone",
-  "license": "MIT",
+  "author": "Stephen Robert Vanstone",
+  "license": "UNLICENSED",
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.0.0",

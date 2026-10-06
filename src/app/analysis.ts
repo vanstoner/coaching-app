@@ -52,6 +52,97 @@ export function wholeMinutes(ms: number): number {
   return Math.round(ms / MIN);
 }
 
+/**
+ * Whole numbers for parts that add up to the whole number shown for their
+ * total (#142, #143 AC10). Rounding each part on its own does not: 37.6 and
+ * 12.6 round to 38 and 13 beside a total of 50.
+ *
+ * Largest remainder: every part is floored, then the units still missing go
+ * to the largest fractions, the earlier part first on a tie. `total` is the
+ * figure the screen shows for the total. If it is a unit away from the parts'
+ * own sum (each was rounded from slightly different ms), units are taken back
+ * from the smallest fractions, never below zero, so the parts still add up.
+ */
+export function largestRemainder(parts: readonly number[], total: number): number[] {
+  const safe = parts.map((p) => (Number.isFinite(p) && p > 0 ? p : 0));
+  const out = safe.map((p) => Math.floor(p));
+  const target = Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0;
+  let rest = target - out.reduce((sum, n) => sum + n, 0);
+  const byFraction = safe
+    .map((p, i) => ({ i, f: p - Math.floor(p) }))
+    .sort((a, b) => b.f - a.f || a.i - b.i);
+  for (let k = 0; rest > 0 && byFraction.length > 0; k = (k + 1) % byFraction.length, rest--) {
+    out[byFraction[k].i]++;
+  }
+  // Too many: smallest fractions give one back first.
+  const smallestFirst = [...byFraction].reverse();
+  while (rest < 0) {
+    const from = smallestFirst.find(({ i }) => out[i] > 0);
+    if (!from) break;
+    out[from.i]--;
+    rest++;
+  }
+  return out;
+}
+
+/** Whole-minute parts that add up to `wholeMinutes(totalMs)`, the total shown beside them. */
+export function wholeMinuteParts(partsMs: readonly number[], totalMs: number): number[] {
+  return largestRemainder(
+    partsMs.map((ms) => ms / MIN),
+    wholeMinutes(totalMs)
+  );
+}
+
+/**
+ * In goal and outfield beside their total, in whole minutes that add up
+ * (#142): the one split the match report, the season grid and a child's page
+ * all draw. `totalMs` defaults to the two parts' sum; the child page passes
+ * its minutes a game, which is rounded from slightly different ms.
+ */
+export function goalOutfieldSplit(
+  goalMs: number,
+  outfieldMs: number,
+  totalMs: number = goalMs + outfieldMs
+): { total: number; goal: number; outfield: number } {
+  const [goal, outfield] = wholeMinuteParts([goalMs, outfieldMs], totalMs);
+  return { total: wholeMinutes(totalMs), goal, outfield };
+}
+
+/**
+ * Whole-second parts that add up to the seconds `formatClock(totalMs)` shows
+ * (it floors), for a table of mm:ss parts beside their total.
+ */
+export function wholeSecondParts(partsMs: readonly number[], totalMs: number): number[] {
+  return largestRemainder(
+    partsMs.map((ms) => ms / 1000),
+    Math.floor(Math.max(0, totalMs) / 1000)
+  );
+}
+
+/**
+ * One row of the Settings minutes table, in whole seconds that add up
+ * (#142, #143 AC10): Out and GK to Total; DEF, MID and FWD to Out when every
+ * outfield minute has a unit. Time from an early match with no unit cannot be
+ * shared out, so then each unit is floored as before.
+ */
+export function minutesRowSeconds(row: {
+  outfieldMs: number;
+  goalkeeperMs: number;
+  byUnit: Record<'DEF' | 'MID' | 'ATT', number>;
+}): { outfield: number; goal: number; total: number; byUnit: Record<'DEF' | 'MID' | 'ATT', number> } {
+  const totalMs = row.outfieldMs + row.goalkeeperMs;
+  const [outfield, goal] = wholeSecondParts([row.outfieldMs, row.goalkeeperMs], totalMs);
+  const unitsMs = [row.byUnit.DEF, row.byUnit.MID, row.byUnit.ATT];
+  const placed = unitsMs.reduce((sum, ms) => sum + ms, 0) === row.outfieldMs;
+  const [DEF, MID, ATT] = placed
+    ? largestRemainder(
+        unitsMs.map((ms) => ms / 1000),
+        outfield
+      )
+    : unitsMs.map((ms) => Math.floor(Math.max(0, ms) / 1000));
+  return { outfield, goal, total: outfield + goal, byUnit: { DEF, MID, ATT } };
+}
+
 function nameOf(players: Player[], ledgerPlayers: LedgerPlayer[], id: UUID): string {
   const p = players.find((x) => x.id === id);
   if (p) return displayName(p);

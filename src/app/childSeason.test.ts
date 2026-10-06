@@ -14,7 +14,8 @@ import { currentQuarter } from './matchClock';
 import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { mergeCurrentMatch } from './persistence';
 import { seasonStats } from './analysis';
-import { competitionText, seasonSummary, squadAverage, squadSeason } from './childSeason';
+import { wholeMinutes } from './analysis';
+import { competitionText, goalOutfieldLine, seasonSummary, squadAverage, squadSeason } from './childSeason';
 
 const MIN = 60_000;
 const QUARTER = 12.5 * MIN;
@@ -185,6 +186,18 @@ describe("a child's season in words (#121 AC2, AC3)", () => {
     }
     // Calling it twice changes nothing: nothing is stored.
     expect(seasonStats(ledger, sq.players)).toEqual(stats);
+  });
+
+  it("a keeper's split adds up to the minutes a game above it: 37.6 + 12.6 reads 38 + 12 beside 50 (#142 AC2)", () => {
+    const keeper = { averageMs: 50.2 * MIN, goalMsPerGame: 37.6 * MIN, outfieldMsPerGame: 12.6 * MIN };
+    expect(wholeMinutes(keeper.averageMs)).toBe(50);
+    // Rounded one by one these read 38 and 13: 51 beside a total of 50.
+    expect(goalOutfieldLine(keeper)).toBe('In goal 38 min a game, outfield 12');
+    // The beta's keeper, 37.5 and 12.5 exactly: a tie goes to the first part, as the prototype shows it.
+    expect(goalOutfieldLine({ averageMs: 50 * MIN, goalMsPerGame: 37.5 * MIN, outfieldMsPerGame: 12.5 * MIN })).toBe(
+      'In goal 38 min a game, outfield 12'
+    );
+    expect(goalOutfieldLine({ averageMs: null, goalMsPerGame: null, outfieldMsPerGame: null })).toBeNull();
   });
 
   it('words', () => {
