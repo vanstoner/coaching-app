@@ -87,6 +87,12 @@ jobs:
       - name: Prove the allowBackup check gates before trusting it
         run: python3 .github/scripts/check_backup.py --self-test
 
+      # #108 A4: testflight.yml repairs and validates the API key with this
+      # script, in the app-store environment, after merge. Its self-test runs
+      # here on every PR: a healthy key first, then each broken paste.
+      - name: Self-test the API key repair
+        run: .github/scripts/asc-key.sh --self-test
+
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.
       - name: Prove the beta-only check gates before trusting it
