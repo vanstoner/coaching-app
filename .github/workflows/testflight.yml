@@ -34,8 +34,64 @@ permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # #160: one build number per commit. The GitHub release built from this
+  # commit (android-apk.yml) names it, v<version>-build.N, and N is also that
+  # APK's versionCode, so TestFlight, the releases page and Android show the
+  # same number for the same code. Waits for that release, bounded; on Linux,
+  # because waiting on macOS is billed at the Mac rate. Also writes TestFlight's
+  # "What to Test" from the same release note (AC3).
+  # ---------------------------------------------------------------------------
+  number:
+    name: Find this commit's build number
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      build: ${{ steps.find.outputs.BUILD }}
+      tag: ${{ steps.find.outputs.TAG }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the notes script
+        run: python3 .github/scripts/testflight_notes.py --self-test
+
+      - name: Wait for this commit's release
+        id: find
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 80); do
+            if python3 .github/scripts/testflight_notes.py number "$GITHUB_SHA" > /tmp/found.txt; then
+              cat /tmp/found.txt | tee -a "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "attempt $i: no release for ${GITHUB_SHA:0:7} yet; waiting 30s"
+            sleep 30
+          done
+          echo "=============================================================="
+          echo "WHY THIS JOB FAILED: no release for ${GITHUB_SHA:0:7} appeared within 40 minutes (#160 AC1)."
+          echo "android-apk.yml publishes it on a green build of main; check that run."
+          echo "=============================================================="
+          exit 1
+
+      - name: Write What to Test from the release note
+        run: python3 .github/scripts/testflight_notes.py notes "$GITHUB_SHA" "${{ steps.find.outputs.BUILD }}" what-to-test.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: what-to-test
+          path: what-to-test.txt
+          if-no-files-found: error
+          retention-days: 14
+
   upload:
     name: Sign and upload to TestFlight
+    needs: number
     runs-on: macos-26
     timeout-minutes: 90
     environment: app-store
@@ -44,6 +100,9 @@ jobs:
       APP_VARIANT: ''
       DISTRIBUTION: app
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      # #160 AC1: the build number of this commit's GitHub release.
+      IOS_BUILD_NUMBER: ${{ needs.number.outputs.build }}
+      RELEASE_TAG: ${{ needs.number.outputs.tag }}
     steps:
       # A2: before anything is built or signed.
       - name: Refuse anything but main
@@ -53,16 +112,7 @@ jobs:
             echo "For an unsigned check of a branch, see ios.yml's 'Archive for a device' job on its PR."
             exit 1
           fi
-          # A5: CFBundleVersion always increases. The run number alone repeats
-          # on a re-run, and Apple refuses a build number it has already seen,
-          # so the attempt is folded in: run 7 is 701, its re-run 702.
-          if [ "$GITHUB_RUN_ATTEMPT" -ge 100 ]; then
-            echo "WHY THIS JOB FAILED: re-run 100 times; start a new run so the build number still increases (#108 A5)."
-            exit 1
-          fi
-          IOS_BUILD_NUMBER=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
-          echo "IOS_BUILD_NUMBER=$IOS_BUILD_NUMBER" >> "$GITHUB_ENV"
-          echo "ref: $GITHUB_REF  dry run: $DRY_RUN  build number: $IOS_BUILD_NUMBER"
+          echo "ref: $GITHUB_REF  dry run: $DRY_RUN  build number: $IOS_BUILD_NUMBER ($RELEASE_TAG)"
 
       # A4: a missing secret fails here and is named; a value is never printed.
       - name: Check the four secrets are present
@@ -110,18 +160,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The version is build-label.sh's, as on Android (A6). The label is not:
-      # its tag form names a GitHub release by THIS workflow's run number,
-      # which no release has (run 37490079637 labelled itself
-      # "v1.0.0-build.2"). On TestFlight the label names the build Apple
-      # shows instead. No "(pr N)", so no Test kit (isBetaBuild).
+      # The version is build-label.sh's, as on Android (A6). The label is the
+      # release's own tag, v<version>-build.N, as on Android (#160 AC6), so
+      # the paste-into-the-releases-page rule (#52) holds on iPhone too. No
+      # "(pr N)", so no Test kit (isBetaBuild).
       - name: Compute the version and the label
         run: |
           set -euo pipefail
           .github/scripts/build-label.sh >> "$GITHUB_ENV"
           VERSION="$(.github/scripts/build-label.sh | sed -n 's/^VERSION=//p')"
-          echo "BUILD_LABEL=v$VERSION (iOS build $IOS_BUILD_NUMBER)" >> "$GITHUB_ENV"
-          echo "label: v$VERSION (iOS build $IOS_BUILD_NUMBER)"
+          case "$RELEASE_TAG" in
+            "v$VERSION-build.$IOS_BUILD_NUMBER") ;;
+            *) echo "WHY THIS JOB FAILED: release $RELEASE_TAG is not version $VERSION build $IOS_BUILD_NUMBER"; exit 1 ;;
+          esac
+          echo "BUILD_LABEL=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "label: $RELEASE_TAG"
+
+      # #160 AC2: Apple refuses a build number it has already seen for this
+      # version, after a full build. Asked first, so the run fails in seconds.
+      - name: Check Apple has no build this high already
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -uo pipefail
+          APPLE_MAX="$(python3 .github/scripts/asc_api.py max-build com.vanstoner.coachingapp "$VERSION")" || {
+            echo "WHY THIS JOB FAILED: could not ask App Store Connect for its builds of $VERSION"; exit 1; }
+          echo "Apple's highest build of $VERSION: $APPLE_MAX; this build: $IOS_BUILD_NUMBER"
+          if [ "$IOS_BUILD_NUMBER" -le "$APPLE_MAX" ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: Apple already has $VERSION ($APPLE_MAX); build $IOS_BUILD_NUMBER is not higher (#160 AC2)."
+            echo "Raise the version in app.json (a fix is a patch: 1.0.0 -> 1.0.1), or upload a later commit."
+            echo "=============================================================="
+            exit 1
+          fi
 
       - name: Write the build label and the distribution into the bundle
         run: |
@@ -187,6 +259,21 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: .github/scripts/ios-export.sh upload build-device/App.xcarchive build-device/upload
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: env.DRY_RUN != 'true'
+        with:
+          name: what-to-test
+
+      # #160 AC3: never fails the job; the upload has already happened.
+      - name: Set What to Test from the release note
+        if: env.DRY_RUN != 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          echo "--- What to Test ---"; cat what-to-test.txt; echo; echo "---"
+          python3 .github/scripts/asc_api.py what-to-test com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" what-to-test.txt 25
 
       - name: Say what happened
         if: always()

@@ -1,0 +1,12 @@
+No sign-in. The app opens empty: it holds only what a coach enters, on the phone.
+
+To see a full season quickly (made-up names only):
+1. In Safari on the test device, open https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json and save it to Files.
+2. In the app: Settings > Import minutes file, and choose test-season.json. It adds 10 players and a past season.
+3. Open the Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
+
+To try a match: Home > Play now, pick the starting seven, start the clock, tap a bench player to plan a substitution, and play to full time for the match report.
+
+Settings > Forget everything empties the app again.
+
+Data: everything stays on the device. First names only. No account, server, analytics, advertising or tracking. Privacy policy: https://github.com/vanstoner/coaching-app/blob/main/PRIVACY.md
