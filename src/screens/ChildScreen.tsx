@@ -16,7 +16,7 @@ import { Text } from './Text';
 
 import type { Player } from '../types/index';
 import { wholeMinutes } from '../app/analysis';
-import { MAIN_KEEPER_NOTE, type ChildSeason } from '../app/childSeason';
+import { MAIN_KEEPER_NOTE, goalOutfieldLine, type ChildSeason } from '../app/childSeason';
 import {
   KEEPER_LABEL,
   UNIT_PREF_LABEL,
@@ -37,6 +37,7 @@ export function ChildScreen({
   everyone,
   onPlayers,
   onBack,
+  backLabel = 'Back to Squad',
 }: {
   player: Player;
   season: ChildSeason | undefined;
@@ -46,6 +47,8 @@ export function ChildScreen({
   everyone: Player[];
   onPlayers: (p: Player[]) => void;
   onBack: () => void;
+  /** "Back to Squad", or back to the view the child was opened from (#143). */
+  backLabel?: string;
 }) {
   const name = displayName(player);
   const s = season;
@@ -57,7 +60,7 @@ export function ChildScreen({
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
         <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>Back to Squad</Text>
+          <Text style={screen.link}>{backLabel}</Text>
         </Pressable>
         <Text style={screen.title} numberOfLines={1}>
           {name}
@@ -104,11 +107,8 @@ export function ChildScreen({
         {showKeeper && s !== undefined && (
           <>
             <Text style={screen.fieldLabel}>In goal and outfield</Text>
-            {s.goalMsPerGame !== null && s.outfieldMsPerGame !== null && (
-              <Text style={local.line}>
-                In goal {wholeMinutes(s.goalMsPerGame)} min a game, outfield {wholeMinutes(s.outfieldMsPerGame)}
-              </Text>
-            )}
+            {/* #142: the two parts add up to the minutes a game above. */}
+            {goalOutfieldLine(s) !== null && <Text style={local.line}>{goalOutfieldLine(s)}</Text>}
             {target !== null && (
               <>
                 <Text style={local.line}>
@@ -172,7 +172,7 @@ export function ChildScreen({
           style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
           onPress={onBack}
         >
-          <Text style={screen.buttonLabel}>Back to Squad</Text>
+          <Text style={screen.buttonLabel}>{backLabel}</Text>
         </Pressable>
       </ScrollView>
     </View>

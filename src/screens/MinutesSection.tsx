@@ -22,6 +22,7 @@ import {
 import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
+import { minutesRowSeconds } from '../app/analysis';
 import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
@@ -84,47 +85,51 @@ export function MinutesSection({
           <Text style={[local.figure, local.headText]}>Total</Text>
         </View>
       )}
-      {rows.map((row) => (
-        <View key={row.playerId} style={local.row}>
-          <View style={local.nameCol}>
-            <Text style={[local.name, row.retired && local.faint]} numberOfLines={1}>
-              {row.name}
-              {row.retired ? ' (removed)' : ''}
-            </Text>
-            {/* #83 AC6: where the time was played, at unit level. */}
-            <Text style={local.units} numberOfLines={1}>
-              {(['DEF', 'MID', 'ATT'] as const)
-                .filter((u) => row.byUnit[u] > 0)
-                .map((u) => `${UNIT_LABEL[u]} ${formatClock(row.byUnit[u])}`)
-                .join(' · ')}
-            </Text>
-            {/* #102 AC4: matches attended and missed; AC3: average per match attended. */}
-            <Text style={local.units} numberOfLines={1}>
-              {attendanceLine(attendance.get(row.playerId))}
-            </Text>
-            {shareLabel(shares.get(row.playerId)) !== '' && (
-              <Text
-                style={[
-                  local.units,
-                  shares.get(row.playerId)?.status === 'below' && local.below,
-                ]}
-                numberOfLines={1}
-              >
-                {shareLabel(shares.get(row.playerId))}
+      {rows.map((row) => {
+        // #142, #143 AC10: Out and GK add up to Total, and the units to Out.
+        const sec = minutesRowSeconds(row);
+        return (
+          <View key={row.playerId} style={local.row}>
+            <View style={local.nameCol}>
+              <Text style={[local.name, row.retired && local.faint]} numberOfLines={1}>
+                {row.name}
+                {row.retired ? ' (removed)' : ''}
               </Text>
-            )}
+              {/* #83 AC6: where the time was played, at unit level. */}
+              <Text style={local.units} numberOfLines={1}>
+                {(['DEF', 'MID', 'ATT'] as const)
+                  .filter((u) => row.byUnit[u] > 0)
+                  .map((u) => `${UNIT_LABEL[u]} ${formatClock(sec.byUnit[u] * 1000)}`)
+                  .join(' · ')}
+              </Text>
+              {/* #102 AC4: matches attended and missed; AC3: average per match attended. */}
+              <Text style={local.units} numberOfLines={1}>
+                {attendanceLine(attendance.get(row.playerId))}
+              </Text>
+              {shareLabel(shares.get(row.playerId)) !== '' && (
+                <Text
+                  style={[
+                    local.units,
+                    shares.get(row.playerId)?.status === 'below' && local.below,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {shareLabel(shares.get(row.playerId))}
+                </Text>
+              )}
+            </View>
+            <Text style={local.figure} numberOfLines={1}>
+              {formatClock(sec.outfield * 1000)}
+            </Text>
+            <Text style={[local.figure, row.goalkeeperMs === 0 && local.faint]} numberOfLines={1}>
+              {row.goalkeeperMs === 0 ? '-' : formatClock(sec.goal * 1000)}
+            </Text>
+            <Text style={local.figure} numberOfLines={1}>
+              {formatClock(sec.total * 1000)}
+            </Text>
           </View>
-          <Text style={local.figure} numberOfLines={1}>
-            {formatClock(row.outfieldMs)}
-          </Text>
-          <Text style={[local.figure, row.goalkeeperMs === 0 && local.faint]} numberOfLines={1}>
-            {row.goalkeeperMs === 0 ? '-' : formatClock(row.goalkeeperMs)}
-          </Text>
-          <Text style={local.figure} numberOfLines={1}>
-            {formatClock(row.outfieldMs + row.goalkeeperMs)}
-          </Text>
-        </View>
-      ))}
+        );
+      })}
 
       <Pressable
         disabled={busy || matches === 0}

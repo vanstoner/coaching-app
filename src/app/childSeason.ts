@@ -27,6 +27,7 @@ import {
   competitionBucket,
   isCounted,
   seasonStats,
+  wholeMinuteParts,
   wholeMinutes,
   type CompetitionBucket,
   type SeasonOptions,
@@ -98,6 +99,22 @@ export interface SquadSeason {
 export function competitionText(label: string, played: number, of: number, averageMs: number | null): string {
   if (played === 0 || averageMs === null) return `${label}: did not play, 0 of ${of}`;
   return `${label}: ${wholeMinutes(averageMs)} min a game, played ${played} of ${of}`;
+}
+
+/**
+ * A keeper's split, a game: "In goal 38 min a game, outfield 12". The two
+ * add up to the minutes a game shown above them (#142): rounded one by one,
+ * 37.6 and 12.6 read 38 and 13 beside 50. Null before their first match.
+ */
+export function goalOutfieldLine(
+  c: Pick<ChildSeason, 'averageMs' | 'goalMsPerGame' | 'outfieldMsPerGame'>
+): string | null {
+  if (c.goalMsPerGame === null || c.outfieldMsPerGame === null) return null;
+  const [goal, outfield] = wholeMinuteParts(
+    [c.goalMsPerGame, c.outfieldMsPerGame],
+    c.averageMs ?? c.goalMsPerGame + c.outfieldMsPerGame
+  );
+  return `In goal ${goal} min a game, outfield ${outfield}`;
 }
 
 /** The Squad row's line. */

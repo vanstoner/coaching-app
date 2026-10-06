@@ -25,6 +25,17 @@
  * A Main keeper is not in the squad average, and their row says so. Tapping a
  * name opens the child's page, where their figures and their position
  * preferences live.
+ *
+ * ---------------------------------------------------------------------------
+ * The squad views (#143)
+ * ---------------------------------------------------------------------------
+ *
+ * On the tab, four tiles sit above the list, each showing its answer: Season
+ * grid, Fairness, Going into Saturday, Positions tried (`SquadViews.tsx`).
+ * A view, and a child opened from one, stack here like the child's page
+ * always has: Back returns to where the coach came from. The list itself is
+ * unchanged. On the way to a match there are no tiles: that errand is a
+ * kick-off.
  */
 
 import { useCallback, useState } from 'react';
@@ -54,10 +65,22 @@ import {
   validateName,
 } from '../app/squad';
 import { wholeMinutes } from '../app/analysis';
-import { MAIN_KEEPER_NOTE, squadSeason } from '../app/childSeason';
+import { MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
+import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
 import { colours, screen, TOUCH_TARGET } from './theme';
+
+/** Where the coach is inside Squad: a view, or a child's page. The list is the empty stack. */
+type Page = { kind: 'view'; view: SquadView } | { kind: 'child'; id: UUID };
+
+const VIEWS = {
+  grid: SeasonGridView,
+  fairness: FairnessView,
+  saturday: SaturdayView,
+  positions: PositionsView,
+} as const;
 
 export function SquadScreen({
   squadId,
@@ -89,14 +112,19 @@ export function SquadScreen({
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
   const [draft, setDraft] = useState('');
-  /** Whose page is open (#121). */
-  const [openChild, setOpenChild] = useState<UUID | null>(null);
+  /** The views and child pages open (#121, #143); empty shows the list. */
+  const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
+  const onTab = onStartMatch === null && onLeave === null;
 
   const readiness = squadReadiness(players, onFieldCount);
   const dupes = duplicatedNames(players);
-  const season = squadSeason(ledger, everyone, { kickoffs });
+  // Every figure on this screen and the views, folded from the ledger on each draw (invariant 1).
+  const views = squadViews(ledger, everyone, { kickoffs });
+  const season = views.season;
   const seasonOf = (id: UUID) => season.children.find((c) => c.playerId === id);
+  const open = (page: Page) => setPages((stack) => [...stack, page]);
+  const back = () => setPages((stack) => stack.slice(0, -1));
 
   const add = useCallback(() => {
     const check = validateName(draft);
@@ -109,8 +137,14 @@ export function SquadScreen({
     setError('');
   }, [draft, everyone, onPlayers, squadId]);
 
-  const child = openChild === null ? undefined : players.find((p) => p.id === openChild);
+  const top = pages[pages.length - 1];
+  if (top?.kind === 'view') {
+    const ViewScreen = VIEWS[top.view];
+    return <ViewScreen views={views} onChild={(id) => open({ kind: 'child', id })} onBack={back} />;
+  }
+  const child = top?.kind === 'child' ? players.find((p) => p.id === top.id) : undefined;
   if (child) {
+    const under = pages[pages.length - 2];
     return (
       <ChildScreen
         player={child}
@@ -119,7 +153,8 @@ export function SquadScreen({
         scaleMs={season.scaleMs}
         everyone={everyone}
         onPlayers={onPlayers}
-        onBack={() => setOpenChild(null)}
+        backLabel={under?.kind === 'view' ? `Back to ${VIEW_TITLE[under.view]}` : 'Back to Squad'}
+        onBack={back}
       />
     );
   }
@@ -134,33 +169,36 @@ export function SquadScreen({
           <Text style={screen.title}>Squad</Text>
           <Text style={screen.hint}>First names only. Nothing leaves this phone.</Text>
 
-          <View style={local.addRow}>
-            <TextInput
-              style={[screen.input, local.nameInput]}
-              value={draft}
-              onChangeText={(t) => {
-                setDraft(t);
-                if (error) setError('');
-              }}
-              placeholder="First name"
-              placeholderTextColor={colours.inkFaint}
-              autoCapitalize="words"
-              autoCorrect={false}
-              maxLength={MAX_NAME_LENGTH + 8}
-              returnKeyType="done"
-              onSubmitEditing={add}
-            />
-            <Pressable
-              style={({ pressed }) => [local.addButton, pressed && screen.buttonPressed]}
-              onPress={add}
-            >
-              <Text style={screen.buttonLabel}>Add</Text>
-            </Pressable>
-          </View>
-
-          {error !== '' && <Text style={screen.error}>{error}</Text>}
-
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
+            {/* #143 AC1: the squad views, each answering before it is tapped. */}
+            {onTab && <SquadTiles views={views} onOpen={(view) => open({ kind: 'view', view })} />}
+
+            <View style={[local.addRow, onTab && local.addRowUnderTiles]}>
+              <TextInput
+                style={[screen.input, local.nameInput]}
+                value={draft}
+                onChangeText={(t) => {
+                  setDraft(t);
+                  if (error) setError('');
+                }}
+                placeholder="First name"
+                placeholderTextColor={colours.inkFaint}
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={MAX_NAME_LENGTH + 8}
+                returnKeyType="done"
+                onSubmitEditing={add}
+              />
+              <Pressable
+                style={({ pressed }) => [local.addButton, pressed && screen.buttonPressed]}
+                onPress={add}
+              >
+                <Text style={screen.buttonLabel}>Add</Text>
+              </Pressable>
+            </View>
+
+            {error !== '' && <Text style={screen.error}>{error}</Text>}
+
             {players.length > 0 &&
               (season.countedMatches === 0 ? (
                 <Text style={screen.hint}>
@@ -188,7 +226,7 @@ export function SquadScreen({
                 <View key={p.id} style={screen.playerRow}>
                   {/* #121: tap a name for their page. */}
                   <Pressable
-                    onPress={() => setOpenChild(p.id)}
+                    onPress={() => open({ kind: 'child', id: p.id })}
                     style={local.nameHit}
                     accessibilityRole="button"
                     accessibilityLabel={`${displayName(p)}, ${figures}${s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
@@ -278,7 +316,8 @@ export function SquadScreen({
 }
 
 const local = StyleSheet.create({
-  addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
+  addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  addRowUnderTiles: { marginTop: 10 },
   nameInput: { flex: 1, alignSelf: 'auto', marginRight: 8 },
   addButton: {
     backgroundColor: colours.accent,
