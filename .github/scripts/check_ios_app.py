@@ -17,10 +17,12 @@ app.json, because the .app is what would reach a phone. Three things:
   3. ITSAppUsesNonExemptEncryption is present and FALSE in both variants
      (#108 B1): the app uses no encryption beyond the OS's own, and saying so
      in the build keeps TestFlight from holding it at "Missing Compliance".
-  4. CFBundleVersion is the build number CI injected (the run number), when
+  4. CFBundleShortVersionString is the version CI computed (#108 A6/A8,
+     ruling 42: app.json's semantic version), when one is given.
+  5. CFBundleVersion is the build number CI injected (the run number), when
      one is given — a silently missing injection would ship build 1.
 
-    check_ios_app.py INFO_PLIST VARIANT [BUILD_NUMBER]   # VARIANT 'beta' or ''
+    check_ios_app.py INFO_PLIST VARIANT [BUILD_NUMBER [VERSION]]   # VARIANT 'beta' or ''
     check_ios_app.py --self-test
 
 The self-test runs first in CI and dry-runs the check against BOTH healthy
@@ -56,7 +58,7 @@ def excluded_from_backup(variant):
     raise ValueError(f"unknown variant {variant!r}")
 
 
-def check(plist, variant, build_number=None):
+def check(plist, variant, build_number=None, version=None):
     """Return a list of problems; empty means the .app is right."""
     want_id, want_name = expected(variant)
     problems = []
@@ -80,6 +82,10 @@ def check(plist, variant, build_number=None):
         problems.append(
             f"{ENCRYPTION_KEY} is {plist.get(ENCRYPTION_KEY, '<absent>')!r}, expected False (#108 B1)"
         )
+    if version:
+        got_version = plist.get("CFBundleShortVersionString")
+        if got_version != version:
+            problems.append(f"CFBundleShortVersionString is {got_version!r}, expected {version!r}")
     if build_number:
         got_build = plist.get("CFBundleVersion")
         if got_build != build_number:
@@ -124,15 +130,17 @@ def self_test():
         ("beta: encryption key absent (B1)", plist_of(BETA_ID, BETA_NAME, encryption=None), "beta", "42", False),
         ("beta: encryption key true (B1)", plist_of(BETA_ID, BETA_NAME, encryption=True), "beta", "42", False),
         ("encryption key the string 'NO'", plist_of(BASE_ID, BASE_NAME, encryption="NO"), "", "42", False),
+        ("healthy: version checked", plist_of(BASE_ID, BASE_NAME), "", "42", True, "1.0.0"),
+        ("version is the old date form", plist_of(BASE_ID, BASE_NAME), "", "42", False, "2026.10.06"),
         ("build number not injected", plist_of(BASE_ID, BASE_NAME, build="1"), "", "42", False),
         ("empty plist", {}, "", None, False),
     ]
     failed = 0
-    for name, plist, variant, build, should_pass in cases:
+    for name, plist, variant, build, should_pass, *rest in cases:
         # Round-trip through BINARY plist, the format a built .app carries,
         # so the parse path is the one CI will take.
         parsed = plistlib.loads(plistlib.dumps(plist, fmt=plistlib.FMT_BINARY))
-        passed = not check(parsed, variant, build)
+        passed = not check(parsed, variant, build, rest[0] if rest else None)
         ok = passed == should_pass
         failed += not ok
         print(f"  {'ok' if ok else 'x '} {name} -> {'pass' if passed else 'fail'}")
@@ -149,11 +157,12 @@ def self_test():
 def main(argv):
     if argv[1:] == ["--self-test"]:
         return self_test()
-    if len(argv) not in (3, 4):
+    if len(argv) not in (3, 4, 5):
         print(__doc__)
         return 2
     path, variant = argv[1], argv[2]
-    build_number = argv[3] if len(argv) == 4 and argv[3] else None
+    build_number = argv[3] if len(argv) >= 4 and argv[3] else None
+    version = argv[4] if len(argv) == 5 and argv[4] else None
     try:
         with open(path, "rb") as f:
             plist = plistlib.load(f)
@@ -166,7 +175,9 @@ def main(argv):
         f"found:    {plist.get('CFBundleIdentifier')} / {plist.get('CFBundleDisplayName')} / "
         f"{BACKUP_KEY}={plist.get(BACKUP_KEY, '<absent>')} / build {plist.get('CFBundleVersion')}"
     )
-    problems = check(plist, variant, build_number)
+    print(f"version:  expected {version or '(not checked)'}, found {plist.get('CFBundleShortVersionString')} / "
+          f"ITSAppUsesNonExemptEncryption={plist.get(ENCRYPTION_KEY, '<absent>')}")
+    problems = check(plist, variant, build_number, version)
     for p in problems:
         print(f"ASSERTION FAILED: {p}")
     return 1 if problems else 0

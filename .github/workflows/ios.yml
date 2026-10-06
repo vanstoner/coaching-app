@@ -242,6 +242,82 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Archive for a DEVICE, signing off: #108 A7 and A8
+  # ---------------------------------------------------------------------------
+  #
+  # The healthy case of the TestFlight build, proved on every PR and every
+  # push to main before any secret is used. It archives the iPhone device
+  # build (not the simulator build above) and asserts the A8 keys on that
+  # archive's Info.plist: bundle id, display name, version, build number,
+  # backup key and the no-encryption flag (B1), plus the bundle's label and
+  # distribution. testflight.yml runs the same script and the same checks
+  # with signing on, and only on main.
+  device-build:
+    name: Archive for a device (signing off)
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
+      IOS_BUILD_NUMBER: ${{ github.run_number }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      DISTRIBUTION: ${{ github.event_name == 'pull_request' && 'beta' || 'app' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Self-test the .app assertion
+        run: python3 .github/scripts/check_ios_app.py --self-test
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute the version
+        run: .github/scripts/build-label.sh >> "$GITHUB_ENV"
+
+      - name: Write the build label and the distribution into the bundle
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/write-build-label.py "$BUILD_LABEL"
+          python3 .github/scripts/write-distribution.py "$DISTRIBUTION" "$APP_VARIANT"
+
+      - name: Generate the native iOS project
+        env:
+          APP_VERSION_NAME: ${{ env.VERSION }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Archive for a device, signing off
+        run: .github/scripts/ios-archive.sh unsigned build-device/App.xcarchive
+
+      - name: Assert the archived app (A8)
+        run: |
+          set -uo pipefail
+          check=0
+          python3 .github/scripts/check_ios_app.py "$APP/Info.plist" "$APP_VARIANT" "$IOS_BUILD_NUMBER" "$VERSION" \
+            > /tmp/ios-check.txt 2>&1 || check=$?
+          cat /tmp/ios-check.txt
+          bundle=0
+          python3 .github/scripts/assert_label_in_bundle.py "$APP/main.jsbundle" "$BUILD_LABEL" || bundle=1
+          python3 .github/scripts/write-distribution.py --assert-bundle "$APP/main.jsbundle" "$DISTRIBUTION" || bundle=1
+          if [ "$check" != 0 ] || [ "$bundle" != 0 ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED"
+            echo "=============================================================="
+            grep -E '^ASSERTION FAILED' /tmp/ios-check.txt || true
+            [ "$bundle" = 0 ] || echo "the bundle lacks the label '$BUILD_LABEL' or is not only distribution:$DISTRIBUTION"
+            echo "=============================================================="
+            exit 1
+          fi
+          echo "device archive is the app this build should produce (variant '${APP_VARIANT:-release}', $VERSION ($IOS_BUILD_NUMBER))"
+
+  # ---------------------------------------------------------------------------
   # Attach the simulator zip to the release or the beta — #128 AC5
   # ---------------------------------------------------------------------------
   #
