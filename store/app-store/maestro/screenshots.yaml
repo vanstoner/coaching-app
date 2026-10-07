@@ -51,14 +51,9 @@ appId: com.vanstoner.coachingapp
     optional: true
 - takeScreenshot: 06-clock
 
-# Tap a player for what can be recorded (#84): the striker's sheet, then a
-# goal, with the score and the Undo offer showing.
+# Tap a player for what can be recorded (#84): the striker's sheet, with
+# Goal and Move or swap. The sheet is a Modal, whose buttons Maestro cannot
+# find on iOS (run 9), so the flow ends on this shot rather than tapping Goal.
 - tapOn: "Gus"
 - waitForAnimationToEnd
 - takeScreenshot: 07-player
-- tapOn: "Goal"
-- extendedWaitUntil:
-    visible: "Undo"
-    timeout: 5000
-    optional: true
-- takeScreenshot: 08-goal
