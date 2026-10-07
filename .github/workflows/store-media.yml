@@ -179,22 +179,29 @@ jobs:
             done
             python3 .github/scripts/check_store_media.py shots "media/$2" "$2" || fail=1
           }
-          prepare "$IPHONE_UDID"; shots "$IPHONE_UDID" iphone
-
-          # The iPad last, alone: with the iPhone still running, its launch
-          # hung for eight minutes (run 2). One retry, from a fresh launch.
-          xcrun simctl shutdown "$IPHONE_UDID" || true
-          prepare "$IPAD_UDID"
-          before=$fail
-          shots "$IPAD_UDID" ipad
-          if [ "$fail" != "$before" ]; then
-            echo "the iPad flow failed once; retrying from a fresh boot"
-            fail=$before
-            rm -rf media/ipad media/raw-ipad media/debug-ipad
-            xcrun simctl shutdown "$IPAD_UDID" || true
-            prepare "$IPAD_UDID"
-            shots "$IPAD_UDID" ipad
-          fi
+          # One simulator at a time, each retried once from a fresh boot.
+          # Both booted during the build (the first boot is the slow one), but
+          # running them together hung a tap for five minutes (run 9) and a
+          # launch for eight (run 2).
+          device() {  # UDID display
+            local saved=$fail
+            fail=0
+            prepare "$1"
+            shots "$1" "$2"
+            if [ "$fail" != 0 ]; then
+              echo "the $2 flow failed once; retrying from a fresh boot"
+              fail=0
+              rm -rf "media/$2" "media/raw-$2" "media/debug-$2"
+              xcrun simctl shutdown "$1" || true
+              prepare "$1"
+              shots "$1" "$2"
+            fi
+            xcrun simctl shutdown "$1" || true
+            [ "$fail" = 0 ] && fail=$saved
+          }
+          xcrun simctl shutdown "$IPAD_UDID" || true
+          device "$IPHONE_UDID" iphone
+          device "$IPAD_UDID" ipad
           if [ "$fail" != 0 ]; then
             echo "=============================================================="
             echo "WHY THIS JOB FAILED: a flow failed or the media is outside Apple's rules;"
