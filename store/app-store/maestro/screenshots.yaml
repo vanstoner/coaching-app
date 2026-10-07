@@ -50,3 +50,15 @@ appId: com.vanstoner.coachingapp
     timeout: 8000
     optional: true
 - takeScreenshot: 06-clock
+
+# Tap a player for what can be recorded (#84): the striker's sheet, then a
+# goal, with the score and the Undo offer showing.
+- tapOn: "Gus"
+- waitForAnimationToEnd
+- takeScreenshot: 07-player
+- tapOn: "Goal"
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 5000
+    optional: true
+- takeScreenshot: 08-goal
