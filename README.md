@@ -39,6 +39,10 @@ request; `store-listing.yml`, run by hand from `main` and approved in the
 `app-store` environment, sends it to App Store Connect and reads it back. The
 privacy policy is [PRIVACY.md](PRIVACY.md).
 
+The screenshots in `store/app-store/screenshots/` (iPhone 6.9" and iPad 13")
+are made by `store-media.yml`, run by hand, from a build that opens with the
+made-up season; the same listing run uploads them.
+
 The website, [vanstoner.github.io/coaching-app](https://vanstoner.github.io/coaching-app/),
 is `site/` with the privacy page made from PRIVACY.md; `pages.yml` checks it
 on a pull request and publishes it from `main`. The listing's support and

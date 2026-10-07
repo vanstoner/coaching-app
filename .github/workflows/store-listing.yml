@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   listing:
-    name: Update the App Store listing
+    name: Update the App Store listing and screenshots
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: app-store
@@ -46,6 +46,9 @@ jobs:
         run: |
           python3 .github/scripts/check_listing.py --self-test
           python3 .github/scripts/check_listing.py store/app-store/en-GB
+          python3 .github/scripts/check_store_media.py --self-test
+          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/iphone iphone
+          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/ipad ipad
 
       # Apple shows these links on the listing: never send one that is down.
       - name: Check the support and privacy pages are live
@@ -81,6 +84,22 @@ jobs:
             python3 .github/scripts/asc_api.py listing com.vanstoner.coachingapp "$VERSION" store/app-store/en-GB --dry-run
           else
             python3 .github/scripts/asc_api.py listing com.vanstoner.coachingapp "$VERSION" store/app-store/en-GB
+          fi
+
+      # #108 E: the screenshots store-media.yml made (made-up squad only),
+      # replacing each display's set, then read back.
+      - name: Upload the screenshots and read them back
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("app.json"))["expo"]["version"])')"
+          if [ "$DRY_RUN" = true ]; then
+            python3 .github/scripts/asc_api.py screenshots com.vanstoner.coachingapp "$VERSION" store/app-store/screenshots --dry-run
+          else
+            python3 .github/scripts/asc_api.py screenshots com.vanstoner.coachingapp "$VERSION" store/app-store/screenshots
           fi
 
       - name: Remove the API key

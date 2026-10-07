@@ -1,17 +1,18 @@
 name: App Store media
 
-# #108 E, PO ruling "approve 1 2 3": the App Store screenshots and the app
-# preview video, made in CI from the `store` build (ADR-017 amendment,
+# #108 E, PO ruling "approve 1 2 3", then "approve 1" (2026-10-06): the App
+# Store screenshots, made in CI from the `store` build (ADR-017 amendment,
 # 2026-10-06). That build is Heart FC Coach, exactly what App Review sees, but
 # on an empty simulator it opens with the Test kit's made-up squad and season
 # (first names only, invariant 4) and shows no Test kit. It is built here
 # only, for the simulator only, and never uploaded: TestFlight and every
-# release assert distribution:app in the bundle.
+# release assert distribution:app in the bundle. The preview video was
+# dropped by that second ruling; check_store_media.py still checks one.
 #
-# Maestro (pinned, checksummed) taps through store/app-store/maestro/*.yaml on
-# an iPhone 6.9" and an iPad 13" simulator. The screenshots and the 886x1920
-# preview are checked against Apple's rules (check_store_media.py) and kept as
-# this run's `store-media` artifact.
+# Maestro (pinned, checksummed) taps through store/app-store/maestro/
+# screenshots.yaml on an iPhone 6.9" and an iPad 13" simulator. The shots are
+# checked against Apple's rules (check_store_media.py) and kept as this run's
+# `store-media` artifact.
 #
 #   gh workflow run store-media.yml --ref main
 
@@ -36,7 +37,7 @@ env:
 
 jobs:
   media:
-    name: Screenshots and the preview video
+    name: Screenshots
     runs-on: macos-26
     timeout-minutes: 90
     permissions:
@@ -153,7 +154,7 @@ jobs:
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
           brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
 
-      - name: Screenshots on each display, then the preview on the iPhone
+      - name: Screenshots on the iPhone, then the iPad
         run: |
           set -uo pipefail
           FLOWS="$GITHUB_WORKSPACE/store/app-store/maestro"
@@ -180,28 +181,6 @@ jobs:
           }
           prepare "$IPHONE_UDID"; shots "$IPHONE_UDID" iphone
 
-          # The preview: record the iPhone around the preview flow.
-          mkdir -p media/preview media/debug-preview
-          xcrun simctl io "$IPHONE_UDID" recordVideo --codec=h264 --force media/preview/raw.mov &
-          REC=$!
-          sleep 2
-          maestro --device "$IPHONE_UDID" test --test-output-dir media/debug-preview \
-            "$FLOWS/preview.yaml" || { echo "MEDIA PROBLEM: the preview flow failed"; fail=1; }
-          kill -INT "$REC"; wait "$REC" || true
-          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 media/preview/raw.mov || true
-          # To 886x1920: scale to cover, then crop the few spare rows;
-          # 30 fps; at most 29.5 s; a silent stereo track, as Apple expects.
-          ffmpeg -loglevel error -y -i media/preview/raw.mov \
-            -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 \
-            -t 29.5 -vf "scale=886:1920:force_original_aspect_ratio=increase,crop=886:1920,fps=30,format=yuv420p" \
-            -c:v libx264 -profile:v high -level 4.0 -crf 18 -c:a aac -b:a 256k -shortest \
-            -movflags +faststart media/preview/preview.mp4 || { echo "MEDIA PROBLEM: ffmpeg failed"; fail=1; }
-          rm -f media/preview/raw.mov
-          if [ -s media/preview/preview.mp4 ]; then
-            ffprobe -v error -show_streams -show_format -of json media/preview/preview.mp4 > media/preview/probe.json
-            python3 .github/scripts/check_store_media.py video media/preview/probe.json || fail=1
-          fi
-
           # The iPad last, alone: with the iPhone still running, its launch
           # hung for eight minutes (run 2). One retry, from a fresh launch.
           xcrun simctl shutdown "$IPHONE_UDID" || true
@@ -209,9 +188,11 @@ jobs:
           before=$fail
           shots "$IPAD_UDID" ipad
           if [ "$fail" != "$before" ]; then
-            echo "the iPad flow failed once; retrying"
+            echo "the iPad flow failed once; retrying from a fresh boot"
             fail=$before
-            rm -rf media/ipad media/raw-ipad
+            rm -rf media/ipad media/raw-ipad media/debug-ipad
+            xcrun simctl shutdown "$IPAD_UDID" || true
+            prepare "$IPAD_UDID"
             shots "$IPAD_UDID" ipad
           fi
           if [ "$fail" != 0 ]; then
