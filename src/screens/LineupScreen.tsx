@@ -81,6 +81,8 @@ import {
 } from '../app/teamSheet';
 import { Chip, ChipRow } from './Chip';
 import { PitchView } from './PitchView';
+import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
+import { hasRenamedPositions } from '../app/positionNames';
 import { shapeOfFormat } from '../app/shapes';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -95,6 +97,7 @@ export function LineupScreen({
   onLeave,
   onPlanRest,
   attendance,
+  names,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -109,6 +112,8 @@ export function LineupScreen({
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
+  /** Rename this match's positions (#166): before kick-off and between periods. */
+  names?: PositionNaming;
   /**
    * Who is here today (#102 AC1). Given between periods, never while one
    * runs; `players` above is already only those not marked absent, so an
@@ -158,6 +163,8 @@ export function LineupScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** The position whose name is being changed (#166). */
+  const [renaming, setRenaming] = useState<UUID | null>(null);
   /** Which sub's "comes off" the picker is open for. */
   const [picking, setPicking] = useState<
     { kind: 'slot'; positionId: UUID } | { kind: 'off'; playerId: UUID } | null
@@ -274,7 +281,16 @@ export function LineupScreen({
             onSelect={setPitchPick}
             onDragging={setDragging}
             onMove={(id, target) => setSheet(editSheet(sheet, id, target))}
+            onRenamePosition={names ? setRenaming : undefined}
           />
+          {names && (
+            <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
+          )}
+          {names && hasRenamedPositions(format) && (
+            <Pressable style={screen.linkHit} onPress={names.onReset}>
+              <Text style={screen.link}>Reset position names</Text>
+            </Pressable>
+          )}
 
           <Text style={screen.fieldLabel}>Who is on?</Text>
           <Text style={screen.hint}>
@@ -488,6 +504,15 @@ export function LineupScreen({
           </Pressable>
         </View>
       </View>
+      {names && (
+        <PositionNameSheet
+          format={format}
+          positionId={renaming}
+          offerKeep={names.offerKeep}
+          onSave={names.onRename}
+          onClose={() => setRenaming(null)}
+        />
+      )}
       <StatusBar style="light" />
     </SafeAreaView>
   );
