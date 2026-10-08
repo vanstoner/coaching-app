@@ -1,6 +1,6 @@
 # Privacy policy: Heart of the Game: Coach
 
-*Last updated 6 October 2026. Applies to the app named **Heart FC Coach** on the
+*Last updated 8 October 2026. Applies to the app named **Heart FC Coach** on the
 phone and **Heart of the Game: Coach** in the App Store, on iPhone, iPad and
 Android.*
 
@@ -45,8 +45,16 @@ Test builds of the app ("Heart FC Beta Coach") are never included in a backup.
 
 ## Sharing
 
-The app shares data only when the coach chooses to, using **Export minutes
-file**. Where that file goes, and who sees it, is then the coach's choice.
+The app shares data only when the coach chooses to, in one of two ways:
+
+- **Export minutes file**, a copy of the season's records.
+- **Share plan**, a picture of one match's plan for parents: the starting
+  positions, the planned substitutions and the bench, with children's first
+  names. It shows no minutes and does not say who is unavailable. The app
+  makes the picture only for that share and does not keep it.
+
+Where the file or the picture goes, and who sees it, is then the coach's
+choice.
 
 ## Deleting data
 

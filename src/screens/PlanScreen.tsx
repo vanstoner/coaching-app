@@ -17,12 +17,13 @@
  * file draws them.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Text } from './Text';
 
@@ -57,6 +58,9 @@ import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { PLAN_IMAGE_WIDTH, planImage, type PlanImageLayout } from '../app/planImage';
+import { releasePlanImage, sharePlanImage } from '../app/planImageFile';
+import { PlanImageView } from './PlanImageView';
 
 /** What the picker is choosing for, when it is open. */
 type Picking =
@@ -74,6 +78,7 @@ export function PlanScreen({
   onChange,
   onBack,
   names,
+  absent,
 }: {
   match: Match;
   /** Our team's name, so the header reads "Us v Them" as the clock does. */
@@ -89,6 +94,8 @@ export function PlanScreen({
    * period has started, names change on the lineup between periods.
    */
   names?: PositionNaming;
+  /** Who is marked unavailable for this match: kept off the shared image's bench (#165). */
+  absent?: ReadonlySet<UUID>;
   /**
    * Re-planning during play (#88): the first period still to come, and what
    * each player already has. Earlier periods are locked.
@@ -123,6 +130,38 @@ export function PlanScreen({
   const [benchMenu, setBenchMenu] = useState<
     { playerId: UUID; atMs: number; editing: boolean } | null
   >(null);
+
+  // Share plan (#165): which image is laid out off-screen for capture, if
+  // any, and whether the layout question is open.
+  const [shareAsk, setShareAsk] = useState(false);
+  const [shareLayout, setShareLayout] = useState<PlanImageLayout | null>(null);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const imageRef = useRef<View>(null);
+  const captured = useRef(false);
+  // The capture lives only for the share; let it go when the plan closes.
+  useEffect(() => releasePlanImage, []);
+
+  const startShare = (layout: PlanImageLayout) => {
+    setShareAsk(false);
+    setShareNote(null);
+    captured.current = false;
+    setShareLayout(layout);
+  };
+  // Quarters offer 2×2 or four in a row; halves sit side by side either way.
+  const askShare = () => (periodCount === 4 ? setShareAsk(true) : startShare('grid'));
+  const onImageLayout = (e: LayoutChangeEvent) => {
+    if (captured.current || !shareLayout) return;
+    captured.current = true;
+    const { width, height } = e.nativeEvent.layout;
+    const target = PLAN_IMAGE_WIDTH[shareLayout];
+    // One frame after layout, so the capture sees what was drawn.
+    requestAnimationFrame(() => {
+      void sharePlanImage(imageRef, target, { width, height }).then((outcome) => {
+        setShareLayout(null);
+        if (!outcome.ok) setShareNote(outcome.reason);
+      });
+    });
+  };
 
   const period = plan.periods[periodIndex];
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -363,6 +402,20 @@ export function PlanScreen({
           </>
         )}
 
+        <Pressable
+          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+          onPress={askShare}
+          disabled={shareLayout !== null}
+        >
+          <Text style={screen.buttonLabel}>Share plan</Text>
+        </Pressable>
+        <Text style={screen.hint}>
+          {shareNote ??
+            'One picture of every ' +
+              noun.toLowerCase() +
+              ' and its subs, for parents. No minutes, and nobody marked absent.'}
+        </Text>
+
         <Text style={screen.fieldLabel}>
           {live ? 'Minutes so far, plus the plan' : 'Minutes if played to plan'}
         </Text>
@@ -397,6 +450,23 @@ export function PlanScreen({
           <Text style={screen.buttonLabel}>Done</Text>
         </Pressable>
       </ScrollView>
+
+      {/* The image being shared (#165): laid out off-screen, captured, gone. */}
+      {shareLayout && (
+        <View style={local.offscreen} pointerEvents="none">
+          <PlanImageView
+            ref={imageRef}
+            layout={shareLayout}
+            onLayout={onImageLayout}
+            image={planImage({ match, squadName, format, plan, players, absent })}
+          />
+        </View>
+      )}
+
+      <ActionSheet visible={shareAsk} title="Share plan" onClose={() => setShareAsk(false)}>
+        <SheetButton label="2 × 2, best on a phone" strong onPress={() => startShare('grid')} />
+        <SheetButton label="Four in a row" onPress={() => startShare('row')} />
+      </ActionSheet>
 
       {names && (
         <PositionNameSheet
@@ -503,6 +573,8 @@ export function PlanScreen({
 }
 
 const local = StyleSheet.create({
+  // Far off to the left: laid out and drawn for the capture, never seen.
+  offscreen: { position: 'absolute', left: -10000, top: 0 },
   slotLabel: {
     color: colours.inkMuted,
     fontSize: 15,

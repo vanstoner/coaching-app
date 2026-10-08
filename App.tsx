@@ -98,7 +98,7 @@ import {
 import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
-import { beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
+import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -1076,6 +1076,12 @@ export default function App() {
       const planQuarters =
         match && match.state.match.id === planning.match.id ? match.state.quarters : planning.quarters;
       const planFormat = planning.format ?? format;
+      // #165: who is marked unavailable, kept off the shared image's bench.
+      // The held match's marks when it is this one, else the stored copy's.
+      const planAbsent =
+        match && match.state.match.id === planning.match.id
+          ? absentIds(match.state)
+          : absentIds({ playerAvailability: new Map(planning.availability ?? []) });
       return (
         <PlanScreen
           match={planning.match}
@@ -1086,6 +1092,7 @@ export default function App() {
             canRenamePositions('plan', planQuarters) ? namingFor(planning.match.id, planFormat) : undefined
           }
           players={squad}
+          absent={planAbsent}
           squadName={squadName}
           plan={planning.plan}
           onChange={(plan) => savePlan(planning.match.id, plan)}
