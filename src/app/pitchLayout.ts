@@ -5,8 +5,9 @@
  * a device. The screen only draws what this returns.
  *
  * The pitch is drawn attacking upwards: goal at the bottom, then defence,
- * midfield, forwards. Within a row, a position whose label starts with L sits
- * left and R sits right, so LB is on the left as a coach expects.
+ * midfield, forwards. Within a row, a position whose role starts with L sits
+ * left and R sits right, so LB is on the left as a coach expects. The role
+ * code, not the label: a slot renamed "Sweeper" (#166) stays where it was.
  */
 
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
@@ -56,7 +57,8 @@ export function slotSpots(format: Format): SlotSpot[] {
   const spots: SlotSpot[] = [];
   for (const [y, row] of rows) {
     const ordered = [...row].sort(
-      (a, b) => side(a.label) - side(b.label) || a.sortOrder - b.sortOrder
+      (a, b) =>
+        side(a.roleCode ?? a.label) - side(b.roleCode ?? b.label) || a.sortOrder - b.sortOrder
     );
     ordered.forEach((p, i) => {
       spots.push({

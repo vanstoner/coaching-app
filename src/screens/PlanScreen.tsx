@@ -53,6 +53,8 @@ import { opponentLabel } from '../app/fixtures';
 import { Chip, ChipRow } from './Chip';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
+import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
+import { hasRenamedPositions } from '../app/positionNames';
 import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -71,6 +73,7 @@ export function PlanScreen({
   squadName,
   onChange,
   onBack,
+  names,
 }: {
   match: Match;
   /** Our team's name, so the header reads "Us v Them" as the clock does. */
@@ -81,6 +84,11 @@ export function PlanScreen({
   plan: MatchPlan | undefined;
   onChange: (plan: MatchPlan) => void;
   onBack: () => void;
+  /**
+   * Rename this match's positions (#166). Given before kick-off only: once a
+   * period has started, names change on the lineup between periods.
+   */
+  names?: PositionNaming;
   /**
    * Re-planning during play (#88): the first period still to come, and what
    * each player already has. Earlier periods are locked.
@@ -105,6 +113,8 @@ export function PlanScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** The position whose name is being changed (#166). */
+  const [renaming, setRenaming] = useState<UUID | null>(null);
   /**
    * The bench player's menu (#120): who, the time it offers, and whether it
    * is asking for a time and who comes off (`editing`) or showing the sub
@@ -262,7 +272,16 @@ export function PlanScreen({
           onMove={(id, target) =>
             change(setPeriodSlots(plan, periodIndex, editSheet(period.slots, id, target)))
           }
+          onRenamePosition={names ? setRenaming : undefined}
         />
+        {names && (
+          <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
+        )}
+        {names && hasRenamedPositions(format) && (
+          <Pressable style={screen.linkHit} onPress={names.onReset}>
+            <Text style={screen.link}>Reset position names</Text>
+          </Pressable>
+        )}
 
         <Text style={screen.fieldLabel}>Subs this {noun.toLowerCase()}</Text>
         {period.subs.length === 0 && (
@@ -378,6 +397,16 @@ export function PlanScreen({
           <Text style={screen.buttonLabel}>Done</Text>
         </Pressable>
       </ScrollView>
+
+      {names && (
+        <PositionNameSheet
+          format={format}
+          positionId={renaming}
+          offerKeep={names.offerKeep}
+          onSave={names.onRename}
+          onClose={() => setRenaming(null)}
+        />
+      )}
 
       {/* The bench player's menu (#120): plan their sub without Add a sub. */}
       <ActionSheet

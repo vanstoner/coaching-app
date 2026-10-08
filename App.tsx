@@ -107,6 +107,13 @@ import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
+import type { PositionNaming } from './src/screens/PositionNameSheet';
+import {
+  adoptPositionNames,
+  canRenamePositions,
+  renamePosition,
+  resetPositionNames,
+} from './src/app/positionNames';
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TestKitSection } from './src/screens/TestKitSection';
@@ -593,6 +600,44 @@ export default function App() {
     [matches, persist, planning]
   );
 
+  /**
+   * Rename one match's positions (#166). The new format goes onto the match
+   * everywhere it is held — the stored copy and, if it is the one held, the
+   * live one — so every screen showing that match shows the new names. Only
+   * labels change (positionNames.ts), so no minute moves.
+   *
+   * With "Use these names for new matches" (ruling Q2) the names are copied
+   * onto the squad default too; never otherwise.
+   */
+  const setMatchFormat = useCallback(
+    (matchId: UUID, next: Format, keepForNew: boolean) => {
+      const nextMatches = matches.map((m) => (m.match.id === matchId ? { ...m, format: next } : m));
+      setMatches(nextMatches);
+      const held = match && match.state.match.id === matchId ? match : null;
+      if (held) setMatch({ ...held, format: next });
+      const adopted = keepForNew ? adoptPositionNames(format, next) : null;
+      if (adopted) setFormat(adopted);
+      persist({
+        matches: nextMatches,
+        ...(held ? { matchFormat: next } : {}),
+        ...(adopted ? { format: adopted } : {}),
+      });
+    },
+    [matches, match, format, persist]
+  );
+
+  /** What the Plan and the lineup are handed to rename a match's positions. */
+  const namingFor = (matchId: UUID, current: Format): PositionNaming => ({
+    onRename: (positionId, typed, keep) => {
+      const result = renamePosition(current, positionId, typed);
+      if (!result.ok) return result.reason;
+      setMatchFormat(matchId, result.format, keep);
+      return null;
+    },
+    onReset: () => setMatchFormat(matchId, resetPositionNames(current), false),
+    offerKeep: adoptPositionNames(format, current) !== null,
+  });
+
   /** Where the analysis goes back to: the report or the clock (#105 AC3). */
   const [analysisReturn, setAnalysisReturn] = useState<'summary' | 'playing'>('summary');
 
@@ -1027,11 +1072,19 @@ export default function App() {
     }
 
     if (effectiveStep === 'plan' && planning) {
+      // The held match's quarters, not the stored copy's, which may be stale.
+      const planQuarters =
+        match && match.state.match.id === planning.match.id ? match.state.quarters : planning.quarters;
+      const planFormat = planning.format ?? format;
       return (
         <PlanScreen
           match={planning.match}
           // The shape THIS fixture is played in (ADR-012).
-          format={planning.format ?? format}
+          format={planFormat}
+          // #166 Q1: names change on the Plan before kick-off only.
+          names={
+            canRenamePositions('plan', planQuarters) ? namingFor(planning.match.id, planFormat) : undefined
+          }
           players={squad}
           squadName={squadName}
           plan={planning.plan}
@@ -1215,6 +1268,12 @@ export default function App() {
           onStart={startQuarter}
           onLeave={goHome}
           onPlanRest={planTheRest}
+          // #166 Q1: before a period starts; never while one runs.
+          names={
+            canRenamePositions('lineup', match.state.quarters)
+              ? namingFor(match.state.match.id, match.format)
+              : undefined
+          }
         />
       );
     }

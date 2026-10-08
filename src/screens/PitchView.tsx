@@ -25,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
+  Pressable,
   StyleSheet,
   View,
   type GestureResponderEvent,
@@ -66,6 +67,11 @@ export interface PitchViewProps {
   onDragging?: (dragging: boolean) => void;
   /** Hide the bench strip (the plan's subs live elsewhere). */
   hideBench?: boolean;
+  /**
+   * When set, a tap on a gold position name renames it (#166). The Plan and
+   * the lineup pass it; the live clock never does (ruling Q1).
+   */
+  onRenamePosition?: (positionId: UUID) => void;
 }
 
 export function PitchView(props: PitchViewProps) {
@@ -240,7 +246,25 @@ export function PitchView(props: PitchViewProps) {
                   },
                 ]}
               >
-                <Text style={s.slotLabel}>{spot.label}</Text>
+                {props.onRenamePosition ? (
+                  <Pressable
+                    onPress={() => props.onRenamePosition?.(spot.positionId)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rename ${spot.label}`}
+                    // 13dp of text plus 32 of slop: a full TOUCH_TARGET, reaching up into the
+                    // clear grass above, never down onto the pill.
+                    hitSlop={{ top: 28, bottom: 4, left: 4, right: 4 }}
+                    style={s.slotLabelHit}
+                  >
+                    <Text style={[s.slotLabel, s.slotLabelTappable]} numberOfLines={1}>
+                      {spot.label}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text style={s.slotLabel} numberOfLines={1}>
+                    {spot.label}
+                  </Text>
+                )}
                 {who ? (
                   pill(who, spot.positionId === keeperPosition, false)
                 ) : (
@@ -346,6 +370,9 @@ const s = StyleSheet.create({
     alignSelf: 'stretch',
     textAlign: 'center',
   },
+  slotLabelHit: { alignSelf: 'stretch' },
+  // An underline only: the same metrics as the plain label (theme.ts).
+  slotLabelTappable: { textDecorationLine: 'underline' },
   pill: {
     minHeight: PILL_HEIGHT,
     borderRadius: PILL_HEIGHT / 2,

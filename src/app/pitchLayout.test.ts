@@ -17,6 +17,20 @@ describe('the pitch layout (#83 AC1)', () => {
     expect(at('ST').x).toBeCloseTo(0.5);
   });
 
+  it('keeps every slot where it was when the positions are renamed (#166)', () => {
+    for (const shape of ['2-3-1', '2-2-2'] as const) {
+      const format = makeFormat(shape);
+      // "LW" renamed "CDM", "CM" renamed "Roamer": a label is no guide to the side.
+      const renamed = {
+        ...format,
+        positions: format.positions.map((p, i) => ({ ...p, label: ['Roamer', 'CDM', 'Sweeper'][i % 3] })),
+      };
+      const where = (f: typeof format) =>
+        slotSpots(f).map((s) => [s.positionId, s.x, s.y]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+      expect(where(renamed)).toEqual(where(format));
+    }
+  });
+
   it('draws 2-2-2 with two forwards side by side', () => {
     const spots = slotSpots(makeFormat('2-2-2'));
     const fwd = spots.filter((s) => s.unit === 'ATT');
