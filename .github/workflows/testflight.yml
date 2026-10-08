@@ -5,8 +5,12 @@ name: TestFlight
 # environment, whose required reviewer is Rob, and only that environment holds
 # the four secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID).
 #
-# A2: no pull_request trigger, ever. A push to main queues a run that waits
-# for Rob; a newer push cancels a waiting one. By hand:
+# A2: no pull_request trigger, ever. Only a push to main that changes
+# app.json (the version bump that marks a store release, PO "approve
+# testflight-on-bump", 2026-10-08) queues a run, which waits for Rob; a newer
+# one cancels a waiting one. Every other merge costs no Mac time and no click.
+# Apple refuses a build number at or below one it holds for the same version,
+# so an upload without a bump would fail anyway. By hand:
 #
 #   gh workflow run testflight.yml --ref main                  # sign and upload
 #   gh workflow run testflight.yml --ref main -f dry_run=true  # sign, export, stop
@@ -19,6 +23,7 @@ name: TestFlight
 on:
   push:
     branches: [main]
+    paths: [app.json]
   workflow_dispatch:
     inputs:
       dry_run:

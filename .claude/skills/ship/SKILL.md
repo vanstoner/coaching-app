@@ -22,7 +22,9 @@ main only and is refreshed in place (same release, tag moved, APK replaced);
 jobs never touch it and check so (`check_release.py --demo-untouched`).
 
 **TestFlight (#108 A).** `testflight.yml` signs and uploads the release
-build of `main`, in the `app-store` environment (Rob approves every run).
+build of `main`, in the `app-store` environment (Rob approves every run),
+only when a merge changes `app.json`: the version bump that marks a store
+release ("approve testflight-on-bump").
 It holds no certificate or profile: Apple's automatic signing with the API
 key, which needs Admin. One build number per commit (#160): the iOS build is
 the N of the GitHub release built from the same commit (`v<version>-build.N`,
