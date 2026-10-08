@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "commit": "13820e450b8e49e000676256678977c67577a12f",
+  "now": "2026-10-07T09:00:00.000Z",
+  "timeZone": "UTC",
+  "script": "scripts/freeze-release-fixture.ts",
+  "sessionSchemaVersion": 6,
+  "ledgerVersion": 2,
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2
+    },
+    {
+      "from": 2,
+      "to": 3
+    },
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 4,
+      "to": 5
+    },
+    {
+      "from": 5,
+      "to": 6
+    }
+  ]
+}
