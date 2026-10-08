@@ -26,6 +26,8 @@ from release_notes import IPHONE_STATUS, SIMULATOR_LINE, build_notes, gh_json, m
 LIMIT = 4000  # App Store Connect's limit for What to Test
 TEST_SEASON = "https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json"
 FOOTER = (
+    "An update: install it over the version you already have, with your data in it,"
+    " and check everything is still there (#167).\n"
     "Test data: a made-up season to import (Settings > Import minutes file):\n"
     f"{TEST_SEASON}\n"
     "Made-up names only. Settings > Forget everything when done."

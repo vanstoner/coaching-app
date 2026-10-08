@@ -35,6 +35,18 @@ Test from the release note (`testflight_notes.py`, `asc_api.py`). `-f dry_run=tr
 then uploads nothing. The unsigned device build is ios.yml's `device-build`,
 on every PR. Never add a `pull_request` trigger to it.
 
+**Updating safely (#167).** Once a version is in the App Store, a coach's
+season lives on their phone and an installed app cannot be rolled back. Every
+store release freezes its stored data first (`scripts/freeze-release-fixture.ts`
+into `src/app/fixtures/release-<version>/`, listed in `releases.json`), from
+the commit TestFlight shipped; `releaseUpgrade.test.ts` proves every later
+build reads every frozen release with identical figures, and CI
+(`check_release_fixture.py`) refuses a version bump without the previous
+release frozen, or a fixture edited or removed. A schema change needs a
+migration and passes against every fixture. Updates go to TestFlight testers
+installed over the previous version with data in it, then out with Apple's
+phased release.
+
 ## Produce
 
 - Workflows, build scripts, gates, release plumbing.
