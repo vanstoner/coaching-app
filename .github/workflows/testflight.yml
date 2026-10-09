@@ -14,6 +14,8 @@ name: TestFlight
 #
 #   gh workflow run testflight.yml --ref main                  # sign and upload
 #   gh workflow run testflight.yml --ref main -f dry_run=true  # sign, export, stop
+#   gh workflow run testflight.yml --ref main -f what_to_test_for=SHA  # #182: rewrite
+#       the What to Test of the build made from SHA; builds and uploads nothing
 #
 # The unsigned healthy case (A7) is ios.yml's device-build job, on every PR.
 # No certificate or provisioning profile is held anywhere (A1): Apple's
@@ -30,6 +32,10 @@ on:
         description: "Sign and export the .ipa, run every check, and upload nothing"
         type: boolean
         default: false
+      what_to_test_for:
+        description: "Only rewrite What to Test for the build made from this main commit (no build, no upload)"
+        type: string
+        default: ""
 
 concurrency:
   group: testflight
@@ -58,34 +64,59 @@ jobs:
     outputs:
       build: ${{ steps.find.outputs.BUILD }}
       tag: ${{ steps.find.outputs.TAG }}
+      version: ${{ steps.sha.outputs.VERSION }}
     env:
       GH_TOKEN: ${{ github.token }}
+      WHAT_TO_TEST_FOR: ${{ inputs.what_to_test_for }}
     steps:
+      # #182: What to Test lists the merges since the previous version, which
+      # it finds in app.json's history, so the whole history is needed.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Self-test the notes script
         run: python3 .github/scripts/testflight_notes.py --self-test
+
+      # A notes-only run (#182) names an earlier commit of main; otherwise
+      # this one. The full SHA, because the release lookup compares it whole.
+      - name: Which commit
+        id: sha
+        run: |
+          set -euo pipefail
+          if [ -n "$WHAT_TO_TEST_FOR" ]; then
+            SHA="$(git rev-parse --verify "${WHAT_TO_TEST_FOR}^{commit}" 2>/dev/null)" \
+              || { echo "WHY THIS JOB FAILED: '$WHAT_TO_TEST_FOR' is not a commit here"; exit 1; }
+            git merge-base --is-ancestor "$SHA" "$GITHUB_SHA" \
+              || { echo "WHY THIS JOB FAILED: $SHA is not on main"; exit 1; }
+          else
+            SHA="$GITHUB_SHA"
+          fi
+          VERSION="$(git show "$SHA:app.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expo"]["version"])')"
+          echo "commit $SHA, version $VERSION"
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Wait for this commit's release
         id: find
         run: |
           set -uo pipefail
           for i in $(seq 1 80); do
-            if python3 .github/scripts/testflight_notes.py number "$GITHUB_SHA" > /tmp/found.txt; then
+            if python3 .github/scripts/testflight_notes.py number "$SHA" > /tmp/found.txt; then
               cat /tmp/found.txt | tee -a "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "attempt $i: no release for ${GITHUB_SHA:0:7} yet; waiting 30s"
+            echo "attempt $i: no release for ${SHA:0:7} yet; waiting 30s"
             sleep 30
           done
           echo "=============================================================="
-          echo "WHY THIS JOB FAILED: no release for ${GITHUB_SHA:0:7} appeared within 40 minutes (#160 AC1)."
+          echo "WHY THIS JOB FAILED: no release for ${SHA:0:7} appeared within 40 minutes (#160 AC1)."
           echo "android-apk.yml publishes it on a green build of main; check that run."
           echo "=============================================================="
           exit 1
 
       - name: Write What to Test from the release note
-        run: python3 .github/scripts/testflight_notes.py notes "$GITHUB_SHA" "${{ steps.find.outputs.BUILD }}" what-to-test.txt
+        run: python3 .github/scripts/testflight_notes.py notes "$SHA" "${{ steps.find.outputs.BUILD }}" what-to-test.txt
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -94,9 +125,60 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # #182: a notes-only run rewrites one build's What to Test, nothing else.
+  # In app-store, like every App Store Connect write, so Rob approves it.
+  what-to-test:
+    name: Rewrite What to Test
+    needs: number
+    if: inputs.what_to_test_for != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: app-store
+    env:
+      VERSION: ${{ needs.number.outputs.version }}
+      IOS_BUILD_NUMBER: ${{ needs.number.outputs.build }}
+    steps:
+      - name: Refuse anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "WHY THIS JOB FAILED: App Store Connect is written from main only; this run is on $GITHUB_REF."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: what-to-test
+
+      - name: Write and check the API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          .github/scripts/asc-key.sh "$RUNNER_TEMP/asc-key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-key.p8" >> "$GITHUB_ENV"
+
+      - name: Set What to Test and read it back
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          echo "Heart FC Coach $VERSION (build $IOS_BUILD_NUMBER)"
+          echo "--- What to Test ---"; cat what-to-test.txt; echo; echo "---"
+          # asc_api.py never fails an upload over the notes; here the notes are the job.
+          python3 .github/scripts/asc_api.py what-to-test com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" what-to-test.txt 1 | tee /tmp/wtt.log
+          grep -q "set and read back" /tmp/wtt.log \
+            || { echo "WHY THIS JOB FAILED: What to Test for $VERSION ($IOS_BUILD_NUMBER) was not set and read back"; exit 1; }
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/asc-key.p8"
+
   upload:
     name: Sign and upload to TestFlight
     needs: number
+    if: inputs.what_to_test_for == ''
     runs-on: macos-26
     timeout-minutes: 90
     environment: app-store
