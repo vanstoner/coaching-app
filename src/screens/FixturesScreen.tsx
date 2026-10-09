@@ -52,6 +52,7 @@ export function FixturesScreen({
   scores,
   periods,
   notClosed,
+  notice,
 }: {
   squadName: string;
   matches: Match[];
@@ -85,6 +86,8 @@ export function FixturesScreen({
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
   /** Played to the end, not yet closed with End match (ruling D): hinted on the card. */
   notClosed: ReadonlySet<UUID>;
+  /** What launch found when the saved squad would not read (#173). Empty: nothing. */
+  notice?: string;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
@@ -98,6 +101,7 @@ export function FixturesScreen({
         <Text style={screen.title} numberOfLines={1}>
           {squadName}
         </Text>
+        {notice ? <Text style={[screen.hint, screen.overtime]}>{notice}</Text> : null}
 
         {/* #131 (PO ruling 12): a live match stays on top; the two ways to
             start one come next, so they never scroll away as Played grows. */}
