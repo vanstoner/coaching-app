@@ -58,6 +58,15 @@ interface Match {
 }
 ```
 
+```mermaid
+stateDiagram-v2
+    [*] --> planned: newMatch
+    planned --> in_progress: first startQuarter
+    in_progress --> completed: endMatch (every period ended)
+    planned --> [*]: delete (never started)
+    note right of in_progress: 'abandoned' exists in the type, nothing sets it
+```
+
 | From | To | Trigger | Guard |
 |---|---|---|---|
 | `planned` | `in_progress` | `engine.startQuarter` (first period) | lineup valid, enough players |
@@ -78,6 +87,14 @@ interface Quarter {
   accumulatedMs: number;                    // frozen at end; 0 while running
   elapsedMs: number;                        // derived mirror; the engine never reads it
 }
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending
+    pending --> running: startQuarter (sheet valid; previous ended)
+    running --> ended: endQuarter (accumulatedMs frozen; stretches closed)
+    note right of running: end time is always now (#180)
 ```
 
 - `pending → running → ended`, one way, in index order; at most one `running`.

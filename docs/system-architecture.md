@@ -37,10 +37,20 @@ four exceptions in `src/app`: `storage.ts` (AsyncStorage), `ledgerFile.ts`,
 
 ## State lifecycle
 
-```
-launch ─► loadSession + openStoredLedger ─► back-fill ledger from played matches
-       ─► step = 'resume' (a match is under way) | 'fixtures'
-any state change ─► persist(): saveSession (whole document) + recordMatches → saveLedger
+```mermaid
+sequenceDiagram
+    participant A as App.tsx
+    participant S as AsyncStorage
+    participant E as MatchEngine
+    A->>S: loadSession (session/v1)
+    A->>S: openStoredLedger (ledger/v2 + head)
+    A->>A: recordMatches(back-fill) → commitLedger
+    A->>S: saveLedger (queued)
+    A->>A: step = resume | fixtures
+    Note over A: every state change
+    A->>E: engine.substitute / startQuarter / endQuarter (mutates state)
+    A->>S: saveSession (whole document, not queued)
+    A->>S: saveLedger (only if records changed)
 ```
 
 - **All durable state lives in `App.tsx`** `useState`s. Screens receive values
@@ -74,14 +84,43 @@ false for the beta (#112).
 
 A `Step` (`src/app/tabs.ts`) picks one screen. No navigator, no back stack.
 
+```mermaid
+stateDiagram-v2
+    [*] --> loading
+    loading --> resume: match under way
+    loading --> fixtures
+    resume --> playing: Resume (period running)
+    resume --> lineup: Resume (between periods)
+    resume --> fixtures: Leave
+    state "Tuesday · tab bar" as T {
+        fixtures --> fixtureForm: Add
+        fixtureForm --> fixtures: Save / Cancel
+        fixtures --> plan: Plan
+        squad
+        settings
+    }
+    fixtures --> squad: Play now, too few players (errand=match)
+    squad --> lineup: Start
+    fixtures --> lineup: Open / Play now
+    fixtures --> playing: Open (period running)
+    fixtures --> summary: Open (played)
+    lineup --> playing: Start period
+    playing --> lineup: End period
+    playing --> summary: See the minutes
+    playing --> analysis: Playing time chart
+    summary --> analysis
+    analysis --> summary: Back
+    analysis --> playing: Back
+    summary --> fixtures: Back (match released)
+    playing --> plan: Plan the rest
+    lineup --> plan: Plan the rest
+    plan --> playing: Done (planReturn)
+    playing --> fixtures: Leave (match keeps running)
+    lineup --> fixtures: Leave
 ```
-Tuesday (tab bar):   Home=fixtures   Squad=squad   Settings=settings
-                       │  ├─ fixtureForm ─► fixtures
-                       │  └─ plan ─► (planReturn)
-Saturday (full screen): squad(errand=match) ─► lineup ─► playing ─► lineup … ─► summary ─► analysis
-                        resume ─► playing | lineup
-Every Saturday screen has an explicit "Leave" back to fixtures; the match keeps running.
-```
+
+Every Saturday screen (lineup, playing, summary, analysis, plan from a match)
+is full screen with an explicit exit; the match keeps running when left.
 
 `effectiveStep` collapses any Saturday step without a held match to
 `fixtures`. The Android hardware back button is not handled: it backgrounds

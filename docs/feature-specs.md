@@ -39,7 +39,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Substitute / swap | Due-sub Done, drag, or tap sheet | Period running | Engine closes one Appearance and opens the next at the same instant | session | Engine refuses → reminder left due, "could not be made" |
 | Goal / save / conceded | Tap a player | Period running | Goal: on pitch. Save/conceded: GK only | session `events` | Refused → "could not be recorded" |
 | Undo / withdraw | 10s toast, or Withdraw in time stream | Event not already withdrawn | Withdrawal is a new event with a mandatory note (invariant 5); undo of a move is a reverse move | session `events` | Blank note: button disabled |
-| End period | Clock | Period running | Freezes `accumulatedMs`; closes all open stretches | session; ledger `interval` | Last period → full time |
+| End period | Clock | Period running | Freezes `accumulatedMs`; closes all open stretches at *now* | session; ledger `interval` | Last period → full time. A forgotten clock credits the overrun to everyone on and cannot be corrected (#180) |
 | End match | Summary | Every period ended | `completed`; counts towards season averages | session; ledger `match` | — |
 | Correct attendance | Summary | Ledger writable | Noted correction appended, never edited | ledger `attendance` | Ledger blocked → refused with reason |
 | Leave | Every Saturday screen | — | Match keeps running and stays current | session `currentMatchId` | — |
