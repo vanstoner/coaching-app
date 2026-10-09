@@ -8,6 +8,7 @@
 
 import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 
 import { CONTENT_MAX_WIDTH, colours, screen } from './theme';
@@ -17,16 +18,23 @@ export function ActionSheet({
   title,
   onClose,
   children,
+  closeLabel = 'Cancel',
 }: {
   visible: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** The words on the way out, which never commits anything. */
+  closeLabel?: string;
 }) {
+  // #174: a Modal is a window of its own, drawn edge to edge on Android, so
+  // the shell's padding does not reach it: Cancel would sit under the
+  // navigation bar.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={local.scrim} onPress={onClose}>
-        <Pressable style={local.sheet} onPress={() => {}}>
+        <Pressable style={[local.sheet, { paddingBottom: 28 + insets.bottom }]} onPress={() => {}}>
           {visible && (
             <>
               <Text style={local.sheetTitle} numberOfLines={1}>
@@ -34,7 +42,7 @@ export function ActionSheet({
               </Text>
               {children}
               <Pressable onPress={onClose} style={screen.linkHit}>
-                <Text style={screen.link}>Cancel</Text>
+                <Text style={screen.link}>{closeLabel}</Text>
               </Pressable>
             </>
           )}

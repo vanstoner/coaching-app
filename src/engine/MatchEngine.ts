@@ -465,18 +465,71 @@ export class MatchEngine {
   }
 
   /**
+   * The last thing the coach recorded in a quarter, in quarter-elapsed ms:
+   * a substitution, a position swap, or a goal, save or goal conceded that
+   * has not been withdrawn. Null when nothing has happened since kick-off
+   * (the kick-off itself is not a recorded event: Spec 02, ruling 11c).
+   *
+   * This is the last-event floor (Spec 02, PO ruling on open question 7):
+   * a quarter can never end before it, or an interval would open after the
+   * quarter had closed (#180).
+   */
+  lastRecordedInQuarter(
+    state: MatchState,
+    quarter: Quarter
+  ): { atMs: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } | null {
+    const startMatchMs = this.getMatchElapsedMs(state) - this.getQuarterElapsedMs(quarter);
+    let last: { at: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } | null = null;
+    const consider = (at: number, kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded') => {
+      if (!last || at >= last.at) last = { at, kind };
+    };
+    for (const a of state.appearances) {
+      if (a.quarterId !== quarter.id || a.endElapsedMs === null) continue;
+      if (a.endReason === 'substitution') consider(a.endElapsedMs, 'sub');
+      else if (a.endReason === 'position_change') consider(a.endElapsedMs, 'swap');
+    }
+    const events = state.events ?? [];
+    const withdrawn = new Set(events.filter((e) => e.kind === 'withdrawn').map((e) => e.refersTo));
+    for (const e of events) {
+      if (e.quarterId !== quarter.id || e.kind === 'withdrawn' || withdrawn.has(e.id)) continue;
+      consider(e.atElapsedMs, e.kind);
+    }
+    if (last === null) return null;
+    const found: { at: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } = last;
+    return { atMs: Math.max(0, found.at - startMatchMs), kind: found.kind };
+  }
+
+  /**
    * End a quarter. Always a coach action; the clock never stops on its own
    * (Spec 02, "Ending a quarter").
    * Closes all open Appearances and BenchStints at match-elapsed at the end.
+   *
+   * `atQuarterElapsedMs` is the coach's stated end when the quarter ran on
+   * past its planned length (#180, "Ended at planned time"). It may not be
+   * before the last-event floor nor after now. `endedAt` is still the moment
+   * the coach said so: both times are kept, and an end earlier than that is
+   * the coach's statement at the time, not a correction (Spec 02, PO ruling
+   * on open question 6).
    */
-  endQuarter(state: MatchState, quarter: Quarter): void {
+  endQuarter(state: MatchState, quarter: Quarter, atQuarterElapsedMs?: number): void {
     if (quarter.status !== 'running') {
       throw new MatchEngineError(
         `Cannot end quarter ${quarter.index}; status is ${quarter.status} (expected running)`
       );
     }
 
-    const elapsedMs = this.getQuarterElapsedMs(quarter);
+    const liveElapsedMs = this.getQuarterElapsedMs(quarter);
+    let elapsedMs = liveElapsedMs;
+    if (atQuarterElapsedMs !== undefined) {
+      const floor = this.lastRecordedInQuarter(state, quarter)?.atMs ?? 0;
+      if (!Number.isFinite(atQuarterElapsedMs) || atQuarterElapsedMs < floor) {
+        throw new MatchEngineError('A quarter cannot end before the last thing recorded in it');
+      }
+      if (atQuarterElapsedMs > liveElapsedMs) {
+        throw new MatchEngineError('A quarter cannot end after now');
+      }
+      elapsedMs = atQuarterElapsedMs;
+    }
 
     // Freeze the clock
     quarter.accumulatedMs = elapsedMs;
