@@ -1,12 +1,18 @@
-No sign-in. The app opens empty: it holds only what a coach enters, on the phone.
+1. Screen recording: attached to our reply in App Review. It was recorded on an iPhone with the latest iOS, starting from launch.
 
-To see a full season quickly (made-up names only):
-1. In Safari on the test device, open https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json and save it to Files.
-2. In the app: Settings > Import minutes file, and choose test-season.json. It adds 10 players and a past season.
-3. Open the Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
+2. Purpose and audience. Heart of the Game: Coach is for volunteer coaches of grassroots and junior football teams. In small-sided youth football every child is meant to get a fair share of playing time, which is hard to track at the touchline. The coach plans who plays each period; during the match the app keeps the clock and reminds the coach when a planned substitution is due; across the season it shows each child's total minutes, so the coach sees at a glance who is owed time. The users are adult coaches. Children do not use the app.
 
-To try a match: Home > Play now, pick the starting seven, start the clock, tap a bench player to plan a substitution, and play to full time for the match report.
+3. Setup and main features. No account or login is needed. The app opens empty. To see a full season quickly (made-up names only):
+- In Safari on the test device, open https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json and save it to Files.
+- In the app: Settings > Import minutes file, and choose test-season.json. It adds 10 players and a past season.
+- Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
+- Home > Play now > Use suggestion > Start quarter: the live match clock. Tap a player for Goal or Save, or drag a bench player onto the pitch to substitute. End the match for the report.
+- Settings > Forget everything removes all data.
 
-Settings > Forget everything empties the app again.
+4. External services: none. No server, account, analytics, advertising, payments or AI services. All data is stored on the device, included in the device's own iCloud backup, and can be exported by the coach through the system share sheet. The only network use is opening links the user taps.
 
-Data: everything stays on the device. First names only. No account, server, analytics, advertising or tracking. Privacy policy: https://vanstoner.github.io/coaching-app/privacy.html
+5. Regions: the app works the same in every region. It is offered in the United Kingdom.
+
+6. Regulated industry or third-party material: not applicable. The app holds only what the coach types in (children's first names and match records), kept on the coach's own device. It is not directed at children, contains no third-party protected material, and is not affiliated with any league or governing body.
+
+Privacy policy: https://vanstoner.github.io/coaching-app/privacy.html
