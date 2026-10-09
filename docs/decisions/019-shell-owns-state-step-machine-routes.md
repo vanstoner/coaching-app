@@ -1,8 +1,8 @@
 # ADR-019: The shell owns app state; a step machine routes; no state or navigation library
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-09
-**Decision maker:** Architect, recording a choice already shipped in v1.0.0; for Product Owner approval
+**Decision maker:** Architect, recording a choice already shipped in v1.0.0; approved by the Product Owner, 2026-10-09 (`approve 5`)
 
 ## Context
 
