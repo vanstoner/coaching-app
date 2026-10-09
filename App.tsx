@@ -1016,11 +1016,18 @@ export default function App() {
     [match, persist]
   );
 
-  const endQuarter = useCallback(() => {
+  /** With a time: the coach said when an overrun period ended (#180). */
+  const endQuarter = useCallback((atQuarterElapsedMs?: number) => {
     if (!match) return;
     const quarter = currentQuarter(match.state);
     if (!quarter) return;
-    match.engine.endQuarter(match.state, quarter);
+    try {
+      match.engine.endQuarter(match.state, quarter, atQuarterElapsedMs);
+    } catch {
+      // Refused (before the last thing recorded, or after now): the period
+      // keeps running and the clock still offers End.
+      return;
+    }
     setSubPlan([]);
     persist();
     // Straight to the lineup for the next period — this IS the reminder.

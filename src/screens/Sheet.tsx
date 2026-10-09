@@ -17,11 +17,14 @@ export function ActionSheet({
   title,
   onClose,
   children,
+  closeLabel = 'Cancel',
 }: {
   visible: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** The words on the way out, which never commits anything. */
+  closeLabel?: string;
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -34,7 +37,7 @@ export function ActionSheet({
               </Text>
               {children}
               <Pressable onPress={onClose} style={screen.linkHit}>
-                <Text style={screen.link}>Cancel</Text>
+                <Text style={screen.link}>{closeLabel}</Text>
               </Pressable>
             </>
           )}
