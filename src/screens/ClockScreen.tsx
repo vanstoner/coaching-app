@@ -29,7 +29,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import {
   AppState,
   Pressable,
-  SafeAreaView,
+  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -248,7 +248,9 @@ export function ClockScreen({
   const stream = timeStream(state.appearances, state.events, players);
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.safe}>
+      {/* #174: keeps the withdraw note above the keyboard on Android too. */}
+      <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
         <View style={local.scoreRow}>
           <Text style={[local.team]} numberOfLines={1}>
@@ -458,6 +460,7 @@ export function ClockScreen({
           </Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* The tap sheet (#84): what can be recorded for this player. */}
       <ActionSheet
@@ -532,7 +535,7 @@ export function ClockScreen({
         </View>
       )}
       <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 

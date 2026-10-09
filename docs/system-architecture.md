@@ -14,7 +14,7 @@ One page. Where it and the code disagree, the code wins. Fix this page.
 | React | 19.2.3 | |
 | TypeScript | 5.9 | `strict: true`; no `any` in `src/` outside tests |
 | Storage | `@react-native-async-storage/async-storage` 3.1.1 | Behind `KeyValueStore` |
-| Safe areas | RN `SafeAreaView` | iOS only; a plain `View` on Android (#174) |
+| Safe areas | `react-native-safe-area-context` ~5.7.0 | The shell pads once; bottom sheets add the bottom inset (#174) |
 | Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot` | Ledger export/import, Share plan image |
 
 No navigation library, no state library, no network client. See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).

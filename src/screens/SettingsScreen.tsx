@@ -19,11 +19,10 @@
 import { useState, type ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   TextInput,
+  View,
 } from 'react-native';
 import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
@@ -74,10 +73,12 @@ export function SettingsScreen({
   const [confirmForget, setConfirmForget] = useState(false);
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.safe}>
       <KeyboardAvoidingView
         style={screen.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // #174: Android draws edge to edge, so the window no longer resizes for
+        // the keyboard; pad on both platforms.
+        behavior="padding"
       >
         <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
           <Text style={screen.title}>Settings</Text>
@@ -183,6 +184,6 @@ export function SettingsScreen({
       </KeyboardAvoidingView>
       <BuildLabel />
       <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }

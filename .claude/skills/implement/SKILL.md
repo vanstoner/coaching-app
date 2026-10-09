@@ -44,7 +44,11 @@ python3 docs/process/validate-docs.py
   one. This shipped a settings link nobody could reach.
 - **Hermes stores a non-ASCII string as UTF-16LE**, so a byte-grep for its
   UTF-8 form finds nothing in a bundle that contains it.
-- RN activities are edge-to-edge; screens need `SafeAreaView`.
+- **Android draws edge to edge, and React Native's own `SafeAreaView` is a
+  plain `View` there.** The shell pads once with `react-native-safe-area-context`
+  (#174); screens never pad again; a `Modal` is its own window and takes
+  `useSafeAreaInsets()` itself. `KeyboardAvoidingView` needs `behavior="padding"`
+  on Android too: the window no longer resizes for the keyboard.
 
 ## Rules that bite
 

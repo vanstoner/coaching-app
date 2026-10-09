@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine } from './src/engine/MatchEngine';
@@ -1392,12 +1393,18 @@ export default function App() {
    * is a Tuesday one. Screens render their own content and none of the frame,
    * so a screen cannot disagree with the shell about whether it has tabs.
    */
+  // #174: react-native-safe-area-context, not React Native's SafeAreaView,
+  // which is a plain View on Android. Android draws edge to edge, so without
+  // this the top of every screen sat under the status bar and the tab bar
+  // under the navigation bar. The shell pads once; screens never pad again.
   return (
+    <SafeAreaProvider>
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
       <View style={screen.column}>{body}</View>
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
