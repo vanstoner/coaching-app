@@ -116,6 +116,20 @@ jobs:
           python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/iphone iphone
           python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/ipad ipad
 
+      # #167: released data survives every update. The upgrade test runs in
+      # vitest; this gate makes a version bump freeze the previous release's
+      # data first, and refuses a release fixture that was edited or removed.
+      - name: Every release's stored data is frozen and kept
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check_release_fixture.py --self-test
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          python3 .github/scripts/check_release_fixture.py "$BASE"
+
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.
       - name: Prove the beta-only check gates before trusting it
