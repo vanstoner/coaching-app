@@ -3,8 +3,8 @@
 2. Purpose and audience. Heart of the Game: Coach is for volunteer coaches of grassroots and junior football teams. In small-sided youth football every child is meant to get a fair share of playing time, which is hard to track at the touchline. The coach plans who plays each period; during the match the app keeps the clock and reminds the coach when a planned substitution is due; across the season it shows each child's total minutes, so the coach sees at a glance who is owed time. The users are adult coaches. Children do not use the app.
 
 3. Setup and main features. No account or login is needed. The app opens empty. To see a full season quickly (made-up names only):
-- In Safari on the test device, open https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json and save it to Files.
-- In the app: Settings > Import minutes file, and choose test-season.json. It adds 10 players and a past season.
+- In Safari on the test device, open https://vanstoner.github.io/coaching-app/testers.html and tap Download the test season, then Download. It saves to Files > Downloads.
+- In the app: Settings > Import minutes file, and choose test-season.json (in Recents, or Browse > Downloads). It adds 10 players and a past season.
 - Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
 - Home > Play now > Use suggestion > Start quarter: the live match clock. Tap a player for Goal or Save, or drag a bench player onto the pitch to substitute. End the match for the report.
 - Settings > Forget everything removes all data.

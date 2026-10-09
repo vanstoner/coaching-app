@@ -52,3 +52,6 @@ footer a { color: var(--muted); }
   header.top nav { gap: 12px; font-size: 14px; }
   header.top a.home span { display: none; }
 }
+
+/* testers.html: the test-season download, big enough to hit with a thumb. */
+.download a { display: inline-block; padding: 14px 22px; border-radius: 10px; background: var(--warn); color: #10231a; font-weight: 700; text-decoration: none; }

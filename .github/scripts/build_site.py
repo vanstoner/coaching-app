@@ -20,7 +20,10 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 MARK = "<!-- PRIVACY.md, rendered by pages.yml -->"
-PAGES = ("index.html", "privacy.html", "support.html")
+PAGES = ("index.html", "privacy.html", "support.html", "testers.html")
+# #182: the made-up test season, served from the site so an iPhone's Safari
+# downloads it to Files (a raw GitHub link only opens it as text).
+TEST_SEASON = os.path.join("test-data", "test-season.json")
 
 
 class Links(html.parser.HTMLParser):
@@ -41,6 +44,7 @@ def build(privacy_html, out, root=ROOT):
         if f != "privacy.template.html":
             shutil.copy(os.path.join(site, f), out)
     shutil.copy(os.path.join(root, "assets", "images", "icon.png"), os.path.join(out, "icon.png"))
+    shutil.copy(os.path.join(root, TEST_SEASON), os.path.join(out, "test-season.json"))
     with open(os.path.join(site, "privacy.template.html"), encoding="utf-8") as fh:
         template = fh.read()
     if template.count(MARK) != 1:
@@ -86,8 +90,14 @@ def self_test():
     with tempfile.TemporaryDirectory() as d:
         build(rendered, d)
         check("healthy: the committed site builds with every link resolving", problems(d) == [])
+        check("healthy: the test season is served beside testers.html",
+              os.path.getsize(os.path.join(d, "test-season.json")) == os.path.getsize(os.path.join(ROOT, TEST_SEASON)))
         os.remove(os.path.join(d, "icon.png"))
         check("fails: the icon is missing", bool(problems(d)))
+    with tempfile.TemporaryDirectory() as d:
+        build(rendered, d)
+        os.remove(os.path.join(d, "test-season.json"))
+        check("fails: testers.html's download is missing", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
         build("", d)
         check("fails: the privacy page without the policy", bool(problems(d)))
