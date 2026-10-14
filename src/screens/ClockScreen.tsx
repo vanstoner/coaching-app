@@ -29,7 +29,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import {
   AppState,
   Pressable,
-  SafeAreaView,
+  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -63,6 +63,7 @@ import {
 import { UNDO_NOTE, UNDO_WINDOW_MS, scoreOf, timeStream } from '../app/matchEvents';
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
 import { opponentLabel } from '../app/fixtures';
+import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
@@ -124,7 +125,11 @@ export function ClockScreen({
   onRecord: (kind: RecordKind, playerId: UUID) => MatchEvent | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
-  onEndQuarter: () => void;
+  /**
+   * End the running period. With a time, the coach chose when it ended
+   * because the clock ran on past planned length (#180).
+   */
+  onEndQuarter: (atQuarterElapsedMs?: number) => void;
   onFinish: () => void;
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
@@ -169,6 +174,8 @@ export function ClockScreen({
   const [undo, setUndo] = useState<{ label: string; until: number; run: () => void } | null>(null);
   const [withdrawing, setWithdrawing] = useState<{ id: UUID; note: string } | null>(null);
   const [notice, setNotice] = useState('');
+  /** #180: when the period ended, asked only when End comes past the margin. */
+  const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
   const view = deriveClockView(engine, state);
   const quarter = currentQuarter(state);
@@ -241,7 +248,9 @@ export function ClockScreen({
   const stream = timeStream(state.appearances, state.events, players);
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.safe}>
+      {/* #174: keeps the withdraw note above the keyboard on Android too. */}
+      <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
         <View style={local.scoreRow}>
           <Text style={[local.team]} numberOfLines={1}>
@@ -364,7 +373,11 @@ export function ClockScreen({
             ]}
             onPress={() => {
               setSelected(null);
-              onEndQuarter();
+              // Read at the tap from the anchors: within the margin, end now
+              // as always; past it, ask (#180).
+              const choices = quarter ? periodEndChoices(engine, state, quarter) : null;
+              if (choices) setEndChoices(choices);
+              else onEndQuarter();
             }}
           >
             <Text style={screen.buttonLabel}>End {noun}</Text>
@@ -447,6 +460,7 @@ export function ClockScreen({
           </Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* The tap sheet (#84): what can be recorded for this player. */}
       <ActionSheet
@@ -476,6 +490,34 @@ export function ClockScreen({
         )}
       </ActionSheet>
 
+      {/* #180: the forgotten clock. Spec 02's words; "Still playing" changes nothing. */}
+      <ActionSheet
+        visible={endChoices !== null}
+        title={`When did the ${noun} end?`}
+        onClose={() => setEndChoices(null)}
+        closeLabel="Still playing"
+      >
+        {endChoices && (
+          <>
+            <SheetButton
+              label={endChoices.planned.label}
+              strong
+              onPress={() => {
+                setEndChoices(null);
+                onEndQuarter(endChoices.planned.atMs);
+              }}
+            />
+            <SheetButton
+              label={endChoices.now.label}
+              onPress={() => {
+                setEndChoices(null);
+                onEndQuarter();
+              }}
+            />
+          </>
+        )}
+      </ActionSheet>
+
       {undoLive && (
         <View style={local.toast}>
           <Text style={local.toastText} numberOfLines={2}>
@@ -493,7 +535,7 @@ export function ClockScreen({
         </View>
       )}
       <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 

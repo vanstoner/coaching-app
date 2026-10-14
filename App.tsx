@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine } from './src/engine/MatchEngine';
@@ -62,12 +63,12 @@ import {
 import {
   clearSession,
   hasMatchUnderway,
-  loadSession,
-  saveSession,
   toMatchState,
   type SavedMatch,
   type SavedSession,
+  type SessionInput,
 } from './src/app/persistence';
+import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
 import { createDeviceStore } from './src/app/storage';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { kickoffTimes } from './src/app/attendance';
@@ -233,6 +234,14 @@ export default function App() {
    */
   const ledgerBlockedRef = useRef(false);
 
+  /**
+   * The stored session could not be read, or was written by a newer build
+   * (#173). Nothing is saved over it this launch, exactly as for the ledger;
+   * Forget everything is the deliberate way past it.
+   */
+  const sessionWritableRef = useRef(true);
+  const [sessionMessage, setSessionMessage] = useState('');
+
   const commitLedger = useCallback(
     (next: Ledger) => {
       if (ledgerBlockedRef.current) return;
@@ -260,11 +269,16 @@ export default function App() {
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
-      let saved = await loadSession(store);
+      // #173: an unreadable session is set aside, a too-new one left alone;
+      // either way the first save below cannot write over it.
+      const openedSession = await openStoredSession(store, appNow());
+      let saved = openedSession.session;
       // A ledger that will not read is set aside intact, never written over;
       // one this build may not write is left alone (#99, QA on #110).
       const opened = await openStoredLedger(store, appNow());
       if (cancelled) return;
+      if (!openedSession.writable) sessionWritableRef.current = false;
+      if (openedSession.message !== '') setSessionMessage(openedSession.message);
       if (!opened.writable) ledgerBlockedRef.current = true;
       if (opened.message !== '') setLedgerMessage(opened.message);
       // A newer build's ledger that verified: shown, never written (ADR-014 §10).
@@ -336,11 +350,12 @@ export default function App() {
   // --- save on every change that matters ------------------------------------
   //
   // Fire and forget. `saveSession` swallows storage failure by design: a phone
-  // with a full disk loses the save, never the match.
+  // with a full disk loses the save, never the match. A session this launch
+  // may not write (#173) is not written at all.
 
   const persist = useCallback(
-    (overrides: Partial<Parameters<typeof saveSession>[1]> = {}) => {
-      void saveSession(store, {
+    (overrides: Partial<SessionInput> = {}) => {
+      void saveSessionIfWritable(store, sessionWritableRef.current, {
         squadName,
         squadId,
         players,
@@ -795,6 +810,9 @@ export default function App() {
    */
   const forgetEverything = useCallback(() => {
     void clearSession(store);
+    // Cleared above: nothing is left for the session block (#173) to protect.
+    sessionWritableRef.current = true;
+    setSessionMessage('');
     // The minutes go too: this is how a phone is handed on, and children's
     // data must not stay behind. The confirm text says to export first.
     void clearLedger(store);
@@ -999,11 +1017,18 @@ export default function App() {
     [match, persist]
   );
 
-  const endQuarter = useCallback(() => {
+  /** With a time: the coach said when an overrun period ended (#180). */
+  const endQuarter = useCallback((atQuarterElapsedMs?: number) => {
     if (!match) return;
     const quarter = currentQuarter(match.state);
     if (!quarter) return;
-    match.engine.endQuarter(match.state, quarter);
+    try {
+      match.engine.endQuarter(match.state, quarter, atQuarterElapsedMs);
+    } catch {
+      // Refused (before the last thing recorded, or after now): the period
+      // keeps running and the clock still offers End.
+      return;
+    }
     setSubPlan([]);
     persist();
     // Straight to the lineup for the next period — this IS the reminder.
@@ -1358,6 +1383,7 @@ export default function App() {
         }}
         onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
+        notice={sessionMessage}
       />
     );
   })();
@@ -1367,12 +1393,18 @@ export default function App() {
    * is a Tuesday one. Screens render their own content and none of the frame,
    * so a screen cannot disagree with the shell about whether it has tabs.
    */
+  // #174: react-native-safe-area-context, not React Native's SafeAreaView,
+  // which is a plain View on Android. Android draws edge to edge, so without
+  // this the top of every screen sat under the status bar and the tab bar
+  // under the navigation bar. The shell pads once; screens never pad again.
   return (
+    <SafeAreaProvider>
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
       <View style={screen.column}>{body}</View>
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }

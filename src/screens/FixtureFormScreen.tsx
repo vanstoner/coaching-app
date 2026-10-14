@@ -18,7 +18,6 @@
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -85,7 +84,9 @@ export function FixtureFormScreen({
     <View style={screen.flex}>
       <KeyboardAvoidingView
         style={screen.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // #174: Android draws edge to edge, so the window no longer resizes for
+        // the keyboard; pad on both platforms.
+        behavior="padding"
       >
         <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
           <Text style={screen.title}>New fixture</Text>

@@ -47,6 +47,8 @@ state management does.
 | [015](./015-fairness-is-total-pitch-time.md) | Fairness is total time on the pitch; averages are per match attended | Accepted | 2026-10-04 |
 | [016](./016-charts-drawn-from-views.md) | Charts are bars we draw ourselves, from a pure numbers module | Accepted | 2026-10-04 |
 | [017](./017-data-categories-and-audiences.md) | Data categories and audiences | Accepted | 2026-10-05 |
+| [018](./018-session-and-ledger-in-asyncstorage.md) | Session and ledger as two JSON documents in AsyncStorage | Accepted | 2026-10-09 |
+| [019](./019-shell-owns-state-step-machine-routes.md) | The shell owns app state; a step machine routes; no state or navigation library | Accepted | 2026-10-09 |
 
 ## Template
 

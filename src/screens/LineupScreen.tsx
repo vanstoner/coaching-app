@@ -44,7 +44,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   View,
@@ -251,7 +250,7 @@ export function LineupScreen({
   const forOf = (id: UUID) => plan.find((e) => e.playerId === id)?.forPlayerId ?? null;
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.safe}>
       <View style={screen.pane}>
         <Text style={screen.title} numberOfLines={1}>
           {squadName || PLACEHOLDER_SQUAD_NAME}
@@ -514,7 +513,7 @@ export function LineupScreen({
         />
       )}
       <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -14,7 +14,6 @@
 import { useMemo } from 'react';
 import {
   Pressable,
-  SafeAreaView,
   View,
 } from 'react-native';
 import { Text } from './Text';
@@ -45,7 +44,7 @@ export function ResumeScreen({
   const played = state ? state.quarters.filter((q) => q.status === 'ended').length : 0;
 
   return (
-    <SafeAreaView style={screen.safe}>
+    <View style={screen.safe}>
       <View style={screen.pane}>
         <View style={screen.flex} />
         <Text style={screen.title} numberOfLines={1}>
@@ -77,6 +76,6 @@ export function ResumeScreen({
       </View>
       <BuildLabel />
       <StatusBar style="light" />
-    </SafeAreaView>
+    </View>
   );
 }

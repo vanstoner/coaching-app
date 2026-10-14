@@ -6,6 +6,12 @@ Status: **Approved** by the Product Owner, 2026-09-18.
 differs, that wins.** Later behaviour lives in each issue's acceptance
 criteria and in [HISTORY.md](../../HISTORY.md).
 
+> **As built, v1.0.1 (2026-10-09).** What v1 actually does is in
+> [system-architecture](../system-architecture.md), [domain-models](../domain-models.md)
+> and [feature-specs](../feature-specs.md). Where this spec and those pages differ,
+> those pages describe the code; this spec records the intent. Gaps are listed in the
+> [v1.0.1 audit](../audit/2026-10-09-v1.0.1.md#17-spec-drift-the-approved-specs-against-v1).
+
 > Approved 2026-09-18 — the engine is built and 66 tests pass against it. A line-by-line alignment audit of this spec is still outstanding; discrepancies will be raised as issues rather than held against approval.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
