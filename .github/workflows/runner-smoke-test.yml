@@ -1,0 +1,19 @@
+name: Runner Verification
+
+on:
+  workflow_dispatch: # Allows manual trigger from CLI or GitHub UI
+
+jobs:
+  verify-local-hardware:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - name: Runner Architecture & OS
+        run: |
+          echo "Host: $(hostname)"
+          echo "Chip: $(uname -m)"
+          echo "OS Version: $(sw_vers -productVersion)"
+          echo "Node: $(node -v 2>/dev/null || echo 'Not in PATH')"
+          echo "Xcode: $(xcodebuild -version 2>/dev/null || echo 'Not in PATH')"
+
+      - name: Verify Working Directory
+        run: pwd
