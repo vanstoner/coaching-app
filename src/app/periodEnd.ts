@@ -15,20 +15,25 @@
  * Within the margin nothing is asked and End works as it always has.
  */
 
-import type { MatchEngine, MatchState } from '../engine/MatchEngine';
+import type { MatchEngine, MatchState, RecordedKind } from '../engine/MatchEngine';
 import type { Quarter } from '../types/index';
 import { formatClock } from './matchClock';
 
 /** Spec 02 default margin (#18): one minute past planned length. */
 export const PERIOD_END_MARGIN_MS = 60_000;
 
-const LAST_LABEL = {
+const LAST_LABEL: Record<RecordedKind, string> = {
   sub: 'last sub',
   swap: 'last swap',
   goal: 'last goal',
   save: 'last save',
   conceded: 'last goal conceded',
-} as const;
+  tackle: 'last tackle',
+  corner: 'last corner',
+  free_kick: 'last free kick',
+  // An assist is recorded at its goal's moment.
+  assist: 'last goal',
+};
 
 export interface PeriodEndChoices {
   /** "Ended at planned time", floored at the last recorded event. */
