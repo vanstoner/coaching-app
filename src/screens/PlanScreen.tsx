@@ -164,7 +164,6 @@ export function PlanScreen({
   };
 
   const period = plan.periods[periodIndex];
-  const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
   const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
   const name = (id: UUID | null) =>
     id === null ? 'Pick' : (nameOf.get(id) ?? 'Removed player');

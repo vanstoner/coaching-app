@@ -61,14 +61,13 @@ import {
   type Tab,
 } from './src/app/tabs';
 import {
-  clearSession,
   hasMatchUnderway,
   toMatchState,
   type SavedMatch,
   type SavedSession,
   type SessionInput,
 } from './src/app/persistence';
-import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
+import { forgetSession, openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
 import { createDeviceStore } from './src/app/storage';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { kickoffTimes } from './src/app/attendance';
@@ -96,7 +95,7 @@ import {
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { clearLedger, openStoredLedger, sameRecords, saveLedger } from './src/app/ledgerStore';
+import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
@@ -242,17 +241,18 @@ export default function App() {
   const sessionWritableRef = useRef(true);
   const [sessionMessage, setSessionMessage] = useState('');
 
+  // Skips the write when nothing a coach cares about changed, and retries
+  // one that failed (#177).
+  const writeLedger = useMemo(() => ledgerWriter(store), [store]);
   const commitLedger = useCallback(
     (next: Ledger) => {
       if (ledgerBlockedRef.current) return;
       const current = ledgerRef.current;
       ledgerRef.current = next;
       setLedger(next);
-      // Skip the write when nothing a coach cares about changed.
-      if (current && sameRecords(current, next)) return;
-      void saveLedger(store, next);
+      void writeLedger(current, next);
     },
-    [store]
+    [writeLedger]
   );
 
   // --- load once at launch --------------------------------------------------
@@ -809,7 +809,7 @@ export default function App() {
    * is how a coach hands the phone on, not how they start next Saturday.
    */
   const forgetEverything = useCallback(() => {
-    void clearSession(store);
+    void forgetSession(store);
     // Cleared above: nothing is left for the session block (#173) to protect.
     sessionWritableRef.current = true;
     setSessionMessage('');

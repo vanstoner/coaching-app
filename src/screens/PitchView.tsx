@@ -75,7 +75,7 @@ export interface PitchViewProps {
 }
 
 export function PitchView(props: PitchViewProps) {
-  const { format, sheet, bench, nameOf, detailOf, selected, onSelect, onMove, onTapPlayer } = props;
+  const { format, sheet, bench, nameOf, detailOf, selected, onSelect, onMove } = props;
   const spots = useMemo(() => slotSpots(format), [format]);
   const keeperPosition = format.positions.find((p) => p.kind === 'goalkeeper')?.id;
 

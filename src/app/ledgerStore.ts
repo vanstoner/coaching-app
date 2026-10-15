@@ -10,7 +10,7 @@
  * upgrade it, and is never written again; Forget everything clears both.
  */
 
-import type { KeyValueStore } from './persistence';
+import { inTurn, type KeyValueStore } from './persistence';
 import { parseLedger, serialiseLedger, type Ledger } from './ledger';
 import {
   anchorDamage,
@@ -190,9 +190,6 @@ export async function loadLedger(store: KeyValueStore): Promise<Ledger | null> {
   return stored.status === 'ok' ? stored.ledger : null;
 }
 
-/** Saves to one store, one at a time, so the head is never written out of order. */
-const queues = new WeakMap<KeyValueStore, Promise<unknown>>();
-
 /**
  * Fire and forget, like the session: a full disk loses the save, not the match.
  *
@@ -220,9 +217,27 @@ export function saveLedger(store: KeyValueStore, ledger: Ledger): Promise<boolea
     }
     return true;
   };
-  const next = (queues.get(store) ?? Promise.resolve()).then(run, run);
-  queues.set(store, next);
-  return next;
+  return inTurn(store, run);
+}
+
+/**
+ * Writes the ledger when its records change (`sameRecords`), and after a write
+ * that failed keeps writing until one succeeds (#177): a full disk that clears
+ * must not leave the stored ledger behind until the minutes next change.
+ * One per store, held by the shell.
+ */
+export function ledgerWriter(store: KeyValueStore) {
+  let unsaved = false;
+  let latest: Ledger | null = null;
+  return (previous: Ledger | null, next: Ledger): Promise<boolean> | null => {
+    latest = next;
+    if (!unsaved && previous && sameRecords(previous, next)) return null;
+    unsaved = true;
+    return saveLedger(store, next).then((ok) => {
+      if (ok && latest === next) unsaved = false;
+      return ok;
+    });
+  };
 }
 
 /**
@@ -240,9 +255,7 @@ export function clearLedger(store: KeyValueStore): Promise<void> {
       }
     }
   };
-  const next = (queues.get(store) ?? Promise.resolve()).then(run, run);
-  queues.set(store, next);
-  return next;
+  return inTurn(store, run);
 }
 
 /** True when two ledgers hold the same chain. */

@@ -14,7 +14,6 @@ import {
   Match,
   Quarter,
   QuarterStatus,
-  Player,
   Format,
   Appearance,
   BenchStint,
