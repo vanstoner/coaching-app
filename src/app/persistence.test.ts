@@ -27,6 +27,7 @@ import {
   toSavedSession,
   toMatchState,
   parseSession,
+  readSession,
   saveSession,
   loadSession,
   clearSession,
@@ -213,12 +214,63 @@ describe('a corrupt save starts a clean session rather than crashing', () => {
     }
   });
 
-  it('rejects a session whose match is half written', () => {
+  it('leaves out a half-written match and keeps the rest of the season (#177)', () => {
     const x = setUp();
-    const saved = toSavedSession(sessionOf(x));
-    const broken = JSON.parse(JSON.stringify(saved));
-    delete broken.matches[0].quarters;
-    expect(parseSession(JSON.stringify(broken))).toBeNull();
+    const doc = JSON.parse(JSON.stringify(toSavedSession(sessionOf(x))));
+    const whole = JSON.parse(JSON.stringify(doc.matches[0]));
+    whole.match.id = 'kept';
+    doc.matches.push(whole);
+    delete doc.matches[0].quarters;
+
+    const read = readSession(JSON.stringify(doc));
+    expect(read.status).toBe('ok');
+    if (read.status !== 'ok') return;
+    expect(read.droppedMatches).toBe(1);
+    expect(read.session.matches.map((m) => m.match.id)).toEqual(['kept']);
+    expect(read.session.players).toHaveLength(10);
+    // It named the dropped match: never pointed at a match that is not there.
+    expect(read.session.currentMatchId).toBeNull();
+  });
+
+  it('leaves out a match whose quarters, intervals or bench stints are the wrong shape (#177)', () => {
+    const x = setUp();
+    const breaks: Array<(m: Record<string, any>) => void> = [
+      (m) => (m.quarters[0] = null),
+      (m) => (m.quarters[0].accumulatedMs = '0'),
+      (m) => m.appearances.push({ playerId: 'p1', quarterId: 'q1', startElapsedMs: 'soon', endElapsedMs: null }),
+      (m) => m.benchStints.push({ playerId: 7, quarterId: 'q1', startElapsedMs: 0, endElapsedMs: null }),
+      (m) => (m.match = { opponent: 'No id' }),
+    ];
+    for (const [i, breakIt] of breaks.entries()) {
+      const doc = JSON.parse(JSON.stringify(toSavedSession(sessionOf(x))));
+      breakIt(doc.matches[0]);
+      const read = readSession(JSON.stringify(doc));
+      expect(read.status, `break ${i}`).toBe('ok');
+      if (read.status === 'ok') expect(read.session.matches, `break ${i}`).toHaveLength(0);
+    }
+  });
+
+  it('a whole season reads with nothing dropped', () => {
+    const x = setUp();
+    const read = readSession(JSON.stringify(toSavedSession(sessionOf(x))));
+    expect(read.status === 'ok' && read.droppedMatches).toBe(0);
+  });
+
+  it('rejects a squad whose players or positions are the wrong shape (#176, #177)', () => {
+    const x = setUp();
+    const breaks: Array<(d: Record<string, any>) => void> = [
+      (d) => (d.players[0] = null),
+      (d) => (d.players[0].firstName = 42),
+      (d) => delete d.players[0].id,
+      (d) => (d.players[0].active = 'yes'),
+      (d) => (d.format.positions[0] = 'GK'),
+      (d) => delete d.format.positions[0].kind,
+    ];
+    for (const [i, breakIt] of breaks.entries()) {
+      const doc = JSON.parse(JSON.stringify(toSavedSession(sessionOf(x))));
+      breakIt(doc);
+      expect(readSession(JSON.stringify(doc)).status, `break ${i}`).toBe('corrupt');
+    }
   });
 
   it('rejects impossible match configuration rather than trusting it', () => {

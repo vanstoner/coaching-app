@@ -25,8 +25,9 @@
  * that anchor from the current clock rather than counting anything.
  *
  * **ADR-011 — device-local.** This writes to one key on the device and nowhere
- * else. No network, no cloud backup (Android auto-backup is off and asserted in
- * CI), no export. Children's first names live here and must not travel.
+ * else. No network and no export; the phone's own backup is the one copy that
+ * leaves it, and only for Heart FC Coach (#112). Children's first names live
+ * here and must not travel.
  */
 
 import type {
@@ -481,7 +482,16 @@ export function toMatchState(saved: SavedSession, matchId?: UUID): MatchState | 
  * quietly emptied a squad (#61).
  */
 export type ReadResult =
-  | { status: 'ok'; session: SavedSession; migrationsApplied: string[] }
+  | {
+      status: 'ok';
+      session: SavedSession;
+      migrationsApplied: string[];
+      /**
+       * Matches left out because they would not read (#177). The caller must
+       * set the stored document aside before writing over it.
+       */
+      droppedMatches: number;
+    }
   | { status: 'empty' }
   /** Not a document this app wrote, or damaged beyond reading. */
   | { status: 'corrupt' }
@@ -495,9 +505,9 @@ export type ReadResult =
  *
  *     if (s.schemaVersion !== SCHEMA_VERSION) return null;
  *
- * which discarded every older save the moment the version moved. With
- * `allowBackup="false"` (ADR-011) and no export, that was unrecoverable data
- * loss dressed up as caution. An older save is now UPGRADED; only a genuinely
+ * which discarded every older save the moment the version moved. With no
+ * backup at the time (ADR-011, before #112) and no export, that was
+ * unrecoverable data loss dressed up as caution. An older save is now UPGRADED; only a genuinely
  * unreadable one is refused, and a newer one says so in words.
  */
 export function readSession(raw: string | null): ReadResult {
@@ -521,37 +531,42 @@ export function readSession(raw: string | null): ReadResult {
     return { status: 'corrupt' };
   }
 
-  const session = validate(outcome.doc);
-  if (!session) return { status: 'corrupt' };
-  return { status: 'ok', session, migrationsApplied: outcome.applied };
+  const validated = validate(outcome.doc);
+  if (!validated) return { status: 'corrupt' };
+  return {
+    status: 'ok',
+    session: validated.session,
+    migrationsApplied: outcome.applied,
+    droppedMatches: validated.droppedMatches,
+  };
 }
 
 /**
  * Check a migrated document is whole, and keep anything this build does not
  * recognise so writing back cannot destroy it.
  */
-function validate(doc: VersionedDocument): SavedSession | null {
+function validate(doc: VersionedDocument): { session: SavedSession; droppedMatches: number } | null {
   const s = doc as Partial<SavedSession> & VersionedDocument;
 
-  if (!Array.isArray(s.players)) return null;
+  // The squad is checked element by element (#176, #177): a player or position
+  // that is the wrong shape would pass a check on the array alone, then throw
+  // while rendering at every launch. The squad cannot be read in part, so a bad
+  // one makes the whole session unreadable, and #173 sets it aside.
+  if (!Array.isArray(s.players) || !s.players.every(isPlayerShaped)) return null;
   if (typeof s.squadId !== 'string') return null;
   if (typeof s.totalMinutes !== 'number' || !(s.totalMinutes > 0)) return null;
   if (typeof s.periodCount !== 'number' || !(s.periodCount > 0)) return null;
-  if (!s.format || !Array.isArray((s.format as Format).positions)) return null;
+  if (!isFormatShaped(s.format)) return null;
 
   // Matches are optional — a squad with no fixtures yet is a valid session —
-  // but each one present must be whole. A half-written match is discarded
-  // along with the session rather than loaded into a screen that will then
-  // read a quarter that does not exist.
+  // but each one present must be whole. A half-written match is left out
+  // rather than loaded into a screen that will then read a quarter that does
+  // not exist; the rest of the season still loads (#177). The caller sets the
+  // stored document aside first, so the match is not lost.
   if (!Array.isArray(s.matches)) return null;
-  for (const m of s.matches) {
-    if (!m || !m.match || !Array.isArray(m.quarters) || !Array.isArray(m.appearances)) {
-      return null;
-    }
-    if (!Array.isArray(m.benchStints)) return null;
-  }
+  const matches = s.matches.filter(isMatchWhole);
 
-  return {
+  const session: SavedSession = {
     ...unknownFields(doc, KNOWN_FIELDS),
     schemaVersion: SCHEMA_VERSION,
     minReaderVersion: MIN_READER_VERSION,
@@ -564,7 +579,7 @@ function validate(doc: VersionedDocument): SavedSession | null {
     periodCount: s.periodCount,
     buzzWhenSubDue: readBuzzWhenSubDue(s.buzzWhenSubDue),
     plan: (s.plan ?? {}) as Record<string, UUID[]>,
-    matches: s.matches.map((m) => ({
+    matches: matches.map((m) => ({
       ...m,
       availability: Array.isArray(m.availability) ? m.availability : [],
       // A malformed plan is dropped, not the match: a plan is intent, and
@@ -579,10 +594,48 @@ function validate(doc: VersionedDocument): SavedSession | null {
     // than trusted: it would send the app to a screen with nothing behind it.
     currentMatchId:
       typeof s.currentMatchId === 'string' &&
-      s.matches.some((m) => m.match.id === s.currentMatchId)
+      matches.some((m) => m.match.id === s.currentMatchId)
         ? (s.currentMatchId as UUID)
         : null,
   };
+  return { session, droppedMatches: s.matches.length - matches.length };
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isMs = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
+const isMsOrNull = (v: unknown): boolean => v === null || isMs(v);
+
+function isPlayerShaped(p: unknown): boolean {
+  return isRecord(p) && typeof p.id === 'string' && typeof p.firstName === 'string' && typeof p.active === 'boolean';
+}
+
+function isFormatShaped(f: unknown): boolean {
+  return (
+    isRecord(f) &&
+    Array.isArray(f.positions) &&
+    f.positions.every((p) => isRecord(p) && typeof p.id === 'string' && typeof p.kind === 'string')
+  );
+}
+
+/** Every field a screen reads without checking first. */
+function isMatchWhole(m: unknown): m is SavedMatch {
+  if (!isRecord(m) || !isRecord(m.match) || typeof m.match.id !== 'string') return false;
+  if (typeof m.match.status !== 'string') return false;
+  const { quarters, appearances, benchStints } = m;
+  if (!Array.isArray(quarters) || !Array.isArray(appearances) || !Array.isArray(benchStints)) return false;
+  return (
+    quarters.every(
+      (q) => isRecord(q) && typeof q.id === 'string' && typeof q.status === 'string' && isMs(q.accumulatedMs)
+    ) &&
+    [...appearances, ...benchStints].every(
+      (a) =>
+        isRecord(a) &&
+        typeof a.playerId === 'string' &&
+        typeof a.quarterId === 'string' &&
+        isMs(a.startElapsedMs) &&
+        isMsOrNull(a.endElapsedMs)
+    )
+  );
 }
 
 function unionEvents(
@@ -690,6 +743,20 @@ export async function clearSession(store: KeyValueStore): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Run storage work on one store one job at a time, in the order it was asked
+ * for (#177). The session and the ledger share the queue, so neither a save
+ * nor Forget everything can overtake one asked for earlier. A job that fails
+ * does not stop the next.
+ */
+export function inTurn<T>(store: KeyValueStore, run: () => Promise<T>): Promise<T> {
+  const next = (queues.get(store) ?? Promise.resolve()).then(run, run);
+  queues.set(store, next);
+  return next;
+}
+
+const queues = new WeakMap<KeyValueStore, Promise<unknown>>();
 
 /** An in-memory store. Used by the tests, and as a fallback if the native one fails to load. */
 export function createMemoryStore(): KeyValueStore {

@@ -14,12 +14,18 @@
  *   store itself failed to read**: nothing is written to the session key for
  *   the rest of this launch.
  *
+ * A session that reads except for some of its matches (#177) is set aside the
+ * same way, then opened without them: the rest of the season stays usable and
+ * the matches are not lost. A copy that cannot be proved blocks writing.
+ *
  * Restoring a set-aside session is out of scope (#173): it stays on the phone,
  * as an unreadable ledger does.
  */
 
 import {
   STORAGE_KEY,
+  clearSession,
+  inTurn,
   readSession,
   saveSession,
   type KeyValueStore,
@@ -57,8 +63,25 @@ export async function openStoredSession(store: KeyValueStore, now: Date): Promis
 
   const read = readSession(raw);
   switch (read.status) {
-    case 'ok':
-      return { session: read.session, writable: true, message: '' };
+    case 'ok': {
+      if (read.droppedMatches === 0) return { session: read.session, writable: true, message: '' };
+      const n = read.droppedMatches;
+      const them = n === 1 ? 'One match' : `${n} matches`;
+      const key = await setAside(store, raw as string, now);
+      if (!key) {
+        return {
+          session: read.session,
+          writable: false,
+          message: `${them} on this phone would not read, and could not be set aside safely. ${KEPT} Nothing will be saved until this is resolved.`,
+        };
+      }
+      return {
+        session: read.session,
+        writable: true,
+        setAsideKey: key,
+        message: `${them} on this phone would not read and ${n === 1 ? 'has' : 'have'} been left out. Your squad and other fixtures are here, and a copy of everything has been set aside unchanged. ${KEPT} Player minutes are kept separately.`,
+      };
+    }
     case 'empty':
       return { session: null, writable: true, message: '' };
     case 'too_new':
@@ -70,12 +93,8 @@ export async function openStoredSession(store: KeyValueStore, now: Date): Promis
       };
     case 'corrupt': {
       // readSession only says corrupt for a non-empty string.
-      const text = raw as string;
-      const key = `${UNREADABLE_SESSION_PREFIX}${now.toISOString()}`;
-      try {
-        await store.setItem(key, text);
-        if ((await store.getItem(key)) !== text) throw new Error('copy did not read back');
-      } catch {
+      const key = await setAside(store, raw as string, now);
+      if (!key) {
         return {
           session: null,
           writable: false,
@@ -92,12 +111,31 @@ export async function openStoredSession(store: KeyValueStore, now: Date): Promis
   }
 }
 
-/** Save the session only when this launch may write it (#173 AC2, AC3). */
+/**
+ * Save the session only when this launch may write it (#173 AC2, AC3). Saves
+ * wait their turn behind every earlier save of the session or ledger (#177).
+ */
 export async function saveSessionIfWritable(
   store: KeyValueStore,
   writable: boolean,
   input: SessionInput
 ): Promise<boolean> {
   if (!writable) return false;
-  return saveSession(store, input);
+  return inTurn(store, () => saveSession(store, input));
+}
+
+/** Forget the session, after any save asked for before it (#177). */
+export function forgetSession(store: KeyValueStore): Promise<boolean> {
+  return inTurn(store, () => clearSession(store));
+}
+
+/** Copy the stored text aside and read it back; the key, or null if not proved. */
+async function setAside(store: KeyValueStore, text: string, now: Date): Promise<string | null> {
+  const key = `${UNREADABLE_SESSION_PREFIX}${now.toISOString()}`;
+  try {
+    await store.setItem(key, text);
+    return (await store.getItem(key)) === text ? key : null;
+  } catch {
+    return null;
+  }
 }

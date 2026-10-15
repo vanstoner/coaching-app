@@ -10,9 +10,10 @@
  * `createMemoryStore()` instead, and that is deliberate rather than an
  * oversight.
  *
- * ADR-011: this writes to the device and nowhere else. Android auto-backup is
- * disabled (`allowBackup="false"`, asserted in CI), so it does not sync to
- * Google either.
+ * ADR-011: this writes to the device and nowhere else. The only copy that
+ * leaves it is the phone's own backup: on for Heart FC Coach, so a lost phone
+ * keeps the season, and off for Heart FC Beta Coach, so test data never reaches
+ * a coach's cloud (#112, asserted on the built APK by `check_backup.py`).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';

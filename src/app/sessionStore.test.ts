@@ -130,6 +130,51 @@ describe('openStoredSession (#173)', () => {
     expect(await memory.getItem(STORAGE_KEY)).toBe(NOT_JSON);
   });
 
+  /** A stored session with one whole match and one missing its quarters. */
+  async function withOneBrokenMatch(store: KeyValueStore): Promise<string> {
+    await saveSession(store, input([makePlayer(uuid(), 'Ava')]));
+    const saved = JSON.parse((await store.getItem(STORAGE_KEY))!);
+    const match = (id: string) => ({ match: { id, status: 'planned' }, quarters: [], appearances: [], benchStints: [] });
+    const broken = { ...match('broken'), quarters: undefined };
+    saved.matches = [match('kept'), broken];
+    const text = JSON.stringify(saved);
+    await store.setItem(STORAGE_KEY, text);
+    return text;
+  }
+
+  it('#177: a match that will not read is left out, after the whole document is set aside', async () => {
+    const store = createMemoryStore();
+    const text = await withOneBrokenMatch(store);
+    const opened = await openStoredSession(store, NOW);
+    expect(opened.writable).toBe(true);
+    expect(opened.session?.players.map((p) => p.firstName)).toEqual(['Ava']);
+    expect(opened.session?.matches.map((m) => m.match.id)).toEqual(['kept']);
+    expect(opened.message).toMatch(/One match on this phone would not read/);
+    expect(opened.message).toMatch(/Nothing has been deleted/);
+
+    expect(await firstSave(store, opened.writable)).toBe(true);
+    expect(await store.getItem(opened.setAsideKey!)).toBe(text);
+  });
+
+  it('#177: when that copy cannot be proved, the squad still opens but nothing is written', async () => {
+    const memory = createMemoryStore();
+    const text = await withOneBrokenMatch(memory);
+    const store: KeyValueStore = {
+      ...memory,
+      setItem: async (key, value) => {
+        if (key.startsWith(UNREADABLE_SESSION_PREFIX)) throw new Error('disk full');
+        return memory.setItem(key, value);
+      },
+    };
+    const opened = await openStoredSession(store, NOW);
+    expect(opened.writable).toBe(false);
+    expect(opened.session?.matches).toHaveLength(1);
+    expect(opened.message).toMatch(/could not be set aside/);
+
+    expect(await firstSave(store, opened.writable)).toBe(false);
+    expect(await memory.getItem(STORAGE_KEY)).toBe(text);
+  });
+
   it('a store that fails to read blocks writing: the session may be perfectly fine', async () => {
     const memory = createMemoryStore();
     await saveSession(memory, input([makePlayer(uuid(), 'Ava')]));
