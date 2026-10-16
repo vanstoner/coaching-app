@@ -92,6 +92,7 @@ import {
   importLedger,
   parseLedger,
   recordMatches,
+  setMatchExcluded,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
@@ -550,6 +551,7 @@ export default function App() {
           opponent: draft.opponent,
           competition: draft.competition,
           kickoffAt: draft.kickoffAt,
+          excludeFromStats: draft.excludeFromStats,
         },
         appNow
       );
@@ -908,6 +910,25 @@ export default function App() {
     [match, persist, commitLedger]
   );
 
+  /**
+   * Leave this match out of the figures, or count it again (#187, ADR-020).
+   * Works on a match already played, so it applies retrospectively. The reason
+   * when refused, else null.
+   */
+  const setExcludedOnReport = useCallback(
+    (excluded: boolean, note: string): string | null => {
+      if (!match) return 'No match is open.';
+      if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+      const result = setMatchExcluded(ledgerRef.current, match.state.match.id, excluded, note, appNow());
+      if (!result.ok) return result.reason;
+      commitLedger(result.ledger);
+      repaint();
+      persist();
+      return null;
+    },
+    [match, persist, commitLedger]
+  );
+
   const startQuarter = useCallback(
     (sheet: Sheet, plan: PlannedSub[]) => {
       if (!match) return;
@@ -1089,6 +1110,7 @@ export default function App() {
             totalMinutes,
             periodCount,
             shape: shapeOfFormat(format) ?? DEFAULT_SHAPE,
+            excludeFromStats: false,
           }}
           onSave={saveFixture}
           onCancel={() => setStep('fixtures')}
@@ -1143,6 +1165,7 @@ export default function App() {
           // Ruling D: after the last period, the coach closes the match here.
           onEndMatch={canEndMatch(match.state) ? closeMatch : undefined}
           onCorrectAttendance={correctAttendanceOnReport}
+          onSetExcluded={setExcludedOnReport}
           onAnalysis={() => {
             setAnalysisReturn('summary');
             setStep('analysis');

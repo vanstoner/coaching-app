@@ -101,6 +101,13 @@ export interface Match {
   quarterCount: number; // default 4
   status: MatchStatus;
   createdAt: string; // ISO timestamp
+  /**
+   * Set when the fixture is made: leave this match out of averages and season
+   * totals (#187, ADR-020). Absent means it counts. Only the INITIAL choice
+   * lives here: at kick-off the ledger takes it over as an `exclusion` record,
+   * and a change after that is a noted correction there, never an edit here.
+   */
+  excludeFromStats?: boolean;
 }
 
 export interface Quarter {

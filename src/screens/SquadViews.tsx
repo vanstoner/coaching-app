@@ -178,7 +178,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
                 <Pressable
                   key={m.matchId}
                   onPress={() => setPicked(m.label)}
-                  style={local.gCell}
+                  style={[local.gCell, !m.counted && local.gOff]}
                   accessibilityRole="button"
                   accessibilityLabel={m.label}
                 >
@@ -205,7 +205,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
                     <Pressable
                       key={j}
                       onPress={() => setPicked(c.text)}
-                      style={local.gCell}
+                      style={[local.gCell, c.counted === false && local.gOff]}
                       accessibilityRole="button"
                       accessibilityLabel={c.text}
                     >
@@ -230,6 +230,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
       <View style={local.key}>
         <KeyItem shape="mark" label="GK 12: of which in goal" />
         <Text style={local.keyWords}>Blank: not there</Text>
+        {matches.some((m) => !m.counted) && <Text style={local.keyWords}>Faded: left out of the figures</Text>}
         <Text style={local.keyWords}>L, C, F, T: league, cup, friendly, tournament</Text>
       </View>
       <Text style={screen.hint}>
@@ -590,6 +591,8 @@ const local = StyleSheet.create({
   gAvgCell: { width: GRID_AVG, textAlign: 'center' },
   gAvg: { color: colours.ink, fontSize: 15, includeFontPadding: false },
   gCell: { width: GRID_CELL, height: '100%', alignItems: 'center', justifyContent: 'center' },
+  /** A match the coach left out of the figures (ADR-020): still there, plainly set back. */
+  gOff: { opacity: 0.4 },
   gDay: { width: GRID_CELL, textAlign: 'center', color: colours.inkMuted, fontSize: 12, includeFontPadding: false },
   gComp: { width: GRID_CELL, textAlign: 'center', color: colours.inkFaint, fontSize: 11, includeFontPadding: false },
   gTotal: { width: GRID_CELL, textAlign: 'center', color: colours.ink, fontSize: 16, includeFontPadding: false },

@@ -27,7 +27,7 @@ import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
-import type { Ledger } from '../app/ledger';
+import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
 import { formatClock, periodNounPlural } from '../app/matchClock';
@@ -60,6 +60,7 @@ export function MatchSummaryScreen({
   onAnalysis,
   onEndMatch,
   onCorrectAttendance,
+  onSetExcluded,
   onBack,
 }: {
   engine: MatchEngine;
@@ -77,8 +78,15 @@ export function MatchSummaryScreen({
   onEndMatch?: () => void;
   /** A noted attendance correction (ruling F): the reason if refused, else null. */
   onCorrectAttendance?: (playerId: UUID, status: AvailabilityStatus, note: string) => string | null;
+  /**
+   * Leave this match out of the figures, or count it again, with a note
+   * (#187, ADR-020): the reason if refused, else null. Works on a match
+   * already played.
+   */
+  onSetExcluded?: (excluded: boolean, note: string) => string | null;
   onBack: () => void;
 }) {
+  const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
   const [correcting, setCorrecting] = useState<{
     playerId: UUID | null;
     status: 'available' | 'absent';
@@ -86,6 +94,9 @@ export function MatchSummaryScreen({
     error: string;
   } | null>(null);
   const closed = state.match.status === 'completed';
+  // Only a match the ledger holds can be left out or counted (ADR-020).
+  const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
+  const excluded = inLedger ? isExcluded(inLedger) : false;
   const report = matchReport(engine, state, players, format);
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
@@ -275,6 +286,64 @@ export function MatchSummaryScreen({
               </View>
             </View>
           ))}
+
+        {inLedger && (
+          <>
+            <Text style={screen.fieldLabel}>In the season figures</Text>
+            <Text style={local.line}>
+              {excluded
+                ? 'Left out: not in averages or season totals.'
+                : 'Counted in averages and season totals.'}
+            </Text>
+            {inLedger.excluded?.note != null && (
+              <Text style={local.lineFaint} numberOfLines={2}>
+                {`Why: ${inLedger.excluded.note}`}
+              </Text>
+            )}
+            {onSetExcluded &&
+              (marking === null ? (
+                <Pressable onPress={() => setMarking({ note: '', error: '' })} style={screen.linkHit}>
+                  <Text style={screen.link}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
+                </Pressable>
+              ) : (
+                <View style={local.panel}>
+                  <Text style={screen.fieldLabel}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
+                  <Text style={screen.hint}>
+                    Its minutes stay on record either way. The record keeps this change and why.
+                  </Text>
+                  <TextInput
+                    style={screen.input}
+                    value={marking.note}
+                    onChangeText={(note) => setMarking({ note, error: '' })}
+                    placeholder="Why? (needed)"
+                    placeholderTextColor={colours.inkFaint}
+                    maxLength={120}
+                  />
+                  {marking.error !== '' && <Text style={screen.error}>{marking.error}</Text>}
+                  <View style={screen.actions}>
+                    <Pressable
+                      disabled={marking.note.trim() === ''}
+                      onPress={() => {
+                        const refused = onSetExcluded(!excluded, marking.note);
+                        if (refused === null) setMarking(null);
+                        else setMarking({ ...marking, error: refused });
+                      }}
+                      style={({ pressed }) => [
+                        screen.button,
+                        marking.note.trim() === '' && screen.buttonDisabled,
+                        pressed && screen.buttonPressed,
+                      ]}
+                    >
+                      <Text style={screen.buttonLabel}>Save</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setMarking(null)} style={screen.linkHit}>
+                      <Text style={screen.link}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+          </>
+        )}
 
         {onAnalysis && (
           <Pressable

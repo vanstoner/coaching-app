@@ -39,7 +39,7 @@ import type {
   Player,
   UUID,
 } from '../types/index';
-import type { Ledger, LedgerMatch, LedgerPlayer } from './ledger';
+import { isExcluded, type Ledger, type LedgerMatch, type LedgerPlayer } from './ledger';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import { foldPlayerMinutes } from './playerMinutes';
 import { scoreOf, talliesOf, type Score } from './matchEvents';
@@ -316,9 +316,13 @@ export function matchReport(
 // Season figures (ADR-015 §4–§8, #102 AC3, #103)
 // ============================================================================
 
-/** Whether a ledger match counts towards averages: closed (ADR-015 §6, ruling D). */
-export function isCounted(match: Pick<LedgerMatch, 'status'>): boolean {
-  return match.status === 'completed';
+/**
+ * Whether a ledger match counts towards averages: closed (ADR-015 §6, ruling
+ * D) and not left out by the coach (ADR-020, #187). Everything that asks which
+ * matches count goes through here.
+ */
+export function isCounted(match: Pick<LedgerMatch, 'status' | 'excluded'>): boolean {
+  return match.status === 'completed' && !isExcluded(match);
 }
 
 const KNOWN_COMPETITIONS: readonly string[] = ['league', 'cup', 'friendly', 'tournament'];
@@ -436,11 +440,14 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
   const seen = firstSeen(ledger);
 
   for (const m of ledger.matches) {
+    // A match the coach left out is in neither the totals nor the averages
+    // (ADR-020). Its intervals are still in the ledger, untouched.
+    if (isExcluded(m)) continue;
     const pitch = new Map<UUID, number>();
     for (const i of m.intervals) {
       pitch.set(i.playerId, (pitch.get(i.playerId) ?? 0) + Math.max(0, i.endMs - i.startMs));
     }
-    // Season totals: every match's minutes (§6).
+    // Season totals: every other match's minutes (§6).
     for (const [id, ms] of pitch) of(id).pitchMs += ms;
 
     if (!isCounted(m) || m.id === options.excludeMatchId) continue;

@@ -103,6 +103,8 @@ export class MatchEngine {
       totalMinutes?: number;
       quarterCount?: number;
       competition?: Competition | null;
+      /** Leave this match out of averages and totals (#187, ADR-020). */
+      excludeFromStats?: boolean;
       /**
        * Who is in the squad for this match — #64.
        *
@@ -153,6 +155,8 @@ export class MatchEngine {
       quarterCount,
       status: 'planned',
       createdAt: this.now().toISOString(),
+      // Only when set, so a match that counts is shaped exactly as before.
+      ...(options.excludeFromStats ? { excludeFromStats: true } : {}),
     };
 
     const quarters: Quarter[] = Array.from({ length: quarterCount }, (_, i) => ({

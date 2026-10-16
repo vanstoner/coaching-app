@@ -28,7 +28,7 @@
 
 import type { AvailabilityStatus, Player, UUID } from '../types/index';
 import { keyOf } from './ledgerChain';
-import type { Ledger, LedgerAttendance, LedgerMatch } from './ledger';
+import { isExcluded, type Ledger, type LedgerAttendance, type LedgerMatch } from './ledger';
 
 export interface PlayerAttendance {
   playerId: UUID;
@@ -240,7 +240,8 @@ export function seasonAttendance(
   const seen = firstSeen(ledger);
 
   for (const match of ledger.matches) {
-    if (match.status !== 'completed') continue;
+    // Closed, and not left out by the coach (ADR-020).
+    if (match.status !== 'completed' || isExcluded(match)) continue;
     const pitch = new Map<UUID, number>();
     for (const i of match.intervals) {
       pitch.set(i.playerId, (pitch.get(i.playerId) ?? 0) + Math.max(0, i.endMs - i.startMs));
@@ -270,5 +271,5 @@ export function matchesAttended(ledger: Ledger, playerId: UUID, timeline: SquadT
 
 /** How many counted matches had their attendance inferred from play (ADR-015 §5). */
 export function inferredMatchCount(ledger: Ledger): number {
-  return ledger.matches.filter((m) => m.status === 'completed' && attendanceOf(m).inferred).length;
+  return ledger.matches.filter((m) => m.status === 'completed' && !isExcluded(m) && attendanceOf(m).inferred).length;
 }

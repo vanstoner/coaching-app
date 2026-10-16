@@ -110,6 +110,8 @@ export function keyOf(record: LedgerRecord): string | null {
       return `${record.type}:${String(record.matchId)}:${String(record.id)}`;
     case 'attendance':
       return `attendance:${String(record.matchId)}:${String(record.playerId)}`;
+    case 'exclusion':
+      return `exclusion:${String(record.matchId)}`;
     default:
       return null;
   }
