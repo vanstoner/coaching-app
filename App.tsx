@@ -919,7 +919,9 @@ export default function App() {
     (excluded: boolean, note: string): string | null => {
       if (!match) return 'No match is open.';
       if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
-      const result = setMatchExcluded(ledgerRef.current, match.state.match.id, excluded, note, appNow());
+      const current = ledgerRef.current;
+      if (!current) return 'That match is not in the ledger.';
+      const result = setMatchExcluded(current, match.state.match.id, excluded, note, appNow());
       if (!result.ok) return result.reason;
       commitLedger(result.ledger);
       repaint();
