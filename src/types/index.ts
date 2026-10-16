@@ -232,12 +232,25 @@ export interface Format {
 
 /**
  * What a coach records with a tap during play. Goals, saves and goals
- * conceded for now (#84); assists, tackles and fouls are #6.
+ * conceded (#84); tackles, corners won, free kicks won and assists (#185).
+ * Corners and free kicks are credited to the player who won them; an assist
+ * belongs to a goal (`refersTo`) and falls with it.
  *
  * `withdrawn` is not something that happened on the pitch: it takes back an
  * earlier event, which stays in the log (invariant 5).
  */
-export type MatchEventKind = 'goal' | 'save' | 'conceded' | 'withdrawn';
+export type MatchEventKind =
+  | 'goal'
+  | 'save'
+  | 'conceded'
+  | 'tackle'
+  | 'corner'
+  | 'free_kick'
+  | 'assist'
+  | 'withdrawn';
+
+/** What a tap on one player records on its own: everything but an assist (#185). */
+export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist'>;
 
 /**
  * One entry on the match's time stream. Append-only: never edited, never
@@ -255,7 +268,7 @@ export interface MatchEvent {
   atElapsedMs: number;
   /** Wall-clock ISO timestamp of the tap. */
   recordedAt: string;
-  /** For `withdrawn`: the event it takes back. Null otherwise. */
+  /** For `withdrawn`: the event it takes back. For `assist`: its goal. Null otherwise. */
   refersTo: UUID | null;
   /** Mandatory on `withdrawn` (invariant 5). Null otherwise. */
   note: string | null;

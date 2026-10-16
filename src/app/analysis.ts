@@ -201,6 +201,8 @@ export interface MatchReport {
   score: Score;
   /** Each scorer once, most goals first. */
   scorers: { playerId: UUID; name: string; goals: number }[];
+  /** Each player with an assist, tackle, corner or free kick won, by name (#185 AC7). */
+  play: { playerId: UUID; name: string; assists: number; tackles: number; corners: number; freeKicks: number }[];
   /** Each keeper who made a save or was in goal for a goal against. */
   keepers: { playerId: UUID; name: string; saves: number; conceded: number }[];
   saves: number;
@@ -299,6 +301,17 @@ export function matchReport(
       .filter((t) => t.goals > 0)
       .map((t) => ({ playerId: t.playerId, name: name(t.playerId), goals: t.goals }))
       .sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name)),
+    play: tallies
+      .filter((t) => t.assists + t.tackles + t.corners + t.freeKicks > 0)
+      .map(({ playerId, assists, tackles, corners, freeKicks }) => ({
+        playerId,
+        name: name(playerId),
+        assists,
+        tackles,
+        corners,
+        freeKicks,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
     keepers: tallies
       .filter((t) => t.saves > 0 || t.conceded > 0)
       .map((t) => ({ playerId: t.playerId, name: name(t.playerId), saves: t.saves, conceded: t.conceded }))

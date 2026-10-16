@@ -141,6 +141,17 @@ export function MatchSummaryScreen({
           ))
         )}
 
+        {report.play.length > 0 && (
+          <>
+            <Text style={screen.fieldLabel}>Play</Text>
+            {report.play.map((p) => (
+              <Text key={p.playerId} style={local.line} numberOfLines={2}>
+                {p.name} · {playLine(p)}
+              </Text>
+            ))}
+          </>
+        )}
+
         <Text style={screen.fieldLabel}>In goal</Text>
         <Text style={local.line}>
           {report.saves} {report.saves === 1 ? 'save' : 'saves'} · {report.conceded} conceded
@@ -420,3 +431,17 @@ const local = StyleSheet.create({
   panel: { alignSelf: 'stretch', marginTop: 8 },
   pointer: { marginTop: 14 },
 });
+
+/** "2 assists · 1 tackle · 1 corner won", leaving out what is zero (#185 AC7). */
+function playLine(p: { assists: number; tackles: number; corners: number; freeKicks: number }): string {
+  const part = (n: number, one: string, many: string) => (n === 0 ? null : `${n} ${n === 1 ? one : many}`);
+  return [
+    part(p.assists, 'assist', 'assists'),
+    part(p.tackles, 'tackle', 'tackles'),
+    part(p.corners, 'corner won', 'corners won'),
+    part(p.freeKicks, 'free kick won', 'free kicks won'),
+  ]
+    .filter((x) => x !== null)
+    .join(' · ');
+}
+

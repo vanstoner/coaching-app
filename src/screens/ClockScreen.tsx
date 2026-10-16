@@ -10,9 +10,10 @@
  * engine. Every move and every goal, save or conceded goal gets a 10-second
  * Undo (PO rulings 11 and 12): a mis-drop on a touchline costs one tap.
  *
- * **A tap on a player opens what can be recorded for them** (#84): Goal for
- * anyone on the pitch; Goal, Save and Conceded for the keeper; and "Move or
- * swap…" so every move is possible without dragging.
+ * **A tap on a player opens what can be recorded for them** (#84, #185):
+ * picture buttons for Goal, Tackle, Corner won and Free kick won for anyone on
+ * the pitch, plus Save and Conceded for the keeper; and "Move or swap…" so
+ * every move is possible without dragging. A goal then asks who set it up.
  *
  * **A sub falling due buzzes the phone once** (#137, ruling 19 R1). Each paint
  * only detects it: what is due is read from the anchors that paint used, and
@@ -40,7 +41,7 @@ import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
-import type { Format, MatchEvent, Player, UUID } from '../types/index';
+import type { Format, MatchEvent, Player, TapEventKind, UUID } from '../types/index';
 import {
   currentQuarter,
   deriveClockView,
@@ -60,15 +61,22 @@ import {
   type BuzzLog,
   type PlannedSub,
 } from '../app/subPlan';
-import { UNDO_NOTE, UNDO_WINDOW_MS, scoreOf, timeStream } from '../app/matchEvents';
+import {
+  TAP_LABEL,
+  UNDO_NOTE,
+  UNDO_WINDOW_MS,
+  assistCandidates,
+  scoreOf,
+  tapEventsFor,
+  timeStream,
+} from '../app/matchEvents';
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
 import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
+import { AssistButton, EventButtons } from './EventButtons';
 import { colours, screen, TOUCH_TARGET } from './theme';
-
-type RecordKind = 'goal' | 'save' | 'conceded';
 
 /**
  * Two short pulses (#137). Android reads it as wait, buzz, pause, buzz. iOS
@@ -97,6 +105,7 @@ export function ClockScreen({
   onMakeSub,
   onLiveMove,
   onRecord,
+  onRecordAssist,
   onWithdraw,
   onEndQuarter,
   onFinish,
@@ -121,8 +130,10 @@ export function ClockScreen({
   onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
   /** A swap or a substitution during play. False if the engine refused it. */
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
-  /** A goal, save or goal conceded. Null if the engine refused it. */
-  onRecord: (kind: RecordKind, playerId: UUID) => MatchEvent | null;
+  /** A goal, save, goal conceded, tackle, corner or free kick won. Null if the engine refused it. */
+  onRecord: (kind: TapEventKind, playerId: UUID) => MatchEvent | null;
+  /** Credit a goal's assist (#185). Null if the engine refused it. */
+  onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -168,6 +179,8 @@ export function ClockScreen({
 
   const [selected, setSelected] = useState<UUID | null>(null);
   const [sheetFor, setSheetFor] = useState<UUID | null>(null);
+  /** The goal just recorded, while asking who set it up (#185 AC3). */
+  const [assistFor, setAssistFor] = useState<MatchEvent | null>(null);
   const [dragging, setDragging] = useState(false);
   /** Who comes off each due sub, when the coach has changed the suggestion. */
   const [offChoice, setOffChoice] = useState<Record<string, UUID>>({});
@@ -233,16 +246,27 @@ export function ClockScreen({
     offerUndo(describe(m), () => onLiveMove(reverseOf(m), true));
   };
 
-  const record = (kind: RecordKind, id: UUID) => {
+  const record = (kind: TapEventKind, id: UUID) => {
     setSheetFor(null);
     const event = onRecord(kind, id);
     if (!event) {
       setNotice('That could not be recorded.');
       return;
     }
-    const label =
-      kind === 'goal' ? `Goal: ${nameOf(id)}` : kind === 'save' ? `Save: ${nameOf(id)}` : 'Goal conceded';
+    const label = kind === 'conceded' ? 'Goal conceded' : `${TAP_LABEL[kind]}: ${nameOf(id)}`;
     offerUndo(label, () => onWithdraw(event.id, UNDO_NOTE));
+    if (kind === 'goal') setAssistFor(event);
+  };
+
+  /** Withdrawing the goal takes its assist with it (#185 AC5), so Undo stays one tap. */
+  const assist = (goal: MatchEvent, id: UUID) => {
+    setAssistFor(null);
+    if (!onRecordAssist(goal.id, id)) {
+      setNotice('That assist could not be recorded.');
+      return;
+    }
+    const scorer = goal.playerId ? nameOf(goal.playerId) : 'someone';
+    offerUndo(`Goal: ${scorer}, assist ${nameOf(id)}`, () => onWithdraw(goal.id, UNDO_NOTE));
   };
 
   const stream = timeStream(state.appearances, state.events, players);
@@ -471,13 +495,7 @@ export function ClockScreen({
         {sheetFor && (
           <>
             {onIds.has(sheetFor) && (
-              <SheetButton label="Goal" strong onPress={() => record('goal', sheetFor)} />
-            )}
-            {sheetFor === keeper && (
-              <>
-                <SheetButton label="Save" strong onPress={() => record('save', sheetFor)} />
-                <SheetButton label="Conceded" against onPress={() => record('conceded', sheetFor)} />
-              </>
+              <EventButtons kinds={tapEventsFor(sheetFor === keeper)} onPress={(kind) => record(kind, sheetFor)} />
             )}
             <SheetButton
               label="Move or swap…"
@@ -488,6 +506,19 @@ export function ClockScreen({
             />
           </>
         )}
+      </ActionSheet>
+
+      {/* #185: a goal asks who set it up, from the players on the pitch. */}
+      <ActionSheet
+        visible={assistFor !== null}
+        title="Who set it up?"
+        onClose={() => setAssistFor(null)}
+        closeLabel="No assist"
+      >
+        {assistFor?.playerId &&
+          assistCandidates([...onIds], assistFor.playerId).map((id) => (
+            <AssistButton key={id} name={nameOf(id)} onPress={() => assist(assistFor, id)} />
+          ))}
       </ActionSheet>
 
       {/* #180: the forgotten clock. Spec 02's words; "Still playing" changes nothing. */}
