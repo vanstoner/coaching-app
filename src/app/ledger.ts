@@ -30,6 +30,11 @@
  * - **Attendance (§4, #102)** is snapshotted at kick-off; a later change is a
  *   new record with a mandatory note (invariant 5). Games missed are derived
  *   (`attendance.ts`), never stored.
+ * - **Leaving a match out (ADR-020, #187)** is an `exclusion` record, kept like
+ *   attendance: written once from the fixture at kick-off, then changed only by
+ *   `setMatchExcluded` with a mandatory note, on any match, played or not.
+ *   It never removes an interval: `foldLedger` and the file's summary stay
+ *   all-matches; the season views leave the match out.
  * - **Forward-compatible (#99 AC2).** Unknown fields and record types are
  *   carried and hashed, never dropped. A file whose `minReaderVersion` is
  *   above this build's is refused for writing.
@@ -93,6 +98,16 @@ export interface LedgerAttendance {
   note: string | null;
 }
 
+/**
+ * Whether a match is left out of the figures (ADR-020): the latest revision.
+ * Absent on a match with none, which counts.
+ */
+export interface LedgerExclusion {
+  excluded: boolean;
+  /** Mandatory on a change after the first record (invariant 5); null on the initial choice. */
+  note: string | null;
+}
+
 export interface LedgerMatch {
   id: UUID;
   kickoffAt: string | null;
@@ -109,6 +124,13 @@ export interface LedgerMatch {
    * existed (every v1 match): `attendance.ts` infers it from play (ADR-015 §5).
    */
   attendance?: LedgerAttendance[];
+  /** Left out of averages and season totals (ADR-020). Absent: it counts. */
+  excluded?: LedgerExclusion;
+}
+
+/** True when the coach has left this match out of the figures (ADR-020). */
+export function isExcluded(match: Pick<LedgerMatch, 'excluded'>): boolean {
+  return match.excluded?.excluded === true;
 }
 
 /** One entry on a match's time stream, as the ledger keeps it. */
@@ -175,6 +197,7 @@ const FIELDS: Record<string, readonly string[]> = {
   ],
   event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
+  exclusion: ['type', 'matchId', 'excluded', 'note'],
 };
 
 /** Top-level fields of a file this build knows. The rest are carried. */
@@ -254,6 +277,8 @@ function checkRecord(r: LedgerRecord): void {
         return str(r.id) && str(r.matchId) && str(r.kind) && num(r.atMs);
       case 'attendance':
         return str(r.matchId) && str(r.playerId) && str(r.status);
+      case 'exclusion':
+        return str(r.matchId) && typeof r.excluded === 'boolean';
       default:
         return true;
     }
@@ -269,6 +294,7 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
   const intervals = new Map<UUID, LedgerInterval[]>();
   const events = new Map<UUID, LedgerEvent[]>();
   const attendance = new Map<UUID, LedgerAttendance[]>();
+  const exclusions = new Map<UUID, LedgerExclusion>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -343,6 +369,13 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
           note: typeof r.note === 'string' ? r.note : null,
         });
         break;
+      case 'exclusion':
+        matchFor(r.matchId as UUID);
+        exclusions.set(r.matchId as UUID, {
+          excluded: r.excluded === true,
+          note: typeof r.note === 'string' ? r.note : null,
+        });
+        break;
     }
   }
 
@@ -352,11 +385,13 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
     matches: [...matches.values()].map((m) => {
       const ev = events.get(m.id);
       const att = attendance.get(m.id);
+      const exc = exclusions.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
         ...(ev ? { events: ev.sort(byTime) } : {}),
         ...(att ? { attendance: att } : {}),
+        ...(exc ? { excluded: exc } : {}),
       };
     }),
   };
@@ -442,6 +477,8 @@ export interface MatchRecord {
     totalMinutes: number;
     quarterCount: number;
     status: MatchStatus;
+    /** The fixture's initial choice (ADR-020); taken over by the ledger on first sight. */
+    excludeFromStats?: boolean;
   };
   quarters: { id: UUID; index: number; status?: string }[];
   appearances: Appearance[];
@@ -577,6 +614,12 @@ export function recordMatches(
       periodCount: ms(record.match.quarterCount),
       status: record.match.status,
     });
+    // The fixture's choice, taken over the first time the ledger sees the
+    // match. After that the ledger is the only truth: a later change is
+    // `setMatchExcluded`, and the working document is never read again.
+    if (record.match.excludeFromStats === true && !latest.has(`exclusion:${id}`)) {
+      put(`exclusion:${id}`, { type: 'exclusion', matchId: id, excluded: true, note: null });
+    }
     if (started && intervals.length === 0 && !played.has(id) && !attended.has(id)) {
       for (const [playerId, status] of availabilityOf(record)) {
         put(`attendance:${id}:${playerId}`, { type: 'attendance', matchId: id, playerId, status, note: null });
@@ -623,13 +666,52 @@ export function correctAttendance(
   };
 }
 
-/** Every player's minutes, folded from the intervals. Never stored as truth. */
-export function foldLedger(ledger: Ledger): PlayerTotal[] {
+/**
+ * Leave a match out of the figures, or count it again (ADR-020, #187). Works
+ * on any match in the ledger, played or not, so it can be applied
+ * retrospectively. A new `exclusion` record with a mandatory note (invariant
+ * 5): the earlier choice stays in the chain, and no interval is touched.
+ */
+export function setMatchExcluded(
+  ledger: Ledger,
+  matchId: UUID,
+  excluded: boolean,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) {
+    return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  }
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if (isExcluded(match) === excluded) {
+    return {
+      ok: false,
+      reason: excluded ? 'That match is already left out of the figures.' : 'That match already counts.',
+    };
+  }
+  return {
+    ok: true,
+    ledger: appendRecords(ledger, [{ type: 'exclusion', matchId, excluded, note: trimmed }], now),
+  };
+}
+
+/**
+ * Every player's minutes, folded from the intervals. Never stored as truth.
+ *
+ * All matches, unless `leaveOutExcluded`: the file's summary and its check on
+ * import are the audit figure and keep every interval (ADR-020 §4); the
+ * season totals a coach reads leave out what they chose not to count.
+ */
+export function foldLedger(ledger: Ledger, options: { leaveOutExcluded?: boolean } = {}): PlayerTotal[] {
   const totals = new Map<UUID, PlayerTotal>();
   for (const p of ledger.players) {
     totals.set(p.id, { playerId: p.id, outfieldMs: 0, goalkeeperMs: 0 });
   }
   for (const m of ledger.matches) {
+    if (options.leaveOutExcluded && isExcluded(m)) continue;
     for (const i of m.intervals) {
       let row = totals.get(i.playerId);
       if (!row) {
@@ -985,6 +1067,7 @@ export function seasonRows(ledger: Ledger): SeasonRow[] {
   const names = new Map(ledger.players.map((p) => [p.id, p]));
   const units = new Map<UUID, Record<'GK' | 'DEF' | 'MID' | 'ATT', number>>();
   for (const m of ledger.matches) {
+    if (isExcluded(m)) continue; // left out of the season (ADR-020)
     for (const i of m.intervals) {
       if (!i.unit) continue;
       const row = units.get(i.playerId) ?? { GK: 0, DEF: 0, MID: 0, ATT: 0 };
@@ -992,7 +1075,7 @@ export function seasonRows(ledger: Ledger): SeasonRow[] {
       units.set(i.playerId, row);
     }
   }
-  return foldLedger(ledger)
+  return foldLedger(ledger, { leaveOutExcluded: true })
     .map((t) => {
       const p = names.get(t.playerId);
       return {

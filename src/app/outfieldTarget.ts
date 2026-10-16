@@ -16,7 +16,7 @@
  */
 
 import type { Player, UUID } from '../types/index';
-import { foldLedger, type Ledger } from './ledger';
+import { foldLedger, isExcluded, type Ledger } from './ledger';
 
 export type TargetStatus = 'on-track' | 'below';
 
@@ -72,14 +72,18 @@ export function outfieldShare(
 
 /**
  * Each player's outfield share over the season's COUNTED matches: those with
- * status `completed` (ADR-015 §6). Computed from the ledger on every call,
+ * status `completed` (ADR-015 §6) and not left out by the coach (ADR-020).
+ * Computed from the ledger on every call,
  * never stored (invariant 1).
  */
 export function seasonOutfieldShares(
   ledger: Ledger,
   players: Pick<Player, 'id' | 'outfieldTargetPct'>[]
 ): Map<UUID, OutfieldShare> {
-  const counted = { ...ledger, matches: ledger.matches.filter((m) => m.status === 'completed') };
+  const counted = {
+    ...ledger,
+    matches: ledger.matches.filter((m) => m.status === 'completed' && !isExcluded(m)),
+  };
   const totals = new Map(foldLedger(counted).map((t) => [t.playerId, t]));
   const targets = new Map(players.map((p) => [p.id, targetOf(p)]));
   const out = new Map<UUID, OutfieldShare>();

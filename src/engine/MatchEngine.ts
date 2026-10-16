@@ -23,6 +23,7 @@ import {
   AvailabilityStatus,
   MatchEvent,
   MatchEventKind,
+  TapEventKind,
 } from '../types/index';
 
 // ============================================================================
@@ -68,6 +69,13 @@ export interface MatchState {
 // Match Engine
 // ============================================================================
 
+/** What can set the last-event floor (#180): a change of personnel or any event. */
+export type RecordedKind = 'sub' | 'swap' | Exclude<MatchEventKind, 'withdrawn'>;
+
+function isWithdrawnIn(events: MatchEvent[], id: UUID): boolean {
+  return events.some((e) => e.kind === 'withdrawn' && e.refersTo === id);
+}
+
 export class MatchEngine {
   private config: MatchEngineConfig;
 
@@ -103,6 +111,8 @@ export class MatchEngine {
       totalMinutes?: number;
       quarterCount?: number;
       competition?: Competition | null;
+      /** Leave this match out of averages and totals (#187, ADR-020). */
+      excludeFromStats?: boolean;
       /**
        * Who is in the squad for this match — #64.
        *
@@ -153,6 +163,8 @@ export class MatchEngine {
       quarterCount,
       status: 'planned',
       createdAt: this.now().toISOString(),
+      // Only when set, so a match that counts is shaped exactly as before.
+      ...(options.excludeFromStats ? { excludeFromStats: true } : {}),
     };
 
     const quarters: Quarter[] = Array.from({ length: quarterCount }, (_, i) => ({
@@ -473,13 +485,10 @@ export class MatchEngine {
    * a quarter can never end before it, or an interval would open after the
    * quarter had closed (#180).
    */
-  lastRecordedInQuarter(
-    state: MatchState,
-    quarter: Quarter
-  ): { atMs: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } | null {
+  lastRecordedInQuarter(state: MatchState, quarter: Quarter): { atMs: number; kind: RecordedKind } | null {
     const startMatchMs = this.getMatchElapsedMs(state) - this.getQuarterElapsedMs(quarter);
-    let last: { at: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } | null = null;
-    const consider = (at: number, kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded') => {
+    let last: { at: number; kind: RecordedKind } | null = null;
+    const consider = (at: number, kind: RecordedKind) => {
       if (!last || at >= last.at) last = { at, kind };
     };
     for (const a of state.appearances) {
@@ -494,7 +503,7 @@ export class MatchEngine {
       consider(e.atElapsedMs, e.kind);
     }
     if (last === null) return null;
-    const found: { at: number; kind: 'sub' | 'swap' | 'goal' | 'save' | 'conceded' } = last;
+    const found: { at: number; kind: RecordedKind } = last;
     return { atMs: Math.max(0, found.at - startMatchMs), kind: found.kind };
   }
 
@@ -631,18 +640,14 @@ export class MatchEngine {
   }
 
   /**
-   * Record a goal, a save or a goal conceded at this moment (#84).
+   * Record a goal, a save, a goal conceded (#84), a tackle, or a corner or
+   * free kick won (#185) at this moment.
    *
    * Only while a period runs, and only for a player on the pitch: a goal
    * credited to someone on the bench is a wrong tap, not a record. `save`
    * and `conceded` belong to whoever is in goal.
    */
-  recordEvent(
-    state: MatchState,
-    quarter: Quarter,
-    kind: Exclude<MatchEventKind, 'withdrawn'>,
-    playerId: UUID
-  ): MatchEvent {
+  recordEvent(state: MatchState, quarter: Quarter, kind: TapEventKind, playerId: UUID): MatchEvent {
     if (quarter.status !== 'running') {
       throw new MatchEngineError(
         `Cannot record a ${kind} in quarter ${quarter.index}; status is ${quarter.status} (expected running)`
@@ -664,6 +669,45 @@ export class MatchEngine {
       atElapsedMs: this.getMatchElapsedMs(state),
       recordedAt: this.now().toISOString(),
       refersTo: null,
+      note: null,
+    };
+    (state.events ??= []).push(event);
+    return event;
+  }
+
+  /**
+   * Credit a goal's assist (#185): asked straight after the goal, from the
+   * players on the pitch. Recorded at the goal's moment and linked to it, so
+   * withdrawing the goal takes the assist out of every count with it.
+   */
+  recordAssist(state: MatchState, goalId: UUID, playerId: UUID): MatchEvent {
+    const events = state.events ?? [];
+    const goal = events.find((e) => e.id === goalId);
+    if (!goal || goal.kind !== 'goal') throw new MatchEngineError('An assist needs the goal it set up');
+    if (events.some((e) => e.kind === 'withdrawn' && e.refersTo === goalId)) {
+      throw new MatchEngineError('That goal has been withdrawn');
+    }
+    if (events.some((e) => e.kind === 'assist' && e.refersTo === goalId && !isWithdrawnIn(events, e.id))) {
+      throw new MatchEngineError('That goal already has an assist');
+    }
+    if (playerId === goal.playerId) throw new MatchEngineError('A scorer cannot assist their own goal');
+    const quarter = state.quarters.find((q) => q.id === goal.quarterId);
+    if (!quarter || quarter.status !== 'running') {
+      throw new MatchEngineError('An assist is recorded while the period of its goal is running');
+    }
+    const onPitch = state.appearances.some(
+      (a) => a.quarterId === quarter.id && a.playerId === playerId && a.endElapsedMs === null
+    );
+    if (!onPitch) throw new MatchEngineError('Cannot record an assist; that player is not on the pitch');
+    const event: MatchEvent = {
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      kind: 'assist',
+      playerId,
+      atElapsedMs: goal.atElapsedMs,
+      recordedAt: this.now().toISOString(),
+      refersTo: goalId,
       note: null,
     };
     (state.events ??= []).push(event);

@@ -24,7 +24,7 @@ import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
 import { inSquadOrder, minutesRowSeconds } from '../app/analysis';
-import { UNIT_LABEL, seasonRows, type Ledger } from '../app/ledger';
+import { UNIT_LABEL, isExcluded, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
 import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
@@ -55,6 +55,8 @@ export function MinutesSection({
   const rows = inSquadOrder(ledger ? seasonRows(ledger) : [], players);
   const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
+  // ADR-020: matches the coach left out are in the record, not in the figures.
+  const leftOut = ledger?.matches.filter(isExcluded).length ?? 0;
   // #102 AC3, AC4: derived from the ledger every time, never stored.
   const attendance = ledger ? seasonAttendance(ledger, { players, kickoffs }) : new Map<string, SeasonAttendance>();
   const inferred = ledger ? inferredMatchCount(ledger) : 0;
@@ -67,6 +69,7 @@ export function MinutesSection({
         {matches === 0
           ? 'Nothing played yet.'
           : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
+        {leftOut > 0 ? ` ${leftOut} left out of the figures.` : ''}
         {inferred > 0
           ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
           : ''}

@@ -203,10 +203,13 @@ function MatchByMatch({ views, player, s }: { views: SquadViews; player: Player;
     segments:
       m.cell === null
         ? null
-        : [
-            { value: m.cell.goal, colour: chartColours.goal },
-            { value: m.cell.outfield, colour: chartColours.outfield },
-          ],
+        : m.cell.counted === false
+          ? // Left out of the figures (ADR-020): shown, in no hue.
+            [{ value: m.cell.total, colour: chartColours.quiet }]
+          : [
+              { value: m.cell.goal, colour: chartColours.goal },
+              { value: m.cell.outfield, colour: chartColours.outfield },
+            ],
     value: m.cell === null ? '–' : String(m.cell.total),
     day: m.day,
     month: m.month,

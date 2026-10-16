@@ -62,6 +62,11 @@ export interface FixtureDraft {
   totalMinutes: number;
   periodCount: number;
   shape: ShapeCode;
+  /**
+   * Leave this match out of averages and season totals (#187, ADR-020), for a
+   * one-off or ad hoc game. Its minutes are still recorded.
+   */
+  excludeFromStats: boolean;
 }
 
 export function FixtureFormScreen({
@@ -79,6 +84,7 @@ export function FixtureFormScreen({
   const [periodCount, setPeriodCount] = useState(initial.periodCount);
   const [shape, setShape] = useState<ShapeCode>(initial.shape);
   const [kickoffAt, setKickoffAt] = useState<string | null>(initial.kickoffAt);
+  const [excludeFromStats, setExcludeFromStats] = useState(initial.excludeFromStats);
 
   return (
     <View style={screen.flex}>
@@ -117,6 +123,16 @@ export function FixtureFormScreen({
               />
             ))}
           </ChipRow>
+
+          <Text style={screen.fieldLabel}>Stats</Text>
+          <ChipRow>
+            <Chip label="Counts" selected={!excludeFromStats} onPress={() => setExcludeFromStats(false)} />
+            <Chip label="Leave out" selected={excludeFromStats} onPress={() => setExcludeFromStats(true)} />
+          </ChipRow>
+          <Text style={screen.hint}>
+            Leave out a one-off or ad hoc game: its minutes stay on record but are not in averages or season
+            totals. You can change this later from the match report.
+          </Text>
 
           <Text style={screen.fieldLabel}>Kick-off</Text>
           <KickoffField value={kickoffAt} onChange={setKickoffAt} />
@@ -167,7 +183,7 @@ export function FixtureFormScreen({
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
             onPress={() =>
-              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape })
+              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape, excludeFromStats })
             }
           >
             <Text style={screen.buttonLabel}>Save fixture</Text>

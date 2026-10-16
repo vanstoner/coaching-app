@@ -22,6 +22,11 @@
  *   a target, a warning or a score (invariant 3).
  *
  * Nothing is ranked. Every list keeps the squad's own order (AC7).
+ *
+ * **A match the coach left out (ADR-020, #187)** stays in the grid and
+ * match-by-match as `counted: false`, so the record is complete, and is left
+ * out of every figure: averages, the squad average, the trend, owed time and
+ * positions.
  */
 
 import type { Competition, KeeperPreference, Player, PositionUnit, UUID } from '../types/index';
@@ -85,6 +90,8 @@ export interface SeasonMatch {
   label: string;
   /** Everyone who attended (played is attended), and their minutes. */
   minutes: ReadonlyMap<UUID, MatchMinutes>;
+  /** False when the coach left this match out of the figures (ADR-020); still listed. */
+  counted: boolean;
 }
 
 const blankUnits = (): Record<PositionUnit, number> => ({ GK: 0, DEF: 0, MID: 0, ATT: 0 });
@@ -104,7 +111,8 @@ export function seasonMatches(
   const seen = firstSeen(ledger);
   const entryAt = new Map(ledger.entries.map((e) => [e.seq, e.at]));
 
-  const rows = ledger.matches.filter(isCounted).map((m, index) => {
+  // Every closed match is listed; `counted` says whether it is in the figures.
+  const rows = ledger.matches.filter((m) => m.status === 'completed').map((m, index) => {
     const { attended } = countedAttendance(ledger, m, timeline, seen);
     const minutes = new Map<UUID, MatchMinutes>();
     const of = (id: UUID) => {
@@ -147,6 +155,7 @@ export function seasonMatches(
     const opponent = (m.opponent ?? '').trim() || 'Opponent TBC';
     const competition = competitionLabel(m.competition);
     const date = at ? dayLabel(at) : 'Date TBC';
+    const counted = isCounted(m);
     return {
       matchId: m.id,
       at,
@@ -155,8 +164,9 @@ export function seasonMatches(
       opponent,
       competition: m.competition,
       competitionShort: competition.slice(0, 1),
-      label: [date, competition, `v ${opponent}`].filter((s) => s !== '').join(' · '),
+      label: [date, competition, `v ${opponent}`, counted ? '' : 'not counted'].filter((s) => s !== '').join(' · '),
       minutes,
+      counted,
     };
   });
 }
@@ -183,6 +193,8 @@ export interface GridCell {
   outfield: number;
   /** "Ava, Sat 8 Aug v Mock Albion: 50 min (38 in goal, 12 outfield)". */
   text: string;
+  /** Present, and false, only when the match is left out of the figures (ADR-020). */
+  counted?: false;
 }
 
 export interface GridRow {
@@ -196,10 +208,21 @@ export interface GridRow {
 }
 
 /** One child's minutes in one match, as a cell and its words. */
-export function gridCell(name: string, match: Pick<SeasonMatch, 'date' | 'opponent'>, m: MatchMinutes): GridCell {
+export function gridCell(
+  name: string,
+  match: Pick<SeasonMatch, 'date' | 'opponent'> & { counted?: boolean },
+  m: MatchMinutes
+): GridCell {
   const { total, goal, outfield } = goalOutfieldSplit(m.goalMs, m.pitchMs - m.goalMs);
   const split = goal > 0 ? ` (${goal} in goal, ${outfield} outfield)` : '';
-  return { total, goal, outfield, text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}` };
+  const left = match.counted === false;
+  return {
+    total,
+    goal,
+    outfield,
+    text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}${left ? ', not counted' : ''}`,
+    ...(left ? { counted: false as const } : {}),
+  };
 }
 
 export function seasonGrid(matches: readonly SeasonMatch[], children: readonly ChildSeason[]): GridRow[] {
@@ -284,11 +307,14 @@ export interface TrendPoint {
   average: number | null;
   /** The headline's N after this match, for the season so far. */
   gap: number | null;
+  /** Present, and false, only for a match left out (ADR-020): the figures carry over unchanged. */
+  counted?: false;
 }
 
 /** "After Sat 8 Aug v Mock Albion (1 of 9): everyone within 15 min a game of 41". */
 export function trendLabel(t: TrendPoint, m: Pick<SeasonMatch, 'date' | 'opponent'>, index: number, count: number): string {
   const after = `After ${m.date} v ${m.opponent} (${index + 1} of ${count})`;
+  if (t.counted === false) return `${after}: not counted, so nothing changes`;
   return t.gap === null ? `${after}: no squad average yet` : `${after}: everyone within ${t.gap} min a game of ${t.average}`;
 }
 
@@ -300,7 +326,10 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
   const sums = new Map<UUID, { ms: number; played: number }>(
     children.map((c) => [c.playerId, { ms: 0, played: 0 }])
   );
+  let carried: { average: number | null; gap: number | null } = { average: null, gap: null };
   return matches.map((match) => {
+    // Left out (ADR-020): no one's sum moves, so the point repeats the last.
+    if (!match.counted) return { matchId: match.matchId, ...carried, counted: false as const };
     for (const [id, m] of match.minutes) {
       const s = sums.get(id);
       if (!s) continue; // a retired child: not in the list, so not in the average
@@ -312,10 +341,14 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
       return { mainKeeper: c.mainKeeper, averageMs: s.played === 0 ? null : Math.round(s.ms / s.played) };
     });
     const avgMs = squadAverage(soFar);
-    if (avgMs === null) return { matchId: match.matchId, average: null, gap: null };
+    if (avgMs === null) {
+      carried = { average: null, gap: null };
+      return { matchId: match.matchId, average: null, gap: null };
+    }
     const average = wholeMinutes(avgMs);
     const counted = soFar.map((c) => (c.mainKeeper || c.averageMs === null ? null : wholeMinutes(c.averageMs)));
-    return { matchId: match.matchId, average, gap: widestGap(counted, average) };
+    carried = { average, gap: widestGap(counted, average) };
+    return { matchId: match.matchId, average, gap: carried.gap };
   });
 }
 
@@ -352,6 +385,7 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
     let ms = 0;
     let played = 0;
     for (const match of matches) {
+      if (!match.counted) continue; // left out (ADR-020)
       const m = match.minutes.get(c.playerId);
       if (!m) continue;
       ms += m.pitchMs;
@@ -417,6 +451,7 @@ export function positionsTried(
     const ms = blankUnits();
     let pitchMs = 0;
     for (const match of matches) {
+      if (!match.counted) continue; // left out (ADR-020)
       const m = match.minutes.get(c.playerId);
       if (!m) continue;
       pitchMs += m.pitchMs;
@@ -564,7 +599,7 @@ export interface ChildMatch {
   month: string;
   /** Their minutes, in goal and outfield adding up to the total; null where they were not there. */
   cell: GridCell | null;
-  /** "Sat 8 Aug v Mock Albion, League: 50 min (38 in goal)", or "…: not there". */
+  /** "Sat 8 Aug v Mock Albion, League: 50 min (38 in goal)", or "…: not there". "…, not counted" when left out (ADR-020). */
   label: string;
 }
 
@@ -583,7 +618,9 @@ export function childMatches(v: SquadViews, playerId: UUID): ChildMatch[] {
       label:
         cell === null
           ? `${what}: not there`
-          : `${what}: ${cell.total} min${cell.goal > 0 ? ` (${cell.goal} in goal)` : ''}`,
+          : `${what}: ${cell.total} min${cell.goal > 0 ? ` (${cell.goal} in goal)` : ''}${
+              cell.counted === false ? ', not counted' : ''
+            }`,
     };
   });
 }

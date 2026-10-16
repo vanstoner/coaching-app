@@ -21,13 +21,13 @@
  * correction (invariant 5). Leaving without either keeps everything.
  */
 
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
-import type { Ledger } from '../app/ledger';
+import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
 import { formatClock, periodNounPlural } from '../app/matchClock';
@@ -60,6 +60,7 @@ export function MatchSummaryScreen({
   onAnalysis,
   onEndMatch,
   onCorrectAttendance,
+  onSetExcluded,
   onBack,
 }: {
   engine: MatchEngine;
@@ -77,15 +78,43 @@ export function MatchSummaryScreen({
   onEndMatch?: () => void;
   /** A noted attendance correction (ruling F): the reason if refused, else null. */
   onCorrectAttendance?: (playerId: UUID, status: AvailabilityStatus, note: string) => string | null;
+  /**
+   * Leave this match out of the figures, or count it again, with a note
+   * (#187, ADR-020): the reason if refused, else null. Works on a match
+   * already played.
+   */
+  onSetExcluded?: (excluded: boolean, note: string) => string | null;
   onBack: () => void;
 }) {
+  const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
+  const scroller = useRef<ScrollView>(null);
+  // Where the note box sits in the scrolled content, to bring it into view.
+  const panelY = useRef(0);
   const [correcting, setCorrecting] = useState<{
     playerId: UUID | null;
     status: 'available' | 'absent';
     note: string;
     error: string;
   } | null>(null);
+  // The keyboard covers the lower half of the screen (Android draws edge to
+  // edge and the window does not resize for it, #174), so while a note is
+  // being typed, bring its box to the top of what is left. Without this the
+  // coach types blind.
+  const typing = correcting !== null || marking !== null;
+  useEffect(() => {
+    if (!typing) return;
+    const toBox = () => scroller.current?.scrollTo({ y: Math.max(0, panelY.current - 12), animated: true });
+    const later = setTimeout(toBox, 60);
+    const shown = Keyboard.addListener('keyboardDidShow', toBox);
+    return () => {
+      clearTimeout(later);
+      shown.remove();
+    };
+  }, [typing]);
   const closed = state.match.status === 'completed';
+  // Only a match the ledger holds can be left out or counted (ADR-020).
+  const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
+  const excluded = inLedger ? isExcluded(inLedger) : false;
   const report = matchReport(engine, state, players, format);
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
@@ -103,7 +132,12 @@ export function MatchSummaryScreen({
 
   return (
     <View style={screen.flex}>
-      <ScrollView contentContainerStyle={screen.scroll}>
+      <KeyboardAvoidingView
+        style={screen.flex}
+        // #174: padding on both platforms, as the fixture form does.
+        behavior="padding"
+      >
+      <ScrollView ref={scroller} contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
         <Text style={screen.title} numberOfLines={1}>
           {opponentLabel(state.match)}
         </Text>
@@ -128,6 +162,17 @@ export function MatchSummaryScreen({
               {s.name} · {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
             </Text>
           ))
+        )}
+
+        {report.play.length > 0 && (
+          <>
+            <Text style={screen.fieldLabel}>Play</Text>
+            {report.play.map((p) => (
+              <Text key={p.playerId} style={local.line} numberOfLines={2}>
+                {p.name} · {playLine(p)}
+              </Text>
+            ))}
+          </>
         )}
 
         <Text style={screen.fieldLabel}>In goal</Text>
@@ -214,7 +259,7 @@ export function MatchSummaryScreen({
               <Text style={screen.link}>Correct attendance</Text>
             </Pressable>
           ) : (
-            <View style={local.panel}>
+            <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
               <Text style={screen.fieldLabel}>Correct attendance</Text>
               <Text style={screen.hint}>Who, here or not, and why. The record keeps both.</Text>
               <ChipRow>
@@ -248,33 +293,68 @@ export function MatchSummaryScreen({
                 maxLength={120}
               />
               {correcting.error !== '' && <Text style={screen.error}>{correcting.error}</Text>}
-              <View style={screen.actions}>
-                <Pressable
-                  disabled={correcting.playerId === null || correcting.note.trim() === ''}
-                  onPress={() => {
-                    if (correcting.playerId === null) return;
-                    const refused = onCorrectAttendance(
-                      correcting.playerId,
-                      correcting.status,
-                      correcting.note
-                    );
-                    if (refused === null) setCorrecting(null);
-                    else setCorrecting({ ...correcting, error: refused });
-                  }}
-                  style={({ pressed }) => [
-                    screen.button,
-                    (correcting.playerId === null || correcting.note.trim() === '') && screen.buttonDisabled,
-                    pressed && screen.buttonPressed,
-                  ]}
-                >
-                  <Text style={screen.buttonLabel}>Save correction</Text>
-                </Pressable>
-                <Pressable onPress={() => setCorrecting(null)} style={screen.linkHit}>
-                  <Text style={screen.link}>Cancel</Text>
-                </Pressable>
-              </View>
+              <NoteActions
+                saveLabel="Save correction"
+                disabled={correcting.playerId === null || correcting.note.trim() === ''}
+                onSave={() => {
+                  if (correcting.playerId === null) return;
+                  const refused = onCorrectAttendance(correcting.playerId, correcting.status, correcting.note);
+                  if (refused === null) setCorrecting(null);
+                  else setCorrecting({ ...correcting, error: refused });
+                }}
+                onCancel={() => setCorrecting(null)}
+              />
             </View>
           ))}
+
+        {inLedger && (
+          <>
+            <Text style={screen.fieldLabel}>In the season figures</Text>
+            <Text style={local.line}>
+              {excluded
+                ? 'Left out: not in averages or season totals.'
+                : 'Counted in averages and season totals.'}
+            </Text>
+            {inLedger.excluded?.note != null && (
+              <Text style={local.lineFaint} numberOfLines={2}>
+                {`Why: ${inLedger.excluded.note}`}
+              </Text>
+            )}
+            {onSetExcluded &&
+              (marking === null ? (
+                <Pressable onPress={() => setMarking({ note: '', error: '' })} style={screen.linkHit}>
+                  <Text style={screen.link}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
+                </Pressable>
+              ) : (
+                <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
+                  <Text style={screen.fieldLabel}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
+                  <Text style={screen.hint}>
+                    Its minutes stay on record either way. The record keeps this change and why.
+                  </Text>
+                  <TextInput
+                    style={screen.input}
+                    value={marking.note}
+                    onChangeText={(note) => setMarking({ note, error: '' })}
+                    placeholder="Why? (needed)"
+                    placeholderTextColor={colours.inkFaint}
+                    maxLength={120}
+                    autoFocus
+                  />
+                  {marking.error !== '' && <Text style={screen.error}>{marking.error}</Text>}
+                  <NoteActions
+                    saveLabel="Save"
+                    disabled={marking.note.trim() === ''}
+                    onSave={() => {
+                      const refused = onSetExcluded(!excluded, marking.note);
+                      if (refused === null) setMarking(null);
+                      else setMarking({ ...marking, error: refused });
+                    }}
+                    onCancel={() => setMarking(null)}
+                  />
+                </View>
+              ))}
+          </>
+        )}
 
         {onAnalysis && (
           <Pressable
@@ -303,6 +383,51 @@ export function MatchSummaryScreen({
           <Text style={screen.buttonLabel}>Back to Home</Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/**
+ * Save and Cancel for a note box: two buttons of one height, side by side,
+ * each half the width. (Save used to be the full-width button style dropped
+ * into a centred row beside a text link: it shrank to its label and sat lower
+ * than Cancel.)
+ */
+function NoteActions({
+  saveLabel,
+  disabled,
+  onSave,
+  onCancel,
+}: {
+  saveLabel: string;
+  disabled: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <View style={local.noteActions}>
+      <Pressable
+        onPress={onCancel}
+        accessibilityRole="button"
+        style={({ pressed }) => [screen.buttonQuiet, local.noteButton, local.noteGap, pressed && screen.buttonPressed]}
+      >
+        <Text style={screen.buttonLabel}>Cancel</Text>
+      </Pressable>
+      <Pressable
+        disabled={disabled}
+        onPress={onSave}
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
+        style={({ pressed }) => [
+          screen.button,
+          local.noteButton,
+          disabled && screen.buttonDisabled,
+          pressed && screen.buttonPressed,
+        ]}
+      >
+        <Text style={screen.buttonLabel}>{saveLabel}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -349,5 +474,23 @@ const local = StyleSheet.create({
   faint: { color: colours.inkFaint },
   notClosed: { color: colours.warn },
   panel: { alignSelf: 'stretch', marginTop: 8 },
+  noteActions: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 12 },
+  // Same margin and height on both, so they line up; the gap is on Cancel.
+  noteButton: { flex: 1, marginTop: 0 },
+  noteGap: { marginRight: 10 },
   pointer: { marginTop: 14 },
 });
+
+/** "2 assists · 1 tackle · 1 corner won", leaving out what is zero (#185 AC7). */
+function playLine(p: { assists: number; tackles: number; corners: number; freeKicks: number }): string {
+  const part = (n: number, one: string, many: string) => (n === 0 ? null : `${n} ${n === 1 ? one : many}`);
+  return [
+    part(p.assists, 'assist', 'assists'),
+    part(p.tackles, 'tackle', 'tackles'),
+    part(p.corners, 'corner won', 'corners won'),
+    part(p.freeKicks, 'free kick won', 'free kicks won'),
+  ]
+    .filter((x) => x !== null)
+    .join(' · ');
+}
+

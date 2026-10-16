@@ -36,6 +36,8 @@ export interface NewMatchInput {
   opponent?: string | null;
   competition?: Competition | null;
   kickoffAt?: string | null;
+  /** Leave this match out of averages and totals (#187, ADR-020). */
+  excludeFromStats?: boolean;
 }
 
 export interface NewMatch {
@@ -62,6 +64,7 @@ export function newMatch(input: NewMatchInput, nowFn: () => Date): NewMatch {
     opponent,
     competition: input.competition ?? null,
     kickoffAt: input.kickoffAt ?? null,
+    excludeFromStats: input.excludeFromStats === true,
   });
   return {
     held: { state, format: input.format },

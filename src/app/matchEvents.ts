@@ -12,7 +12,7 @@
  * stops counting the moment its withdrawal is appended.
  */
 
-import type { Appearance, MatchEvent, Player, UUID } from '../types/index';
+import type { Appearance, MatchEvent, Player, TapEventKind, UUID } from '../types/index';
 
 /** How long the touchline Undo is offered after a tap (PO ruling 12). */
 export const UNDO_WINDOW_MS = 10_000;
@@ -20,17 +20,22 @@ export const UNDO_WINDOW_MS = 10_000;
 /** The fixed note an Undo inside the window writes (PO ruling 12, invariant 5). */
 export const UNDO_NOTE = 'undone straight after entry';
 
-/** Events that still count: not withdrawals, and not withdrawn. */
+/**
+ * Events that still count: not withdrawals, not withdrawn, and not an assist
+ * whose goal was withdrawn (#185 AC4). The assist stays in the log.
+ */
 export function standingEvents(events: MatchEvent[] | undefined): MatchEvent[] {
   const list = events ?? [];
-  const withdrawn = new Set(
-    list.filter((e) => e.kind === 'withdrawn' && e.refersTo).map((e) => e.refersTo as UUID)
-  );
-  return list.filter((e) => e.kind !== 'withdrawn' && !withdrawn.has(e.id));
+  return list.filter((e) => e.kind !== 'withdrawn' && !isWithdrawn(list, e.id));
 }
 
+/** Withdrawn itself, or an assist that fell with its goal. */
 export function isWithdrawn(events: MatchEvent[] | undefined, id: UUID): boolean {
-  return (events ?? []).some((e) => e.kind === 'withdrawn' && e.refersTo === id);
+  const list = events ?? [];
+  const taken = (x: UUID) => list.some((e) => e.kind === 'withdrawn' && e.refersTo === x);
+  if (taken(id)) return true;
+  const event = list.find((e) => e.id === id);
+  return event?.kind === 'assist' && event.refersTo !== null && taken(event.refersTo);
 }
 
 export interface Score {
@@ -52,20 +57,88 @@ export interface PlayerTally {
   goals: number;
   saves: number;
   conceded: number;
+  /** #185 */
+  assists: number;
+  tackles: number;
+  corners: number;
+  freeKicks: number;
 }
 
-/** Each player's goals, saves and goals conceded (AC6). Players with none omitted. */
+const TALLY: Partial<Record<MatchEvent['kind'], keyof Omit<PlayerTally, 'playerId'>>> = {
+  goal: 'goals',
+  save: 'saves',
+  conceded: 'conceded',
+  assist: 'assists',
+  tackle: 'tackles',
+  corner: 'corners',
+  free_kick: 'freeKicks',
+};
+
+/** Each player's events, by kind (#84 AC6, #185 AC7). Players with none omitted. */
 export function talliesOf(events: MatchEvent[] | undefined): PlayerTally[] {
   const rows = new Map<UUID, PlayerTally>();
   for (const e of standingEvents(events)) {
-    if (!e.playerId) continue;
-    const row = rows.get(e.playerId) ?? { playerId: e.playerId, goals: 0, saves: 0, conceded: 0 };
-    if (e.kind === 'goal') row.goals++;
-    else if (e.kind === 'save') row.saves++;
-    else if (e.kind === 'conceded') row.conceded++;
+    const field = TALLY[e.kind];
+    if (!e.playerId || !field) continue;
+    const row = rows.get(e.playerId) ?? {
+      playerId: e.playerId,
+      goals: 0,
+      saves: 0,
+      conceded: 0,
+      assists: 0,
+      tackles: 0,
+      corners: 0,
+      freeKicks: 0,
+    };
+    row[field]++;
     rows.set(e.playerId, row);
   }
   return [...rows.values()];
+}
+
+/** The word under each picture button (#185 AC1). */
+export const TAP_LABEL: Record<TapEventKind, string> = {
+  goal: 'Goal',
+  tackle: 'Tackle',
+  corner: 'Corner won',
+  free_kick: 'Free kick won',
+  save: 'Save',
+  conceded: 'Conceded',
+};
+
+/**
+ * The picture buttons a tap on a player on the pitch offers, in order
+ * (#185 AC1). The keeper's own two come first for the keeper.
+ */
+export function tapEventsFor(isKeeper: boolean): TapEventKind[] {
+  const anyone: TapEventKind[] = ['goal', 'tackle', 'corner', 'free_kick'];
+  return isKeeper ? ['save', 'conceded', ...anyone] : anyone;
+}
+
+/**
+ * How many picture buttons sit side by side for `count` of them. Four are a
+ * 2 x 2 square, not three and a lonely one; everything else is up to three
+ * across (PO feedback on the first beta: the tiles did not fill the box evenly).
+ */
+export function eventGridColumns(count: number): number {
+  if (count <= 3) return Math.max(1, count);
+  return count === 4 ? 2 : 3;
+}
+
+/**
+ * The buttons split into rows of `eventGridColumns`; a short last row is
+ * centred by the screen, so five read as 3 + 2 and never as a left-hand stub.
+ */
+export function eventGridRows<T>(items: T[]): T[][] {
+  const columns = eventGridColumns(items.length);
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += columns) rows.push(items.slice(i, i + columns));
+  return rows;
+}
+
+/** Who can be offered as a goal's assist: everyone on the pitch but the scorer (#185 AC3). */
+export function assistCandidates(onPitch: UUID[], scorer: UUID): UUID[] {
+  return onPitch.filter((id) => id !== scorer);
 }
 
 /** The Undo button is offered while the tap is under ten seconds old. */
@@ -76,7 +149,7 @@ export function canQuickUndo(event: MatchEvent, now: Date): boolean {
 export interface StreamRow {
   atMs: number;
   text: string;
-  /** Set for a goal, save or conceded event, so the row can be withdrawn. */
+  /** Set for an event, so the row can be withdrawn. */
   eventId: UUID | null;
   withdrawn: boolean;
 }
@@ -138,14 +211,35 @@ export function timeStream(
       rows.push({ atMs: e.atElapsedMs, text: `Withdrawn: ${e.note ?? ''}`, eventId: null, withdrawn: false });
       continue;
     }
-    const text =
-      e.kind === 'goal'
-        ? `Goal: ${name(e.playerId)}`
-        : e.kind === 'save'
-          ? `Save: ${name(e.playerId)}`
-          : `Conceded (${name(e.playerId)} in goal)`;
+    const text = eventText(e, events ?? [], name);
     rows.push({ atMs: e.atElapsedMs, text, eventId: e.id, withdrawn: isWithdrawn(events, e.id) });
   }
 
   return rows.sort((x, y) => x.atMs - y.atMs);
 }
+
+/** How one event reads on the time stream (#84, #185). */
+function eventText(e: MatchEvent, events: MatchEvent[], name: (id: UUID | null) => string): string {
+  switch (e.kind) {
+    case 'goal':
+      return `Goal: ${name(e.playerId)}`;
+    case 'save':
+      return `Save: ${name(e.playerId)}`;
+    case 'conceded':
+      return `Conceded (${name(e.playerId)} in goal)`;
+    case 'tackle':
+      return `Tackle: ${name(e.playerId)}`;
+    case 'corner':
+      return `Corner won: ${name(e.playerId)}`;
+    case 'free_kick':
+      return `Free kick won: ${name(e.playerId)}`;
+    case 'assist': {
+      const scorer = events.find((g) => g.id === e.refersTo)?.playerId ?? null;
+      return `Assist: ${name(e.playerId)} (${name(scorer)}'s goal)`;
+    }
+    default:
+      // A kind a later version added: shown, never mistaken for another.
+      return `${String(e.kind)}: ${name(e.playerId)}`;
+  }
+}
+

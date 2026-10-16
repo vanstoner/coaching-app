@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -6,7 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine } from './src/engine/MatchEngine';
 import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
-import type { AvailabilityStatus, Format, MatchEvent, Player, UUID } from './src/types/index';
+import type { AvailabilityStatus, Format, MatchEvent, Player, TapEventKind, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
   appClockSetting,
@@ -92,6 +93,7 @@ import {
   importLedger,
   parseLedger,
   recordMatches,
+  setMatchExcluded,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
@@ -165,6 +167,13 @@ interface LiveMatch {
 
 export default function App() {
   const store = useMemo(() => createDeviceStore(), []);
+
+  // The tap sheet's pictures (#185): loaded at launch so the first tap on
+  // Saturday does not show empty stickers. A failure costs the pictures, not
+  // the buttons: each still has its word.
+  useEffect(() => {
+    MaterialCommunityIcons.loadFont().catch(() => {});
+  }, []);
 
   const [step, setStep] = useState<Step>('loading');
   const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
@@ -550,6 +559,7 @@ export default function App() {
           opponent: draft.opponent,
           competition: draft.competition,
           kickoffAt: draft.kickoffAt,
+          excludeFromStats: draft.excludeFromStats,
         },
         appNow
       );
@@ -908,6 +918,27 @@ export default function App() {
     [match, persist, commitLedger]
   );
 
+  /**
+   * Leave this match out of the figures, or count it again (#187, ADR-020).
+   * Works on a match already played, so it applies retrospectively. The reason
+   * when refused, else null.
+   */
+  const setExcludedOnReport = useCallback(
+    (excluded: boolean, note: string): string | null => {
+      if (!match) return 'No match is open.';
+      if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+      const current = ledgerRef.current;
+      if (!current) return 'That match is not in the ledger.';
+      const result = setMatchExcluded(current, match.state.match.id, excluded, note, appNow());
+      if (!result.ok) return result.reason;
+      commitLedger(result.ledger);
+      repaint();
+      persist();
+      return null;
+    },
+    [match, persist, commitLedger]
+  );
+
   const startQuarter = useCallback(
     (sheet: Sheet, plan: PlannedSub[]) => {
       if (!match) return;
@@ -985,14 +1016,29 @@ export default function App() {
     [match, persist, noteLateArrival]
   );
 
-  /** A goal, save or goal conceded (#84). Null when the engine refuses it. */
+  /** A goal, save or goal conceded (#84); a tackle, corner or free kick won (#185). Null when refused. */
   const recordEvent = useCallback(
-    (kind: 'goal' | 'save' | 'conceded', playerId: UUID): MatchEvent | null => {
+    (kind: TapEventKind, playerId: UUID): MatchEvent | null => {
       if (!match) return null;
       const quarter = currentQuarter(match.state);
       if (!quarter) return null;
       try {
         const event = match.engine.recordEvent(match.state, quarter, kind, playerId);
+        persist();
+        return event;
+      } catch {
+        return null;
+      }
+    },
+    [match, persist]
+  );
+
+  /** A goal's assist (#185). Null when the engine refuses it. */
+  const recordAssist = useCallback(
+    (goalId: UUID, playerId: UUID): MatchEvent | null => {
+      if (!match) return null;
+      try {
+        const event = match.engine.recordAssist(match.state, goalId, playerId);
         persist();
         return event;
       } catch {
@@ -1089,6 +1135,7 @@ export default function App() {
             totalMinutes,
             periodCount,
             shape: shapeOfFormat(format) ?? DEFAULT_SHAPE,
+            excludeFromStats: false,
           }}
           onSave={saveFixture}
           onCancel={() => setStep('fixtures')}
@@ -1143,6 +1190,7 @@ export default function App() {
           // Ruling D: after the last period, the coach closes the match here.
           onEndMatch={canEndMatch(match.state) ? closeMatch : undefined}
           onCorrectAttendance={correctAttendanceOnReport}
+          onSetExcluded={setExcludedOnReport}
           onAnalysis={() => {
             setAnalysisReturn('summary');
             setStep('analysis');
@@ -1324,6 +1372,7 @@ export default function App() {
           onMakeSub={makeSub}
           onLiveMove={liveMove}
           onRecord={recordEvent}
+          onRecordAssist={recordAssist}
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
