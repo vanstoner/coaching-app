@@ -30,6 +30,7 @@ Today a match counts towards averages when it is `completed` (ADR-015 §6), and 
 - Season totals in the app can be lower than the `summary` in an exported file. That is intended and the file's summary says nothing about which matches a coach chose to count.
 - A marking is a coach's choice, not a measurement, so it carries a note once the match has been played.
 - Every consumer of "which matches count" goes through `isCounted`; a new one that filters on `status` alone would count an excluded match.
+- This covers figures not yet written, in-play event totals across games included (PO, #187). `leftOutGuard.test.ts` fails the build if a source file compares a match's status to `'completed'` without `isExcluded`/`isCounted` on the line, unless the file is listed there as single-match with its reason.
 
 ## Alternatives considered
 

@@ -115,6 +115,27 @@ export function tapEventsFor(isKeeper: boolean): TapEventKind[] {
   return isKeeper ? ['save', 'conceded', ...anyone] : anyone;
 }
 
+/**
+ * How many picture buttons sit side by side for `count` of them. Four are a
+ * 2 x 2 square, not three and a lonely one; everything else is up to three
+ * across (PO feedback on the first beta: the tiles did not fill the box evenly).
+ */
+export function eventGridColumns(count: number): number {
+  if (count <= 3) return Math.max(1, count);
+  return count === 4 ? 2 : 3;
+}
+
+/**
+ * The buttons split into rows of `eventGridColumns`; a short last row is
+ * centred by the screen, so five read as 3 + 2 and never as a left-hand stub.
+ */
+export function eventGridRows<T>(items: T[]): T[][] {
+  const columns = eventGridColumns(items.length);
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += columns) rows.push(items.slice(i, i + columns));
+  return rows;
+}
+
 /** Who can be offered as a goal's assist: everyone on the pitch but the scorer (#185 AC3). */
 export function assistCandidates(onPitch: UUID[], scorer: UUID): UUID[] {
   return onPitch.filter((id) => id !== scorer);

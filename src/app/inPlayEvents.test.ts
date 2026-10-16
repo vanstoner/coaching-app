@@ -14,6 +14,8 @@ import { periodEndChoices, PERIOD_END_MARGIN_MS } from './periodEnd';
 import {
   UNDO_NOTE,
   assistCandidates,
+  eventGridColumns,
+  eventGridRows,
   isWithdrawn,
   scoreOf,
   talliesOf,
@@ -44,6 +46,24 @@ describe('the picture buttons offered (AC1)', () => {
   it('anyone on the pitch: Goal, Tackle, Corner won, Free kick won; the keeper adds Save and Conceded first', () => {
     expect(tapEventsFor(false)).toEqual(['goal', 'tackle', 'corner', 'free_kick']);
     expect(tapEventsFor(true)).toEqual(['save', 'conceded', 'goal', 'tackle', 'corner', 'free_kick']);
+  });
+});
+
+describe('the picture buttons are laid out evenly', () => {
+  it('four are a 2 x 2 square, six are two rows of three', () => {
+    expect(eventGridRows(tapEventsFor(false)).map((r) => r.length)).toEqual([2, 2]);
+    expect(eventGridRows(tapEventsFor(true)).map((r) => r.length)).toEqual([3, 3]);
+  });
+
+  it('no row is a single stub unless there is only one button, and nothing is lost or reordered', () => {
+    for (let n = 1; n <= 6; n++) {
+      const items = Array.from({ length: n }, (_, i) => i);
+      const rows = eventGridRows(items);
+      expect(rows.flat()).toEqual(items);
+      expect(rows.every((r) => r.length <= eventGridColumns(n))).toBe(true);
+      if (n > 1) expect(rows[rows.length - 1].length).toBeGreaterThan(1);
+    }
+    expect(eventGridRows([])).toEqual([]);
   });
 });
 

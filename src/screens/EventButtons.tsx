@@ -11,7 +11,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { TAP_LABEL } from '../app/matchEvents';
+import { TAP_LABEL, eventGridColumns, eventGridRows } from '../app/matchEvents';
 import type { TapEventKind } from '../types/index';
 import { Text } from './Text';
 import { TOUCH_TARGET, colours, screen } from './theme';
@@ -67,6 +67,8 @@ const TILE: Record<TapEventKind, string> = {
 };
 
 const STICKER = 60;
+/** On the tiles the sticker is drawn smaller than its design size (PO: "feel free to size them smaller"). */
+const TILE_STICKER = 48;
 
 export function Sticker({ glyphs, size = STICKER }: { glyphs: Glyph[]; size?: number }) {
   const scale = size / STICKER;
@@ -101,21 +103,33 @@ export function EventButtons({
   kinds: TapEventKind[];
   onPress: (kind: TapEventKind) => void;
 }) {
+  // Rows of equal tiles, the last one centred: four make a 2 x 2 square and
+  // five a 3 + 2, never a lone tile stranded at the left.
+  const wide = eventGridColumns(kinds.length) <= 2;
   return (
     <View style={local.grid}>
-      {kinds.map((kind) => (
-        <Pressable
-          key={kind}
-          accessibilityRole="button"
-          accessibilityLabel={TAP_LABEL[kind]}
-          onPress={() => onPress(kind)}
-          style={({ pressed }) => [local.tile, { backgroundColor: TILE[kind] }, pressed && local.pressed]}
-        >
-          <Sticker glyphs={PICTURE[kind]} />
-          <Text style={local.label} numberOfLines={1}>
-            {TAP_LABEL[kind]}
-          </Text>
-        </Pressable>
+      {eventGridRows(kinds).map((row, r) => (
+        <View key={r} style={local.row}>
+          {row.map((kind) => (
+            <Pressable
+              key={kind}
+              accessibilityRole="button"
+              accessibilityLabel={TAP_LABEL[kind]}
+              onPress={() => onPress(kind)}
+              style={({ pressed }) => [
+                local.tile,
+                wide ? local.tileWide : local.tileThird,
+                { backgroundColor: TILE[kind] },
+                pressed && local.pressed,
+              ]}
+            >
+              <Sticker glyphs={PICTURE[kind]} size={TILE_STICKER} />
+              <Text style={local.label} numberOfLines={1}>
+                {TAP_LABEL[kind]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       ))}
     </View>
   );
@@ -139,10 +153,13 @@ export function AssistButton({ name, onPress }: { name: string; onPress: () => v
 }
 
 const local = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 4 },
+  grid: { marginBottom: 4 },
+  row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'stretch' },
+  tileThird: { width: '30%' },
+  tileWide: { width: '44%' },
   tile: {
-    width: '31.5%',
-    minHeight: TOUCH_TARGET * 2.5,
+    minHeight: TOUCH_TARGET * 2.1,
+    marginHorizontal: 5,
     borderRadius: 20,
     borderWidth: 3,
     borderColor: INK,
