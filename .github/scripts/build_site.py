@@ -14,8 +14,10 @@ never copied by hand. Then every page is checked: the privacy text is
 really in it, and every local link and image points at a file that exists.
 """
 
+import html
 import html.parser
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -32,10 +34,29 @@ RENDERED = (
 )
 
 
+def slug(text):
+    """A heading's anchor as GitHub writes it: lower case, punctuation
+    dropped, spaces to hyphens ("On an iPhone" -> "on-an-iphone")."""
+    text = re.sub(r"<[^>]+>", "", html.unescape(text)).strip().lower()
+    return re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+
+
 def own_anchors(rendered):
-    """GitHub prefixes heading ids with "user-content-" (its own pages strip it
-    with script); without that script a "#heading" link would go nowhere."""
-    return rendered.replace('id="user-content-', 'id="')
+    """Every heading gets the id a "#heading" link expects. GitHub's API
+    gives headings none of their own (github.com adds them with script, and
+    any anchor it does emit is prefixed "user-content-"), so without this a
+    link to a heading would go nowhere."""
+    rendered = rendered.replace('id="user-content-', 'id="')
+
+    def add_id(m):
+        if "id=" in m.group(2):
+            return m.group(0)
+        anchor = slug(m.group(3))
+        if f'id="{anchor}"' in rendered:
+            return m.group(0)
+        return f'<h{m.group(1)}{m.group(2)} id="{anchor}">{m.group(3)}</h{m.group(1)}>'
+
+    return re.sub(r"<h([1-6])([^>]*)>(.*?)</h\1>", add_id, rendered, flags=re.S)
 # #182: the made-up test season, served from the site so an iPhone's Safari
 # downloads it to Files (a raw GitHub link only opens it as text).
 TEST_SEASON = os.path.join("test-data", "test-season.json")
@@ -112,14 +133,23 @@ def self_test():
 
     rendered = "<h1>Privacy policy: Heart of the Game: Coach</h1><p>Nothing.</p>"
     # As GitHub renders a heading and a link to it.
-    coaches = ('<h1>Try Heart FC Coach</h1><p><a href="#on-an-iphone">iPhone</a></p>'
-               '<div class="markdown-heading"><h2 class="heading-element">On an iPhone</h2>'
-               '<a id="user-content-on-an-iphone" class="anchor" href="#on-an-iphone"></a></div>')
+    # As GitHub's API renders a heading and a link to it: no id on the heading.
+    coaches = ('<h1>Try Heart FC Coach</h1><p><a href="#on-an-iphone">iPhone</a> '
+               '<a href="#getting-started-both-phones">Start</a></p>'
+               '<h2>On an iPhone</h2><h2>Getting started (both phones)</h2>')
+    # As github.com's own pages carry it: an anchor with the prefixed id.
+    prefixed = ('<h1>Try</h1><p><a href="#on-an-iphone">iPhone</a></p><div class="markdown-heading">'
+                '<h2 class="heading-element">On an iPhone</h2>'
+                '<a id="user-content-on-an-iphone" class="anchor" href="#on-an-iphone"></a></div>')
     with tempfile.TemporaryDirectory() as d:
         build(rendered, coaches, d)
         check("healthy: the committed site builds with every link resolving", problems(d) == [])
+        page = open(os.path.join(d, "coaches.html"), encoding="utf-8").read()
         check("healthy: a link to a heading on the coaches page lands on it",
-              'id="on-an-iphone"' in open(os.path.join(d, "coaches.html"), encoding="utf-8").read())
+              'id="on-an-iphone"' in page and 'id="getting-started-both-phones"' in page)
+    with tempfile.TemporaryDirectory() as d:
+        build(rendered, prefixed, d)
+        check("healthy: a heading GitHub gave a prefixed anchor is reachable too", problems(d) == [])
         check("healthy: the test season is served beside testers.html",
               os.path.getsize(os.path.join(d, "test-season.json")) == os.path.getsize(os.path.join(ROOT, TEST_SEASON)))
         os.remove(os.path.join(d, "icon.png"))
@@ -135,7 +165,7 @@ def self_test():
         build(rendered, "", d)
         check("fails: the coaches page without its guide", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
-        build(rendered, coaches.replace("user-content-on-an-iphone", "user-content-elsewhere"), d)
+        build(rendered, coaches.replace("<h2>On an iPhone</h2>", "<h2>On a phone</h2>"), d)
         check("fails: a link to a heading that is not there", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
         build(rendered, coaches, d)
