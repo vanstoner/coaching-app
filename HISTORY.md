@@ -236,3 +236,10 @@ analysis, iOS". Entries are added as each release ships.
   backup and restore, signed entries, shot on target, and imported matches
   under Played. 1.0.1's saved data, with signed entries, is frozen as
   `release-1.0.1` and opened by every build in CI (#167).
+- **17 October — Heart FC Coach 1.1.1: test matches hidden (#194).** Rob:
+  *"the 3 on the 16th lasting a minute look silly being shown in the league
+  tables."* Settings › Test matches offers the earlier matches that look like
+  tests (no opponent, and left out as a test or over within a period). Once
+  the coach confirms, each is marked a test in the record, with a note, and
+  disappears from every screen. The record keeps them, and each can be shown
+  again.
