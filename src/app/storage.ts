@@ -34,6 +34,7 @@ export function createDeviceStore(): KeyValueStore {
         getItem: (key) => AsyncStorage.getItem(key),
         setItem: (key, value) => AsyncStorage.setItem(key, value),
         removeItem: (key) => AsyncStorage.removeItem(key),
+        allKeys: () => AsyncStorage.getAllKeys(),
       };
     }
   } catch {

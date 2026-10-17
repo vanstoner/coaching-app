@@ -242,6 +242,8 @@ export interface KeyValueStore {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
+  /** Every key held, so Forget everything can find copies kept aside (#207). */
+  allKeys?(): Promise<readonly string[]>;
 }
 
 /** One match on disk: the log and the anchors, never a computed total. */
@@ -770,6 +772,9 @@ export function createMemoryStore(): KeyValueStore {
     },
     async removeItem(key) {
       map.delete(key);
+    },
+    async allKeys() {
+      return [...map.keys()];
     },
   };
 }

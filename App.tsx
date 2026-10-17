@@ -70,7 +70,8 @@ import {
   type SavedSession,
   type SessionInput,
 } from './src/app/persistence';
-import { forgetSession, openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
+import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
+import { forgetAppData } from './src/app/forget';
 import { createDeviceStore } from './src/app/storage';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { kickoffTimes } from './src/app/attendance';
@@ -99,7 +100,7 @@ import {
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
+import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { installDeviceSigner } from './src/app/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
@@ -915,13 +916,13 @@ export default function App() {
   }, [pendingBackup, store]);
 
   const forgetEverything = useCallback(() => {
-    void forgetSession(store);
+    // Every key this app owns, copies kept aside included (#207): this is how
+    // a phone is handed on, and children's data must not stay behind. The
+    // confirm text says to back up first.
+    void forgetAppData(store);
     // Cleared above: nothing is left for the session block (#173) to protect.
     sessionWritableRef.current = true;
     setSessionMessage('');
-    // The minutes go too: this is how a phone is handed on, and children's
-    // data must not stay behind. The confirm text says to export first.
-    void clearLedger(store);
     const nextSquadId = uuid();
     // A fresh, empty ledger rather than none, so the next match is recorded.
     const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME, appNow());
