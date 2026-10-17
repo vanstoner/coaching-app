@@ -2,17 +2,17 @@ name: Website
 
 # The marketing site at https://vanstoner.github.io/coaching-app/ (#108, PO
 # "approve site"): site/ plus the app icon, with privacy.html made from
-# PRIVACY.md by GitHub's own Markdown renderer, so there is one privacy
-# policy. A PR builds and checks it (the healthy case, before merge); a push
+# PRIVACY.md (and coaches.html from COACHES.md) by GitHub's own Markdown
+# renderer, so there is one privacy policy and one coaches' guide. A PR builds and checks it (the healthy case, before merge); a push
 # to main publishes it. The App Store's support and privacy links point here.
 # Needs Settings › Pages › Source: GitHub Actions, once.
 
 on:
   push:
     branches: [main]
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
   pull_request:
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
   workflow_dispatch:
 
 concurrency:
@@ -33,14 +33,16 @@ jobs:
       - name: Self-test the site check
         run: python3 .github/scripts/build_site.py --self-test
 
-      - name: Render PRIVACY.md and build
+      - name: Render PRIVACY.md and COACHES.md, and build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api -X POST markdown -f mode=gfm -f context="$GITHUB_REPOSITORY" -F text=@PRIVACY.md > /tmp/privacy.html
           test -s /tmp/privacy.html || { echo "WHY THIS JOB FAILED: GitHub rendered PRIVACY.md as nothing"; exit 1; }
-          python3 .github/scripts/build_site.py /tmp/privacy.html _site
+          gh api -X POST markdown -f mode=gfm -f context="$GITHUB_REPOSITORY" -F text=@COACHES.md > /tmp/coaches.html
+          test -s /tmp/coaches.html || { echo "WHY THIS JOB FAILED: GitHub rendered COACHES.md as nothing"; exit 1; }
+          python3 .github/scripts/build_site.py /tmp/privacy.html /tmp/coaches.html _site
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
