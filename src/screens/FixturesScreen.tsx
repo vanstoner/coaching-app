@@ -21,12 +21,14 @@ import { Text } from './Text';
 
 import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
+import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
 import {
   NO_FIXTURES_YET,
   competitionLabel,
   fixtureList,
   inBucket,
   kickoffLabel,
+  whenLabel,
   lengthLabel,
   opponentLabel,
   type MatchProgress,
@@ -53,6 +55,8 @@ export function FixturesScreen({
   periods,
   notClosed,
   notice,
+  recordOnly = [],
+  onOpenRecord,
 }: {
   squadName: string;
   matches: Match[];
@@ -88,6 +92,9 @@ export function FixturesScreen({
   notClosed: ReadonlySet<UUID>;
   /** What launch found when the saved squad would not read (#173). Empty: nothing. */
   notice?: string;
+  /** Played matches the minutes record holds with no fixture here, e.g. imported ones (#195). */
+  recordOnly?: RecordOnlyMatch[];
+  onOpenRecord?: (matchId: UUID) => void;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
@@ -128,7 +135,7 @@ export function FixturesScreen({
           <Text style={screen.buttonLabel}>Add a fixture</Text>
         </Pressable>
 
-        {rows.length === 0 ? (
+        {rows.length === 0 && recordOnly.length === 0 ? (
           <Text style={screen.caption}>
             {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
           </Text>
@@ -138,7 +145,12 @@ export function FixturesScreen({
             {/* Finished matches. One never started stays in Coming up
                 whatever its date, and can still be planned, played or
                 deleted (#76, match day 4). */}
-            <Section title="Played" rows={past} {...cardProps} />
+            <PlayedSection
+              rows={past}
+              recordOnly={recordOnly}
+              onOpenRecord={onOpenRecord ?? (() => {})}
+              {...cardProps}
+            />
           </>
         )}
 
@@ -194,6 +206,73 @@ function Section({ title, rows, ...actions }: { title: string; rows: FixtureRow[
         <FixtureCard key={row.match.id} row={row} {...actions} />
       ))}
     </View>
+  );
+}
+
+/**
+ * Played: this phone's finished fixtures and the record's other matches in
+ * one list, most recent first, undated last, as `fixtureList` orders them.
+ */
+function PlayedSection({
+  rows,
+  recordOnly,
+  onOpenRecord,
+  ...actions
+}: { rows: FixtureRow[]; recordOnly: RecordOnlyMatch[]; onOpenRecord: (matchId: UUID) => void } & CardActions) {
+  if (rows.length === 0 && recordOnly.length === 0) return null;
+  const time = (iso: string | null) => {
+    const t = iso ? Date.parse(iso) : NaN;
+    return Number.isFinite(t) ? t : null;
+  };
+  const items = [
+    ...rows.map((row) => ({ key: row.match.id, at: time(row.match.kickoffAt), row, record: null })),
+    ...recordOnly.map((m) => ({ key: m.id, at: time(m.kickoffAt), row: null, record: m })),
+  ].sort((a, b) => (a.at === null ? (b.at === null ? 0 : 1) : b.at === null ? -1 : b.at - a.at));
+  return (
+    <View style={local.section}>
+      <Text style={screen.fieldLabel}>Played</Text>
+      {items.map((item) =>
+        item.row ? (
+          <FixtureCard key={item.key} row={item.row} {...actions} />
+        ) : (
+          <RecordCard key={item.key} match={item.record!} now={actions.now} onOpen={onOpenRecord} />
+        )
+      )}
+    </View>
+  );
+}
+
+/**
+ * A match from the record with no fixture on this phone. It was entered after
+ * the fact by definition, so it carries the one reconstructed treatment from
+ * the prototype: a dashed outline and "◐ reconstructed" (PO, `approve tag`).
+ */
+function RecordCard({ match, now, onOpen }: { match: RecordOnlyMatch; now: Date; onOpen: (matchId: UUID) => void }) {
+  const competition = competitionLabel(match.competition);
+  return (
+    <Pressable
+      onPress={() => onOpen(match.id)}
+      style={({ pressed }) => [local.card, local.cardRecord, pressed && screen.buttonPressed]}
+    >
+      <Text style={local.opponent} numberOfLines={1}>
+        {(match.opponent ?? '').trim() || 'Opponent not recorded'}
+      </Text>
+      <Text style={local.meta} numberOfLines={1}>
+        {whenLabel(match.kickoffAt ? new Date(match.kickoffAt) : null, now)}
+        {competition === '' ? '' : ` · ${competition}`}
+      </Text>
+      <Text style={match.score ? local.score : local.meta} numberOfLines={1}>
+        {scoreLabel(match.score)}
+      </Text>
+      <Text style={local.reconstructed} numberOfLines={1}>
+        ◐ reconstructed · from the minutes record
+      </Text>
+      {match.leftOut !== null && (
+        <Text style={local.meta} numberOfLines={1}>
+          Left out of the figures{match.leftOut ? ` · "${match.leftOut}"` : ''}
+        </Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -303,6 +382,9 @@ const local = StyleSheet.create({
   // Colour and border only — never a different font weight, which is what
   // clipped the last glyph off the choice boxes on a real phone.
   cardCurrent: { borderColor: colours.warn, backgroundColor: '#12543f' },
+  // #195 / #199: the one reconstructed treatment, border style and colour only.
+  cardRecord: { borderStyle: 'dashed', borderColor: colours.taint },
+  reconstructed: { color: colours.taint, fontSize: 13, includeFontPadding: false, marginTop: 4 },
   opponent: {
     color: colours.ink,
     fontSize: 18,

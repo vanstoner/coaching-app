@@ -107,6 +107,8 @@ import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { BackupSection } from './src/screens/BackupSection';
+import { RecordMatchScreen } from './src/screens/RecordMatchScreen';
+import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -226,6 +228,8 @@ export default function App() {
 
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
+  /** The record-only match open read-only (#195), on the 'record' step. */
+  const [recordId, setRecordId] = useState<UUID | null>(null);
 
   // --- the minutes ledger (#75, ADR-013) ------------------------------------
   //
@@ -511,9 +515,11 @@ export default function App() {
   const planning: SavedMatch | undefined =
     matches.find((m) => m.match.id === planningId) ??
     (match && match.state.match.id === planningId ? storedFromHeld(match) : undefined);
+  const recordPage = step === 'record' && recordId ? recordMatchPage(ledger, recordId) : null;
   const effectiveStep: Step =
     (!match && (step === 'lineup' || step === 'playing' || step === 'summary' || step === 'analysis')) ||
-    (step === 'plan' && !planning)
+    (step === 'plan' && !planning) ||
+    (step === 'record' && !recordPage)
       ? 'fixtures'
       : step;
 
@@ -1267,6 +1273,10 @@ export default function App() {
     // Each match's kick-off, for ruling E: who was in the squad for it.
     const kickoffs = () => kickoffTimes(withLiveMatch(matches, match));
 
+    if (effectiveStep === 'record' && recordPage) {
+      return <RecordMatchScreen page={recordPage} now={appNow()} onBack={() => setStep('fixtures')} />;
+    }
+
     if (effectiveStep === 'summary' && match) {
       return (
         <MatchSummaryScreen
@@ -1506,6 +1516,12 @@ export default function App() {
         periods={periodsById(matches, match)}
         notClosed={notClosedIds(withLiveMatch(matches, match))}
         onDelete={deleteFixture}
+        // #195: the record's played matches with no fixture here, archived fixtures included in "here".
+        recordOnly={recordOnlyMatches(ledger, new Set(withLiveMatch(matches, match).map((m) => m.match.id)))}
+        onOpenRecord={(id) => {
+          setRecordId(id);
+          setStep('record');
+        }}
         onAdd={() => setStep('fixtureForm')}
         onPlan={(id) => {
           setPlanningId(id);

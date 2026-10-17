@@ -33,6 +33,8 @@ export const colours = {
   warn: '#ffd166',
   danger: '#ffb4a2',
   urgent: '#c47f1a',
+  /** Reconstructed: entered after the event (#195, #199). One tone, used everywhere. */
+  taint: '#c9ad6a',
 } as const;
 
 /**
