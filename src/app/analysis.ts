@@ -202,11 +202,22 @@ export interface MatchReport {
   /** Each scorer once, most goals first. */
   scorers: { playerId: UUID; name: string; goals: number }[];
   /** Each player with an assist, tackle, corner or free kick won, by name (#185 AC7). */
-  play: { playerId: UUID; name: string; assists: number; tackles: number; corners: number; freeKicks: number }[];
+  play: {
+    playerId: UUID;
+    name: string;
+    /** #202: tapped shots plus goals. */
+    shotsOnTarget: number;
+    assists: number;
+    tackles: number;
+    corners: number;
+    freeKicks: number;
+  }[];
   /** Each keeper who made a save or was in goal for a goal against. */
   keepers: { playerId: UUID; name: string; saves: number; conceded: number }[];
   saves: number;
   conceded: number;
+  /** #202: every save and every goal against was a shot on target by them. Derived. */
+  theirShotsOnTarget: number;
   /** Everyone available at kick-off, in squad order (PO ruling Q1, #143). */
   players: ReportPlayer[];
   /**
@@ -302,10 +313,13 @@ export function matchReport(
       .map((t) => ({ playerId: t.playerId, name: name(t.playerId), goals: t.goals }))
       .sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name)),
     play: tallies
-      .filter((t) => t.assists + t.tackles + t.corners + t.freeKicks > 0)
-      .map(({ playerId, assists, tackles, corners, freeKicks }) => ({
+      // A player who only scored is in Scorers, not Play (#185 AC9): their goals
+      // count as shots on target, but only a tapped shot puts them here (#202).
+      .filter((t) => t.shotsOnTarget - t.goals + t.assists + t.tackles + t.corners + t.freeKicks > 0)
+      .map(({ playerId, shotsOnTarget, assists, tackles, corners, freeKicks }) => ({
         playerId,
         name: name(playerId),
+        shotsOnTarget,
         assists,
         tackles,
         corners,
@@ -318,6 +332,7 @@ export function matchReport(
       .sort((a, b) => a.name.localeCompare(b.name)),
     saves: tallies.reduce((sum, t) => sum + t.saves, 0),
     conceded: score.them,
+    theirShotsOnTarget: tallies.reduce((sum, t) => sum + t.saves, 0) + score.them,
     players: rows,
     fairShareMs,
     subs,

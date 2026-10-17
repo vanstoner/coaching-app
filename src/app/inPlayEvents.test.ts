@@ -43,20 +43,22 @@ const tallyOf = (events: Parameters<typeof talliesOf>[0], id: UUID) =>
   talliesOf(events).find((t) => t.playerId === id);
 
 describe('the picture buttons offered (AC1)', () => {
-  it('anyone on the pitch: Goal, Tackle, Corner won, Free kick won; the keeper adds Save and Conceded first', () => {
-    expect(tapEventsFor(false)).toEqual(['goal', 'tackle', 'corner', 'free_kick']);
-    expect(tapEventsFor(true)).toEqual(['save', 'conceded', 'goal', 'tackle', 'corner', 'free_kick']);
+  it('anyone on the pitch: Goal, Shot on target, Tackle, Corner won, Free kick won; the keeper adds Save and Conceded first', () => {
+    expect(tapEventsFor(false)).toEqual(['goal', 'shot_on_target', 'tackle', 'corner', 'free_kick']);
+    expect(tapEventsFor(true)).toEqual(['save', 'conceded', 'goal', 'shot_on_target', 'tackle', 'corner', 'free_kick']);
   });
 });
 
 describe('the picture buttons are laid out evenly', () => {
-  it('four are a 2 x 2 square, six are two rows of three', () => {
-    expect(eventGridRows(tapEventsFor(false)).map((r) => r.length)).toEqual([2, 2]);
-    expect(eventGridRows(tapEventsFor(true)).map((r) => r.length)).toEqual([3, 3]);
+  it('four are a 2 x 2 square, six two rows of three; five read 3 + 2 and seven 3 + 2 + 2 (#202)', () => {
+    expect(eventGridRows([1, 2, 3, 4]).map((r) => r.length)).toEqual([2, 2]);
+    expect(eventGridRows([1, 2, 3, 4, 5, 6]).map((r) => r.length)).toEqual([3, 3]);
+    expect(eventGridRows(tapEventsFor(false)).map((r) => r.length)).toEqual([3, 2]);
+    expect(eventGridRows(tapEventsFor(true)).map((r) => r.length)).toEqual([3, 2, 2]);
   });
 
   it('no row is a single stub unless there is only one button, and nothing is lost or reordered', () => {
-    for (let n = 1; n <= 6; n++) {
+    for (let n = 1; n <= 9; n++) {
       const items = Array.from({ length: n }, (_, i) => i);
       const rows = eventGridRows(items);
       expect(rows.flat()).toEqual(items);
@@ -213,8 +215,8 @@ describe('the time stream and the summary (AC6, AC7)', () => {
 
     const report = matchReport(engine, state, players, format);
     expect(report.play).toEqual([
-      { playerId: ids[2], name: 'P3', assists: 0, tackles: 1, corners: 1, freeKicks: 1 },
-      { playerId: ids[5], name: 'P6', assists: 1, tackles: 1, corners: 0, freeKicks: 0 },
+      { playerId: ids[2], name: 'P3', shotsOnTarget: 0, assists: 0, tackles: 1, corners: 1, freeKicks: 1 },
+      { playerId: ids[5], name: 'P6', shotsOnTarget: 0, assists: 1, tackles: 1, corners: 0, freeKicks: 0 },
     ]);
     // The scorer has only a goal, so is not in Play.
     expect(report.scorers.map((s) => s.name)).toEqual(['P5']);

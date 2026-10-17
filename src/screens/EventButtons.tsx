@@ -47,6 +47,10 @@ export const PICTURE: Record<TapEventKind | 'assist', Glyph[]> = {
     { name: 'shoe-cleat', size: 30, colour: INK, x: -10, y: 4 },
     { name: 'shoe-cleat', size: 30, colour: '#b5462a', x: 10, y: -4, flip: true },
   ],
+  shot_on_target: [
+    { name: 'target', size: 46, colour: '#d63a2f' },
+    { name: 'soccer', size: 18, colour: BALL, x: 12, y: -12 },
+  ],
   corner: [{ name: 'flag-triangle', size: 42, colour: '#d63a2f', x: 2 }],
   free_kick: [{ name: 'whistle', size: 40, colour: INK }],
   save: [{ name: 'hand-back-left', size: 40, colour: '#1f6fb2' }],
@@ -59,6 +63,7 @@ export const PICTURE: Record<TapEventKind | 'assist', Glyph[]> = {
 /** A bright tile per kind; Conceded is the one that reads as against us. */
 const TILE: Record<TapEventKind, string> = {
   goal: '#ffd166',
+  shot_on_target: '#c9b8f0',
   tackle: '#f4a259',
   corner: '#ef8a80',
   free_kick: '#7cc6fe',

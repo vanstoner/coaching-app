@@ -241,6 +241,7 @@ export interface Format {
  */
 export type MatchEventKind =
   | 'goal'
+  | 'shot_on_target'
   | 'save'
   | 'conceded'
   | 'tackle'
