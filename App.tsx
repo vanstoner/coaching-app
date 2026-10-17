@@ -101,6 +101,8 @@ import {
 } from './src/app/ledger';
 import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { installDeviceSigner } from './src/app/deviceKey';
+import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
@@ -284,6 +286,10 @@ export default function App() {
         setAppClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
         setClockSpeed(appClockSetting().speed);
       }
+
+      // #193: this install's key, before anything is recorded, so every entry
+      // this launch writes is signed. Without one, recording goes on unsigned.
+      await installDeviceSigner();
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -1385,6 +1391,12 @@ export default function App() {
                   setMatches(data.matches);
                   persist({ players: data.players, matches: data.matches });
                   setTestKitMessage(data.summary);
+                }}
+                onTimeSigning={() => {
+                  const t = timeSigning();
+                  setTestKitMessage(
+                    `Signing on this phone: ${t.signMs.toFixed(1)} ms to sign, ${t.verifyMs.toFixed(1)} ms to check (average of 5).`
+                  );
                 }}
                 message={testKitMessage}
               />
