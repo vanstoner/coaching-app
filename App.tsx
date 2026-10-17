@@ -17,7 +17,8 @@ import {
   setAppClockSpeed,
   type ClockSpeed,
 } from './src/app/appClock';
-import { TEST_CLOCK_KEY, addTestData, showTestKit } from './src/app/testKit';
+import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app/testKit';
+import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/phoneBackup';
 import { addTestSeason } from './src/app/testSeason';
 import { currentDistribution } from './src/app/distribution';
 import { seedDemo, shouldAutoSeed, storeContents } from './src/app/demoSeed';
@@ -64,6 +65,7 @@ import {
 import {
   hasMatchUnderway,
   toMatchState,
+  toSavedSession,
   type SavedMatch,
   type SavedSession,
   type SessionInput,
@@ -98,10 +100,11 @@ import {
   type MatchRecord,
 } from './src/app/ledger';
 import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
-import { exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
+import { BackupSection } from './src/screens/BackupSection';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -235,6 +238,12 @@ export default function App() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [ledgerMessage, setLedgerMessage] = useState('');
   const [ledgerBusy, setLedgerBusy] = useState(false);
+  // #192: back up this app, and restore it.
+  const [backupMessage, setBackupMessage] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [pendingBackup, setPendingBackup] = useState<ReadBackup | null>(null);
+  /** Bumped after a restore, to run the launch again over what was restored. */
+  const [launchKey, setLaunchKey] = useState(0);
   /**
    * The stored ledger was written by a newer build that says this one cannot
    * safely write it back (#99 AC2). Nothing is recorded, imported or saved
@@ -352,9 +361,10 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // Launch only. squadId is read for a brand-new install's empty ledger.
+    // Launch only, and again after a restore (#192). squadId is read for a
+    // brand-new install's empty ledger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store]);
+  }, [store, launchKey]);
 
   // --- save on every change that matters ------------------------------------
   //
@@ -362,27 +372,33 @@ export default function App() {
   // with a full disk loses the save, never the match. A session this launch
   // may not write (#173) is not written at all.
 
+  /** What a save writes: the app's state as it stands, with any overrides. */
+  const sessionInput = useCallback(
+    (overrides: Partial<SessionInput> = {}): SessionInput => ({
+      squadName,
+      squadId,
+      players,
+      format,
+      totalMinutes,
+      periodCount,
+      buzzWhenSubDue,
+      plan: {},
+      matches,
+      state: match?.state ?? null,
+      // The shape the live match is played in, which is no longer the same
+      // thing as the squad default.
+      matchFormat: match?.format ?? null,
+      // The running period's planned subs, so a relaunch mid-period brings
+      // the reminders back (#139). Null between periods, which clears them.
+      periodSubs: periodSubsToSave(match?.state.quarters, subPlan),
+      ...overrides,
+    }),
+    [squadName, squadId, players, format, totalMinutes, periodCount, buzzWhenSubDue, match, matches, subPlan]
+  );
+
   const persist = useCallback(
     (overrides: Partial<SessionInput> = {}) => {
-      void saveSessionIfWritable(store, sessionWritableRef.current, {
-        squadName,
-        squadId,
-        players,
-        format,
-        totalMinutes,
-        periodCount,
-        buzzWhenSubDue,
-        plan: {},
-        matches,
-        state: match?.state ?? null,
-        // The shape the live match is played in, which is no longer the same
-        // thing as the squad default.
-        matchFormat: match?.format ?? null,
-        // The running period's planned subs, so a relaunch mid-period brings
-        // the reminders back (#139). Null between periods, which clears them.
-        periodSubs: periodSubsToSave(match?.state.quarters, subPlan),
-        ...overrides,
-      });
+      void saveSessionIfWritable(store, sessionWritableRef.current, sessionInput(overrides));
 
       // The ledger, from the same records. Only closed intervals reach it, so
       // a period ending is what puts minutes in; nothing is ever removed.
@@ -401,7 +417,7 @@ export default function App() {
         );
       }
     },
-    [store, squadName, squadId, players, format, totalMinutes, periodCount, buzzWhenSubDue, match, matches, subPlan, commitLedger]
+    [store, sessionInput, squadName, players, match, matches, commitLedger]
   );
 
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
@@ -818,6 +834,74 @@ export default function App() {
    * Forget everything, including the squad. Deliberately harder to reach — it
    * is how a coach hands the phone on, not how they start next Saturday.
    */
+  /** #192 AC1: everything this app keeps, as it stands now, in one file. */
+  const backUpApp = useCallback(async () => {
+    setBackupBusy(true);
+    const label = currentBuildLabel();
+    const text = makePhoneBackup(
+      toSavedSession({ ...sessionInput(), now: appNow() }),
+      ledgerRef.current,
+      { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
+      appNow()
+    );
+    const outcome = await exportBackupFile(text, appNow());
+    setBackupBusy(false);
+    setBackupMessage(outcome.ok ? '' : outcome.reason);
+  }, [sessionInput]);
+
+  /** #192 AC2, AC5: read and check a backup; nothing changes until the coach confirms. */
+  const pickBackup = useCallback(async () => {
+    setBackupBusy(true);
+    const picked = await pickLedgerFile();
+    setBackupBusy(false);
+    if (!picked.ok) {
+      setBackupMessage(picked.reason);
+      return;
+    }
+    if (picked.text === null) return; // cancelled
+    const read = readPhoneBackup(picked.text);
+    if (!read.ok) {
+      setBackupMessage(read.reason);
+      return;
+    }
+    setBackupMessage('');
+    setPendingBackup(read);
+  }, []);
+
+  /**
+   * #192 AC3, AC4: replace what this app keeps, then run the launch again over
+   * it, exactly as opening the app would. Everything held in memory is let go
+   * first, so nothing from before the restore can be saved over it.
+   */
+  const restoreBackup = useCallback(async () => {
+    const backup = pendingBackup;
+    if (!backup) return;
+    setPendingBackup(null);
+    setBackupBusy(true);
+    setStep('loading');
+    const outcome = await restorePhoneBackup(store, backup, appNow());
+    setBackupBusy(false);
+    if (!outcome.ok) {
+      setBackupMessage(outcome.reason);
+      setStep('settings');
+      return;
+    }
+    sessionWritableRef.current = true;
+    setSessionMessage('');
+    ledgerBlockedRef.current = false;
+    ledgerRef.current = null;
+    setLedger(null);
+    setLedgerMessage('');
+    setMatch(null);
+    setPending(null);
+    setSubPlan([]);
+    setPlayers([]);
+    setMatches([]);
+    setSquadErrand('home');
+    setBackupMessage('Restored. What was on this phone before is kept aside, unchanged.');
+    setLaunchKey((k) => k + 1);
+  }, [pendingBackup, store]);
+
   const forgetEverything = useCallback(() => {
     void forgetSession(store);
     // Cleared above: nothing is left for the session block (#173) to protect.
@@ -1244,6 +1328,17 @@ export default function App() {
               busy={ledgerBusy}
               onExport={() => void exportMinutes()}
               onImport={() => void importMinutes()}
+            />
+          }
+          backup={
+            <BackupSection
+              message={backupMessage}
+              busy={backupBusy}
+              pending={pendingBackup ? describeBackup(pendingBackup.preview) : null}
+              onBackup={() => void backUpApp()}
+              onPick={() => void pickBackup()}
+              onConfirm={() => void restoreBackup()}
+              onCancel={() => setPendingBackup(null)}
             />
           }
           testKit={
