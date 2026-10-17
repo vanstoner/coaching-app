@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Build the marketing site into a folder — #108, PO "approve site".
 
-    build_site.py PRIVACY_HTML OUT    site/ plus the app icon into OUT, with
-                                      PRIVACY_HTML (PRIVACY.md as GitHub
-                                      renders it) inside privacy.html
+    build_site.py PRIVACY_HTML COACHES_HTML OUT
+                                      site/ plus the app icon into OUT, with
+                                      PRIVACY.md and COACHES.md (as GitHub
+                                      renders them) inside privacy.html and
+                                      coaches.html
     build_site.py --self-test
 
-PRIVACY.md stays the one privacy policy: the page is made from it on every
-build, never copied by hand. Then every page is checked: the privacy text is
+PRIVACY.md stays the one privacy policy, and COACHES.md the one guide for
+coaches trying the app: each page is made from its Markdown on every build,
+never copied by hand. Then every page is checked: the privacy text is
 really in it, and every local link and image points at a file that exists.
 """
 
@@ -20,7 +23,19 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 MARK = "<!-- PRIVACY.md, rendered by pages.yml -->"
-PAGES = ("index.html", "privacy.html", "support.html", "testers.html")
+COACHES_MARK = "<!-- COACHES.md, rendered by pages.yml -->"
+PAGES = ("index.html", "privacy.html", "support.html", "testers.html", "coaches.html")
+# Pages made from Markdown: (page, template, marker).
+RENDERED = (
+    ("privacy.html", "privacy.template.html", MARK),
+    ("coaches.html", "coaches.template.html", COACHES_MARK),
+)
+
+
+def own_anchors(rendered):
+    """GitHub prefixes heading ids with "user-content-" (its own pages strip it
+    with script); without that script a "#heading" link would go nowhere."""
+    return rendered.replace('id="user-content-', 'id="')
 # #182: the made-up test season, served from the site so an iPhone's Safari
 # downloads it to Files (a raw GitHub link only opens it as text).
 TEST_SEASON = os.path.join("test-data", "test-season.json")
@@ -37,20 +52,23 @@ class Links(html.parser.HTMLParser):
                 self.found.append(v)
 
 
-def build(privacy_html, out, root=ROOT):
+def build(privacy_html, coaches_html, out, root=ROOT):
     site = os.path.join(root, "site")
     os.makedirs(out, exist_ok=True)
+    templates = {t for _, t, _ in RENDERED}
     for f in os.listdir(site):
-        if f != "privacy.template.html":
+        if f not in templates:
             shutil.copy(os.path.join(site, f), out)
     shutil.copy(os.path.join(root, "assets", "images", "icon.png"), os.path.join(out, "icon.png"))
     shutil.copy(os.path.join(root, TEST_SEASON), os.path.join(out, "test-season.json"))
-    with open(os.path.join(site, "privacy.template.html"), encoding="utf-8") as fh:
-        template = fh.read()
-    if template.count(MARK) != 1:
-        raise ValueError("privacy.template.html must hold the marker exactly once")
-    with open(os.path.join(out, "privacy.html"), "w", encoding="utf-8") as fh:
-        fh.write(template.replace(MARK, privacy_html))
+    bodies = {"privacy.html": privacy_html, "coaches.html": coaches_html}
+    for page, template_name, mark in RENDERED:
+        with open(os.path.join(site, template_name), encoding="utf-8") as fh:
+            template = fh.read()
+        if template.count(mark) != 1:
+            raise ValueError(f"{template_name} must hold the marker exactly once")
+        with open(os.path.join(out, page), "w", encoding="utf-8") as fh:
+            fh.write(template.replace(mark, own_anchors(bodies[page])))
 
 
 def problems(out):
@@ -64,10 +82,16 @@ def problems(out):
             text = fh.read()
         if page == "privacy.html" and ("<h1" not in text or MARK in text):
             found.append("privacy.html does not hold the rendered PRIVACY.md")
+        if page == "coaches.html" and ("<h1" not in text or COACHES_MARK in text):
+            found.append("coaches.html does not hold the rendered COACHES.md")
         p = Links()
         p.feed(text)
         for link in p.found:
-            if link.startswith(("http://", "https://", "mailto:", "#")):
+            if link.startswith(("http://", "https://", "mailto:")):
+                continue
+            if link.startswith("#"):
+                if f'id="{link[1:]}"' not in text:
+                    found.append(f"{page} links to {link}, which is not on the page")
                 continue
             target = link.split("#")[0] or "index.html"
             if target in ("./", "."):
@@ -87,22 +111,34 @@ def self_test():
         print(f"  {'ok' if cond else 'x '} {name}")
 
     rendered = "<h1>Privacy policy: Heart of the Game: Coach</h1><p>Nothing.</p>"
+    # As GitHub renders a heading and a link to it.
+    coaches = ('<h1>Try Heart FC Coach</h1><p><a href="#on-an-iphone">iPhone</a></p>'
+               '<div class="markdown-heading"><h2 class="heading-element">On an iPhone</h2>'
+               '<a id="user-content-on-an-iphone" class="anchor" href="#on-an-iphone"></a></div>')
     with tempfile.TemporaryDirectory() as d:
-        build(rendered, d)
+        build(rendered, coaches, d)
         check("healthy: the committed site builds with every link resolving", problems(d) == [])
+        check("healthy: a link to a heading on the coaches page lands on it",
+              'id="on-an-iphone"' in open(os.path.join(d, "coaches.html"), encoding="utf-8").read())
         check("healthy: the test season is served beside testers.html",
               os.path.getsize(os.path.join(d, "test-season.json")) == os.path.getsize(os.path.join(ROOT, TEST_SEASON)))
         os.remove(os.path.join(d, "icon.png"))
         check("fails: the icon is missing", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
-        build(rendered, d)
+        build(rendered, coaches, d)
         os.remove(os.path.join(d, "test-season.json"))
         check("fails: testers.html's download is missing", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
-        build("", d)
+        build("", coaches, d)
         check("fails: the privacy page without the policy", bool(problems(d)))
     with tempfile.TemporaryDirectory() as d:
-        build(rendered, d)
+        build(rendered, "", d)
+        check("fails: the coaches page without its guide", bool(problems(d)))
+    with tempfile.TemporaryDirectory() as d:
+        build(rendered, coaches.replace("user-content-on-an-iphone", "user-content-elsewhere"), d)
+        check("fails: a link to a heading that is not there", bool(problems(d)))
+    with tempfile.TemporaryDirectory() as d:
+        build(rendered, coaches, d)
         with open(os.path.join(d, "support.html"), "a", encoding="utf-8") as fh:
             fh.write('<a href="faq.html">x</a>')
         check("fails: a link to a page that does not exist", bool(problems(d)))
@@ -113,16 +149,16 @@ def self_test():
 def main(argv):
     if argv[1:] == ["--self-test"]:
         return self_test()
-    if len(argv) != 3:
+    if len(argv) != 4:
         print(__doc__, file=sys.stderr)
         return 2
-    with open(argv[1], encoding="utf-8") as fh:
-        build(fh.read(), argv[2])
-    found = problems(argv[2])
+    with open(argv[1], encoding="utf-8") as fh, open(argv[2], encoding="utf-8") as gh:
+        build(fh.read(), gh.read(), argv[3])
+    found = problems(argv[3])
     for p in found:
         print(f"SITE PROBLEM: {p}")
     if not found:
-        print(f"{argv[2]}: {', '.join(PAGES)} built; every local link resolves")
+        print(f"{argv[3]}: {', '.join(PAGES)} built; every local link resolves")
     return 1 if found else 0
 
 
