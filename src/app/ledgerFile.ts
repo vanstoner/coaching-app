@@ -14,6 +14,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { ledgerFileName, serialiseLedger, type Ledger } from './ledger';
+import { backupFileName } from './phoneBackup';
 
 export type FileOutcome = { ok: true } | { ok: false; reason: string };
 
@@ -33,6 +34,26 @@ export async function exportLedgerFile(ledger: Ledger, now: Date): Promise<FileO
     return { ok: true };
   } catch {
     return { ok: false, reason: 'The minutes file could not be written.' };
+  }
+}
+
+/** The app's backup (#192): the same share path, its own name and wording. */
+export async function exportBackupFile(text: string, now: Date): Promise<FileOutcome> {
+  try {
+    if (!(await Sharing.isAvailableAsync())) {
+      return { ok: false, reason: 'This phone cannot share files.' };
+    }
+    const file = new File(Paths.cache, backupFileName(now));
+    if (file.exists) file.delete();
+    file.create();
+    file.write(text);
+    await Sharing.shareAsync(file.uri, {
+      mimeType: 'application/json',
+      dialogTitle: 'Save the app backup somewhere private',
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'The backup could not be written.' };
   }
 }
 
