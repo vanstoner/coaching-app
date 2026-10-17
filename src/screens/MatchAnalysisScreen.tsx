@@ -74,9 +74,9 @@ export function MatchAnalysisScreen({
 
         <Text style={screen.fieldLabel}>This match, minutes</Text>
         <Text style={screen.hint}>
-          Outline: their average per match attended, from the other matches. Furthest below it first.
+          Outline: their average per match attended, from the other matches. Tap a heading to sort by it.
         </Text>
-        <MatchBars chart={chart} />
+        <MatchBars chart={chart} table="analysisMinutes" />
 
         <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 

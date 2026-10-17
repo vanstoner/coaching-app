@@ -5,8 +5,13 @@
  * tapped (AC1), and the four views they open: Season grid, Fairness at a
  * glance, Going into Saturday and Positions tried. Every figure arrives
  * folded from the ledger by `src/app/squadViews.ts`; these only draw it
- * (invariant 1). Every list keeps the squad's order and nothing is ranked
- * (AC7). Each view has a way back at its top and its foot.
+ * (invariant 1). Each view has a way back at its top and its foot.
+ *
+ * #208 (overturning PO ruling Q1's squad order for these views): every table
+ * sorts by its numbers, most first by default, and a tap on a heading
+ * re-sorts it. Ties keep squad order; a Main keeper is listed last whatever
+ * the sort. The bars and dots in each row are drawn in the same order, so a
+ * chart and its table always agree.
  *
  * Charts are boxes drawn with Views (ADR-016), from `./Charts`.
  *
@@ -35,6 +40,8 @@ import {
   type SquadView,
   type SquadViews,
 } from '../app/squadViews';
+import { NAME, TABLE_DEFAULTS, matchKey, sortFairness, sortGrid, sortOwed, sortPositions } from '../app/tableSort';
+import { SortHeading, useTableSort } from './TableSort';
 import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitColours } from './Charts';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -124,7 +131,9 @@ function MainKeeperHint({ names, tail }: { names: string[]; tail: string }) {
 export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
-  const { matches, grid, fairness } = views;
+  const { matches, fairness } = views;
+  const { sort, onSort } = useTableSort('squadGrid', (key) => matches.some((m) => matchKey(m.matchId) === key));
+  const grid = sortGrid(views.grid, matches, sort);
   if (matches.length === 0) {
     return (
       <ViewFrame view="grid" onBack={onBack}>
@@ -139,12 +148,8 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
         {/* The name and "a game" columns stay put while the matches scroll. */}
         <View style={local.gFixed}>
           <View style={[local.gRow, local.gHeadRow]}>
-            <Text style={[local.gNameCell, local.gHeadText]} numberOfLines={1}>
-              Child
-            </Text>
-            <Text style={[local.gAvgCell, local.gHeadText]} numberOfLines={1}>
-              a game
-            </Text>
+            <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.gNameCell} />
+            <SortHeading label="a game" column="perGame" sort={sort} onSort={onSort} align="center" style={local.gAvgCell} />
           </View>
           {grid.map((r) => (
             <View key={r.playerId} style={local.gRow}>
@@ -175,12 +180,18 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
           <View style={local.gScrollBody}>
             <View style={[local.gRow, local.gHeadRow]}>
               {matches.map((m) => (
-                <Pressable
+                // A tap sorts by this match's minutes and says which match it is.
+                <SortHeading
                   key={m.matchId}
-                  onPress={() => setPicked(m.label)}
+                  label={m.label}
+                  column={matchKey(m.matchId)}
+                  sort={sort}
+                  onSort={(key) => {
+                    onSort(key);
+                    setPicked(m.label);
+                  }}
+                  align="center"
                   style={[local.gCell, !m.counted && local.gOff]}
-                  accessibilityRole="button"
-                  accessibilityLabel={m.label}
                 >
                   <Text style={local.gDay} numberOfLines={1}>
                     {m.day}
@@ -188,7 +199,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
                   <Text style={local.gComp} numberOfLines={1}>
                     {m.competitionShort}
                   </Text>
-                </Pressable>
+                </SortHeading>
               ))}
             </View>
             {grid.map((r) => (
@@ -236,7 +247,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
       <Text style={screen.hint}>
         {`"a game" is minutes a game this season.${
           fairness ? ` Squad average ${fairness.average}.` : ''
-        }${fairness && fairness.mainKeepers.length > 0 ? ` ${mainKeeperWords(fairness.mainKeepers)}, so not in it.` : ''} Tap a number for the match, a name for that child.`}
+        }${fairness && fairness.mainKeepers.length > 0 ? ` ${mainKeeperWords(fairness.mainKeepers)}, so not in it.` : ''} Tap a number for the match, a name for that child, a heading to sort by it.`}
       </Text>
     </ViewFrame>
   );
@@ -248,6 +259,7 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
 
 export function FairnessView({ views, onChild, onBack }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
+  const { sort, onSort } = useTableSort('squadFairness');
   const f = views.fairness;
   if (f === null) {
     return (
@@ -286,7 +298,19 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
         <KeyItem shape="band" label={`Within ${f.gap} of the average`} />
         <KeyItem shape="tick" label={`Squad average, ${f.average}`} />
       </View>
-      {f.rows.map((r) => {
+      <View style={local.dHead}>
+        <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.dNameHead} />
+        <SortHeading
+          label="From the average"
+          column="offset"
+          sort={sort}
+          onSort={onSort}
+          align="center"
+          style={local.dBandHead}
+        />
+        <SortHeading label="a game" column="perGame" sort={sort} onSort={onSort} style={local.dValueHead} />
+      </View>
+      {sortFairness(f.rows, sort).map((r) => {
         if (r.perGame === null) {
           return (
             <View key={r.playerId} style={local.drow}>
@@ -344,6 +368,7 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
 // ============================================================================
 
 export function SaturdayView({ views, onChild, onBack }: ViewProps) {
+  const { sort, onSort } = useTableSort('squadSaturday');
   const f = views.fairness;
   if (f === null) {
     return (
@@ -352,7 +377,8 @@ export function SaturdayView({ views, onChild, onBack }: ViewProps) {
       </ViewFrame>
     );
   }
-  const named = views.owed.filter((r) => r.named);
+  // Most owed first, whatever the table below is sorted by (#208).
+  const named = sortOwed(views.owed, TABLE_DEFAULTS.squadSaturday).filter((r) => r.named);
   const max = Math.max(1, ...views.owed.map((r) => Math.abs(r.owed ?? 0)));
   return (
     <ViewFrame view="saturday" onBack={onBack}>
@@ -371,13 +397,19 @@ export function SaturdayView({ views, onChild, onBack }: ViewProps) {
         owed time.
       </Text>
 
-      <Text style={screen.fieldLabel}>Everyone, in squad order</Text>
+      <Text style={screen.fieldLabel}>Everyone</Text>
+      <View style={local.oHead}>
+        <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.oNameHead} />
+        <SortHeading label="Owed" column="owed" sort={sort} onSort={onSort} align="left" style={local.oTextHead} />
+        <SortHeading label="a game" column="perGame" sort={sort} onSort={onSort} style={local.oMetaHead} />
+        <SortHeading label="played" column="played" sort={sort} onSort={onSort} style={local.oMetaHead} />
+      </View>
       <View style={local.oKey}>
         <Text style={local.oKeyText}>← Owed</Text>
         <Text style={local.oKeyText}>Level</Text>
         <Text style={local.oKeyText}>Had more →</Text>
       </View>
-      {views.owed.map((r) => {
+      {sortOwed(views.owed, sort).map((r) => {
         if (r.perGame === null) {
           return (
             <View key={r.playerId} style={local.orow}>
@@ -453,6 +485,7 @@ export function UnitKey() {
 }
 
 export function PositionsView({ views, onChild, onBack }: ViewProps) {
+  const { sort, onSort } = useTableSort('squadPositions');
   if (views.matches.length === 0) {
     return (
       <ViewFrame view="positions" onBack={onBack}>
@@ -470,7 +503,22 @@ export function PositionsView({ views, onChild, onBack }: ViewProps) {
         is total time on the pitch.
       </Text>
       <UnitKey />
-      {views.positions.map((r) => {
+      <View style={local.pHead}>
+        <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.pNameHead} />
+        {UNITS.map((u) => (
+          <SortHeading
+            key={u}
+            label={UNIT_LABEL[u]}
+            column={u}
+            sort={sort}
+            onSort={onSort}
+            align="center"
+            style={local.pUnitHead}
+          />
+        ))}
+        <SortHeading label="Total" column="total" sort={sort} onSort={onSort} align="center" style={local.pUnitHead} />
+      </View>
+      {sortPositions(views.positions, sort).map((r) => {
         const role = r.keeper ? KEEPER_LABEL[r.keeper] : '';
         if (r.played === 0) {
           return (
@@ -573,7 +621,6 @@ const local = StyleSheet.create({
     borderBottomColor: '#164f3c',
   },
   gHeadRow: { height: 48, borderBottomColor: colours.line },
-  gHeadText: { color: colours.inkMuted, fontSize: 12, includeFontPadding: false },
   gNameCell: { width: GRID_NAME, paddingLeft: 18, paddingRight: 4 },
   gNameHit: { flexDirection: 'row', alignItems: 'center', height: GRID_ROW - 1 },
   gName: { flexShrink: 1, color: colours.ink, fontSize: 16, includeFontPadding: false },
@@ -642,7 +689,7 @@ const local = StyleSheet.create({
   dName: { width: 72, color: colours.ink, fontSize: 16, includeFontPadding: false, marginRight: 8 },
   dNote: { flex: 1, color: colours.inkFaint, fontSize: 13, includeFontPadding: false, paddingVertical: 6 },
   dValue: {
-    width: 34,
+    width: 48,
     textAlign: 'right',
     color: colours.ink,
     fontSize: 15,
@@ -652,7 +699,18 @@ const local = StyleSheet.create({
   },
   dScale: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 4 },
   dNameSpace: { width: 72, marginRight: 8 },
-  dValueSpace: { width: 34, marginLeft: 8 },
+  dValueSpace: { width: 48, marginLeft: 8 },
+  dHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colours.line,
+  },
+  dNameHead: { width: 72, marginRight: 8 },
+  dBandHead: { flex: 1, flexShrink: 1 },
+  dValueHead: { width: 48, marginLeft: 8 },
   dAxis: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
 
   // --- going into Saturday
@@ -680,6 +738,17 @@ const local = StyleSheet.create({
     borderBottomColor: '#164f3c',
   },
   oLine: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  oHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderBottomWidth: 1,
+    borderBottomColor: colours.line,
+  },
+  oNameHead: { width: 72, marginRight: 6 },
+  oTextHead: { flex: 1, flexShrink: 1 },
+  // The two halves of the 136 under "50 a game · played 9".
+  oMetaHead: { width: 68 },
   oName: { width: 72, color: colours.ink, fontSize: 17, includeFontPadding: false, marginRight: 6 },
   oText: { flex: 1, color: colours.inkMuted, fontSize: 15, includeFontPadding: false },
   oNamed: { color: colours.ink },
@@ -704,6 +773,16 @@ const local = StyleSheet.create({
     borderBottomColor: '#164f3c',
   },
   pLine: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  pHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colours.line,
+  },
+  pNameHead: { width: 96, marginRight: 6 },
+  pUnitHead: { flex: 1, flexShrink: 1 },
   pName: { width: 96, color: colours.ink, fontSize: 17, includeFontPadding: false, marginRight: 6 },
   pRole: { flex: 1, color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
   pText: { alignSelf: 'stretch', color: colours.inkMuted, fontSize: 14, includeFontPadding: false, marginTop: 5 },

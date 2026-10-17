@@ -128,8 +128,8 @@ describe('matchReport (#104)', () => {
     const ivyRow = r.players.find((p) => p.playerId === ivy.id)!;
     expect(ivyRow.totalMs).toBe(0);
     expect(ivyRow.deltaMs).toBe(-r.fairShareMs);
-    // Squad order, never by minutes (PO ruling Q1, #143 AC7; it was least
-    // pitch time first, which put Ivy at 0 at the top).
+    // Folded in squad order: the tie order the screen's sort keeps (#208,
+    // which overturned PO ruling Q1's "never by minutes" for this table).
     expect(r.players.map((p) => p.name)).toEqual(['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy']);
     // Goal and outfield add up to the total; Ava kept goal all match.
     const avaRow = r.players.find((p) => p.playerId === ava.id)!;
@@ -266,7 +266,7 @@ describe('seasonStats (ADR-015, #102 AC3, #103)', () => {
 });
 
 describe('matchChart (#105 AC1)', () => {
-  it('shadows each bar with the average from the OTHER matches, furthest below usual first', () => {
+  it('shadows each bar with the average from the OTHER matches, in the report\'s squad order', () => {
     const sq = squad();
     const [ava, ben, , , , , gus, hal, ivy, jo] = sq.players;
     // Earlier: Ben benched, so everyone moves up one: Gus plays all 50, Hal
@@ -288,16 +288,16 @@ describe('matchChart (#105 AC1)', () => {
     expect(row(ben.id).shadowMs).toBeNull();
     expect(row(ben.id).label).toBe(`Ben ${wholeMinutes(row(ben.id).thisMatchMs)} · no average yet`);
     // Ivy 26 before and 0 today; Gus 50 before and 24 today. Both 26 below
-    // their usual: furthest below first, ties by name.
+    // their usual. #208 replaced "furthest below first" (ADR-016 §4's
+    // default): the rows come in the report's squad order and the screen
+    // sorts them (`tableSort.sortMatchBars`, tested there).
     expect(row(ivy.id).shadowMs).toBe(26 * MIN);
     expect(row(gus.id).shadowMs).toBe(50 * MIN);
-    expect(chart.rows.slice(0, 2).map((r) => r.name)).toEqual(['Gus', 'Ivy']);
+    expect(chart.rows.map((r) => r.playerId)).toEqual(report.players.map((p) => p.playerId));
     expect(row(ivy.id).label).toBe('Ivy 0 · avg 26');
     // Hal came off each quarter before (24) and on today (26): above usual.
     expect(row(hal.id).shadowMs).toBe(24 * MIN);
     expect(row(hal.id).thisMatchMs).toBe(26 * MIN);
-    // Players without an average come last.
-    expect(chart.rows[chart.rows.length - 1].shadowMs).toBeNull();
     // Gus and Hal: the sub pattern is the same both matches.
     expect(row(gus.id).thisMatchMs).toBe(24 * MIN);
     // One axis: the match length at least.
@@ -312,12 +312,15 @@ describe('matchChart (#105 AC1)', () => {
     const { engine, state } = play(sq);
     const chart = matchChart(matchReport(engine, state, sq.players), null, sq.players);
     expect(chart.rows.every((r) => r.shadowMs === null)).toBe(true);
-    // Least played first when nobody has an average.
-    expect(chart.rows[0].thisMatchMs).toBe(0);
+    // The report's order (#208): the screen's sort decides what comes first.
+    expect(chart.rows.map((r) => r.name)).toEqual(['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy', 'Jo']);
   });
 });
 
-describe('squad order, never ranked (PO ruling Q1, #143 AC7)', () => {
+// #208 overturned PO ruling Q1 (#143 AC7, "never ranked") for the analytics
+// tables: they sort by their numbers (tableSort.test.ts). The folds still
+// hand their rows over in squad order, which the sorts keep for ties (AC4).
+describe('folded in squad order, the tie order of the table sorts (#208 AC4)', () => {
   it("the match report follows the squad's own order, whatever the minutes", () => {
     const sq = squad();
     const { engine, state } = play(sq);

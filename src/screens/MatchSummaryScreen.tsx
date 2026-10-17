@@ -35,6 +35,8 @@ import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
 import { Chip, ChipRow } from './Chip';
 import { MatchBars } from './Charts';
+import { NAME, sortReportMinutes } from '../app/tableSort';
+import { SortHeading, useTableSort } from './TableSort';
 import { colours, screen } from './theme';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -86,6 +88,8 @@ export function MatchSummaryScreen({
   onSetExcluded?: (excluded: boolean, note: string) => string | null;
   onBack: () => void;
 }) {
+  // #208: the minutes table sorts by its numbers, Total most first by default.
+  const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
   const scroller = useRef<ScrollView>(null);
   // Where the note box sits in the scrolled content, to bring it into view.
@@ -193,13 +197,13 @@ export function MatchSummaryScreen({
           Fair share {formatClock(report.fairShareMs)} each, goal and outfield together.
         </Text>
         <View style={local.head}>
-          <Text style={[local.name, local.headText]}>Player</Text>
-          <Text style={[local.figure, local.headText]}>Total</Text>
-          <Text style={[local.figure, local.headText]}>GK</Text>
-          <Text style={[local.figure, local.headText]}>Out</Text>
-          <Text style={[local.figure, local.headText]}>vs fair</Text>
+          <SortHeading label="Player" column={NAME} {...minutesSort} align="left" style={local.nameHead} />
+          <SortHeading label="Total" column="total" {...minutesSort} style={local.figureHead} />
+          <SortHeading label="GK" column="gk" {...minutesSort} style={local.figureHead} />
+          <SortHeading label="Out" column="out" {...minutesSort} style={local.figureHead} />
+          <SortHeading label="vs fair" column="delta" {...minutesSort} style={local.figureHead} />
         </View>
-        {report.players.map((row) => {
+        {sortReportMinutes(report.players, minutesSort.sort).map((row) => {
           // #142: GK and Out add up to the Total beside them.
           const { goal, outfield } = goalOutfieldSplit(row.goalMs, row.outfieldMs, row.totalMs);
           return (
@@ -230,9 +234,9 @@ export function MatchSummaryScreen({
 
         <Text style={screen.fieldLabel}>Against their average</Text>
         <Text style={screen.hint}>
-          Outline: their average per match attended, from the other matches. Furthest below it first.
+          Outline: their average per match attended, from the other matches. Tap a heading to sort by it.
         </Text>
-        <MatchBars chart={{ ...chart, absent: [] }} />
+        <MatchBars chart={{ ...chart, absent: [] }} table="reportAverage" />
         <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 
         <Text style={screen.fieldLabel}>Subs made: {report.subs.length}</Text>
@@ -453,8 +457,10 @@ const local = StyleSheet.create({
     paddingVertical: 3,
     includeFontPadding: false,
   },
-  head: { flexDirection: 'row', alignSelf: 'stretch', paddingTop: 6, paddingBottom: 4 },
-  headText: { color: colours.inkFaint, fontSize: 12 },
+  head: { flexDirection: 'row', alignSelf: 'stretch', alignItems: 'center', paddingTop: 2 },
+  nameHead: { flex: 1, flexShrink: 1 },
+  // The heading over a figure: the figure's slot, no shrink.
+  figureHead: { width: 50, paddingRight: 4, flexShrink: 0 },
   row: {
     flexDirection: 'row',
     alignSelf: 'stretch',
