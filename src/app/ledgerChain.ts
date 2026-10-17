@@ -78,23 +78,28 @@ export function hashOf(entry: Omit<LedgerEntry, 'hash'> | LedgerEntry): string {
   return sha256(canonical(rest));
 }
 
-/** A new entry after `previous` (null for a genesis). */
+/**
+ * A new entry after `previous` (null for a genesis). `seal` may add fields
+ * before the hash is taken — the install's signature (#193) — so the hash
+ * covers them like any other field.
+ */
 export function makeEntry(
   previous: LedgerEntry | null,
   kind: string,
   records: LedgerRecord[],
   at: Date,
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  seal: (body: Record<string, unknown>) => Record<string, unknown> = (body) => body
 ): LedgerEntry {
-  const body = {
+  const body = seal({
     ...extra,
     seq: previous ? previous.seq + 1 : 0,
     prev: previous ? previous.hash : null,
     at: at.toISOString(),
     kind,
     records,
-  };
-  return { ...body, hash: hashOf(body) };
+  });
+  return { ...body, hash: hashOf(body) } as LedgerEntry;
 }
 
 /** The key a record's later revisions replace it by; null for an unknown type. */

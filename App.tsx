@@ -101,6 +101,7 @@ import {
 } from './src/app/ledger';
 import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { installDeviceSigner } from './src/app/deviceKey';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
@@ -284,6 +285,10 @@ export default function App() {
         setAppClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
         setClockSpeed(appClockSetting().speed);
       }
+
+      // #193: this install's key, before anything is recorded, so every entry
+      // this launch writes is signed. Without one, recording goes on unsigned.
+      await installDeviceSigner();
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.

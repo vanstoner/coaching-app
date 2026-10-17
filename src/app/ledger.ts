@@ -62,6 +62,7 @@ import {
   type LedgerEntry,
   type LedgerRecord,
 } from './ledgerChain';
+import { currentSigner, deviceRecord, publishes, signBody } from './entrySigning';
 
 export type { LedgerEntry, LedgerRecord } from './ledgerChain';
 
@@ -430,13 +431,8 @@ export function emptyLedger(
   now: Date = new Date(0),
   follows?: string
 ): Ledger {
-  const genesis = makeEntry(
-    null,
-    'genesis',
-    [{ type: 'squad', id: squadId, name: squadName }],
-    now,
-    follows ? { from: 'new', follows } : { from: 'new' }
-  );
+  const { records, seal } = signing([], [{ type: 'squad', id: squadId, name: squadName }]);
+  const genesis = makeEntry(null, 'genesis', records, now, follows ? { from: 'new', follows } : { from: 'new' }, seal);
   return fromEntries([genesis], {
     ledgerVersion: LEDGER_VERSION,
     minReaderVersion: LEDGER_READER_VERSION,
@@ -444,11 +440,28 @@ export function emptyLedger(
   });
 }
 
+/**
+ * How this install signs a new entry (#193): with no signer installed,
+ * unchanged. The first entry it signs in a chain also publishes its key.
+ */
+function signing(
+  entries: readonly LedgerEntry[],
+  records: LedgerRecord[]
+): { records: LedgerRecord[]; seal: (body: Record<string, unknown>) => Record<string, unknown> } {
+  const by = currentSigner();
+  if (!by) return { records, seal: (body) => body };
+  return {
+    records: publishes(entries, by.deviceId) ? records : [deviceRecord(by), ...records],
+    seal: (body) => signBody(body, by),
+  };
+}
+
 /** Append one entry holding `records`. Nothing to record, nothing appended. */
-function appendRecords(ledger: Ledger, records: LedgerRecord[], now: Date): Ledger {
-  if (records.length === 0) return ledger;
+function appendRecords(ledger: Ledger, changed: LedgerRecord[], now: Date): Ledger {
+  if (changed.length === 0) return ledger;
   const last = ledger.entries[ledger.entries.length - 1] ?? null;
-  const entries = [...ledger.entries, makeEntry(last, last ? 'record' : 'genesis', records, now)];
+  const { records, seal } = signing(ledger.entries, changed);
+  const entries = [...ledger.entries, makeEntry(last, last ? 'record' : 'genesis', records, now, {}, seal)];
   return fromEntries(
     entries,
     {
