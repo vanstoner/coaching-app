@@ -168,9 +168,10 @@ export function SettingsScreen({
           {confirmForget ? (
             <>
               <Text style={[screen.hint, screen.overtime]}>
-                This deletes the squad, the team name, every saved match and
-                every player's minutes. Export the minutes file first if you
-                want to keep them.
+                This deletes the squad, the team name, every saved match, every
+                player's minutes and any copies the app kept aside after a
+                restore or a damaged save. Back up the app first if you want to
+                keep them.
               </Text>
               <Pressable onPress={onForget} style={screen.linkHit}>
                 <Text style={screen.dangerLink}>Yes, forget everything</Text>

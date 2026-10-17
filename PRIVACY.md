@@ -1,6 +1,6 @@
 # Privacy policy: Heart of the Game: Coach
 
-*Last updated 8 October 2026. Applies to the app named **Heart FC Coach** on the
+*Last updated 17 October 2026. Applies to the app named **Heart FC Coach** on the
 phone and **Heart of the Game: Coach** in the App Store, on iPhone, iPad and
 Android.*
 
@@ -16,12 +16,19 @@ Only what the coach types in or records during a match:
   children with the same name apart. The app refuses surnames. It has no
   place for dates of birth, contact details or photos.
 - **Match records:** who played, when, and in which position; time in goal
-  and outfield; goals, saves and goals conceded; who was available for each
-  match.
+  and outfield; goals, assists, shots on target, saves and goals conceded;
+  tackles, corners and free kicks won; who was available for each match.
 - **Fixtures and settings:** the squad's name, opponents' names, kick-off
   times, match length, and preferences such as who prefers to play in goal.
 - **Notes the coach writes**, for example when correcting a record. Please
   keep children's personal details out of notes.
+- **A signing key for this copy of the app.** The app makes it on the phone
+  and keeps it in the phone's secure storage. It signs what the app records,
+  so a record can later be shown to be unaltered. It identifies this
+  installation of the app, not a person, and holds no information about
+  anyone. Its public half is included in the minutes file and the app backup
+  so the signatures can be checked; its private half never leaves the phone
+  through the app.
 
 ## Where it is kept
 
@@ -45,21 +52,28 @@ Test builds of the app ("Heart FC Beta Coach") are never included in a backup.
 
 ## Sharing
 
-The app shares data only when the coach chooses to, in one of two ways:
+The app shares data only when the coach chooses to, in one of three ways:
 
 - **Export minutes file**, a copy of the season's records.
+- **Back up this app**, one file holding everything the app keeps: the
+  squad's first names, fixtures, plans, settings and the season's records.
+  It is for moving to a new phone or keeping a safe copy. **Restore from a
+  backup** shows what a file holds before anything changes; what was on the
+  phone is kept aside on the phone, not deleted.
 - **Share plan**, a picture of one match's plan for parents: the starting
   positions, the planned substitutions and the bench, with children's first
   names. It shows no minutes and does not say who is unavailable. The app
   makes the picture only for that share and does not keep it.
 
-Where the file or the picture goes, and who sees it, is then the coach's
-choice.
+Where a file or the picture goes, and who sees it, is then the coach's
+choice. Keep files holding children's names somewhere private.
 
 ## Deleting data
 
-**Settings › Forget everything** removes the squad, its matches and every
-recorded minute from the phone. Uninstalling the app does the same. A phone backup made before then
+**Settings › Forget everything** removes the squad, its matches, every
+recorded minute and any copies the app kept aside (after a restore, or when
+saved data could not be read) from the phone. It keeps the signing key, which
+holds no information about anyone. Uninstalling the app does the same. A phone backup made before then
 can keep a copy until Apple or Google replaces it with a newer backup.
 
 ## Children
