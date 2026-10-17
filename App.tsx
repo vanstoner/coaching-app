@@ -102,6 +102,7 @@ import {
 import { clearLedger, ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { installDeviceSigner } from './src/app/deviceKey';
+import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
@@ -1390,6 +1391,12 @@ export default function App() {
                   setMatches(data.matches);
                   persist({ players: data.players, matches: data.matches });
                   setTestKitMessage(data.summary);
+                }}
+                onTimeSigning={() => {
+                  const t = timeSigning();
+                  setTestKitMessage(
+                    `Signing on this phone: ${t.signMs.toFixed(1)} ms to sign, ${t.verifyMs.toFixed(1)} ms to check (average of 5).`
+                  );
                 }}
                 message={testKitMessage}
               />

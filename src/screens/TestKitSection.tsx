@@ -14,6 +14,7 @@ export function TestKitSection({
   onSpeed,
   onAddTestData,
   onAddTestSeason,
+  onTimeSigning,
   message,
 }: {
   speed: ClockSpeed;
@@ -21,6 +22,8 @@ export function TestKitSection({
   onAddTestData: () => void;
   /** A played season on past Saturdays, for the averages (#106). */
   onAddTestSeason: () => void;
+  /** #193 AC6: measure signing on this phone. */
+  onTimeSigning: () => void;
   message: string;
 }) {
   return (
@@ -57,6 +60,12 @@ export function TestKitSection({
         Nine played matches on the Saturdays before today: league, cup and a friendly, with
         absences, subs, goals and a keeper.
       </Text>
+      <Pressable
+        style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+        onPress={onTimeSigning}
+      >
+        <Text style={screen.buttonLabel}>Time signing on this phone</Text>
+      </Pressable>
       {message !== '' && <Text style={screen.hint}>{message}</Text>}
     </View>
   );

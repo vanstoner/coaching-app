@@ -110,3 +110,22 @@ export function signatureStatuses(entries: readonly LedgerEntry[]): SignatureSta
     }
   });
 }
+
+/**
+ * How long signing and checking take on this phone (#193 AC6), for the beta's
+ * Test kit. A throwaway key and an entry-sized message; nothing is recorded.
+ * Elapsed time for a measurement only, never a match clock.
+ */
+export function timeSigning(runs = 5): { signMs: number; verifyMs: number } {
+  const by = signerFromSecret('timing', new Uint8Array(32).fill(9));
+  const message = utf8ToBytes('x'.repeat(2000));
+  by.sign(message); // the first call builds the curve's tables
+  let t = performance.now();
+  let sig: Uint8Array = new Uint8Array(0);
+  for (let i = 0; i < runs; i++) sig = by.sign(message);
+  const signMs = (performance.now() - t) / runs;
+  const key = hexToBytes(by.publicKey);
+  t = performance.now();
+  for (let i = 0; i < runs; i++) ed.verify(sig, message, key);
+  return { signMs, verifyMs: (performance.now() - t) / runs };
+}
