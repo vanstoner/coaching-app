@@ -48,6 +48,7 @@ export function SettingsScreen({
   onBuzzWhenSubDue,
   minutes,
   backup,
+  testMatches,
   testKit,
   onForget,
 }: {
@@ -67,6 +68,8 @@ export function SettingsScreen({
   minutes?: ReactNode;
   /** Back up this app, and restore it (#192). Drawn by the caller. */
   backup?: ReactNode;
+  /** Earlier test matches: the clean-up, and what is hidden (#194). */
+  testMatches?: ReactNode;
   /** The Test kit (#95). Passed only in a Heart FC Beta Coach build. */
   testKit?: ReactNode;
   onForget: () => void;
@@ -162,6 +165,7 @@ export function SettingsScreen({
           </Text>
 
           {minutes}
+          {testMatches}
           {backup}
           {testKit}
 
