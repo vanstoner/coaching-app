@@ -21,6 +21,17 @@ main only and is refreshed in place (same release, tag moved, APK replaced);
 `-f dry_run=true` proves any branch without publishing. The release and beta
 jobs never touch it and check so (`check_release.py --demo-untouched`).
 
+**Google Play (#211).** A build of `main` (and a plain app dispatch of main,
+which is released like a push) also makes an Android App Bundle in the `apk`
+job: same prebuild, asserted to be Heart FC Coach at this version and run,
+backed up, with the APK's JS byte for byte, and a throwaway-key rehearsal of
+the signing gate (`play_bundle.py`). The `play` job then signs a copy with
+Rob's upload key from the `play-store` environment (limited to main, no
+reviewer) and attaches the `.aab`, its `.sha256` and the key's fingerprint to
+the same release. Secrets not set: green, and the page says so. Set but wrong:
+red, naming the problem, never a value; the APK release is untouched. The
+APK stays debug-signed for sideloading. Upload to Play is by hand, for now.
+
 **TestFlight (#108 A).** `testflight.yml` signs and uploads the release
 build of `main`, in the `app-store` environment (Rob approves every run),
 only when a merge changes `app.json`: the version bump that marks a store
