@@ -226,3 +226,13 @@ analysis, iOS". Entries are added as each release ships.
     match reports were checked (every period adds to 350 pitch-minutes;
     match day 3 corrected from its report), turned into a minutes file on top
     of his own, and imported. Nothing on his phone was changed.
+  - **Played lists imported matches (#195, PR #206).** A match in the
+    record with no fixture on this phone appears under Played, tagged
+    reconstructed, and opens read-only.
+  - **Forget everything forgets everything (#207, PR #209).** It now also
+    removes the copies kept aside by a restore or an import, as the privacy
+    policy says.
+- **17 October — Heart FC Coach 1.1.0.** The second store release: app
+  backup and restore, signed entries, shot on target, and imported matches
+  under Played. 1.0.1's saved data, with signed entries, is frozen as
+  `release-1.0.1` and opened by every build in CI (#167).

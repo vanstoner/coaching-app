@@ -21,9 +21,10 @@
  *  1. seeds the Test kit's made-up squad and past season exactly as the
  *     demo's first open does (`seedDemo`, after `emptyLedger`), on a fixed
  *     clock and with ids from a counter, so two runs write the same bytes;
- *  2. saves through `saveSession` and `saveLedger` into an in-memory store;
- *  3. dumps every stored key and value, byte for byte (`store.json`);
- *  4. reads the store back through `loadSession` and `openStoredLedger`, and
+ *  2. signs its entries with a fixed made-up key, if that release signs (#193);
+ *  3. saves through `saveSession` and `saveLedger` into an in-memory store;
+ *  4. dumps every stored key and value, byte for byte (`store.json`);
+ *  5. reads the store back through `loadSession` and `openStoredLedger`, and
  *     writes the figures that code shows (`expected.json`).
  *
  * Made-up first names only (invariant 4). Nothing here touches a device.
@@ -36,6 +37,9 @@ import { resolve } from 'node:path';
 
 /** Fixed, so the fixture is reproducible. */
 const NOW = new Date('2026-10-07T09:00:00.000Z');
+
+/** The made-up install that signs a fixture's entries, for a release that signs. */
+const FIXTURE_DEVICE_ID = '00000000-0000-4000-8000-00000000fee1';
 
 function arg(name: string): string {
   const at = process.argv.indexOf(`--${name}`);
@@ -98,6 +102,16 @@ async function main(): Promise<void> {
 
   const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
   console.log(`freezing release ${version} from commit ${commit}`);
+
+  // A release that signs its entries (#193) signs them here too, as the phone
+  // does once `installDeviceSigner` has run. The key is made up and fixed, and
+  // Ed25519 is deterministic, so two runs write the same bytes. A release
+  // from before signing has no such module and stores unsigned entries.
+  const signing = await import('../src/app/entrySigning').catch(() => null);
+  if (signing) {
+    signing.setEntrySigner(signing.signerFromSecret(FIXTURE_DEVICE_ID, new Uint8Array(32).fill(7)));
+    console.log(`signing entries as made-up device ${FIXTURE_DEVICE_ID}`);
+  }
 
   // App.tsx's launch on an empty phone, in order: the defaults, an empty
   // ledger, the demo seed, then the saves that follow launch.
