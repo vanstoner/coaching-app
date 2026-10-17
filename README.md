@@ -156,7 +156,10 @@ never committed to this repository** and never attached to a release.
 
 Data stays on the phone. **Heart FC Coach** is included in the phone's own
 backup, so a lost or replaced phone keeps the season; **Heart FC Beta Coach** is not.
-CI checks both against the built APK. See
+CI checks both against the built APK. **Settings › Backup** writes one file
+with everything the app keeps, and restores from it, keeping what was on the
+phone aside (#192). Each install signs what it records with a key kept in the
+phone's secure store (#193, ADR-021). See
 [ADR-011](./docs/decisions/011-player-data-stays-on-device.md) and its
 amendment.
 

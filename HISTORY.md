@@ -181,3 +181,58 @@ analysis, iOS". Entries are added as each release ships.
   package becomes `com.vanstoner.coachingapp`, matching iOS, so the old
   Coaching App is uninstalled once. The version is now **1.0.0** on both
   stores and the releases page, with the build number still counting up.
+- **7–9 October — the App Store submission (#162–#164, #181, #183).** A
+  listing, a privacy policy and a small website; a first good set of
+  screenshots, uploaded by CI; answers to Apple's information request; and a
+  TestFlight "What to Test" that walks a tester through the whole version,
+  with a made-up test season to import.
+- **8 October — Heart FC Coach 1.0.1 (#168, #169, #171).** A match's
+  position names can be renamed on the Plan and lineup, and **Share plan**
+  makes one picture of the plan for parents: positions, subs and bench, no
+  minutes. TestFlight now uploads only when a merge bumps the version (#170).
+- **9 October — released data survives every update (#172).** A frozen copy
+  of 1.0.0's saved data is opened by every build in CI, so an update can never
+  again be the thing that loses a season.
+- **14 October — the v1.0.1 audit and its fixes (#178).** A full audit of the
+  code against the invariants. Three fixes Rob approved: a squad that will not
+  read is set aside, never overwritten by an empty one at launch (#173); a
+  forgotten clock asks "Ended at planned time" or "Ended just now" instead of
+  crediting everyone on the pitch with the overrun (#180); and Android screens
+  no longer draw under the status and navigation bars (#174). Specs 01–03 are
+  marked as the approved v1 foundation; three as-built pages and ADRs 018–019
+  describe the app as shipped.
+- **15 October — persistence hygiene (#184).** A ledger write that fails is
+  retried until one lands; session saves queue behind each other; a damaged
+  match is left out after the whole document is set aside, so one bad match
+  no longer costs a season.
+- **16 October — leave a match out; in-play events (#188).** Any match can be
+  left out of the averages and totals, retrospectively and with a note,
+  without touching its minutes (ADR-020). Tackles, corners won, free kicks
+  won and assists join goals and saves as picture buttons.
+- **17 October — the record of truth begins (#191, ADR-021 Proposed).** Rob:
+  *"there's a future date where the record of truth might be centralised…
+  I do want to keep it to a position when we are happy to lock it down."*
+  - **Back up this app, restore it (#192, PR #200).** One file holds
+    everything the app keeps; a restore shows what the file holds, keeps what
+    was on the phone aside, and never deletes. Its first real use moved Rob's
+    season from the beta into Heart FC Coach the same day.
+  - **Each phone signs what it records (#193, PR #201).** An Ed25519 key per
+    install, in the phone's secure store; every entry signed, so a match
+    recorded live can later be shown as untouched wherever the file travels.
+    Measured on Rob's phone: 10–13 ms to sign, 7–8 ms to check.
+  - **Shot on target (#202, PR #204).** A picture button; a goal counts as a
+    shot on target, and the report adds the opposition's.
+  - **This season's first four matches, from paper.** Rob's Excel sheets and
+    match reports were checked (every period adds to 350 pitch-minutes;
+    match day 3 corrected from its report), turned into a minutes file on top
+    of his own, and imported. Nothing on his phone was changed.
+  - **Played lists imported matches (#195, PR #206).** A match in the
+    record with no fixture on this phone appears under Played, tagged
+    reconstructed, and opens read-only.
+  - **Forget everything forgets everything (#207, PR #209).** It now also
+    removes the copies kept aside by a restore or an import, as the privacy
+    policy says.
+- **17 October — Heart FC Coach 1.1.0.** The second store release: app
+  backup and restore, signed entries, shot on target, and imported matches
+  under Played. 1.0.1's saved data, with signed entries, is frozen as
+  `release-1.0.1` and opened by every build in CI (#167).

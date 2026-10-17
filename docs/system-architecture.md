@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-09
+Last updated: 2026-10-17
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -15,7 +15,8 @@ One page. Where it and the code disagree, the code wins. Fix this page.
 | TypeScript | 5.9 | `strict: true`; no `any` in `src/` outside tests |
 | Storage | `@react-native-async-storage/async-storage` 3.1.1 | Behind `KeyValueStore` |
 | Safe areas | `react-native-safe-area-context` ~5.7.0 | The shell pads once; bottom sheets add the bottom inset (#174) |
-| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot` | Ledger export/import, Share plan image |
+| Signing (#193) | `@noble/ed25519` 3.2, `@noble/hashes` 2.4 (pure TS); `expo-secure-store`, `expo-crypto` ~57.0.4 | Key made from `expo-crypto` bytes, kept in the Keystore/Keychain; the biometric permissions the store brings are blocked in `app.json` |
+| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot` | Minutes file and app backup export/import, Share plan image |
 
 No navigation library, no state library, no network client. See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
 
@@ -23,7 +24,7 @@ No navigation library, no state library, no network client. See [ADR-001](./deci
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell: all app state, every action, the router (1,378 lines)
+App.tsx             the shell: all app state, every action, the router (1,582 lines)
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it; storage adapters
@@ -32,8 +33,9 @@ src/screens/        React components; take props, hold only view state
 ```
 
 Rule: `src/engine` and `src/app` import no React and no platform module, with
-four exceptions in `src/app`: `storage.ts` (AsyncStorage), `ledgerFile.ts`,
-`planImageFile.ts` (file system, sharing) and `fonts.ts`.
+five exceptions in `src/app`: `storage.ts` (AsyncStorage), `ledgerFile.ts`,
+`planImageFile.ts` (file system, sharing), `fonts.ts` and `deviceKey.ts`
+(secure store, random bytes).
 
 ## State lifecycle
 
@@ -42,7 +44,8 @@ sequenceDiagram
     participant A as App.tsx
     participant S as AsyncStorage
     participant E as MatchEngine
-    A->>S: loadSession (session/v1)
+    A->>A: installDeviceSigner (key from the secure store, #193)
+    A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
     A->>S: openStoredLedger (ledger/v2 + head)
     A->>A: recordMatches(back-fill) → commitLedger
     A->>S: saveLedger (queued)
@@ -74,10 +77,13 @@ sequenceDiagram
 | `coaching-app/ledger/head` | Last chain head, guards rollback | `saveLedger` | |
 | `coaching-app/ledger/v1` | Pre-v2 ledger, read for upgrade only | none | |
 | `coaching-app/ledger/v2/unreadable/<iso>` | A ledger that failed to verify, set aside intact | `openStoredLedger` | |
+| `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
+| `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | **Not yet removed by Forget everything (#207)** |
+| Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
 | `TEST_CLOCK_KEY` | Beta clock offset and speed | Test kit only | |
 
-Nothing leaves the device except a ledger file or plan image the coach shares
-explicitly (ADR-011). Android `allowBackup` is **true** for Heart FC Coach and
+Nothing leaves the device except a minutes file, an app backup (#192) or a
+plan image the coach shares explicitly (ADR-011). Android `allowBackup` is **true** for Heart FC Coach and
 false for the beta (#112).
 
 ## Navigation topology
@@ -112,6 +118,8 @@ stateDiagram-v2
     analysis --> summary: Back
     analysis --> playing: Back
     summary --> fixtures: Back (match released)
+    fixtures --> record: Open a match from the record (#195)
+    record --> fixtures: Back
     playing --> plan: Plan the rest
     lineup --> plan: Plan the rest
     plan --> playing: Done (planReturn)

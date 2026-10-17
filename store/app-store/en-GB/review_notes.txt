@@ -7,9 +7,12 @@
 - In the app: Settings > Import minutes file, and choose test-season.json (in Recents, or Browse > Downloads). It adds 10 players and a past season.
 - Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
 - Home > Play now > Use suggestion > Start quarter: the live match clock. Tap a player for Goal or Save, or drag a bench player onto the pitch to substitute. End the match for the report.
+- Settings > Backup > Back up this app writes one file with everything the app keeps; Restore from a backup shows what a file holds before replacing anything.
 - Settings > Forget everything removes all data.
 
 4. External services: none. No server, account, analytics, advertising, payments or AI services. All data is stored on the device, included in the device's own iCloud backup, and can be exported by the coach through the system share sheet. The only network use is opening links the user taps.
+
+Encryption: the app signs its own match records with a key it creates and keeps in the device's Keychain, so a record can later be shown to be unaltered. This is authentication only: no data is encrypted by the app, and nothing is sent anywhere. The app therefore declares no non-exempt encryption (ITSAppUsesNonExemptEncryption = NO).
 
 5. Regions: the app works the same in every region. It is offered in the United Kingdom.
 

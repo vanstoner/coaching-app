@@ -1,7 +1,7 @@
 # Domain models
 
 Status: **Draft**, retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-09
+Last updated: 2026-10-17 (#173, #180, #184, #188, #192, #193, #202, #195 AC1)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./specs/01-domain-model.md)) is the
@@ -94,10 +94,14 @@ stateDiagram-v2
     [*] --> pending
     pending --> running: startQuarter (sheet valid; previous ended)
     running --> ended: endQuarter (accumulatedMs frozen; stretches closed)
-    note right of running: end time is always now (#180)
+    note right of running: past planned + 1 min, End offers planned time (floored at the last event) or now (#180)
 ```
 
 - `pending → running → ended`, one way, in index order; at most one `running`.
+- `endQuarter(state, q, atQuarterElapsedMs?)`: an end earlier than now is
+  allowed only past planned + 60 s, never before the last thing recorded
+  (`lastRecordedInQuarter`). `endedAt` keeps the tap time; it is not a
+  correction (#180, Spec 02 Q6).
 - Elapsed = `accumulatedMs + (now − runningSinceWallClock)` (invariant 2).
   Never incremented by a timer.
 
@@ -125,14 +129,22 @@ interface BenchStint { id; matchId; quarterId; playerId; startElapsedMs: number;
 ```ts
 interface MatchEvent {
   id: UUID; matchId: UUID; quarterId: UUID;
-  kind: 'goal' | 'save' | 'conceded' | 'withdrawn';
-  playerId: UUID | null; atElapsedMs: number; recordedAt: string;
-  refersTo: UUID | null;    // set iff kind = 'withdrawn'
+  kind: 'goal' | 'shot_on_target' | 'save' | 'conceded'
+      | 'tackle' | 'corner' | 'free_kick'      // in-play tallies (#185)
+      | 'assist' | 'withdrawn';
+  playerId: UUID | null;    // for 'conceded', the keeper in goal at the time
+  atElapsedMs: number; recordedAt: string;
+  refersTo: UUID | null;    // 'withdrawn': the event taken back; 'assist': its goal
   note: string | null;      // required (non-blank) iff kind = 'withdrawn'
 }
 ```
 
-- `goal`: scorer on the pitch. `save` / `conceded`: the goalkeeper only.
+- `goal`, `shot_on_target`, `tackle`, `corner`, `free_kick`: anyone on the
+  pitch. `save` / `conceded`: the goalkeeper only. `assist`: asked after a
+  goal, from the others on the pitch.
+- **Derived, never stored:** the score (goals and conceded); shots on target
+  = tapped shots **plus goals** (#202); their shots on target = our saves plus
+  goals against.
 - A withdrawal cannot be withdrawn; an event is withdrawn at most once.
 - Attendance after kick-off changes only by a noted correction in the ledger
   (ruling F). Nothing is ever deleted (invariant 5).
@@ -179,14 +191,33 @@ interface Ledger {                          // key coaching-app/ledger/v2
   // folded from entries, never stored:
   squad: { id: UUID; name: string }; players: LedgerPlayer[]; matches: LedgerMatch[];
 }
-// entry record types: squad | player | match | interval | event | attendance
+// entry: { seq, prev, at, kind, records, hash, device?, sig? }
+// record types: squad | player | match | interval | event | attendance
+//             | exclusion (ADR-020) | device (#193)
 ```
+
+- **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
+  with a note after kick-off. Views use `isCounted`; the file summary does not.
+- **Signed** (#193, ADR-021 D4): each install has an Ed25519 key in the
+  platform's secure store and publishes its public key once in a `device`
+  record. Its entries carry `device` and `sig` (over the entry without `hash`
+  and `sig`); `hash` covers `sig`, so older builds still verify. Checking:
+  `signatureStatuses` (`unsigned | valid | invalid | unknown-device`); a bad
+  signature never refuses a chain.
+- **Proposed, not built:** the record types of ADR-021 D2 (fixture,
+  structure, awards, profiles, settings, match-kind, origin).
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.
 - Ledger, unreadable or failing verification: set aside under its own key,
   never overwritten. Too new for this build: shown, never written.
-- Session: older versions are migrated (`MIGRATIONS`). **Known gap:** a
-  session that is too new or fails `validate()` loads as "none", and the first
-  save after launch writes an empty squad over it. The ledger survives; the
-  fixtures, plans and squad list do not. See #173.
+- Session: older versions are migrated (`MIGRATIONS`). One that will not read
+  is copied aside under `session/v1/unreadable/<time>` and read back before a
+  new one is written; one too new for this build is never written (#173).
+  `validate()` checks players, positions, periods and stretches element by
+  element: a bad squad is set aside, a bad match is left out after the whole
+  document is copied aside (#184). Saves run one at a time per store.
+- **App backup** (#192): `coaching-app/phone-backup` v1, the session and the
+  ledger in one file. A restore copies what is there to
+  `coaching-app/before-restore/<time>/…`, reads it back, then writes the backup.
+- **Copies kept aside are not yet removed by Forget everything** (#207).
