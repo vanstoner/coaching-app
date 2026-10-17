@@ -201,7 +201,12 @@ export function kickoffLabel(
       : started
         ? new Date(started)
         : null;
-  if (!at) return 'Date TBC';
+  return whenLabel(at, now);
+}
+
+/** "Sat 12 Sep · 10:30", the year added only when it is not this one; "Date TBC" for none. */
+export function whenLabel(at: Date | null, now: Date): string {
+  if (!at || Number.isNaN(at.getTime())) return 'Date TBC';
 
   const time = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const sameYear = at.getFullYear() === now.getFullYear();

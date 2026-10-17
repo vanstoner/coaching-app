@@ -42,7 +42,9 @@ export type Step =
   | 'settings'
   | 'squad'
   | 'lineup'
-  | 'playing';
+  | 'playing'
+  /** A played match from the minutes record, with no fixture on this phone (#195). Read-only. */
+  | 'record';
 
 export type Tab = 'home' | 'squad' | 'settings';
 

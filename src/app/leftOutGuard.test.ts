@@ -23,6 +23,7 @@ const NOT_CROSS_GAME: Record<string, string> = {
   'src/engine/MatchEngine.ts': 'the engine runs one match',
   'src/app/matchClosing.ts': 'closing one match',
   'src/app/fixtures.ts': 'which list or screen one fixture belongs to',
+  'src/app/recordOnly.ts': 'lists played matches for Played (#195), left-out ones included and marked, as Played always has',
   'src/app/phoneBackup.ts': 'counts what a backup file holds (#192), not a figure: a left-out match is still in the file',
   'src/screens/MatchSummaryScreen.tsx': 'one match report',
   'src/app/squadViews.ts':
