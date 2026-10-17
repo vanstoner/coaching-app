@@ -27,6 +27,8 @@ import { Pressable, ScrollView, StyleSheet, View, type DimensionValue } from 're
 import { Text } from './Text';
 
 import type { MatchChart } from '../app/analysis';
+import { NAME, sortMatchBars, type TableId } from '../app/tableSort';
+import { SortHeading, useTableSort } from './TableSort';
 import type { PositionUnit } from '../types/index';
 import { colours } from './theme';
 
@@ -59,8 +61,13 @@ export const unitColours: Record<PositionUnit, string> = {
 const pct = (ms: number, max: number): DimensionValue =>
   `${Math.max(0, Math.min(100, max > 0 ? (ms / max) * 100 : 0))}%`;
 
-/** #105 AC1: this match, over the shadow of the season average. */
-export function MatchBars({ chart }: { chart: MatchChart }) {
+/**
+ * #105 AC1: this match, over the shadow of the season average. Sorted by the
+ * heading chosen above it (#208), each screen with its own default: the
+ * report's "Against their average" by the distance, analysis by the minutes.
+ */
+export function MatchBars({ chart, table }: { chart: MatchChart; table: Extract<TableId, 'reportAverage' | 'analysisMinutes'> }) {
+  const { sort, onSort } = useTableSort(table);
   return (
     <View style={local.chart}>
       <View style={local.legend}>
@@ -68,7 +75,12 @@ export function MatchBars({ chart }: { chart: MatchChart }) {
         <Swatch fill={chartColours.goal} label="In goal" />
         <Swatch outline label="Their average" />
       </View>
-      {chart.rows.map((row) => (
+      <View style={local.sortRow}>
+        <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.sortName} />
+        <SortHeading label="This match" column="total" sort={sort} onSort={onSort} style={local.sortFigure} />
+        <SortHeading label="vs average" column="offset" sort={sort} onSort={onSort} style={local.sortFigure} />
+      </View>
+      {sortMatchBars(chart.rows, sort).map((row) => (
         <View key={row.playerId} style={local.row} accessible accessibilityLabel={row.label}>
           <Text style={local.label} numberOfLines={1}>
             {row.label}
@@ -355,6 +367,16 @@ function Swatch({ fill, outline, label }: { fill?: string; outline?: boolean; la
 const BAR = 22;
 
 const local = StyleSheet.create({
+  sortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderBottomWidth: 1,
+    borderBottomColor: colours.line,
+    marginBottom: 4,
+  },
+  sortName: { flex: 1, flexShrink: 1 },
+  sortFigure: { width: 84, marginLeft: 8 },
   chart: { alignSelf: 'stretch' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'stretch', marginBottom: 8 },
   swatchItem: { flexDirection: 'row', alignItems: 'center', marginRight: 14, marginBottom: 4 },

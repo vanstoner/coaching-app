@@ -21,7 +21,9 @@
  * - **Positions tried** (AC5): time in GK, DEF, MID and FWD. A record: never
  *   a target, a warning or a score (invariant 3).
  *
- * Nothing is ranked. Every list keeps the squad's own order (AC7).
+ * Every list here comes in the squad's own order. The screens sort it by its
+ * numbers (`tableSort.ts`, #208, which overturned PO ruling Q1's "nothing is
+ * ranked" for these views); the squad's order is what keeps ties still.
  *
  * **A match the coach left out (ADR-020, #187)** stays in the grid and
  * match-by-match as `counted: false`, so the record is complete, and is left
@@ -513,10 +515,14 @@ export function fairnessTile(f: Fairness | null): string {
   return f === null ? AFTER_FIRST_MATCH : `Everyone within ${f.gap} min a game`;
 }
 
-/** "Owed time: Dee, Gus, Ivy, Jo". */
+/** "Owed time: Jo, Dee, Gus": most owed first, ties in squad order (#208). */
 export function saturdayTile(rows: readonly OwedRow[], f: Fairness | null): string {
   if (f === null) return AFTER_FIRST_MATCH;
-  const named = rows.filter((r) => r.named).map((r) => r.name);
+  const named = rows
+    .filter((r) => r.named)
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (b.r.owed ?? 0) - (a.r.owed ?? 0) || a.i - b.i)
+    .map(({ r }) => r.name);
   return named.length > 0 ? `Owed time: ${named.join(', ')}` : `Nobody owed ${OWED_MIN} min or more`;
 }
 

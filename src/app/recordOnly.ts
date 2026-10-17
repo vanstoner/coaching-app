@@ -89,7 +89,10 @@ export function scoreLabel(score: RecordOnlyMatch['score']): string {
 
 export interface RecordMatchPage {
   match: RecordOnlyMatch;
-  /** Each child who played, most minutes first: total and the part in goal. */
+  /**
+   * Each child who played, total and the part in goal, in the record's squad
+   * order: the tie order the screen's sort keeps (#208).
+   */
   minutes: { playerId: UUID; name: string; totalMs: number; goalMs: number }[];
   /** Our goals, in match order; a goal with no scorer reads "Unknown". */
   goals: { name: string; period: number; atMs: number }[];
@@ -103,6 +106,8 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
   if (!ledger || !m) return null;
   const nameOf = new Map(ledger.players.map((p) => [p.id, p.firstName]));
   const name = (id: UUID | null) => (id ? (nameOf.get(id) ?? 'Unknown') : 'Unknown');
+  const at = new Map(ledger.players.map((p, i) => [p.id, i]));
+  const squadAt = (id: UUID) => at.get(id) ?? ledger.players.length;
 
   const rows = new Map<UUID, { totalMs: number; goalMs: number }>();
   for (const i of m.intervals) {
@@ -118,7 +123,7 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
     match,
     minutes: [...rows]
       .map(([playerId, r]) => ({ playerId, name: name(playerId), ...r }))
-      .sort((a, b) => b.totalMs - a.totalMs || a.name.localeCompare(b.name)),
+      .sort((a, b) => squadAt(a.playerId) - squadAt(b.playerId)),
     goals: events
       .filter((e) => e.kind === 'goal')
       .sort((a, b) => a.atMs - b.atMs)

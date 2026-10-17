@@ -9,8 +9,9 @@
  * moment it matters: the file carries children's first names.
  *
  * Invariant 3 (ADR-015, #101): Total, goal plus outfield, is the fairness
- * figure; Out and GK are its breakdown. The list is in squad order, never
- * ranked by minutes (PO ruling Q1, #143 AC7). A player's
+ * figure; Out and GK are its breakdown. The table sorts by its numbers, Total
+ * most first by default, and a tap on a heading re-sorts it (#208, which
+ * overturned PO ruling Q1's squad order here). Ties keep squad order. A player's
  * outfield-share target is shown under their name as on track or below, and
  * is never a fairness input.
  */
@@ -24,11 +25,13 @@ import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
 import { inSquadOrder, minutesRowSeconds } from '../app/analysis';
+import { NAME, sortSettingsMinutes } from '../app/tableSort';
 import { UNIT_LABEL, isExcluded, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
 import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
 import { colours, screen } from './theme';
+import { SortHeading, useTableSort } from './TableSort';
 
 export function MinutesSection({
   ledger,
@@ -50,9 +53,11 @@ export function MinutesSection({
   onExport: () => void;
   onImport: () => void;
 }) {
-  // PO ruling Q1 (#143 AC7): squad order, never by minutes. Anyone the
-  // ledger knows who is not in this squad follows.
-  const rows = inSquadOrder(ledger ? seasonRows(ledger) : [], players);
+  // #208: sorted by the heading the coach chose, Total most first by default.
+  // Squad order underneath, so ties keep it; anyone the ledger knows who is
+  // not in this squad follows them on a tie.
+  const { sort, onSort } = useTableSort('settingsMinutes');
+  const rows = sortSettingsMinutes(inSquadOrder(ledger ? seasonRows(ledger) : [], players), sort);
   const shares = ledger ? seasonOutfieldShares(ledger, players) : new Map();
   const matches = ledger?.matches.length ?? 0;
   // ADR-020: matches the coach left out are in the record, not in the figures.
@@ -77,10 +82,10 @@ export function MinutesSection({
 
       {rows.length > 0 && (
         <View style={local.head}>
-          <Text style={[local.name, local.headText]}>Player</Text>
-          <Text style={[local.figure, local.headText]}>Out</Text>
-          <Text style={[local.figure, local.headText]}>GK</Text>
-          <Text style={[local.figure, local.headText]}>Total</Text>
+          <SortHeading label="Player" column={NAME} sort={sort} onSort={onSort} align="left" style={local.nameCol} />
+          <SortHeading label="Out" column="out" sort={sort} onSort={onSort} style={local.figureHead} />
+          <SortHeading label="GK" column="gk" sort={sort} onSort={onSort} style={local.figureHead} />
+          <SortHeading label="Total" column="total" sort={sort} onSort={onSort} style={local.figureHead} />
         </View>
       )}
       {rows.map((row) => {
@@ -100,10 +105,9 @@ export function MinutesSection({
                   .map((u) => `${UNIT_LABEL[u]} ${formatClock(sec.byUnit[u] * 1000)}`)
                   .join(' · ')}
               </Text>
-              {/* #102 AC4: matches attended and missed; AC3: average per match attended. */}
-              <Text style={local.units} numberOfLines={1}>
-                {attendanceLine(attendance.get(row.playerId))}
-              </Text>
+              {/* #102 AC4: matches attended and missed; AC3: average per match attended.
+                  #208: wraps rather than losing its tail beside the three figures. */}
+              <Text style={local.units}>{attendanceLine(attendance.get(row.playerId))}</Text>
               {shareLabel(shares.get(row.playerId)) !== '' && (
                 <Text
                   style={[
@@ -181,7 +185,8 @@ const local = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colours.line,
   },
-  headText: { color: colours.inkMuted, fontSize: 12 },
+  // The heading over a figure: the figure's width, no shrink.
+  figureHead: { width: 64, flexShrink: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

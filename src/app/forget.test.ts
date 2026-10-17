@@ -13,6 +13,7 @@ import { makePhoneBackup, readPhoneBackup, restorePhoneBackup } from './phoneBac
 import { makeSevenASideFormat } from './placeholderSquad';
 import { makePlayer } from './squad';
 import { UNREADABLE_SESSION_PREFIX, openStoredSession } from './sessionStore';
+import { TABLE_SORT_KEY } from './tableSort';
 import { TEST_CLOCK_KEY } from './testKit';
 import { uuid } from '../types/index';
 
@@ -74,6 +75,19 @@ describe('Forget everything (#207)', () => {
     expect(outcome.complete).toBe(false);
     expect(await memory.getItem(STORAGE_KEY)).toBeNull();
     expect(await memory.getItem(LEDGER_STORAGE_KEY)).toBeNull();
+  });
+
+  it('#208 AC6: the tables\' remembered sorts go too, even from a store that cannot list its keys', async () => {
+    const listed = await usedPhone();
+    await listed.setItem(TABLE_SORT_KEY, '{"squadFairness":{"key":"name","dir":"asc"}}');
+    await forgetAppData(listed);
+    expect(await listed.getItem(TABLE_SORT_KEY)).toBeNull();
+
+    const memory = await usedPhone();
+    await memory.setItem(TABLE_SORT_KEY, '{"squadFairness":{"key":"name","dir":"asc"}}');
+    const unlisted: KeyValueStore = { getItem: memory.getItem, setItem: memory.setItem, removeItem: memory.removeItem };
+    await forgetAppData(unlisted);
+    expect(await memory.getItem(TABLE_SORT_KEY)).toBeNull();
   });
 
   it('AC5: the privacy policy says what this does', () => {

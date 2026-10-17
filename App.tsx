@@ -74,6 +74,7 @@ import {
 import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
 import { forgetAppData } from './src/app/forget';
 import { createDeviceStore } from './src/app/storage';
+import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { kickoffTimes } from './src/app/attendance';
 import {
@@ -181,6 +182,9 @@ interface LiveMatch {
 
 export default function App() {
   const store = useMemo(() => createDeviceStore(), []);
+  // #208 AC6: each analytics table's sort, remembered on this phone. Forget
+  // everything removes it from the store and starts the memory afresh.
+  const [sortsForgotten, setSortsForgotten] = useState(0);
 
   // The tap sheet's pictures (#185): loaded at launch so the first tap on
   // Saturday does not show empty stickers. A failure costs the pictures, not
@@ -990,6 +994,7 @@ export default function App() {
     setSquadName(PLACEHOLDER_SQUAD_NAME);
     setSquadErrand('home');
     setStep('fixtures');
+    setSortsForgotten((n) => n + 1);
   }, [store]);
 
   /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
@@ -1635,7 +1640,9 @@ export default function App() {
     <SafeAreaProvider>
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
-      <View style={screen.column}>{body}</View>
+      <TableSortProvider key={sortsForgotten} store={store} remember={sortsForgotten === 0}>
+        <View style={screen.column}>{body}</View>
+      </TableSortProvider>
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>

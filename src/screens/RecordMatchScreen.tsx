@@ -13,10 +13,14 @@ import { Text } from './Text';
 import { competitionLabel, whenLabel } from '../app/fixtures';
 import { formatClock } from '../app/matchClock';
 import { scoreLabel, type RecordMatchPage } from '../app/recordOnly';
+import { NAME, sortRecordMinutes } from '../app/tableSort';
 import { colours, screen } from './theme';
+import { SortHeading, useTableSort } from './TableSort';
 
 export function RecordMatchScreen({ page, now, onBack }: { page: RecordMatchPage; now: Date; onBack: () => void }) {
   const { match } = page;
+  // #208: most minutes first by default; a tap on a heading re-sorts.
+  const { sort, onSort } = useTableSort('recordMinutes');
   const competition = competitionLabel(match.competition);
   return (
     <View style={screen.flex}>
@@ -61,7 +65,12 @@ export function RecordMatchScreen({ page, now, onBack }: { page: RecordMatchPage
         )}
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
-        {page.minutes.map((m) => (
+        <View style={local.head}>
+          <SortHeading label="Player" column={NAME} sort={sort} onSort={onSort} align="left" style={local.nameHead} />
+          <SortHeading label="Minutes" column="total" sort={sort} onSort={onSort} style={local.figureHead} />
+          <SortHeading label="GK" column="gk" sort={sort} onSort={onSort} style={local.goalHead} />
+        </View>
+        {sortRecordMinutes(page.minutes, sort).map((m) => (
           <View key={m.playerId} style={local.row}>
             <Text style={local.name} numberOfLines={1}>
               {m.name}
@@ -118,4 +127,14 @@ const local = StyleSheet.create({
   figure: { width: 64, flexShrink: 0, textAlign: 'right', color: colours.ink, fontSize: 15, includeFontPadding: false },
   goal: { width: 84, flexShrink: 0, textAlign: 'right', color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
   faint: { color: colours.inkFaint },
+  head: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderBottomWidth: 1,
+    borderBottomColor: colours.line,
+  },
+  nameHead: { flex: 1, flexShrink: 1 },
+  figureHead: { width: 64, flexShrink: 0 },
+  goalHead: { width: 84, flexShrink: 0 },
 });
