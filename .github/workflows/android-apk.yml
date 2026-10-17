@@ -15,6 +15,8 @@ name: Android APK
 #           renders (issue #43). It consumes the `apk` job's artifact rather
 #           than rebuilding, so the ~6-minute build happens once per run.
 #   release / beta  publish, and only after the jobs they need succeeded.
+#   play    #211: signs the Play bundle the apk job made with Rob's upload
+#           key and attaches it to the release (play_bundle.py).
 #   demo    #146: on a dispatch with distribution=demo, publishes the
 #           `demo` release, from main only, after the same three jobs.
 
@@ -46,7 +48,7 @@ on:
         options: [app, demo]
         default: app
       dry_run:
-        description: "demo only: build and smoke-test, publish nothing (any branch)"
+        description: "build and smoke-test (and for app, check the Play bundle), publish nothing (any branch)"
         type: boolean
         default: false
 
@@ -149,6 +151,10 @@ jobs:
       # request (the same condition as APP_VARIANT), demo on a demo dispatch,
       # app on main and on any other dispatch. build-label.sh reads it too.
       DISTRIBUTION: ${{ inputs.distribution == 'demo' && 'demo' || (github.event_name == 'pull_request' && 'beta' || 'app') }}
+      # #211: Heart FC Coach also gets an Android App Bundle for Google Play,
+      # on main and on any app dispatch; never on a PR (the beta) or the demo.
+      PLAY_BUNDLE: ${{ github.event_name != 'pull_request' && inputs.distribution != 'demo' }}
+      AAB: android/app/build/outputs/bundle/release/app-release.aab
     steps:
       # #146 AC2: the demo publishes from main only. A real (not dry-run)
       # demo dispatch anywhere else stops here, in seconds, rather than
@@ -460,6 +466,50 @@ jobs:
 
           exit $fail
 
+      # #211 A1-A4: the Play bundle, from the same prebuild and the same JS.
+      # Gradle signs it with the debug key, like the APK; the `play` job
+      # signs a copy with Rob's upload key. Nothing here touches a secret.
+      - name: Build the Play bundle
+        if: env.PLAY_BUNDLE == 'true'
+        run: ./gradlew bundleRelease --no-daemon
+        working-directory: android
+
+      # Self-test first (healthy cases before refusals, throwaway keys only),
+      # then the real bundle: Heart FC Coach at this version and run, backed
+      # up, the APK's JS byte for byte (E4: the JS that passed the emulator
+      # test), and a throwaway-key rehearsal of the signing gate on it (B6).
+      - name: Assert the Play bundle is this APK's app, and rehearse signing it
+        if: env.PLAY_BUNDLE == 'true'
+        run: |
+          set -uo pipefail
+          python3 .github/scripts/play_bundle.py --self-test || {
+            echo "WHY THIS JOB FAILED: play_bundle.py failed its own self-test"; exit 1; }
+          test -f "$AAB" || { echo "WHY THIS JOB FAILED: no bundle at $AAB"; exit 1; }
+          echo "aab size: $(stat -c%s "$AAB") bytes"
+          BUNDLETOOL_VERSION=1.18.1
+          BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
+          curl -fsSL --retry 3 -o /tmp/bundletool.jar \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" || {
+            echo "WHY THIS JOB FAILED: could not download bundletool ${BUNDLETOOL_VERSION}"; exit 1; }
+          echo "${BUNDLETOOL_SHA256}  /tmp/bundletool.jar" | sha256sum -c - || {
+            echo "WHY THIS JOB FAILED: bundletool ${BUNDLETOOL_VERSION} is not the file pinned here"; exit 1; }
+          java -jar /tmp/bundletool.jar dump manifest --bundle "$AAB" > /tmp/aab-manifest.xml || {
+            echo "WHY THIS JOB FAILED: bundletool could not read the bundle's manifest"; exit 1; }
+          PACKAGE="$(python3 -c 'import json; print(json.load(open("app.json"))["expo"]["android"]["package"])')"
+          python3 .github/scripts/play_bundle.py check /tmp/aab-manifest.xml "$APK" "$AAB" \
+            "$PACKAGE" "$VERSION" "$ANDROID_VERSION_CODE" || {
+            echo "WHY THIS JOB FAILED: the Play bundle is not this build of Heart FC Coach (PROBLEM lines above)"; exit 1; }
+          python3 .github/scripts/play_bundle.py rehearse "$AAB" || {
+            echo "WHY THIS JOB FAILED: the signing gate failed its rehearsal on the real bundle (PROBLEM lines above)"; exit 1; }
+
+      - name: Upload the Play bundle (debug-signed; the play job signs it)
+        if: env.PLAY_BUNDLE == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coaching-app-aab
+          path: ${{ env.AAB }}
+          if-no-files-found: error
+
       # AC-A1: exactly one .apk in the artifact.
       - name: Upload the APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -673,14 +723,22 @@ jobs:
     # unit tests, typecheck or lint (#99 AC6). With no status function in
     # `if:`, Actions ANDs in success(): a failed or skipped need skips this job.
     needs: [checks, apk, smoke]
+    # #211 E17: a plain (app, not dry-run) dispatch of main is a rebuild on
+    # demand and is released like a push, with its own, higher N, so a Play
+    # bundle can be made without a new commit.
     if: >-
-      github.event_name == 'push' &&
-      (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+      (github.event_name == 'push' &&
+       (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+       inputs.distribution == 'app' && !inputs.dry_run)
     runs-on: ubuntu-latest
     permissions:
       contents: write             # least privilege: this job only
       pull-requests: read         # #128: which PR this commit came from
       issues: read                # #128: the titles of the issues it closes
+    outputs:
+      tag: ${{ steps.tag.outputs.TAG }}
+      asset: ${{ steps.tag.outputs.ASSET }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -694,6 +752,7 @@ jobs:
           path: release-apk
 
       - name: Work out the tag and verify the APK carries that version
+        id: tag
         run: |
           set -uo pipefail
           gh --version
@@ -749,6 +808,8 @@ jobs:
           sha256sum "$NAME" > "$NAME.sha256"
           cat "$NAME.sha256"
           echo "ASSET=$NAME" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ASSET=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Generate the release notes
         run: |
@@ -891,6 +952,113 @@ jobs:
             echo
             gh release view "$TAG" --json assets --jq '.assets[] | "- \(.name)"'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # The Google Play bundle — #211
+  # ---------------------------------------------------------------------------
+  #
+  # After the release exists: signs a copy of the apk job's bundle with Rob's
+  # upload key and attaches it, with its fingerprint, to that release. Play
+  # App Signing then re-signs what Play installs; the APK beside it stays
+  # debug-signed and sideloadable, unchanged.
+  #
+  # The key lives in the `play-store` environment, which Rob limits to main
+  # (D15): a pull request's jobs never run this, and a PR that edited the
+  # workflow to reference the environment would be refused by its branch rule.
+  # Unlike `app-store` it has no required reviewer, so it costs no click.
+  #
+  # Secrets not set yet (the state until Rob adds them): green, and the
+  # release page says so (C9). Set but wrong: red, with a WHY block that names
+  # the problem and never a value (C11, PO E2); the APK release, already
+  # published, is untouched.
+  play:
+    name: Sign the Play bundle and attach it
+    needs: [release]
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    environment: play-store
+    permissions:
+      contents: write             # attach the bundle, add its section to the page
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.release.outputs.tag }}
+      APK_ASSET: ${{ needs.release.outputs.asset }}
+      PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+      PLAY_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEYSTORE_PASSWORD }}
+      PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+      SETUP: https://github.com/${{ github.repository }}/issues/211
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: coaching-app-aab
+          path: play-aab
+
+      - name: Sign with the upload key, attach, and say so on the release page
+        run: |
+          set -uo pipefail
+          python3 .github/scripts/play_bundle.py --self-test > /tmp/self-test.txt 2>&1 || {
+            cat /tmp/self-test.txt
+            echo "WHY THIS JOB FAILED: play_bundle.py failed its own self-test"; exit 1; }
+          SRC="$(find play-aab -name '*.aab' -print -quit)"
+          test -n "$SRC" || { echo "WHY THIS JOB FAILED: no bundle in the apk job's artifact"; exit 1; }
+          test -n "$TAG" || { echo "WHY THIS JOB FAILED: the release job named no tag"; exit 1; }
+          gh release view "$TAG" --json body --jq .body > body.md || exit 1
+
+          STATE="$(python3 .github/scripts/play_bundle.py secrets)"
+          echo "upload-key secrets: $STATE"
+          if [ "$STATE" = absent ]; then
+            MSG="No Play bundle: PLAY_UPLOAD_KEYSTORE_BASE64, PLAY_UPLOAD_KEYSTORE_PASSWORD and PLAY_UPLOAD_KEY_ALIAS not set in the play-store environment. Setup: $SETUP"
+            { echo; echo "## Google Play"; echo; echo "$MSG"; } >> body.md
+            gh release edit "$TAG" --notes-file body.md || exit 1
+            echo "$MSG" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$STATE" != present ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: only some upload-key secrets are set ($STATE)."
+            echo "Add the rest to the play-store environment: $SETUP"
+            echo "=============================================================="
+            exit 1
+          fi
+
+          AAB="${APK_ASSET%.apk}.aab"
+          python3 .github/scripts/play_bundle.py sign "$SRC" "$AAB" > /tmp/sign.txt 2>&1
+          SIGNED=$?
+          cat /tmp/sign.txt
+          if [ "$SIGNED" -ne 0 ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: the upload key did not sign the bundle (PROBLEM lines above)."
+            echo "No secret value is printed. Check the secrets against the steps: $SETUP"
+            echo "The APK release is published and unaffected."
+            echo "=============================================================="
+            exit 1
+          fi
+          FINGERPRINT="$(sed -n 's/^FINGERPRINT=//p' /tmp/sign.txt)"
+          sha256sum "$AAB" > "$AAB.sha256"
+          gh release upload "$TAG" "$AAB" "$AAB.sha256" --clobber || exit 1
+          {
+            echo
+            echo "## Upload to Google Play"
+            echo
+            echo "\`$AAB\` is this build for the Play Console: **Testing › Closed testing › Create new release**, then upload it."
+            echo "It is signed with the upload key, SHA-256 fingerprint:"
+            echo
+            echo '```'
+            echo "$FINGERPRINT"
+            cat "$AAB.sha256"
+            echo '```'
+            echo
+            echo "The fingerprint must match the upload key the Play Console shows under **App integrity**."
+            echo "The \`.apk\` above is for installing directly; the \`.aab\` is only for Google Play."
+          } >> body.md
+          gh release edit "$TAG" --notes-file body.md || exit 1
+
+          gh release view "$TAG" --json assets > /tmp/assets.json || exit 1
+          python3 .github/scripts/play_bundle.py assets /tmp/assets.json || {
+            echo "WHY THIS JOB FAILED: the release carries an asset this project never publishes (above)"; exit 1; }
+          echo "Attached $AAB to $TAG (upload key $FINGERPRINT)" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Publish Heart FC Beta Coach — #79
