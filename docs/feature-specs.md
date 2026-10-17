@@ -51,6 +51,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 |---|---|---|---|---|---|
 | Record | Every save | Ledger writable | Only closed intervals; idempotent by id; hash-chained (ADR-013/014); each entry signed by the install (#193) | ledger | A failed write is retried on the next commit until one lands (#184) |
 | Leave a match out | Match report | — | An `exclusion` record with a note; out of averages, totals and games missed, still listed (ADR-020) | ledger `exclusion` | — |
+| Hide test matches | Settings › Test matches | #194 | Offers earlier matches with no opponent that were left out as a test or ended within a period; the coach confirms. A `match-kind` record (`test`, with a note) hides each from every screen (`visibleLedger`); listed only here, each can be shown again | ledger `match-kind` | — |
 | Open at launch | Launch | — | Never overwrites: unreadable → set aside; too new → read-only. Same rules for the session (#173) | ledger, head, session, `unreadable/*` | Store read fails → blocked this session |
 | Export | Settings → Minutes | — | Explicit act to a place the coach chooses (ADR-011) | none | Shows count + fingerprint |
 | Import | Settings → Minutes | Not blocked | Extends the chain or is refused; never merged | ledger, session `players` | Diverged chain refused with reason |

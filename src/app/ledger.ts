@@ -127,11 +127,37 @@ export interface LedgerMatch {
   attendance?: LedgerAttendance[];
   /** Left out of averages and season totals (ADR-020). Absent: it counts. */
   excluded?: LedgerExclusion;
+  /** Test or void: hidden from every screen, kept in the record (#194, ADR-021 D3). */
+  matchKind?: LedgerMatchKind;
 }
 
 /** True when the coach has left this match out of the figures (ADR-020). */
 export function isExcluded(match: Pick<LedgerMatch, 'excluded'>): boolean {
   return match.excluded?.excluded === true;
+}
+
+/**
+ * What a match is, when the coach has said (#194, ADR-021 D3): a `test` or a
+ * `void` match is hidden from every screen; `real` undoes that. Latest wins,
+ * with a note. An older build carries the record and shows the match.
+ */
+export interface LedgerMatchKind {
+  kind: 'real' | 'test' | 'void' | (string & Record<never, never>);
+  note: string | null;
+}
+
+/** Hidden from every screen: marked a test or void. The record keeps it. */
+export function isHidden(match: Pick<LedgerMatch, 'matchKind'>): boolean {
+  return match.matchKind?.kind === 'test' || match.matchKind?.kind === 'void';
+}
+
+/**
+ * The ledger as every screen sees it: hidden matches gone (#194). Recording,
+ * export and import keep using the whole ledger, so nothing leaves the record.
+ */
+export function visibleLedger(ledger: Ledger): Ledger {
+  if (!ledger.matches.some(isHidden)) return ledger;
+  return { ...ledger, matches: ledger.matches.filter((m) => !isHidden(m)) };
 }
 
 /** One entry on a match's time stream, as the ledger keeps it. */
@@ -199,6 +225,7 @@ const FIELDS: Record<string, readonly string[]> = {
   event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
+  'match-kind': ['type', 'matchId', 'kind', 'note'],
 };
 
 /** Top-level fields of a file this build knows. The rest are carried. */
@@ -280,6 +307,8 @@ function checkRecord(r: LedgerRecord): void {
         return str(r.matchId) && str(r.playerId) && str(r.status);
       case 'exclusion':
         return str(r.matchId) && typeof r.excluded === 'boolean';
+      case 'match-kind':
+        return str(r.matchId) && str(r.kind);
       default:
         return true;
     }
@@ -296,6 +325,7 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
   const events = new Map<UUID, LedgerEvent[]>();
   const attendance = new Map<UUID, LedgerAttendance[]>();
   const exclusions = new Map<UUID, LedgerExclusion>();
+  const kinds = new Map<UUID, LedgerMatchKind>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -377,6 +407,10 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
           note: typeof r.note === 'string' ? r.note : null,
         });
         break;
+      case 'match-kind':
+        matchFor(r.matchId as UUID);
+        kinds.set(r.matchId as UUID, { kind: String(r.kind), note: typeof r.note === 'string' ? r.note : null });
+        break;
     }
   }
 
@@ -387,12 +421,14 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
       const ev = events.get(m.id);
       const att = attendance.get(m.id);
       const exc = exclusions.get(m.id);
+      const kind = kinds.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
         ...(ev ? { events: ev.sort(byTime) } : {}),
         ...(att ? { attendance: att } : {}),
         ...(exc ? { excluded: exc } : {}),
+        ...(kind ? { matchKind: kind } : {}),
       };
     }),
   };
@@ -708,6 +744,32 @@ export function setMatchExcluded(
   return {
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'exclusion', matchId, excluded, note: trimmed }], now),
+  };
+}
+
+/**
+ * Mark a match as a test or void, or as real again (#194). A new `match-kind`
+ * record with a mandatory note (invariant 5); no interval is touched, and the
+ * earlier record stays in the chain.
+ */
+export function setMatchKind(
+  ledger: Ledger,
+  matchId: UUID,
+  kind: 'real' | 'test' | 'void',
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) {
+    return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  }
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if ((match.matchKind?.kind ?? 'real') === kind) return { ok: false, reason: 'That match is already marked so.' };
+  return {
+    ok: true,
+    ledger: appendRecords(ledger, [{ type: 'match-kind', matchId, kind, note: trimmed }], now),
   };
 }
 

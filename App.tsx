@@ -28,6 +28,7 @@ import {
   listedFixtures,
   matchIsUnderway,
   openDestination,
+  whenLabel,
 } from './src/app/fixtures';
 import { currentQuarter } from './src/app/matchClock';
 import {
@@ -97,6 +98,8 @@ import {
   parseLedger,
   recordMatches,
   setMatchExcluded,
+  setMatchKind,
+  visibleLedger,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
@@ -109,6 +112,9 @@ import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from '.
 import { MinutesSection } from './src/screens/MinutesSection';
 import { BackupSection } from './src/screens/BackupSection';
 import { RecordMatchScreen } from './src/screens/RecordMatchScreen';
+import { TestMatchesSection } from './src/screens/TestMatchesSection';
+import { formatClock } from './src/app/matchClock';
+import { CLEANUP_NOTE, hiddenMatches, playedMs, testMatchCandidates } from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -243,6 +249,9 @@ export default function App() {
 
   const ledgerRef = useRef<Ledger | null>(null);
   const [ledger, setLedger] = useState<Ledger | null>(null);
+  /** What every screen sees: matches marked a test or void left out (#194). */
+  const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
+  const [testMatchMessage, setTestMatchMessage] = useState('');
   const [ledgerMessage, setLedgerMessage] = useState('');
   const [ledgerBusy, setLedgerBusy] = useState(false);
   // #192: back up this app, and restore it.
@@ -516,7 +525,7 @@ export default function App() {
   const planning: SavedMatch | undefined =
     matches.find((m) => m.match.id === planningId) ??
     (match && match.state.match.id === planningId ? storedFromHeld(match) : undefined);
-  const recordPage = step === 'record' && recordId ? recordMatchPage(ledger, recordId) : null;
+  const recordPage = step === 'record' && recordId ? recordMatchPage(viewLedger, recordId) : null;
   const effectiveStep: Step =
     (!match && (step === 'lineup' || step === 'playing' || step === 'summary' || step === 'analysis')) ||
     (step === 'plan' && !planning) ||
@@ -915,6 +924,46 @@ export default function App() {
     setLaunchKey((k) => k + 1);
   }, [pendingBackup, store]);
 
+  /** #194: the ids of matches marked a test or void, kept off every list. */
+  const hiddenIds = useMemo(() => new Set(hiddenMatches(ledger).map((m) => m.id)), [ledger]);
+
+  /** "Fri 16 Oct · 19:40 · lasted 00:58", for Settings › Test matches. */
+  const testMatchLabel = (m: { id: UUID; kickoffAt: string | null; intervals: { endMs: number }[] }) => {
+    const at = m.kickoffAt ?? kickoffTimes(withLiveMatch(matches, match)).get(m.id) ?? null;
+    return `${whenLabel(at ? new Date(at) : null, appNow())} · lasted ${formatClock(playedMs(m))}`;
+  };
+
+  /** #194 AC5: the coach confirmed the clean-up; each match is marked a test, with a note. */
+  const hideTestMatches = useCallback(() => {
+    if (ledgerBlockedRef.current || !ledgerRef.current) return;
+    let next = ledgerRef.current;
+    let hidden = 0;
+    for (const m of testMatchCandidates(next)) {
+      const r = setMatchKind(next, m.id, 'test', CLEANUP_NOTE, appNow());
+      if (r.ok) {
+        next = r.ledger;
+        hidden++;
+      }
+    }
+    if (hidden > 0) commitLedger(next);
+    setTestMatchMessage(
+      hidden > 0
+        ? `${hidden} ${hidden === 1 ? 'match is' : 'matches are'} hidden from every screen. The record keeps ${hidden === 1 ? 'it' : 'them'}.`
+        : 'Nothing was hidden.'
+    );
+  }, [commitLedger]);
+
+  /** Show a hidden match again: a `real` record with a note (invariant 5). */
+  const showMatchAgain = useCallback(
+    (matchId: string) => {
+      if (ledgerBlockedRef.current || !ledgerRef.current) return;
+      const r = setMatchKind(ledgerRef.current, matchId as UUID, 'real', 'Shown again by the coach', appNow());
+      if (r.ok) commitLedger(r.ledger);
+      setTestMatchMessage(r.ok ? 'Shown again on every screen.' : r.reason);
+    },
+    [commitLedger]
+  );
+
   const forgetEverything = useCallback(() => {
     // Every key this app owns, copies kept aside included (#207): this is how
     // a phone is handed on, and children's data must not stay behind. The
@@ -1285,7 +1334,7 @@ export default function App() {
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={ledger}
+          ledger={viewLedger}
           kickoffs={kickoffs()}
           now={appNow()}
           // Ruling D: after the last period, the coach closes the match here.
@@ -1315,7 +1364,7 @@ export default function App() {
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={ledger}
+          ledger={viewLedger}
           kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
           onBack={() => setStep(analysisReturn)}
@@ -1338,13 +1387,22 @@ export default function App() {
           onBuzzWhenSubDue={setBuzzWhenSubDue}
           minutes={
             <MinutesSection
-              ledger={ledger}
+              ledger={viewLedger}
               players={players}
               kickoffs={kickoffTimes(withLiveMatch(matches, match))}
               message={ledgerMessage}
               busy={ledgerBusy}
               onExport={() => void exportMinutes()}
               onImport={() => void importMinutes()}
+            />
+          }
+          testMatches={
+            <TestMatchesSection
+              candidates={testMatchCandidates(ledger).map((m) => ({ id: m.id, label: testMatchLabel(m) }))}
+              hidden={hiddenMatches(ledger).map((m) => ({ id: m.id, label: testMatchLabel(m), note: m.matchKind?.note ?? null }))}
+              message={testMatchMessage}
+              onHideAll={hideTestMatches}
+              onShow={showMatchAgain}
             />
           }
           backup={
@@ -1425,7 +1483,7 @@ export default function App() {
           squadId={squadId}
           players={players}
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
-          ledger={ledger}
+          ledger={viewLedger}
           kickoffs={kickoffs()}
           onPlayers={setPlayers}
           onFieldCount={format.onFieldCount}
@@ -1508,7 +1566,10 @@ export default function App() {
     return (
       <FixturesScreen
         squadName={squadName}
-        matches={listedFixtures(matches, showArchived).map((m) => m.match)}
+        matches={listedFixtures(matches, showArchived)
+          .map((m) => m.match)
+          // #194: a match marked a test or void is on no screen.
+          .filter((m) => !hiddenIds.has(m.id))}
         currentMatchId={match?.state.match.id ?? null}
         now={appNow()}
         onOpen={openFixture}
@@ -1518,7 +1579,7 @@ export default function App() {
         notClosed={notClosedIds(withLiveMatch(matches, match))}
         onDelete={deleteFixture}
         // #195: the record's played matches with no fixture here, archived fixtures included in "here".
-        recordOnly={recordOnlyMatches(ledger, new Set(withLiveMatch(matches, match).map((m) => m.match.id)))}
+        recordOnly={recordOnlyMatches(viewLedger, new Set(withLiveMatch(matches, match).map((m) => m.match.id)))}
         onOpenRecord={(id) => {
           setRecordId(id);
           setStep('record');
