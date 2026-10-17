@@ -184,6 +184,9 @@ export function MatchSummaryScreen({
             {k.name} · {k.saves} {k.saves === 1 ? 'save' : 'saves'} · {k.conceded} conceded
           </Text>
         ))}
+        <Text style={local.lineFaint} numberOfLines={1}>
+          Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
+        </Text>
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
         <Text style={local.lineFaint}>
@@ -481,10 +484,11 @@ const local = StyleSheet.create({
   pointer: { marginTop: 14 },
 });
 
-/** "2 assists · 1 tackle · 1 corner won", leaving out what is zero (#185 AC7). */
-function playLine(p: { assists: number; tackles: number; corners: number; freeKicks: number }): string {
+/** "3 shots on target · 2 assists · 1 tackle", leaving out what is zero (#185 AC7, #202 AC3). */
+function playLine(p: { shotsOnTarget: number; assists: number; tackles: number; corners: number; freeKicks: number }): string {
   const part = (n: number, one: string, many: string) => (n === 0 ? null : `${n} ${n === 1 ? one : many}`);
   return [
+    part(p.shotsOnTarget, 'shot on target', 'shots on target'),
     part(p.assists, 'assist', 'assists'),
     part(p.tackles, 'tackle', 'tackles'),
     part(p.corners, 'corner won', 'corners won'),

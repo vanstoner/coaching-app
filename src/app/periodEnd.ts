@@ -28,6 +28,7 @@ const LAST_LABEL: Record<RecordedKind, string> = {
   goal: 'last goal',
   save: 'last save',
   conceded: 'last goal conceded',
+  shot_on_target: 'last shot on target',
   tackle: 'last tackle',
   corner: 'last corner',
   free_kick: 'last free kick',

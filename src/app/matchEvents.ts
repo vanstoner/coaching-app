@@ -57,6 +57,8 @@ export interface PlayerTally {
   goals: number;
   saves: number;
   conceded: number;
+  /** #202: tapped shots plus goals, since a goal is a shot on target. Derived. */
+  shotsOnTarget: number;
   /** #185 */
   assists: number;
   tackles: number;
@@ -66,6 +68,7 @@ export interface PlayerTally {
 
 const TALLY: Partial<Record<MatchEvent['kind'], keyof Omit<PlayerTally, 'playerId'>>> = {
   goal: 'goals',
+  shot_on_target: 'shotsOnTarget',
   save: 'saves',
   conceded: 'conceded',
   assist: 'assists',
@@ -85,6 +88,7 @@ export function talliesOf(events: MatchEvent[] | undefined): PlayerTally[] {
       goals: 0,
       saves: 0,
       conceded: 0,
+      shotsOnTarget: 0,
       assists: 0,
       tackles: 0,
       corners: 0,
@@ -93,12 +97,14 @@ export function talliesOf(events: MatchEvent[] | undefined): PlayerTally[] {
     row[field]++;
     rows.set(e.playerId, row);
   }
-  return [...rows.values()];
+  // #202 AC2: every goal was a shot on target; the coach never taps twice.
+  return [...rows.values()].map((r) => ({ ...r, shotsOnTarget: r.shotsOnTarget + r.goals }));
 }
 
 /** The word under each picture button (#185 AC1). */
 export const TAP_LABEL: Record<TapEventKind, string> = {
   goal: 'Goal',
+  shot_on_target: 'Shot on target',
   tackle: 'Tackle',
   corner: 'Corner won',
   free_kick: 'Free kick won',
@@ -111,7 +117,7 @@ export const TAP_LABEL: Record<TapEventKind, string> = {
  * (#185 AC1). The keeper's own two come first for the keeper.
  */
 export function tapEventsFor(isKeeper: boolean): TapEventKind[] {
-  const anyone: TapEventKind[] = ['goal', 'tackle', 'corner', 'free_kick'];
+  const anyone: TapEventKind[] = ['goal', 'shot_on_target', 'tackle', 'corner', 'free_kick'];
   return isKeeper ? ['save', 'conceded', ...anyone] : anyone;
 }
 
@@ -130,9 +136,19 @@ export function eventGridColumns(count: number): number {
  * centred by the screen, so five read as 3 + 2 and never as a left-hand stub.
  */
 export function eventGridRows<T>(items: T[]): T[][] {
-  const columns = eventGridColumns(items.length);
+  if (items.length === 0) return [];
+  // Balanced, so the keeper's seven (#202) read as 3 + 2 + 2, never 3 + 3 + 1:
+  // as many rows as the column count needs, the longer ones first.
+  const count = Math.ceil(items.length / eventGridColumns(items.length));
+  const base = Math.floor(items.length / count);
+  const extra = items.length % count;
   const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += columns) rows.push(items.slice(i, i + columns));
+  let at = 0;
+  for (let r = 0; r < count; r++) {
+    const size = base + (r < extra ? 1 : 0);
+    rows.push(items.slice(at, at + size));
+    at += size;
+  }
   return rows;
 }
 
@@ -227,6 +243,8 @@ function eventText(e: MatchEvent, events: MatchEvent[], name: (id: UUID | null) 
       return `Save: ${name(e.playerId)}`;
     case 'conceded':
       return `Conceded (${name(e.playerId)} in goal)`;
+    case 'shot_on_target':
+      return `Shot on target: ${name(e.playerId)}`;
     case 'tackle':
       return `Tackle: ${name(e.playerId)}`;
     case 'corner':
