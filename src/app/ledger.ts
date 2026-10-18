@@ -41,9 +41,11 @@
  * - **First names only (invariant 4).**
  */
 
+import { uuid } from '../types/index';
 import type {
   Appearance,
   AvailabilityStatus,
+  Format,
   MatchEvent,
   MatchEventKind,
   Competition,
@@ -75,6 +77,7 @@ import {
   type LedgerSettings,
   type SetupInput,
 } from './ledgerSetup';
+import { shapeOfFormat } from './shapes';
 
 export type { LedgerFixture, LedgerProfile, LedgerSettings, SetupInput } from './ledgerSetup';
 
@@ -103,6 +106,11 @@ export interface LedgerInterval {
   endMs: number;
   corrected: boolean;
   note: string | null;
+  /**
+   * The position's role code, e.g. 'RB' (#196 AC4, ADR-021 D2). Absent on an
+   * interval recorded before roles were, which reads per unit as before.
+   */
+  role?: string | null;
 }
 
 /** Who was available for a match, snapshotted at kick-off (ADR-014 §4). */
@@ -143,6 +151,31 @@ export interface LedgerMatch {
   excluded?: LedgerExclusion;
   /** Test or void: hidden from every screen, kept in the record (#194, ADR-021 D3). */
   matchKind?: LedgerMatchKind;
+  /** How it was actually played (#196 AC3). Absent: read as planned (`structureOf`). */
+  structure?: LedgerStructure;
+}
+
+/** The periods a match actually ran, as the clock measured them, or as noted afterwards (#196 AC3). */
+export interface LedgerStructure {
+  periodCount: number;
+  /** Each period's length, in order. */
+  periodMs: number[];
+  shape: string | null;
+  onField: number | null;
+  /** Mandatory on a correction (invariant 5); null when the clock wrote it. */
+  note: string | null;
+}
+
+function toStructure(r: LedgerRecord): LedgerStructure | null {
+  if (!Array.isArray(r.periodMs)) return null;
+  const periodMs = r.periodMs.filter((x): x is number => typeof x === 'number' && x >= 0);
+  return {
+    periodCount: typeof r.periodCount === 'number' ? r.periodCount : periodMs.length,
+    periodMs,
+    shape: typeof r.shape === 'string' ? r.shape : null,
+    onField: typeof r.onField === 'number' ? r.onField : null,
+    note: typeof r.note === 'string' ? r.note : null,
+  };
 }
 
 /** True when the coach has left this match out of the figures (ADR-020). */
@@ -185,6 +218,12 @@ export interface LedgerEvent {
   atMs: number;
   refersTo: UUID | null;
   note: string | null;
+  /**
+   * False when the time is not known (#196 AC2, ADR-021 D1): `period` is 0
+   * and `atMs` is 0, so the released build, which needs a number, still
+   * reads it. Such an event counts in the score and in no per-time figure.
+   */
+  timeKnown?: false;
 }
 
 export interface LedgerPlayer {
@@ -241,8 +280,10 @@ const FIELDS: Record<string, readonly string[]> = {
     'endMs',
     'corrected',
     'note',
+    'role',
   ],
-  event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'],
+  event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note', 'timeKnown'],
+  structure: ['type', 'matchId', 'periodCount', 'periodMs', 'shape', 'onField', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
@@ -355,6 +396,7 @@ function foldView(
   const fixtures: LedgerFixture[] = [];
   const profiles: LedgerProfile[] = [];
   let settings: LedgerSettings | null = null;
+  const structures = new Map<UUID, LedgerStructure>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -410,6 +452,7 @@ function foldView(
           unit: typeof r.unit === 'string' ? (r.unit as PositionUnit) : null,
           corrected: r.corrected === true,
           note: typeof r.note === 'string' ? r.note : null,
+          role: typeof r.role === 'string' ? r.role : null,
         });
         break;
       case 'event':
@@ -420,6 +463,7 @@ function foldView(
           period: typeof r.period === 'number' ? r.period : 0,
           refersTo: typeof r.refersTo === 'string' ? (r.refersTo as UUID) : null,
           note: typeof r.note === 'string' ? r.note : null,
+          ...(r.timeKnown === false ? { timeKnown: false as const } : {}),
         });
         break;
       case 'attendance':
@@ -455,6 +499,11 @@ function foldView(
       case 'settings':
         settings = toSettings(r);
         break;
+      case 'structure': {
+        const st = toStructure(r);
+        if (st) structures.set(r.matchId as UUID, st);
+        break;
+      }
     }
   }
 
@@ -466,6 +515,7 @@ function foldView(
       const att = attendance.get(m.id);
       const exc = exclusions.get(m.id);
       const kind = kinds.get(m.id);
+      const st = structures.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
@@ -473,6 +523,7 @@ function foldView(
         ...(att ? { attendance: att } : {}),
         ...(exc ? { excluded: exc } : {}),
         ...(kind ? { matchKind: kind } : {}),
+        ...(st ? { structure: st } : {}),
       };
     }),
     fixtures,
@@ -578,9 +629,11 @@ export interface MatchRecord {
     /** A test match (#194, ADR-021 D3): never recorded. */
     test?: unknown;
   };
-  quarters: { id: UUID; index: number; status?: string }[];
+  quarters: { id: UUID; index: number; status?: string; accumulatedMs?: number }[];
   appearances: Appearance[];
   events?: MatchEvent[];
+  /** The shape it is played in: each interval's role (#196 AC4) and the structure (AC3). */
+  format?: Format;
   /** A stored match's availability (`SavedMatch`). */
   availability?: [UUID, AvailabilityStatus][];
   /** A live match's availability (`MatchState`). */
@@ -613,6 +666,7 @@ function eventRecords(record: MatchRecord): LedgerRecord[] {
 /** Closed appearances only: a running one has no end yet (#75 design). */
 function intervalRecords(record: MatchRecord): LedgerRecord[] {
   const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
+  const roleOf = new Map((record.format?.positions ?? []).map((p) => [p.id, p.roleCode ?? null]));
   return record.appearances
     .filter((a) => a.endElapsedMs !== null)
     .map((a) => ({
@@ -627,7 +681,29 @@ function intervalRecords(record: MatchRecord): LedgerRecord[] {
       endMs: ms(a.endElapsedMs as number),
       corrected: a.corrected === true,
       note: a.correctionNote ?? null,
+      role: roleOf.get(a.positionId) ?? null,
     }));
+}
+
+/**
+ * The structure the clock ran (#196 AC3, PO ruling 18 Oct): the periods
+ * that ended, each as long as it was played, so a match ended early says
+ * so. Null before the first period ends.
+ */
+function structureRecord(record: MatchRecord): LedgerRecord | null {
+  const ended = record.quarters
+    .filter((q) => q.status === 'ended')
+    .sort((a, b) => a.index - b.index);
+  if (ended.length === 0) return null;
+  return {
+    type: 'structure',
+    matchId: record.match.id,
+    periodCount: ended.length,
+    periodMs: ended.map((q) => ms(q.accumulatedMs ?? 0)),
+    shape: record.format ? shapeOfFormat(record.format) : null,
+    onField: record.format ? record.format.onFieldCount : null,
+    note: null,
+  };
 }
 
 function availabilityOf(record: MatchRecord): [UUID, AvailabilityStatus][] {
@@ -733,7 +809,23 @@ export function recordMatches(
       }
       attended.add(id);
     }
-    for (const i of intervals) put(`interval:${id}:${String(i.id)}`, i);
+    const freshIntervals = intervals.some((i) => !latest.has(`interval:${id}:${String(i.id)}`));
+    for (const i of intervals) {
+      // An interval already in the chain keeps the role it was recorded with,
+      // or none (#196 AC4): it is never rewritten for a role; older ones read per unit.
+      const key = `interval:${id}:${String(i.id)}`;
+      const have = latest.get(key);
+      put(key, have ? { ...i, role: have.role } : i);
+    }
+    // How it was played, written by the save that closes a period (#196
+    // AC3): the one bringing new intervals. Never over a noted correction;
+    // never for a match first seen already played (one from before this
+    // build reads as planned).
+    const st = structureRecord(record);
+    const stHave = latest.get(`structure:${id}`);
+    if (st && freshIntervals && (stHave === undefined || stHave.note === null)) {
+      put(`structure:${id}`, st);
+    }
     for (const e of events) put(`event:${id}:${String(e.id)}`, e);
   }
 
@@ -971,6 +1063,136 @@ export function setMatchKind(
   return {
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'match-kind', matchId, kind, note: trimmed }], now),
+  };
+}
+
+/**
+ * A goal or a goal against whose time is not known, entered from a played
+ * match's page (#196 AC2, PO ruling 18 Oct): e.g. the 3 Oct cup match,
+ * imported from paper with no goal events. A new `event` record with
+ * `timeKnown: false`, period 0 and `atMs` 0, so the released build still
+ * reads it (ADR-021 D1). A goal's scorer may be unknown (null). The note is
+ * mandatory: it says where the goal is known from (invariant 5).
+ */
+export function addUnknownTimeEvent(
+  ledger: Ledger,
+  matchId: UUID,
+  kind: 'goal' | 'conceded',
+  playerId: UUID | null,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'Say where this is known from, e.g. "Match report".' };
+  if (!ledger.matches.some((m) => m.id === matchId)) return { ok: false, reason: 'That match is not in the ledger.' };
+  if (kind === 'conceded' && playerId !== null) return { ok: false, reason: 'A goal against is credited to no one here.' };
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'event',
+          matchId,
+          id: uuid(),
+          kind,
+          playerId,
+          period: 0,
+          atMs: 0,
+          refersTo: null,
+          note: trimmed,
+          timeKnown: false,
+        },
+      ],
+      now
+    ),
+  };
+}
+
+/**
+ * Take back an event from the record (#196, invariant 5): a `withdrawn`
+ * event naming it, with a mandatory note. The event stays in the chain.
+ */
+export function withdrawRecordEvent(
+  ledger: Ledger,
+  matchId: UUID,
+  eventId: UUID,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'Taking a goal back needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const events = match?.events ?? [];
+  const target = events.find((e) => e.id === eventId);
+  if (!target || target.kind === 'withdrawn') return { ok: false, reason: 'That is not in the record for this match.' };
+  if (events.some((e) => e.kind === 'withdrawn' && e.refersTo === eventId)) {
+    return { ok: false, reason: 'That has already been taken back.' };
+  }
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'event',
+          matchId,
+          id: uuid(),
+          kind: 'withdrawn',
+          playerId: null,
+          period: target.period,
+          atMs: target.atMs,
+          refersTo: eventId,
+          note: trimmed,
+          ...(target.timeKnown === false ? { timeKnown: false } : {}),
+        },
+      ],
+      now
+    ),
+  };
+}
+
+/**
+ * Correct how a match was played (#196 AC3, PO ruling 18 Oct), e.g. halves
+ * that turned into quarters: a new `structure` record with a mandatory note.
+ * The clock's record stays in the chain. Minutes are never touched: they
+ * fold from the intervals.
+ */
+export function correctStructure(
+  ledger: Ledger,
+  matchId: UUID,
+  periodMs: readonly number[],
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A correction needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if (periodMs.length === 0 || periodMs.some((p) => !Number.isFinite(p) || p <= 0)) {
+    return { ok: false, reason: 'Each period needs a length.' };
+  }
+  const have = latestOf(ledger, `structure:${matchId}`);
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'structure',
+          matchId,
+          periodCount: periodMs.length,
+          periodMs: periodMs.map(ms),
+          shape: (have?.shape as string | null | undefined) ?? match.structure?.shape ?? null,
+          onField: (have?.onField as number | null | undefined) ?? match.structure?.onField ?? null,
+          note: trimmed,
+        },
+      ],
+      now
+    ),
   };
 }
 

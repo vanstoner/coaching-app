@@ -30,6 +30,7 @@ import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
+import { resultOf, scoreWithRecord } from '../app/matchRecord';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
@@ -65,6 +66,7 @@ export function MatchSummaryScreen({
   onSetExcluded,
   onVoid,
   backLabel = 'Back to Home',
+  onOpenRecord,
   onBack,
 }: {
   engine: MatchEngine;
@@ -96,6 +98,8 @@ export function MatchSummaryScreen({
   onVoid?: (note: string) => string | null;
   /** The way back: Home, or Settings for a test match (#194). */
   backLabel?: string;
+  /** #196: the match as the record holds it: how it was played, positions, goals with time unknown. */
+  onOpenRecord?: () => void;
   onBack: () => void;
 }) {
   // #208: the minutes table sorts by its numbers, Total most first by default.
@@ -131,6 +135,8 @@ export function MatchSummaryScreen({
   const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
   const excluded = inLedger ? isExcluded(inLedger) : false;
   const report = matchReport(engine, state, players, format);
+  // #196 AC1: the phone's events plus any the record holds that it does not.
+  const score = scoreWithRecord(report.score, new Set((state.events ?? []).map((e) => e.id)), inLedger);
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
@@ -165,8 +171,17 @@ export function MatchSummaryScreen({
         )}
 
         <Text style={local.score}>
-          {report.score.us} – {report.score.them}
+          {closed ? `${resultOf(score)} ` : ''}
+          {score.us} – {score.them}
         </Text>
+        {(score.us !== report.score.us || score.them !== report.score.them) && (
+          <Text style={screen.caption}>Includes goals added in the record with time unknown.</Text>
+        )}
+        {inLedger && onOpenRecord && (
+          <Pressable onPress={onOpenRecord} style={screen.linkHit}>
+            <Text style={screen.link}>In the record: how it was played, positions, goals with time unknown</Text>
+          </Pressable>
+        )}
 
         <Text style={screen.fieldLabel}>Goals</Text>
         {report.scorers.length === 0 ? (

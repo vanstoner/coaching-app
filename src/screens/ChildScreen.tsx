@@ -50,6 +50,7 @@ export function ChildScreen({
   everyone,
   onPlayers,
   fairness,
+  roleLine = '',
   onBack,
   backLabel = 'Back to Squad',
 }: {
@@ -61,6 +62,8 @@ export function ChildScreen({
   onPlayers: (p: Player[]) => void;
   /** #190: counted in fairness or a fill-in, its history, and how to change it (a reason when refused). */
   fairness: ChildFairness;
+  /** #196 AC4: their season's minutes by position, "RB 20 · LW 15 min"; empty when none recorded. */
+  roleLine?: string;
   onBack: () => void;
   /** "Back to Squad", or back to the view the child was opened from (#143). */
   backLabel?: string;
@@ -76,7 +79,7 @@ export function ChildScreen({
       case 'matches':
         return s ? <MatchByMatch views={views} player={player} s={s} /> : null;
       case 'positions':
-        return <PositionsCard views={views} player={player} name={name} />;
+        return <PositionsCard views={views} player={player} name={name} roleLine={roleLine} />;
       case 'preference':
         return (
           <>
@@ -252,7 +255,17 @@ function MatchByMatch({ views, player, s }: { views: SquadViews; player: Player;
 
 // --- 3. Positions tried ------------------------------------------------------
 
-function PositionsCard({ views, player, name }: { views: SquadViews; player: Player; name: string }) {
+function PositionsCard({
+  views,
+  player,
+  name,
+  roleLine,
+}: {
+  views: SquadViews;
+  player: Player;
+  name: string;
+  roleLine: string;
+}) {
   const r = views.positions.find((p) => p.playerId === player.id);
   if (!r) return <Text style={[screen.hint, local.left]}>No time on the pitch yet.</Text>;
   // QA D2: time with no position recorded is shown and named, never read as "no time".
@@ -261,6 +274,7 @@ function PositionsCard({ views, player, name }: { views: SquadViews; player: Pla
       {r.total > 0 && <UnitKey />}
       {r.total > 0 && <UnitStack minutes={r.minutes} />}
       <Text style={local.unitText}>{positionsLine(r)}</Text>
+      {roleLine !== '' && <Text style={[screen.hint, local.left]}>By position: {roleLine}</Text>}
       <Text style={[screen.hint, local.left]}>Where {name} has played this season. A record, not a target.</Text>
     </>
   );

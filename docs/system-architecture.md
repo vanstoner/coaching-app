@@ -127,6 +127,8 @@ stateDiagram-v2
     summary --> fixtures: Back (match released)
     fixtures --> record: Open a match from the record (#195)
     record --> fixtures: Back
+    summary --> record: In the record (#196)
+    record --> summary: Back to the report
     playing --> plan: Plan the rest
     lineup --> plan: Plan the rest
     plan --> playing: Done (planReturn)

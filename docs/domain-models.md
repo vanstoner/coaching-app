@@ -212,6 +212,9 @@ interface Ledger {                          // key coaching-app/ledger/v2
 // profile  { playerId, keeperPreference, prefers, outfieldTarget, active, removed,
 //            fairness: 'counted' | 'not-counted', note }   // fairness changes only with a note (#190)
 // settings { squad, shape, labels[], totalMinutes, periodCount, buzzWhenSubDue }
+// structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction
+// interval  + role?: 'RB' | 'LW' | …       // #196 AC4; absent on older intervals, which read per unit
+// event     + timeKnown?: false           // #196 AC2; then period 0, atMs 0 (the released build needs a number)
 ```
 
 - **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
@@ -238,8 +241,16 @@ interface Ledger {                          // key coaching-app/ledger/v2
   for the whole season. Out of the squad average, fairness figures and owed
   time; never out of the record, a match's totals or the planner's fair share
   on the day.
-- **Proposed, not built yet:** the remaining ADR-021 D2 types (structure,
-  awards, event types, origin).
+- **The core match record** (#196): the **result** is folded from goal and
+  conceded events, never stored. A goal or goal against with **time unknown**
+  counts in the score and in no per-period or per-time figure; a goal with
+  no scorer counts in no child's figure. **Structure** is written by the save
+  that closes a period (the periods that ended, as long as each ran), never
+  over a noted correction and never for a match first seen already played,
+  which reads as planned. An interval keeps the role it was recorded with,
+  or none: it is never rewritten to add one.
+- **Proposed, not built yet:** the remaining ADR-021 D2 types (awards,
+  event types, origin).
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.

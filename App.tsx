@@ -96,7 +96,10 @@ import {
   storedFromHeld,
 } from './src/app/matchLifecycle';
 import {
+  addUnknownTimeEvent,
   cancelFixture,
+  correctStructure,
+  withdrawRecordEvent,
   describeImport,
   emptyLedger,
   importLedger,
@@ -138,6 +141,7 @@ import {
   withTestSpeed,
 } from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
+import { scoreWithRecord, type Score } from './src/app/matchRecord';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -229,6 +233,27 @@ interface LiveMatch {
   engine: MatchEngine;
   state: MatchState;
   format: Format;
+}
+
+/**
+ * #196: a played match's score on its card is the phone's own events plus
+ * anything the record holds that the phone does not (a goal added later
+ * with time unknown). Folded every render, never stored (invariant 1).
+ */
+function scoresWithRecord(
+  phone: Map<UUID, Score>,
+  held: SavedMatch[],
+  ledger: Ledger | null
+): Map<UUID, Score> {
+  if (!ledger) return phone;
+  const out = new Map(phone);
+  for (const m of held) {
+    const recorded = ledger.matches.find((x) => x.id === m.match.id);
+    const own = phone.get(m.match.id);
+    if (!recorded || !own) continue;
+    out.set(m.match.id, scoreWithRecord(own, new Set((m.events ?? []).map((e) => e.id)), recorded));
+  }
+  return out;
 }
 
 export default function App() {
@@ -333,6 +358,8 @@ export default function App() {
   const [planningId, setPlanningId] = useState<UUID | null>(null);
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
+  /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
+  const [recordReturn, setRecordReturn] = useState<'fixtures' | 'summary'>('fixtures');
 
   // --- the minutes ledger (#75, ADR-013) ------------------------------------
   //
@@ -545,9 +572,10 @@ export default function App() {
       if (ledgerRef.current) {
         const live = 'state' in overrides ? overrides.state : (match?.state ?? null);
         const records: MatchRecord[] = [...(overrides.matches ?? matches)];
-        if (live) records.push(live);
         const input = sessionInput(overrides);
         const liveFormat = input.matchFormat ?? match?.format ?? null;
+        // With its shape, so each interval carries its role (#196 AC4).
+        if (live) records.push(liveFormat ? { ...live, format: liveFormat } : live);
         commitLedger(
           recordMatches(
             ledgerRef.current,
@@ -1147,6 +1175,38 @@ export default function App() {
       },
     }),
     [persist, commitLedger]
+  );
+
+  /**
+   * #196: what a match's page in the record may append — a goal or goal
+   * against with time unknown, taking one back, correcting the structure.
+   * Each is a new record with a note (invariant 5), signed by this phone.
+   */
+  const recordActions = useCallback(
+    (matchId: UUID) => {
+      const apply = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
+        if (!r.ok) return r.reason;
+        commitLedger(r.ledger);
+        return null;
+      };
+      const current = () => (ledgerBlockedRef.current ? null : ledgerRef.current);
+      const refused = 'Player minutes cannot be written on this phone.';
+      return {
+        addEvent: (kind: 'goal' | 'conceded', playerId: UUID | null, note: string) => {
+          const l = current();
+          return l ? apply(addUnknownTimeEvent(l, matchId, kind, playerId, note, appNow())) : refused;
+        },
+        withdraw: (eventId: UUID, note: string) => {
+          const l = current();
+          return l ? apply(withdrawRecordEvent(l, matchId, eventId, note, appNow())) : refused;
+        },
+        correctStructure: (periodMs: number[], note: string) => {
+          const l = current();
+          return l ? apply(correctStructure(l, matchId, periodMs, note, appNow())) : refused;
+        },
+      };
+    },
+    [commitLedger]
   );
 
   /** #194: the ids of matches marked a test or void, kept off every list. */
@@ -1806,7 +1866,17 @@ export default function App() {
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
 
     if (effectiveStep === 'record' && recordPage) {
-      return <RecordMatchScreen page={recordPage} now={appNow()} onBack={() => setStep('fixtures')} />;
+      const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
+      return (
+        <RecordMatchScreen
+          page={recordPage}
+          now={appNow()}
+          onBack={() => setStep(back)}
+          backLabel={back === 'summary' ? 'Back to the report' : 'Back'}
+          playedHere={withLiveMatch(matches, match).some((m) => m.match.id === recordPage.match.id)}
+          actions={ledgerBlockedRef.current ? null : recordActions(recordPage.match.id)}
+        />
+      );
     }
 
     if (effectiveStep === 'summary' && match) {
@@ -1829,6 +1899,11 @@ export default function App() {
           onAnalysis={() => {
             setAnalysisReturn('summary');
             setStep('analysis');
+          }}
+          onOpenRecord={() => {
+            setRecordId(match.state.match.id);
+            setRecordReturn('summary');
+            setStep('record');
           }}
           onBack={() => {
             // A finished match is history: it is safe to let go of, and
@@ -2087,7 +2162,7 @@ export default function App() {
         now={appNow()}
         onOpen={openFixture}
         progress={progressById(real, liveReal)}
-        scores={scoresById(real, liveReal)}
+        scores={scoresWithRecord(scoresById(real, liveReal), withLiveMatch(real, liveReal), viewLedger)}
         periods={periodsById(real, liveReal)}
         notClosed={notClosedIds(withLiveMatch(real, liveReal))}
         onDelete={deleteFixture}
@@ -2095,6 +2170,7 @@ export default function App() {
         recordOnly={recordOnlyList.filter((m) => showArchived || !m.archived)}
         onOpenRecord={(id) => {
           setRecordId(id);
+          setRecordReturn('fixtures');
           setStep('record');
         }}
         onAdd={() => setStep('fixtureForm')}

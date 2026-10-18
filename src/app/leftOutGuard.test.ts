@@ -28,6 +28,7 @@ const NOT_CROSS_GAME: Record<string, string> = {
   'src/screens/MatchSummaryScreen.tsx': 'one match report',
   'src/app/gettingStarted.ts':
     'asks whether anything has been played at all (#218), not a figure: a left-out match has still been played',
+  'src/screens/FixturesScreen.tsx': 'one card: a closed match shows its result (#196 AC1)',
   'src/app/squadViews.ts':
     'seasonMatches lists every closed match on purpose and marks each with isCounted; every average then skips !counted',
 };

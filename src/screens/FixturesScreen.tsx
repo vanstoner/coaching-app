@@ -22,6 +22,7 @@ import { Text } from './Text';
 import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
+import { resultOf } from '../app/matchRecord';
 import {
   competitionLabel,
   fixtureList,
@@ -351,6 +352,8 @@ function FixtureCard({
       </Text>
       {score && (
         <Text style={local.score} numberOfLines={1}>
+          {/* #196 AC1: a closed match shows its result too. */}
+          {match.status === 'completed' ? `${resultOf(score)} ` : ''}
           {score.us} – {score.them}
         </Text>
       )}
