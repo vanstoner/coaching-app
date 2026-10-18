@@ -296,3 +296,30 @@ analysis, iOS". Entries are added as each release ships.
     made-up team asks "This is the made-up team. Clear it and start your real
     squad?". Clear it and start removes the made-up children, fixtures and
     matches, from the record too; Keep exploring adds them to it.
+  - **A phone can be rebuilt from the record; fill-ins (#195, #190).** The
+    minutes file now carries fixtures, each child's preferences and Settings:
+    imported on an empty phone it brings back the squad, preferences,
+    Settings, upcoming fixtures and every played match (not plans; the app
+    says so); on a phone with data it only adds what is missing. A deleted
+    fixture is recorded as cancelled, never erased. A child from another team
+    can be marked a fill-in, with a note: their minutes are kept and they get
+    a fair share on the day, but they are left out of the squad average,
+    fairness figures and "who's owed time".
+  - **Every match has its result, and goals can be added without a time
+    (#196).** Played matches show "W 4 – 1", worked out from their goals. A
+    goal or goal against with no known time, scorer optional, can be added
+    with a note from a played match's page (how the 3 Oct cup match gets its
+    score). The page shows how the match was actually played, correctable
+    with a note, and minutes by position.
+  - **Awards (#197).** Player of the Week and Mr Assister are ready in
+    Settings › Awards; add, rename or retire your own. Give one from a played
+    match's page; joint winners allowed; a change after the day needs a note.
+  - **The coach's tallies (#198).** Add your own in Settings › Tallies, for a
+    child or the team; it gets its own button during play. Saves, shots,
+    tackles, corners, free kicks and your tallies sit under "More stats" on a
+    report, apart from goals and the result.
+  - **How far each match can be trusted (#199).** Signed live matches look as
+    before; live matches recorded before signing carry "◐ live, unsigned";
+    matches entered afterwards a dashed outline and "◐ reconstructed", with
+    the reason on the match page. Squad's "Include reconstructed matches"
+    shows every figure without them.
