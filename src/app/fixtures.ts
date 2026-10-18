@@ -155,14 +155,6 @@ export function inBucket(rows: FixtureRow[], bucket: FixtureBucket): FixtureRow[
   return rows.filter((r) => r.bucket === bucket);
 }
 
-/**
- * What to show when there is nothing at all.
- *
- * An empty state is the first thing a new coach sees and the last thing
- * anybody designs, so it is decided here rather than left to a screen.
- */
-export const NO_FIXTURES_YET = 'No fixtures yet. Add your first match.';
-
 /** A period as far as when it started: its recorded wall-clock anchor. */
 export interface StartedPeriod {
   index: number;

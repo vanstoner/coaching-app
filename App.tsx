@@ -25,6 +25,8 @@ import { seedDemo, shouldAutoSeed, storeContents } from './src/app/demoSeed';
 import {
   canArchiveFixture,
   canDeleteFixture,
+  fixtureList,
+  inBucket,
   listedFixtures,
   matchIsUnderway,
   openDestination,
@@ -134,6 +136,28 @@ import {
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TestKitSection } from './src/screens/TestKitSection';
+import { GettingStartedCard, MadeUpBanner, Toast } from './src/screens/GettingStarted';
+import {
+  FORGOTTEN_TOAST,
+  GETTING_STARTED_KEY,
+  ALL_DONE_TOAST,
+  CLOSED_TOAST,
+  PLAY_NOW_TOAST,
+  TOAST_MS,
+  UNDO_MS,
+  allStepsDone,
+  isMadeUpTeam,
+  loadMadeUpTeam,
+  nextAction,
+  nothingPlayedYet,
+  offerMadeUpTeam,
+  offerShowAgain,
+  parseCardClosed,
+  serialiseCardClosed,
+  showCard,
+  startSteps,
+  type StepKey,
+} from './src/app/gettingStarted';
 import { SquadScreen } from './src/screens/SquadScreen';
 import { TabBar } from './src/screens/TabBar';
 import { screen } from './src/screens/theme';
@@ -194,6 +218,32 @@ export default function App() {
   }, []);
 
   const [step, setStep] = useState<Step>('loading');
+
+  // --- first open (#218) ----------------------------------------------------
+  /** The coach closed Getting started: a view choice on this phone, never in the record (AC7). */
+  const [cardClosed, setCardClosed] = useState(false);
+  /** A short message at the foot of the screen; Undo when it has one. Screen state only. */
+  const [toast, setToast] = useState<{ id: number; text: string; onUndo?: () => void; ms: number } | null>(null);
+  const showToast = useCallback((text: string, onUndo?: () => void) => {
+    setToast((t) => ({ id: (t?.id ?? 0) + 1, text, onUndo, ms: onUndo ? UNDO_MS : TOAST_MS }));
+  }, []);
+  // A timer that only takes a message away: it holds no value (invariant 2).
+  useEffect(() => {
+    if (!toast) return;
+    const handle = setTimeout(() => setToast(null), toast.ms);
+    return () => clearTimeout(handle);
+  }, [toast]);
+  /** The card's third step points at Play now for a moment. */
+  const [pointAtPlayNow, setPointAtPlayNow] = useState(false);
+  useEffect(() => {
+    if (!pointAtPlayNow) return;
+    const handle = setTimeout(() => setPointAtPlayNow(false), 2_400);
+    return () => clearTimeout(handle);
+  }, [pointAtPlayNow]);
+  /** Squad opened to add the squad: the name box is ready. */
+  const [focusName, setFocusName] = useState(false);
+  /** Whether every step was done at the last draw, to say so once when they all are (AC2). */
+  const wasAllDone = useRef<boolean | null>(null);
   const [squadName, setSquadName] = useState(PLACEHOLDER_SQUAD_NAME);
   /** Everyone ever in the squad, retired players included (#77). */
   const [players, setPlayers] = useState<Player[]>([]);
@@ -315,6 +365,9 @@ export default function App() {
       // this launch writes is signed. Without one, recording goes on unsigned.
       await installDeviceSigner();
 
+      // #218: whether the coach closed Getting started on this phone.
+      const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
+
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
       // #173: an unreadable session is set aside, a too-new one left alone;
@@ -325,6 +378,7 @@ export default function App() {
       // one this build may not write is left alone (#99, QA on #110).
       const opened = await openStoredLedger(store, appNow());
       if (cancelled) return;
+      setCardClosed(parseCardClosed(closedRaw));
       if (!openedSession.writable) sessionWritableRef.current = false;
       if (openedSession.message !== '') setSessionMessage(openedSession.message);
       if (!opened.writable) ledgerBlockedRef.current = true;
@@ -545,12 +599,17 @@ export default function App() {
 
   const tab = tabForStep(effectiveStep, squadErrand);
 
-  const goToTab = useCallback((next: Tab) => {
-    // A tab is housekeeping by definition, so the squad editor reached this
-    // way must not offer to start a match.
-    setSquadErrand('home');
-    setStep(stepForTab(next));
-  }, []);
+  const goToTab = useCallback(
+    (next: Tab) => {
+      // A tab is housekeeping by definition, so the squad editor reached this
+      // way must not offer to start a match.
+      setSquadErrand('home');
+      // #218: an empty squad opens with the name box ready, as the card's step does.
+      setFocusName(next === 'squad' && players.length === 0);
+      setStep(stepForTab(next));
+    },
+    [players.length]
+  );
 
   /**
    * Home, without committing to anything.
@@ -1001,7 +1060,12 @@ export default function App() {
     setSquadErrand('home');
     setStep('fixtures');
     setSortsForgotten((n) => n + 1);
-  }, [store]);
+    // #218 Q4: a forgotten phone is a fresh install, Getting started included
+    // (its key went with the rest above).
+    setCardClosed(false);
+    wasAllDone.current = null;
+    showToast(FORGOTTEN_TOAST);
+  }, [store, showToast]);
 
   /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
   const setDefaultShape = useCallback((shape: ShapeCode) => {
@@ -1257,6 +1321,118 @@ export default function App() {
     };
   };
 
+  // --- first open (#218): worked out on every draw, never stored -----------
+
+  const everyMatch = withLiveMatch(matches, match);
+  const startProgress = startSteps({
+    activePlayers: squad.length,
+    onFieldCount: format.onFieldCount,
+    matches: everyMatch,
+    ledgerMatches: ledger?.matches.length ?? 0,
+  });
+  const everyStepDone = allStepsDone(startProgress);
+  const recordOnlyList = recordOnlyMatches(viewLedger, new Set(everyMatch.map((m) => m.match.id)));
+  /** Q3: nothing played yet, so empty Played and squad views say what comes next. */
+  const firstTime = nothingPlayedYet(everyMatch, recordOnlyList.length);
+  const nextUp = inBucket(
+    fixtureList(
+      matches.filter((m) => !m.archived && !hiddenIds.has(m.match.id)).map((m) => m.match),
+      appNow(),
+      match?.state.match.id ?? null,
+      progressById(matches, match)
+    ),
+    'future'
+  )[0]?.match;
+  const next = nextAction(nextUp);
+  const doNext = () => {
+    setSquadErrand('home');
+    if (next.kind === 'plan') {
+      setPlanningId(next.matchId);
+      setPlanReturn('fixtures');
+      setStep('plan');
+    } else {
+      setStep('fixtureForm');
+    }
+  };
+  const nextButton = firstTime ? { label: next.label, onPress: doNext } : null;
+
+  // AC2: when the last step ticks with the card showing, say so once.
+  useEffect(() => {
+    if (step === 'loading' || step === 'resume') {
+      wasAllDone.current = null;
+      return;
+    }
+    const before = wasAllDone.current;
+    wasAllDone.current = everyStepDone;
+    if (before === false && everyStepDone && !cardClosed) showToast(ALL_DONE_TOAST);
+  }, [step, everyStepDone, cardClosed, showToast]);
+
+  const closeCard = useCallback(() => {
+    setCardClosed(true);
+    // A view choice: losing it costs a tap, so a failed write is let go.
+    void store.setItem(GETTING_STARTED_KEY, serialiseCardClosed()).catch(() => undefined);
+    showToast(CLOSED_TOAST, () => {
+      setCardClosed(false);
+      setToast(null);
+      void store.removeItem(GETTING_STARTED_KEY).catch(() => undefined);
+    });
+  }, [store, showToast]);
+
+  /** Q4: from Settings, while a step is undone. */
+  const showCardAgain = useCallback(() => {
+    setCardClosed(false);
+    void store.removeItem(GETTING_STARTED_KEY).catch(() => undefined);
+    setSquadErrand('home');
+    setStep('fixtures');
+  }, [store]);
+
+  /** AC1: each step goes straight to where it is done. */
+  const onStartStep = useCallback(
+    (key: StepKey) => {
+      if (key === 'squad') {
+        setSquadErrand('home');
+        setFocusName(true);
+        setStep('squad');
+      } else if (key === 'match') {
+        setStep('fixtureForm');
+      } else {
+        setPointAtPlayNow(true);
+        showToast(PLAY_NOW_TOAST);
+      }
+    },
+    [showToast]
+  );
+
+  /**
+   * AC5, Q5: the Test kit's squad and season, into this app as it stands, as
+   * the demo seeds them (`loadMadeUpTeam`). Only on an empty squad, so made-up
+   * children never mix with real ones. Forget everything takes it away.
+   */
+  const tryMadeUpTeam = useCallback(() => {
+    if (!offerMadeUpTeam(players)) return;
+    const team = loadMadeUpTeam({
+      players,
+      matches,
+      squadId,
+      squadName,
+      format,
+      totalMinutes,
+      periodCount,
+      ledger: ledgerBlockedRef.current ? null : ledgerRef.current,
+      now: appNow(),
+    });
+    if (team.ledger && team.ledger !== ledgerRef.current) commitLedger(team.ledger);
+    setPlayers(team.players);
+    setMatches(team.matches);
+    persist({ players: team.players, matches: team.matches });
+    // The loaded message, not "all three steps done", is the one to read.
+    wasAllDone.current = null;
+    showToast(team.message);
+    setSquadErrand('home');
+    setFocusName(false);
+    setStep('fixtures');
+  }, [players, matches, squadId, squadName, format, totalMinutes, periodCount, commitLedger, persist, showToast]);
+
   // --- routing --------------------------------------------------------------
 
   const body = (() => {
@@ -1474,6 +1650,7 @@ export default function App() {
             ) : undefined
           }
           onForget={forgetEverything}
+          onShowGettingStarted={offerShowAgain(cardClosed, startProgress) ? showCardAgain : null}
         />
       );
     }
@@ -1491,6 +1668,9 @@ export default function App() {
           onFieldCount={format.onFieldCount}
           onStartMatch={forMatch ? beginMatch : null}
           onLeave={forMatch ? goHome : null}
+          onTryMadeUp={offerMadeUpTeam(players) ? tryMadeUpTeam : null}
+          focusName={focusName}
+          firstTime={nextButton}
         />
       );
     }
@@ -1582,7 +1762,7 @@ export default function App() {
         notClosed={notClosedIds(withLiveMatch(matches, match))}
         onDelete={deleteFixture}
         // #195: the record's played matches with no fixture here, archived fixtures included in "here".
-        recordOnly={recordOnlyMatches(viewLedger, new Set(withLiveMatch(matches, match).map((m) => m.match.id)))}
+        recordOnly={recordOnlyList}
         onOpenRecord={(id) => {
           setRecordId(id);
           setStep('record');
@@ -1621,6 +1801,23 @@ export default function App() {
         onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
         notice={sessionMessage}
+        // #218: the made-up team's line (Q6) and Getting started (AC1, AC2).
+        // Neither shows on a phone with a real squad that has played (AC6).
+        guide={
+          <>
+            {isMadeUpTeam(players, everyMatch) && <MadeUpBanner onSettings={() => goToTab('settings')} />}
+            {showCard(cardClosed, startProgress) && (
+              <GettingStartedCard
+                steps={startProgress}
+                onStep={onStartStep}
+                onClose={closeCard}
+                onTry={offerMadeUpTeam(players) ? tryMadeUpTeam : null}
+              />
+            )}
+          </>
+        }
+        nothingPlayed={nextButton}
+        highlightPlayNow={pointAtPlayNow}
       />
     );
   })();
@@ -1639,7 +1836,10 @@ export default function App() {
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
       <TableSortProvider key={sortsForgotten} store={store} remember={sortsForgotten === 0}>
-        <View style={screen.column}>{body}</View>
+        <View style={screen.column}>
+          {body}
+          {toast && <Toast key={toast.id} text={toast.text} onUndo={toast.onUndo ?? null} />}
+        </View>
       </TableSortProvider>
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />

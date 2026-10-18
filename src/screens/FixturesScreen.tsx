@@ -10,7 +10,7 @@
  * the match they are about to play without scrolling or thinking.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -23,7 +23,6 @@ import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
 import {
-  NO_FIXTURES_YET,
   competitionLabel,
   fixtureList,
   inBucket,
@@ -35,6 +34,8 @@ import {
   type StartedPeriod,
   type FixtureRow,
 } from '../app/fixtures';
+import { NO_MATCHES_YET, NOTHING_PLAYED_YET } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function FixturesScreen({
@@ -57,6 +58,9 @@ export function FixturesScreen({
   notice,
   recordOnly = [],
   onOpenRecord,
+  guide,
+  nothingPlayed = null,
+  highlightPlayNow = false,
 }: {
   squadName: string;
   matches: Match[];
@@ -95,6 +99,19 @@ export function FixturesScreen({
   /** Played matches the minutes record holds with no fixture here, e.g. imported ones (#195). */
   recordOnly?: RecordOnlyMatch[];
   onOpenRecord?: (matchId: UUID) => void;
+  /**
+   * #218: the made-up team's line and the Getting started card, drawn by the
+   * shell under the title. Absent on an established phone (AC6).
+   */
+  guide?: ReactNode;
+  /**
+   * #218 Q3: before the first match is played, Played says so, with the next
+   * thing to do. Null once anything has been played, so an established
+   * phone's Home is as it was (AC6).
+   */
+  nothingPlayed?: { label: string; onPress: () => void } | null;
+  /** #218: the card's third step points at Play now for a moment. */
+  highlightPlayNow?: boolean;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
@@ -109,6 +126,7 @@ export function FixturesScreen({
           {squadName}
         </Text>
         {notice ? <Text style={[screen.hint, screen.overtime]}>{notice}</Text> : null}
+        {guide}
 
         {/* #131 (PO ruling 12): a live match stays on top; the two ways to
             start one come next, so they never scroll away as Played grows. */}
@@ -116,7 +134,11 @@ export function FixturesScreen({
 
         {onPlayNow && (
           <Pressable
-            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+            style={({ pressed }) => [
+              screen.button,
+              highlightPlayNow && local.playNowHighlight,
+              pressed && screen.buttonPressed,
+            ]}
             onPress={onPlayNow}
           >
             <Text style={screen.buttonLabel}>Play now</Text>
@@ -136,9 +158,12 @@ export function FixturesScreen({
         </Pressable>
 
         {rows.length === 0 && recordOnly.length === 0 ? (
-          <Text style={screen.caption}>
-            {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
-          </Text>
+          housekeeping.archivedCount > 0 ? (
+            <Text style={screen.caption}>Every fixture is archived.</Text>
+          ) : (
+            // #218 Q3: nothing has happened yet; the buttons it means are above.
+            <EmptyState text={NO_MATCHES_YET} />
+          )
         ) : (
           <>
             <Section title="Coming up" rows={future} {...cardProps} />
@@ -151,6 +176,12 @@ export function FixturesScreen({
               onOpenRecord={onOpenRecord ?? (() => {})}
               {...cardProps}
             />
+            {past.length === 0 && recordOnly.length === 0 && nothingPlayed && (
+              <View style={local.section}>
+                <Text style={screen.fieldLabel}>Played</Text>
+                <EmptyState text={NOTHING_PLAYED_YET} action={nothingPlayed} style={local.emptyUnderLabel} />
+              </View>
+            )}
           </>
         )}
 
@@ -369,6 +400,10 @@ function FixtureCard({
 
 const local = StyleSheet.create({
   section: { alignSelf: 'stretch' },
+  emptyUnderLabel: { marginTop: 4 },
+  // The same outer size as the plain button: the border takes 3 of the 15
+  // padding, so nothing below it moves while it shows.
+  playNowHighlight: { borderWidth: 3, borderColor: colours.warn, paddingVertical: 12 },
   card: {
     alignSelf: 'stretch',
     backgroundColor: colours.pitchRaised,

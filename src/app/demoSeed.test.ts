@@ -218,7 +218,8 @@ describe('the first screen of a fresh demo (#146, for the smoke test)', () => {
     expect(inBucket(rows, 'current')).toEqual([]);
     expect(inBucket(rows, 'future').map((r) => r.match.opponent)).toEqual([...TEST_OPPONENTS]);
     expect(inBucket(rows, 'past')[0].match.opponent).toBe(SEASON[SEASON.length - 1].opponent);
-    expect(session.squadName).toBe('Example FC');
+    // #218 Q7: the placeholder is "Your team", no longer "Example FC".
+    expect(session.squadName).toBe('Your team');
   });
 
   it('Test Rovers stays first under Coming up after its kick-off time passes, unplayed', () => {

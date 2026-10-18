@@ -69,6 +69,8 @@ import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
+import { emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** Where the coach is inside Squad: a view, or a child's page. The list is the empty stack. */
@@ -93,6 +95,9 @@ export function SquadScreen({
   onStartMatch,
   /** Offered only on the way to a match. Leaves without kicking off. */
   onLeave,
+  onTryMadeUp = null,
+  focusName = false,
+  firstTime = null,
 }: {
   squadId: UUID;
   /** Everyone ever in the squad, retired players included (#77). */
@@ -107,6 +112,12 @@ export function SquadScreen({
   onFieldCount: number;
   onStartMatch: (() => void) | null;
   onLeave: (() => void) | null;
+  /** #218 Q5: load the made-up team. Passed only while the squad is empty. */
+  onTryMadeUp?: (() => void) | null;
+  /** #218: arrived to add the squad, so the name box is ready. */
+  focusName?: boolean;
+  /** #218 Q3: the squad views' next thing to do, before the first match. */
+  firstTime?: { label: string; onPress: () => void } | null;
 }) {
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
@@ -143,7 +154,9 @@ export function SquadScreen({
   const top = pages[pages.length - 1];
   if (top?.kind === 'view') {
     const ViewScreen = VIEWS[top.view];
-    return <ViewScreen views={views} onChild={(id) => open({ kind: 'child', id })} onBack={back} />;
+    return (
+      <ViewScreen views={views} onChild={(id) => open({ kind: 'child', id })} onBack={back} firstTime={firstTime} />
+    );
   }
   const child = top?.kind === 'child' ? players.find((p) => p.id === top.id) : undefined;
   if (child) {
@@ -179,6 +192,7 @@ export function SquadScreen({
             <View style={[local.addRow, onTab && local.addRowUnderTiles]}>
               <TextInput
                 ref={nameInput}
+                autoFocus={focusName}
                 style={[screen.input, local.nameInput]}
                 value={draft}
                 onChangeText={(t) => {
@@ -271,7 +285,16 @@ export function SquadScreen({
                 </View>
               );
             })}
-            {players.length === 0 && <Text style={screen.caption}>No players yet.</Text>}
+            {players.length === 0 &&
+              (everyone.length === 0 ? (
+                // #218 Q3: nothing has happened yet: say how, and offer the made-up team (Q5).
+                <EmptyState
+                  text={emptySquadSentence(onFieldCount)}
+                  action={onTryMadeUp ? { label: TRY_MADE_UP_TEAM, onPress: onTryMadeUp } : null}
+                />
+              ) : (
+                <Text style={screen.caption}>No players yet.</Text>
+              ))}
 
             {retired.length > 0 && (
               <>

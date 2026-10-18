@@ -8,11 +8,15 @@
  * (#192). Each holds children's first names. So this removes every key this
  * app owns, found by listing the store, not only the keys it knows by name.
  *
+ * The Getting started card's closed choice (#218) is a view choice like the
+ * table sorts, and goes with them, so a forgotten phone opens as a fresh one.
+ *
  * Kept: the beta's test-clock setting, a test preference rather than squad
  * data, and the install's signing key (#193), which lives in the secure store,
  * not here, and holds nothing about anyone.
  */
 
+import { GETTING_STARTED_KEY } from './gettingStarted';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY } from './ledgerStore';
 import { STORAGE_KEY, inTurn, type KeyValueStore } from './persistence';
 import { TABLE_SORT_KEY } from './tableSort';
@@ -22,7 +26,7 @@ import { TEST_CLOCK_KEY } from './testKit';
 export const APP_KEY_PREFIX = 'coaching-app/';
 
 /** The keys known by name, removed even by a store that cannot list its keys. */
-const KNOWN = [STORAGE_KEY, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY, LEDGER_V1_STORAGE_KEY, TABLE_SORT_KEY];
+const KNOWN = [STORAGE_KEY, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY, LEDGER_V1_STORAGE_KEY, TABLE_SORT_KEY, GETTING_STARTED_KEY];
 
 export interface Forgotten {
   removed: number;

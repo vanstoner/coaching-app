@@ -45,6 +45,7 @@ sequenceDiagram
     participant S as AsyncStorage
     participant E as MatchEngine
     A->>A: installDeviceSigner (key from the secure store, #193)
+    A->>S: getItem getting-started/v1 (card closed on this phone? #218)
     A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
     A->>S: openStoredLedger (ledger/v2 + head)
     A->>A: recordMatches(back-fill) → commitLedger
@@ -80,6 +81,7 @@ sequenceDiagram
 | `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
 | `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | Removed by Forget everything (#207) |
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
+| `coaching-app/getting-started/v1` | `{"closed":true}` once the coach closes Getting started early, a view choice on this phone (#218) | `App.tsx` (`closeCard`) | Never in the record; removed by Forget everything, Undo or Show Getting started again |
 | Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
 | `TEST_CLOCK_KEY` | Beta clock offset and speed | Test kit only | |
 
@@ -103,6 +105,10 @@ stateDiagram-v2
         fixtures --> fixtureForm: Add
         fixtureForm --> fixtures: Save / Cancel
         fixtures --> plan: Plan
+        fixtures --> squad: Getting started, Add your squad (#218)
+        squad --> plan: empty squad view, next step (#218)
+        squad --> fixtureForm: empty squad view, next step (#218)
+        settings --> fixtures: Show Getting started again (#218)
         squad
         settings
     }

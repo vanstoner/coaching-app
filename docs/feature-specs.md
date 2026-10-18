@@ -16,6 +16,16 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Keeper preference, unit, outfield target | Child page | — | Target is displayed beside figures, never a fairness input (ADR-015) | session `players` | — |
 | Defaults | Settings | — | Length, periods, shape are **defaults**; a match copies them at creation | session root | Changing them never touches a saved match |
 
+## First open (#218)
+
+| Feature | Trigger | Pre-conditions | Business invariant / rule | Persistence key | Error / edge state |
+|---|---|---|---|---|---|
+| Getting started card | Home | A step undone, not closed | Purpose line and three steps, each a button to its screen. Ticks worked out from the phone on every draw, never stored: squad at the default shape's on-field count (7, Pick the lineup's threshold), "N of 7 added" until then; any match saved; any match kicked off or any match in the record. Goes by itself when all three tick, with one message | `coaching-app/getting-started/v1`, only once closed; a view choice, never the record | Closed early: 5 s Undo. A key that does not read is treated as open |
+| Show Getting started again | Settings | Closed, a step undone | Removes the closed choice and returns Home | removes `coaching-app/getting-started/v1` | Forget everything also brings it back |
+| First-time empty states | Home (no matches), Played, empty Squad, each squad view | Nothing played yet: no match finished on this phone (archived and hidden count) and none from the record | One sentence and the next step's button (plan the next fixture, else add one). Otherwise each screen is as before (AC6) | none | All fixtures archived: "Every fixture is archived." as before |
+| Try it with a made-up team | Getting started, or empty Squad | No player ever in the squad | The Test kit's squad, two fixtures and nine-match season, through `addTestData` and `addTestSeason` as the demo seeds them. Nothing beta-only is turned on | session, ledger | Ledger may not be written: squad and fixtures only, and the message says so |
+| Made-up team line | Home | `isMadeUpTeam`: every active player has a Test kit name and a match is against a made-up opponent | Derived on every draw, no flag stored; points to Forget everything | none | A real child added, or every made-up fixture gone: the line goes (documented limit) |
+
 ## Fixtures
 
 | Feature | Trigger | Pre-conditions | Business invariant / rule | Persistence key | Error / edge state |
@@ -59,7 +69,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Import | Settings → Minutes | Not blocked | Extends the chain or is refused; never merged | ledger, session `players` | Diverged chain refused with reason |
 | Back up this app | Settings → Backup | — | One file: session + ledger. This app's data only (#192) | none (shared file) | Share cancelled: nothing happens |
 | Restore from a backup | Settings → Backup | Confirm after preview | Damaged or too-new file refused. Current data copied aside and read back first; then the launch re-runs (#192) | session, ledger, head, `before-restore/*` | Copy not proved → nothing restored |
-| Forget everything | Settings | Confirm | Clears session and ledger keys; fresh squad id | session, ledger, head | Irreversible; confirm text says export first. **Copies kept aside remain (#207)** |
+| Forget everything | Settings | Confirm | Clears session and ledger keys; fresh squad id; the placeholder name "Your team" (#218); Getting started shows again | session, ledger, head, view choices | Irreversible; confirm text says export first. **Copies kept aside remain (#207)** |
 
 ## Views
 

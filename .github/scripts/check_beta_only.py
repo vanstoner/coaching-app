@@ -280,7 +280,7 @@ def self_test():
     release = pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), RELEASE_LABEL)
     beta = pages((TOP, MID_BETA, END_BETA, END_BETA), BETA_LABEL)
     demo = pages((TOP, MID_BETA, END_BETA, END_BETA), DEMO_LABEL)
-    home = [fake_dump(["Example FC", "No fixtures yet. Add your first match."], tab="home")]
+    home = [fake_dump(["Your team", "Getting started", "Who comes off next, and is everyone getting a fair share?"], tab="home")]
     # Another tab that scrolls and has no Test kit: read to its end, it would
     # pass as a release unless the check knows it is not Settings.
     squad = [fake_dump(["Squad", "Ava", "Ben", "Cal"], tab="squad"),

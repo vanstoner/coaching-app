@@ -43,6 +43,8 @@ import {
 import { NAME, TABLE_DEFAULTS, matchKey, sortFairness, sortGrid, sortOwed, sortPositions } from '../app/tableSort';
 import { SortHeading, useTableSort } from './TableSort';
 import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitColours } from './Charts';
+import { VIEW_NOTHING_YET } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 // ============================================================================
@@ -86,6 +88,12 @@ interface ViewProps {
   views: SquadViews;
   onChild: (playerId: UUID) => void;
   onBack: () => void;
+  /**
+   * #218 Q3: before the first match is played, an empty view says what it
+   * will show and offers the next thing to do. Null once anything has been
+   * played, so an established phone's views are as they were (AC6).
+   */
+  firstTime?: { label: string; onPress: () => void } | null;
 }
 
 function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => void; children: ReactNode }) {
@@ -109,6 +117,20 @@ function Empty({ children }: { children: string }) {
   return <Text style={[screen.caption, local.empty]}>{children}</Text>;
 }
 
+/** A view with nothing in it: the first-time sentence and button (#218), else as before. */
+function Nothing({
+  view,
+  firstTime,
+  before,
+}: {
+  view: SquadView;
+  firstTime: ViewProps['firstTime'];
+  before: string;
+}) {
+  if (firstTime) return <EmptyState text={VIEW_NOTHING_YET[view]} action={firstTime} />;
+  return <Empty>{before}</Empty>;
+}
+
 /** What a tapped cell or column says; tap it again to put it away. */
 export function Picked({ text, onClear }: { text: string | null; onClear: () => void }) {
   if (text === null) return null;
@@ -128,7 +150,7 @@ function MainKeeperHint({ names, tail }: { names: string[]; tail: string }) {
 // Season grid (AC2)
 // ============================================================================
 
-export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
+export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
   const { matches, fairness } = views;
@@ -137,7 +159,11 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
   if (matches.length === 0) {
     return (
       <ViewFrame view="grid" onBack={onBack}>
-        <Empty>{'No matches yet.\nEach match appears here as a column once it is closed.'}</Empty>
+        <Nothing
+          view="grid"
+          firstTime={firstTime}
+          before={'No matches yet.\nEach match appears here as a column once it is closed.'}
+        />
       </ViewFrame>
     );
   }
@@ -257,14 +283,14 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
 // Fairness at a glance (AC3)
 // ============================================================================
 
-export function FairnessView({ views, onChild, onBack }: ViewProps) {
+export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const { sort, onSort } = useTableSort('squadFairness');
   const f = views.fairness;
   if (f === null) {
     return (
       <ViewFrame view="fairness" onBack={onBack}>
-        <Empty>Fairness appears here after the first match is closed.</Empty>
+        <Nothing view="fairness" firstTime={firstTime} before="Fairness appears here after the first match is closed." />
       </ViewFrame>
     );
   }
@@ -367,13 +393,17 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
 // Going into Saturday (AC4)
 // ============================================================================
 
-export function SaturdayView({ views, onChild, onBack }: ViewProps) {
+export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadSaturday');
   const f = views.fairness;
   if (f === null) {
     return (
       <ViewFrame view="saturday" onBack={onBack}>
-        <Empty>{'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}</Empty>
+        <Nothing
+          view="saturday"
+          firstTime={firstTime}
+          before={'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}
+        />
       </ViewFrame>
     );
   }
@@ -484,13 +514,17 @@ export function UnitKey() {
   );
 }
 
-export function PositionsView({ views, onChild, onBack }: ViewProps) {
+export function PositionsView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadPositions');
   if (views.matches.length === 0) {
     return (
       <ViewFrame view="positions" onBack={onBack}>
-        <Text style={screen.caption}>Time in each position this season</Text>
-        <Empty>{'Nobody has played yet.\nTime in each position appears after the first match.'}</Empty>
+        {firstTime ? null : <Text style={screen.caption}>Time in each position this season</Text>}
+        <Nothing
+          view="positions"
+          firstTime={firstTime}
+          before={'Nobody has played yet.\nTime in each position appears after the first match.'}
+        />
       </ViewFrame>
     );
   }

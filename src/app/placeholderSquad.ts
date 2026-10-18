@@ -20,7 +20,12 @@ import { DEFAULT_SHAPE, makeFormat } from './shapes';
 export const DEFAULT_TOTAL_MINUTES = 50;
 export const DEFAULT_QUARTER_COUNT = 4;
 
-export const PLACEHOLDER_SQUAD_NAME = 'Example FC';
+/**
+ * The heading before a coach names their team. "Your team" since #218 (PO
+ * ruling Q7): "Example FC" read like a demo, beside a made-up team that is
+ * one. A team already named, or saved under the old placeholder, keeps its name.
+ */
+export const PLACEHOLDER_SQUAD_NAME = 'Your team';
 
 const PLACEHOLDER_FIRST_NAMES = [
   'Alex',

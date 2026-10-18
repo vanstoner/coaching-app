@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { APP_KEY_PREFIX, forgetAppData } from './forget';
+import { GETTING_STARTED_KEY, parseCardClosed, serialiseCardClosed } from './gettingStarted';
 import { emptyLedger } from './ledger';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY, saveLedger } from './ledgerStore';
 import { STORAGE_KEY, createMemoryStore, saveSession, toSavedSession, type KeyValueStore } from './persistence';
@@ -88,6 +89,20 @@ describe('Forget everything (#207)', () => {
     const unlisted: KeyValueStore = { getItem: memory.getItem, setItem: memory.setItem, removeItem: memory.removeItem };
     await forgetAppData(unlisted);
     expect(await memory.getItem(TABLE_SORT_KEY)).toBeNull();
+  });
+
+  it('#218 Q4: a closed Getting started card opens again, even from a store that cannot list its keys', async () => {
+    const listed = await usedPhone();
+    await listed.setItem(GETTING_STARTED_KEY, serialiseCardClosed());
+    await forgetAppData(listed);
+    expect(await listed.getItem(GETTING_STARTED_KEY)).toBeNull();
+    expect(parseCardClosed(await listed.getItem(GETTING_STARTED_KEY))).toBe(false);
+
+    const memory = await usedPhone();
+    await memory.setItem(GETTING_STARTED_KEY, serialiseCardClosed());
+    const unlisted: KeyValueStore = { getItem: memory.getItem, setItem: memory.setItem, removeItem: memory.removeItem };
+    await forgetAppData(unlisted);
+    expect(await memory.getItem(GETTING_STARTED_KEY)).toBeNull();
   });
 
   it('AC5: the privacy policy says what this does', () => {

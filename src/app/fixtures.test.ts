@@ -8,7 +8,6 @@ import {
   listedFixtures,
   openDestination,
   COMPETITIONS,
-  NO_FIXTURES_YET,
   bucketOf,
   competitionLabel,
   fixtureList,
@@ -83,8 +82,8 @@ describe('bucketOf', () => {
 
 describe('fixtureList', () => {
   it('is empty for a squad with no fixtures', () => {
+    // What Home says then is NO_MATCHES_YET in gettingStarted.ts (#218).
     expect(fixtureList([], NOW)).toEqual([]);
-    expect(NO_FIXTURES_YET).toContain('No fixtures yet');
   });
 
   it('orders the way a Saturday morning works: now, next, then history', () => {
