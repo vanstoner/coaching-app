@@ -258,3 +258,15 @@ analysis, iOS". Entries are added as each release ships.
   stuff above built … as 1.3.0 … that's probably a version I'll draw a line
   under and release."* Each feature adds its line here as it lands on the
   1.3.0 branch.
+  - **Planned subs start together, and the shared plan shows exact times
+    (#205).** Every new sub in Plan the match starts at the half-period (6:15
+    in a quarter, 12:30 in a half); nothing is moved to a free slot any more,
+    and ± moves only that sub. The picture shared with parents shows each
+    sub's exact time ("Ava on for Ben – 6:15"). Saved plans keep their times.
+  - **The clock shows this quarter's subs and warns 30 seconds early (#203).**
+    A list above the pitch shows every planned sub and its time; made subs
+    are ticked, unplanned bench players listed. Tap a line to move it 30 s,
+    change who comes off or remove it (the plan, never the record). Thirty
+    seconds before each sub its prompt rises green, turns amber at 15 s and
+    red counting "late"; the phone buzzes once. "Not now" puts it away for
+    the quarter; Done makes the sub, with Undo.
