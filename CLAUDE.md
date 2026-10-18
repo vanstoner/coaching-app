@@ -61,6 +61,13 @@ solution. Before writing a document, ask whether an issue comment would do.
 - **Escalate ambiguity; never silently "fix" a spec.** A confident wrong guess
   is the most expensive failure mode here.
 - **Report partial work as partial.** A known gap reported is a managed risk.
+- **Every app change moves the version and brings its notes (#217).** A PR
+  that touches `App.tsx`, `src/` or `assets/` opens its description with
+  `## Version`: **minor** (something new a coach can see or do), **patch** (a
+  fix), **major** (Rob's call), or **none** plus a reason. The same PR bumps
+  `app.json` by that step, adds its `HISTORY.md` entry and freezes the release
+  it supersedes, and updates the spec row, docs and any Mermaid diagram it
+  makes wrong. CI (`version-impact.yml`) checks the first three.
 - **The match engine stays pure TypeScript** — no React or platform imports.
 
 ## Git and approval
