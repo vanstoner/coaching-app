@@ -21,10 +21,16 @@
  * ---------------------------------------------------------------------------
  *
  * Each row answers "is anyone behind?": minutes a game, played X of Y, and a
- * small bar against the squad average. The list keeps its order (PO ruling).
- * A Main keeper is not in the squad average, and their row says so. Tapping a
+ * small bar against the squad average. A Main keeper is not in the squad
+ * average, and their row says so. Tapping a
  * name opens the child's page, where their figures and their position
  * preferences live.
+ *
+ * The list sorts by minutes a game, most first (#222, overriding #208 AC7 for
+ * this list only). Name and "a game" headings re-sort it as the analytics
+ * tables do, remembered on this phone; children with no matches keep squad
+ * order below the rest, and the Main keeper is last (`sortSquadList`). The
+ * lineup, bench and plan keep squad order.
  *
  * ---------------------------------------------------------------------------
  * The squad views (#143)
@@ -71,6 +77,8 @@ import { ChildScreen } from './ChildScreen';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
 import { emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
+import { NAME, sortSquadList } from '../app/tableSort';
+import { SortHeading, useTableSort } from './TableSort';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** Where the coach is inside Squad: a view, or a child's page. The list is the empty stack. */
@@ -137,6 +145,15 @@ export function SquadScreen({
   const season = views.season;
   const seasonOf = (id: UUID) => season.children.find((c) => c.playerId === id);
   const open = (page: Page) => setPages((stack) => [...stack, page]);
+  // #222: minutes a game most first by default; Name or "a game" re-sorts it.
+  const listSort = useTableSort('squadList');
+  const listed = sortSquadList(
+    players.map((p) => {
+      const s = seasonOf(p.id);
+      return { player: p, name: displayName(p), averageMs: s?.averageMs ?? null, mainKeeper: s?.mainKeeper === true };
+    }),
+    listSort.sort
+  ).map((r) => r.player);
   const back = () => setPages((stack) => stack.slice(0, -1));
 
   const add = useCallback(() => {
@@ -239,7 +256,14 @@ export function SquadScreen({
                   )}
                 </View>
               ))}
-            {players.map((p) => {
+            {players.length > 1 && (
+              <View style={local.headings}>
+                <SortHeading label="Name" column={NAME} align="left" style={local.headingName} {...listSort} />
+                <SortHeading label="a game" column="perGame" {...listSort} />
+                <View style={local.headingSpacer} />
+              </View>
+            )}
+            {listed.map((p) => {
               const s = seasonOf(p.id);
               const summary = preferenceSummary(p);
               const figures = s?.summary ?? 'No matches yet';
@@ -376,6 +400,10 @@ const local = StyleSheet.create({
   },
   // Colour only: a weight change re-measures and clips (theme.ts).
   retired: { color: colours.inkFaint },
+  // #222: the headings sit over the list, "a game" left of the Remove column.
+  headings: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6 },
+  headingName: { flex: 1 },
+  headingSpacer: { width: TOUCH_TARGET + 24, flexShrink: 0 },
   remove: {
     color: colours.inkMuted,
     fontSize: 13,

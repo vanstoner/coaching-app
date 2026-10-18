@@ -94,6 +94,8 @@ describe('the defaults (AC2, AC3)', () => {
       reportAverage: { key: 'offset', dir: 'desc' },
       analysisMinutes: { key: 'total', dir: 'desc' },
       recordMinutes: { key: 'total', dir: 'desc' },
+      // #222 (approve 222) brings the Squad tab's list in, overriding #208 AC7 for it.
+      squadList: { key: 'perGame', dir: 'desc' },
     });
   });
 });
