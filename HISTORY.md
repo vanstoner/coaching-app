@@ -270,3 +270,13 @@ analysis, iOS". Entries are added as each release ships.
     seconds before each sub its prompt rises green, turns amber at 15 s and
     red counting "late"; the phone buzzes once. "Not now" puts it away for
     the quarter; Done makes the sub, with Undo.
+  - **First open shows a new coach how to start (#218).** Home opens with a
+    *Getting started* card: what the app is for ("Who comes off next, and is
+    everyone getting a fair share?") and three steps (add your squad, add
+    your next match, press Play now), each a button that ticks itself off
+    from what is on the phone. It goes away once all three are done, or can
+    be closed with Undo; Settings offers it back while a step is undone.
+    Screens empty because nothing has happened yet say what to do next. An
+    empty squad can *Try it with a made-up team*; a yellow line on Home says
+    so, and Forget everything clears it. The unnamed team is "Your team"
+    instead of "Example FC". A phone with a squad and matches looks as before.
