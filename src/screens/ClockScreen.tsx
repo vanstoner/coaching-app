@@ -15,9 +15,13 @@
  * the pitch, plus Save and Conceded for the keeper; and "Move or swap…" so
  * every move is possible without dragging. A goal then asks who set it up.
  *
- * **A sub falling due buzzes the phone once** (#137, ruling 19 R1). Each paint
- * only detects it: what is due is read from the anchors that paint used, and
- * what has already buzzed is held by the shell.
+ * **This period's planned subs are always in view** (#203), above the pitch,
+ * and can be changed from here: the plan only, never the record. Each sub's
+ * prompt rises 30 s before it is due, green, then amber at 15 s, then red
+ * and counting up once late, and the phone buzzes once as it rises (#137,
+ * moved by #203 AC4). Each paint only works it out: the band and the buzz
+ * are read from the anchors that paint used, and what has already buzzed or
+ * been put off with "Not now" is held by the shell.
  *
  * Invariant 1: the score is folded from the events on every paint.
  * Invariant 2: the interval below is a REPAINT trigger and nothing else.
@@ -53,14 +57,21 @@ import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
+import { checkBuzz, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
 import {
-  checkBuzz,
-  dueSubs,
-  msUntilNextSub,
-  whoComesOff,
-  type BuzzLog,
-  type PlannedSub,
-} from '../app/subPlan';
+  cameOnFor,
+  isNotNow,
+  moveSubTime,
+  notNow,
+  offPicks,
+  promptAgain,
+  promptGroups,
+  removeSub,
+  subBand,
+  subList,
+  type NotNowLog,
+  type OnPitch,
+} from '../app/clockSubs';
 import {
   TAP_LABEL,
   UNDO_NOTE,
@@ -76,6 +87,7 @@ import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, EventButtons } from './EventButtons';
+import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /**
@@ -102,7 +114,8 @@ export function ClockScreen({
   subPlan,
   buzzOnDue,
   buzzLog,
-  onMakeSub,
+  notNowLog,
+  onChangePlan,
   onLiveMove,
   onRecord,
   onRecordAssist,
@@ -127,7 +140,13 @@ export function ClockScreen({
    * and coming back does not buzz the same sub again.
    */
   buzzLog: { current: BuzzLog };
-  onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
+  /**
+   * The subs the coach said "Not now" to this period (#203 C5). Owned by the
+   * shell for the same reason, so the prompt does not nag again on return.
+   */
+  notNowLog: { current: NotNowLog };
+  /** A change to this period's planned subs (#203 AC2). The plan only, never the record. */
+  onChangePlan: (plan: PlannedSub[]) => void;
   /** A swap or a substitution during play. False if the engine refused it. */
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
   /** A goal, save, goal conceded, tackle, corner or free kick won. Null if the engine refused it. */
@@ -182,8 +201,12 @@ export function ClockScreen({
   /** The goal just recorded, while asking who set it up (#185 AC3). */
   const [assistFor, setAssistFor] = useState<MatchEvent | null>(null);
   const [dragging, setDragging] = useState(false);
-  /** Who comes off each due sub, when the coach has changed the suggestion. */
+  /** Who comes off each prompted sub, when the coach has changed the suggestion. */
   const [offChoice, setOffChoice] = useState<Record<string, UUID>>({});
+  /** The row of a shared prompt panel whose choices are open (#203 C2). */
+  const [expanded, setExpanded] = useState<UUID | null>(null);
+  /** The planned sub whose sheet is open (#203 AC2, C7). */
+  const [planSheetFor, setPlanSheetFor] = useState<UUID | null>(null);
   const [undo, setUndo] = useState<{ label: string; until: number; run: () => void } | null>(null);
   const [withdrawing, setWithdrawing] = useState<{ id: UUID; note: string } | null>(null);
   const [notice, setNotice] = useState('');
@@ -207,9 +230,62 @@ export function ClockScreen({
   const bench = players.filter((p) => !onIds.has(p.id)).map((p) => p.id);
   const outfieldOn = onPitch.map((m) => m.playerId).filter((id) => id !== keeper);
 
+  // Read from the anchors on this paint, and everything below follows from
+  // it: a phone that slept shows the right band on waking (#203 AC5).
   const periodElapsedMs = running ? engine.getQuarterElapsedMs(quarter!) : 0;
-  const due = running ? dueSubs(subPlan, periodElapsedMs) : [];
-  const untilNext = running ? msUntilNextSub(subPlan, periodElapsedMs) : null;
+  const periodKey = quarter ? `${state.match.id}/${quarter.id}` : '';
+  const periodMs = engine.getPlannedQuarterMs(state.match);
+  const putOff = (sub: PlannedSub) => isNotNow(notNowLog.current, periodKey, sub);
+  const outfieldStints: OnPitch[] = onPitch
+    .filter((m) => m.playerId !== keeper)
+    .map((m) => ({ playerId: m.playerId, currentStintMs: m.currentStintMs }));
+  const picks = offPicks(subPlan, outfieldStints);
+  const prompts = running ? promptGroups(subPlan, periodElapsedMs, putOff) : [];
+  const list = running
+    ? subList({
+        plan: subPlan,
+        periodElapsedMs,
+        prompting: prompts.length > 0,
+        nameOf,
+        outfieldOn: outfieldStints,
+        onPitchIds: onIds,
+        madeFor: (id) => (quarter ? cameOnFor(state.appearances, quarter.id, id) : null),
+      })
+    : null;
+  /** Who comes off if Done is pressed now: the coach's choice while still on, else the pick. */
+  const chosenOff = (sub: PlannedSub): UUID | null => {
+    const choice = offChoice[sub.playerId];
+    if (choice && outfieldOn.includes(choice)) return choice;
+    return picks.get(sub.playerId)?.offId ?? null;
+  };
+  const sheetSub = planSheetFor ? (subPlan.find((s) => s.playerId === planSheetFor) ?? null) : null;
+  // A sheet left open at the whistle must not reopen on the next period.
+  useEffect(() => {
+    if (!running) setPlanSheetFor(null);
+  }, [running]);
+  const changeSheetSub = (change: (plan: PlannedSub[]) => PlannedSub[]) => onChangePlan(change(subPlan));
+
+  /**
+   * Done on a prompt (#203 AC6): the substitution as any other, with Undo.
+   * An Undo puts the reminder back already put off, so it does not leap
+   * straight back up: the line reads "late" and a tap brings it back (C5).
+   */
+  const makePlannedSub = (sub: PlannedSub, offId: UUID) => {
+    const m: LiveMove = { kind: 'sub', out: offId, in: sub.playerId };
+    if (!onLiveMove(m)) {
+      setNotice('That sub could not be made.');
+      return;
+    }
+    setNotice('');
+    const { [sub.playerId]: _gone, ...rest } = offChoice;
+    setOffChoice(rest);
+    setExpanded(null);
+    offerUndo(describe(m), () => {
+      if (onLiveMove(reverseOf(m), true)) {
+        notNowLog.current = notNow(notNowLog.current, periodKey, [sub]);
+      }
+    });
+  };
 
   // #137: after every paint, buzz for any sub this paint shows as newly due.
   // Detection only: the elapsed time is the one just read from the anchors,
@@ -304,43 +380,35 @@ export function ClockScreen({
           </Text>
         )}
 
-        {/* #82 AC1: the suggestion is the default; any outfield player can be chosen. */}
-        {due.map((sub) => {
-          const suggested = whoComesOff(sub, onPitch);
-          const chosen = offChoice[sub.playerId] ?? suggested;
-          return (
-            <View key={sub.playerId} style={local.subDue}>
-              <Text style={local.subDueText}>Bring on {nameOf(sub.playerId)} for:</Text>
-              <View style={local.choiceRow}>
-                {outfieldOn.map((id) => (
-                  <Pressable
-                    key={id}
-                    onPress={() => setOffChoice({ ...offChoice, [sub.playerId]: id })}
-                    style={[local.choice, chosen === id && local.choiceOn]}
-                  >
-                    <Text style={[local.choiceText, chosen === id && local.choiceTextOn]} numberOfLines={1}>
-                      {nameOf(id)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              {chosen && (
-                <Pressable
-                  onPress={() => {
-                    onMakeSub(chosen, sub.playerId);
-                    const { [sub.playerId]: _gone, ...rest } = offChoice;
-                    setOffChoice(rest);
-                  }}
-                  style={({ pressed }) => [local.subDueButton, pressed && screen.buttonPressed]}
-                >
-                  <Text style={local.subDueButtonLabel}>Done</Text>
-                </Pressable>
-              )}
-            </View>
-          );
-        })}
-        {due.length === 0 && untilNext !== null && (
-          <Text style={screen.hint}>Next substitution in {formatClock(untilNext)}</Text>
+        {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
+        {running && (
+          <SubPrompts
+            groups={prompts}
+            band={(sub) => subBand(sub, periodElapsedMs)}
+            elapsedMs={periodElapsedMs}
+            outfieldOn={outfieldOn}
+            chosenOff={chosenOff}
+            expanded={expanded}
+            nameOf={nameOf}
+            onChoose={(sub, id) => {
+              setOffChoice({ ...offChoice, [sub.playerId]: id });
+              setExpanded(null);
+            }}
+            onExpand={setExpanded}
+            onDone={makePlannedSub}
+            onNotNow={(subs) => {
+              notNowLog.current = notNow(notNowLog.current, periodKey, subs);
+              forceRepaint();
+            }}
+          />
+        )}
+        {list && (
+          <SubPlanList
+            title={`Subs this ${noun}`}
+            list={list}
+            nameOf={nameOf}
+            onOpen={setPlanSheetFor}
+          />
         )}
 
         {running && (
@@ -508,6 +576,35 @@ export function ClockScreen({
         )}
       </ActionSheet>
 
+      {/* #203 AC2: change one planned sub. The plan only; nothing is recorded. */}
+      <SubPlanSheet
+        sub={running ? sheetSub : null}
+        nameOf={nameOf}
+        outfieldOn={outfieldOn}
+        suggested={
+          sheetSub
+            ? (offPicks(setSubFor(subPlan, sheetSub.playerId, null), outfieldStints).get(sheetSub.playerId)
+                ?.offId ?? null)
+            : null
+        }
+        canPromptAgain={
+          sheetSub !== null && putOff(sheetSub) && subBand(sheetSub, periodElapsedMs) !== null
+        }
+        onMove={(deltaMs) =>
+          sheetSub && changeSheetSub((plan) => moveSubTime(plan, sheetSub.playerId, deltaMs, periodMs))
+        }
+        onSetFor={(offId) => sheetSub && changeSheetSub((plan) => setSubFor(plan, sheetSub.playerId, offId))}
+        onPromptAgain={() => {
+          if (sheetSub) notNowLog.current = promptAgain(notNowLog.current, periodKey, sheetSub);
+          setPlanSheetFor(null);
+        }}
+        onRemove={() => {
+          if (sheetSub) changeSheetSub((plan) => removeSub(plan, sheetSub.playerId));
+          setPlanSheetFor(null);
+        }}
+        onClose={() => setPlanSheetFor(null)}
+      />
+
       {/* #185: a goal asks who set it up, from the players on the pitch. */}
       <ActionSheet
         visible={assistFor !== null}
@@ -592,39 +689,6 @@ const local = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 8,
   },
-  subDue: {
-    backgroundColor: colours.urgent,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 10,
-    alignSelf: 'stretch',
-  },
-  subDueText: { color: colours.ink, fontSize: 16, fontWeight: '700', includeFontPadding: false },
-  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
-  choice: {
-    width: 96,
-    minHeight: TOUCH_TARGET,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colours.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  choiceOn: { backgroundColor: colours.ink },
-  choiceText: { color: colours.ink, fontSize: 14, fontWeight: '600', includeFontPadding: false, alignSelf: 'stretch', textAlign: 'center' },
-  choiceTextOn: { color: '#8a5600' },
-  subDueButton: {
-    backgroundColor: colours.ink,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: TOUCH_TARGET,
-    marginTop: 4,
-  },
-  subDueButtonLabel: { color: '#8a5600', fontSize: 15, fontWeight: '700', includeFontPadding: false },
   streamRow: {
     flexDirection: 'row',
     alignItems: 'center',

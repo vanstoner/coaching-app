@@ -45,9 +45,9 @@ import {
   squadReadiness,
 } from './src/app/squad';
 import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
+import { NO_NOT_NOW, type NotNowLog } from './src/app/clockSubs';
 import {
   NO_BUZZES,
-  markDone,
   periodSubsToSave,
   restoreSubPlan,
   type BuzzLog,
@@ -210,6 +210,12 @@ export default function App() {
    * period or match starts empty (`checkBuzz` in src/app/subPlan.ts).
    */
   const subBuzzLog = useRef<BuzzLog>(NO_BUZZES);
+  /**
+   * The planned subs the coach said "Not now" to this period (#203 C5).
+   * Screen state, never saved, held here so the prompt stays put away when
+   * the coach leaves the clock and comes back; keyed like the buzz log.
+   */
+  const subNotNowLog = useRef<NotNowLog>(NO_NOT_NOW);
 
   // --- the defaults. Settings owns these; a match copies them. --------------
   const [totalMinutes, setTotalMinutes] = useState(DEFAULT_TOTAL_MINUTES);
@@ -1109,27 +1115,18 @@ export default function App() {
   );
 
   /**
-   * Make a planned substitution. The engine does the swap, so the minutes move
-   * with the players — a reminder that only nudged the coach would leave the
-   * app recording time for a child who had walked off.
+   * Change the running period's planned subs from the clock (#203 AC2): a
+   * time, who comes off, or a sub removed or added. The plan only, never the
+   * record (#72 AC8); saved with the period so a relaunch keeps it (#139).
+   * Made subs are still read from the record, never from this.
    */
-  const makeSub = useCallback(
-    (outPlayerId: UUID, inPlayerId: UUID) => {
+  const changeSubPlan = useCallback(
+    (plan: PlannedSub[]) => {
       if (!match) return;
-      const quarter = currentQuarter(match.state);
-      if (!quarter) return;
-      try {
-        match.engine.substitute(match.state, quarter, outPlayerId, inPlayerId);
-      } catch {
-        // The engine refuses swaps that would corrupt the record. Marking the
-        // plan done anyway would hide that from the coach, so leave it due.
-        return;
-      }
-      noteLateArrival(inPlayerId);
-      setSubPlan((plan) => markDone(plan, inPlayerId));
-      persist();
+      setSubPlan(plan);
+      persist({ periodSubs: periodSubsToSave(match.state.quarters, plan) });
     },
-    [match, persist, noteLateArrival]
+    [match, persist]
   );
 
   /**
@@ -1550,7 +1547,8 @@ export default function App() {
           subPlan={subPlan}
           buzzOnDue={buzzWhenSubDue}
           buzzLog={subBuzzLog}
-          onMakeSub={makeSub}
+          notNowLog={subNotNowLog}
+          onChangePlan={changeSubPlan}
           onLiveMove={liveMove}
           onRecord={recordEvent}
           onRecordAssist={recordAssist}

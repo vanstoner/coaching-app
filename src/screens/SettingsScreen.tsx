@@ -161,7 +161,7 @@ export function SettingsScreen({
             <Chip label="Off" selected={!buzzWhenSubDue} onPress={() => onBuzzWhenSubDue(false)} />
           </ChipRow>
           <Text style={screen.hint}>
-            The phone buzzes once for each planned sub, while the clock is on screen.
+            The phone buzzes once for each planned sub, 30 seconds before it is due, while the clock is on screen.
           </Text>
 
           {minutes}
