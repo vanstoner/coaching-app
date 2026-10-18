@@ -153,6 +153,8 @@ export interface LedgerMatch {
   matchKind?: LedgerMatchKind;
   /** How it was actually played (#196 AC3). Absent: read as planned (`structureOf`). */
   structure?: LedgerStructure;
+  /** Awards standing for this match (#197); absent when none. Every change stays in the chain. */
+  awards?: LedgerAward[];
 }
 
 /** The periods a match actually ran, as the clock measured them, or as noted afterwards (#196 AC3). */
@@ -258,7 +260,33 @@ export interface Ledger {
   profiles: LedgerProfile[];
   /** The squad's defaults, once recorded (#195 AC3). */
   settings: LedgerSettings | null;
+  /** Award types, the defaults first, retired ones included (#197). */
+  awardTypes: LedgerAwardType[];
 }
+
+/** A kind of award (#197): Player of the Week, Mr Assister, or one the coach added. */
+export interface LedgerAwardType {
+  id: UUID;
+  name: string;
+  /** False once retired: not offered for new awards; past ones still show. */
+  active: boolean;
+}
+
+/** One child's award in one match (#197). Joint winners are one each. */
+export interface LedgerAward {
+  awardTypeId: UUID;
+  playerId: UUID;
+  note: string | null;
+}
+
+/**
+ * The two every match report names (#197 AC1). Fixed ids, so renaming or
+ * retiring one is a record against the same id on every phone.
+ */
+export const DEFAULT_AWARD_TYPES: readonly LedgerAwardType[] = [
+  { id: 'player-of-the-week' as UUID, name: 'Player of the Week', active: true },
+  { id: 'mr-assister' as UUID, name: 'Mr Assister', active: true },
+];
 
 // --- fields this build knows, per record type ---------------------------------
 //
@@ -284,6 +312,8 @@ const FIELDS: Record<string, readonly string[]> = {
   ],
   event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note', 'timeKnown'],
   structure: ['type', 'matchId', 'periodCount', 'periodMs', 'shape', 'onField', 'note'],
+  'award-type': ['type', 'id', 'name', 'active', 'note'],
+  award: ['type', 'matchId', 'awardTypeId', 'playerId', 'given', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
@@ -304,6 +334,7 @@ const FILE_FIELDS = [
   'fixtures',
   'profiles',
   'settings',
+  'awardTypes',
   'summary',
 ] as const;
 
@@ -384,7 +415,7 @@ function checkRecord(r: LedgerRecord): void {
 /** The ledger's squad, players and matches, folded from its chain. */
 function foldView(
   entries: LedgerEntry[]
-): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings'> {
+): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes'> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -397,6 +428,8 @@ function foldView(
   const profiles: LedgerProfile[] = [];
   let settings: LedgerSettings | null = null;
   const structures = new Map<UUID, LedgerStructure>();
+  const awardTypes = new Map<UUID, LedgerAwardType>(DEFAULT_AWARD_TYPES.map((t) => [t.id, t]));
+  const awards = new Map<UUID, LedgerAward[]>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -504,6 +537,20 @@ function foldView(
         if (st) structures.set(r.matchId as UUID, st);
         break;
       }
+      case 'award-type':
+        if (typeof r.id === 'string' && typeof r.name === 'string') {
+          awardTypes.set(r.id as UUID, { id: r.id as UUID, name: r.name, active: r.active !== false });
+        }
+        break;
+      case 'award':
+        if (typeof r.matchId === 'string' && typeof r.awardTypeId === 'string' && typeof r.playerId === 'string' && r.given !== false) {
+          push(awards, r.matchId as UUID, {
+            awardTypeId: r.awardTypeId as UUID,
+            playerId: r.playerId as UUID,
+            note: typeof r.note === 'string' ? r.note : null,
+          });
+        }
+        break;
     }
   }
 
@@ -516,6 +563,7 @@ function foldView(
       const exc = exclusions.get(m.id);
       const kind = kinds.get(m.id);
       const st = structures.get(m.id);
+      const aw = awards.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
@@ -524,11 +572,13 @@ function foldView(
         ...(exc ? { excluded: exc } : {}),
         ...(kind ? { matchKind: kind } : {}),
         ...(st ? { structure: st } : {}),
+        ...(aw ? { awards: aw } : {}),
       };
     }),
     fixtures,
     profiles,
     settings,
+    awardTypes: [...awardTypes.values()],
   };
 }
 
@@ -1194,6 +1244,155 @@ export function correctStructure(
       now
     ),
   };
+}
+
+// --- awards (#197) ---------------------------------------------------------------
+
+const AWARD_NAME_MAX = 24;
+
+function awardName(raw: string): string | null {
+  const name = raw.trim().replace(/\s+/g, ' ');
+  return name === '' || name.length > AWARD_NAME_MAX ? null : name;
+}
+
+/** Settings › Awards: a new kind of award (#197 AC1). */
+export function addAwardType(ledger: Ledger, name: string, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const clean = awardName(name);
+  if (!clean) return { ok: false, reason: `An award needs a name of up to ${AWARD_NAME_MAX} letters.` };
+  if (ledger.awardTypes.some((t) => t.name.toLowerCase() === clean.toLowerCase())) {
+    return { ok: false, reason: 'There is already an award with that name.' };
+  }
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'award-type', id: uuid(), name: clean, active: true, note: null }], now) };
+}
+
+/** Rename, retire or bring back an award type (#197 AC1). Retiring keeps every past award. */
+export function updateAwardType(
+  ledger: Ledger,
+  id: UUID,
+  change: { name?: string; active?: boolean },
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const have = ledger.awardTypes.find((t) => t.id === id);
+  if (!have) return { ok: false, reason: 'That award is not in the record.' };
+  const name = change.name === undefined ? have.name : awardName(change.name);
+  if (!name) return { ok: false, reason: `An award needs a name of up to ${AWARD_NAME_MAX} letters.` };
+  if (ledger.awardTypes.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) {
+    return { ok: false, reason: 'There is already an award with that name.' };
+  }
+  const active = change.active ?? have.active;
+  if (name === have.name && active === have.active) return { ok: false, reason: 'Nothing has changed.' };
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'award-type', id, name, active, note: null }], now) };
+}
+
+/** The day a match was played, for "a change after the day needs a note": kick-off, else when the record first saw it. */
+function matchDayOf(ledger: Ledger, match: LedgerMatch): string | null {
+  if (match.kickoffAt) return match.kickoffAt;
+  for (const e of ledger.entries) {
+    if (e.records.some((r) => r.type === 'match' && r.id === match.id)) return e.at;
+  }
+  return null;
+}
+
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
+/** True when `now` is on a later day than the match (#197 AC2): a change then needs a note. */
+export function afterMatchDay(ledger: Ledger, matchId: UUID, now: Date): boolean {
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const day = match ? matchDayOf(ledger, match) : null;
+  return day !== null && localDay(now.toISOString()) !== localDay(day) && now.getTime() > Date.parse(day);
+}
+
+/**
+ * Give an award to a child for a match (#197 AC2). Joint winners are allowed
+ * (PO ruling, 18 Oct): giving the same award to another child adds a winner.
+ * The note is optional.
+ */
+export function giveAward(
+  ledger: Ledger,
+  matchId: UUID,
+  awardTypeId: UUID,
+  playerId: UUID,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  const type = ledger.awardTypes.find((t) => t.id === awardTypeId);
+  if (!type || !type.active) return { ok: false, reason: 'That award is not offered any more.' };
+  if (!ledger.players.some((p) => p.id === playerId)) return { ok: false, reason: 'That player is not in the record.' };
+  if ((match.awards ?? []).some((a) => a.awardTypeId === awardTypeId && a.playerId === playerId)) {
+    return { ok: false, reason: 'They already have that award for this match.' };
+  }
+  const trimmed = note.trim();
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ type: 'award', matchId, awardTypeId, playerId, given: true, note: trimmed === '' ? null : trimmed }],
+      now
+    ),
+  };
+}
+
+/**
+ * Change who has an award, or take it back (`toPlayerId` null) — #197 AC2.
+ * New records; the earlier one stays in the chain. After the day of the
+ * match the change needs a note (invariant 5).
+ */
+export function changeAward(
+  ledger: Ledger,
+  matchId: UUID,
+  awardTypeId: UUID,
+  fromPlayerId: UUID,
+  toPlayerId: UUID | null,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const standing = match?.awards ?? [];
+  if (!standing.some((a) => a.awardTypeId === awardTypeId && a.playerId === fromPlayerId)) {
+    return { ok: false, reason: 'That award is not in the record for this match.' };
+  }
+  const trimmed = note.trim();
+  if (trimmed === '' && afterMatchDay(ledger, matchId, now)) {
+    return { ok: false, reason: 'A change after the day of the match needs a note saying why.' };
+  }
+  if (toPlayerId === fromPlayerId) return { ok: false, reason: 'Nothing has changed.' };
+  if (toPlayerId !== null && standing.some((a) => a.awardTypeId === awardTypeId && a.playerId === toPlayerId)) {
+    return { ok: false, reason: 'They already have that award for this match.' };
+  }
+  const n = trimmed === '' ? null : trimmed;
+  const records: LedgerRecord[] = [{ type: 'award', matchId, awardTypeId, playerId: fromPlayerId, given: false, note: n }];
+  if (toPlayerId !== null) records.push({ type: 'award', matchId, awardTypeId, playerId: toPlayerId, given: true, note: n });
+  return { ok: true, ledger: appendRecords(ledger, records, now) };
+}
+
+/**
+ * A child's awards for the season, oldest match first (#197 AC3). Across
+ * matches, so individual performance under ADR-017 §3: not drawn on any
+ * screen until the gate's ceiling and switch exist (see #197).
+ */
+export function childAwards(ledger: Ledger, playerId: UUID): { matchId: UUID; award: string; note: string | null }[] {
+  const out: { matchId: UUID; award: string; note: string | null; at: string }[] = [];
+  for (const m of ledger.matches) {
+    for (const a of m.awards ?? []) {
+      if (a.playerId !== playerId) continue;
+      out.push({
+        matchId: m.id,
+        award: ledger.awardTypes.find((t) => t.id === a.awardTypeId)?.name ?? 'Award',
+        note: a.note,
+        at: m.kickoffAt ?? '',
+      });
+    }
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).map(({ matchId, award, note }) => ({ matchId, award, note }));
 }
 
 /**

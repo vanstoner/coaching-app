@@ -96,6 +96,10 @@ import {
   storedFromHeld,
 } from './src/app/matchLifecycle';
 import {
+  addAwardType,
+  changeAward,
+  giveAward,
+  updateAwardType,
   addUnknownTimeEvent,
   cancelFixture,
   correctStructure,
@@ -123,6 +127,7 @@ import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
 import { MinutesSection } from './src/screens/MinutesSection';
 import { BackupSection } from './src/screens/BackupSection';
+import { AwardsSection } from './src/screens/AwardsSection';
 import { RecordMatchScreen } from './src/screens/RecordMatchScreen';
 import { TestMatchBanner, TestMatchesSection } from './src/screens/TestMatchesSection';
 import { formatClock } from './src/app/matchClock';
@@ -1204,7 +1209,27 @@ export default function App() {
           const l = current();
           return l ? apply(correctStructure(l, matchId, periodMs, note, appNow())) : refused;
         },
+        giveAward: (awardTypeId: UUID, playerId: UUID, note: string) => {
+          const l = current();
+          return l ? apply(giveAward(l, matchId, awardTypeId, playerId, note, appNow())) : refused;
+        },
+        changeAward: (awardTypeId: UUID, from: UUID, to: UUID | null, note: string) => {
+          const l = current();
+          return l ? apply(changeAward(l, matchId, awardTypeId, from, to, note, appNow())) : refused;
+        },
       };
+    },
+    [commitLedger]
+  );
+
+  /** A noted act on the record from Settings: the reason when refused, else null. */
+  const applyToLedger = useCallback(
+    (act: (l: Ledger) => { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
+      if (ledgerBlockedRef.current || !ledgerRef.current) return 'Player minutes cannot be written on this phone.';
+      const r = act(ledgerRef.current);
+      if (!r.ok) return r.reason;
+      commitLedger(r.ledger);
+      return null;
     },
     [commitLedger]
   );
@@ -1947,15 +1972,25 @@ export default function App() {
           buzzWhenSubDue={buzzWhenSubDue}
           onBuzzWhenSubDue={setBuzzWhenSubDue}
           minutes={
-            <MinutesSection
-              ledger={viewLedger}
-              players={players}
-              kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
-              message={ledgerMessage}
-              busy={ledgerBusy}
-              onExport={() => void exportMinutes()}
-              onImport={() => void importMinutes()}
-            />
+            <>
+              <MinutesSection
+                ledger={viewLedger}
+                players={players}
+                kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
+                message={ledgerMessage}
+                busy={ledgerBusy}
+                onExport={() => void exportMinutes()}
+                onImport={() => void importMinutes()}
+              />
+              {/* #197: drawn in this slot so Settings itself is unchanged. */}
+              {ledger && !ledgerBlockedRef.current && (
+                <AwardsSection
+                  types={ledger.awardTypes}
+                  onAdd={(name) => applyToLedger((l) => addAwardType(l, name, appNow()))}
+                  onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
+                />
+              )}
+            </>
           }
           testMatches={
             <TestMatchesSection

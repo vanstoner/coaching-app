@@ -14,7 +14,11 @@ whole numbers only, ADR-014 §6); it also carries `labels` (position names,
 #166) and `archived` (#76), and has no `homeAway` or `venue` (the app has
 neither). `profile` also carries `prefers` (outfield unit, #87), `active` and
 `removed`, per the 18 Oct ruling. `settings` also carries `labels` and
-`buzzWhenSubDue`.
+`buzzWhenSubDue`. `award` (#197) is keyed by match, award type **and child**, so
+joint winners are allowed (PO ruling 10, 18 Oct); a winner is taken back
+with `given: false`. `award-type` ids for the two defaults are fixed
+strings (`player-of-the-week`, `mr-assister`). `structure` (#196) also carries
+a `note`, set on a correction.
 
 **Relationship:** extends [ADR-014](./014-ledger-hash-chain.md) §3 (new record
 types) and reverses part of its "HMAC or signatures" alternative (§D4 below).

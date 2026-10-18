@@ -122,6 +122,10 @@ export interface RecordMatchPage {
   structure: Structure;
   /** Each child's minutes per position (#196 AC4), by player id. */
   positions: Map<UUID, PositionMinutes[]>;
+  /** Awards standing for this match, in the award types' order (#197). One match: open to the coach (ADR-017 §3). */
+  awards: { awardTypeId: UUID; award: string; playerId: UUID; name: string; note: string | null }[];
+  /** Award types that can be given now: not retired (#197 AC1). */
+  awardTypes: { id: UUID; name: string }[];
 }
 
 /** The read-only page for one match in the record. Null if the record has no such match. */
@@ -170,5 +174,19 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
     result: match.score ? resultOf(match.score) : null,
     structure: structureOf(m),
     positions: new Map([...rows.keys()].map((id) => [id, positionMinutes(m.intervals, id)])),
+    awards: (m.awards ?? [])
+      .map((a) => ({
+        awardTypeId: a.awardTypeId,
+        award: ledger.awardTypes.find((t) => t.id === a.awardTypeId)?.name ?? 'Award',
+        playerId: a.playerId,
+        name: name(a.playerId),
+        note: a.note,
+      }))
+      .sort(
+        (a, b) =>
+          ledger.awardTypes.findIndex((t) => t.id === a.awardTypeId) -
+            ledger.awardTypes.findIndex((t) => t.id === b.awardTypeId) || a.name.localeCompare(b.name)
+      ),
+    awardTypes: ledger.awardTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name })),
   };
 }

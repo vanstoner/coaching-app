@@ -33,12 +33,20 @@ export interface RecordActions {
   addEvent: (kind: 'goal' | 'conceded', playerId: UUID | null, note: string) => string | null;
   withdraw: (eventId: UUID, note: string) => string | null;
   correctStructure: (periodMs: number[], note: string) => string | null;
+  /** #197: give an award; a second child for the same award is a joint winner. */
+  giveAward: (awardTypeId: UUID, playerId: UUID, note: string) => string | null;
+  /** #197: give it to someone else, or take it back (`to` null). Needs a note after the day. */
+  changeAward: (awardTypeId: UUID, from: UUID, to: UUID | null, note: string) => string | null;
 }
+
+type PageAward = RecordMatchPage['awards'][number];
 
 type Panel =
   | { kind: 'add'; event: 'goal' | 'conceded'; scorer: UUID | null; note: string; error: string }
   | { kind: 'withdraw'; goal: PageGoal; note: string; error: string }
-  | { kind: 'structure'; lengths: string; note: string; error: string };
+  | { kind: 'structure'; lengths: string; note: string; error: string }
+  | { kind: 'award'; typeId: UUID | null; playerId: UUID | null; note: string; error: string }
+  | { kind: 'awardChange'; award: PageAward; to: UUID | null; note: string; error: string };
 
 export function RecordMatchScreen({
   page,
@@ -69,7 +77,14 @@ export function RecordMatchScreen({
     let refused: string | null;
     if (panel.kind === 'add') refused = actions.addEvent(panel.event, panel.event === 'goal' ? panel.scorer : null, panel.note);
     else if (panel.kind === 'withdraw') refused = actions.withdraw(panel.goal.id, panel.note);
-    else {
+    else if (panel.kind === 'award') {
+      refused =
+        panel.typeId && panel.playerId
+          ? actions.giveAward(panel.typeId, panel.playerId, panel.note)
+          : 'Pick the award and who it is for.';
+    } else if (panel.kind === 'awardChange') {
+      refused = actions.changeAward(panel.award.awardTypeId, panel.award.playerId, panel.to, panel.note);
+    } else {
       const lengths = parsePeriodLengths(panel.lengths);
       refused = lengths ? actions.correctStructure(lengths, panel.note) : 'Type each period’s minutes, e.g. 20 20 10 10.';
     }
@@ -225,6 +240,96 @@ export function RecordMatchScreen({
                 It counts in the score, and in no figure by period or time.
               </Text>
               <PanelButtons error={panel.error} label="Add it" onSave={submit} onCancel={() => setPanel(null)} />
+            </View>
+          )}
+
+          {/* #197: awards. One match's, so open to the coach (ADR-017 §3); never a fairness input. */}
+          <Text style={screen.fieldLabel}>Awards</Text>
+          {page.awards.length === 0 && <Text style={local.lineFaint}>No awards recorded for this match.</Text>}
+          {page.awards.map((a) => (
+            <View key={`${a.awardTypeId}:${a.playerId}`} style={local.goalRow}>
+              <Text style={local.goalText} numberOfLines={2}>
+                {a.award}: {a.name}
+                {a.note ? ` (${a.note})` : ''}
+              </Text>
+              {actions && (
+                <Pressable
+                  onPress={() => setPanel({ kind: 'awardChange', award: a, to: null, note: '', error: '' })}
+                  style={local.takeBack}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Change ${a.award} for ${a.name}`}
+                >
+                  <Text style={screen.link}>Change</Text>
+                </Pressable>
+              )}
+            </View>
+          ))}
+          {panel?.kind === 'awardChange' && (
+            <View style={local.panel}>
+              <Text style={screen.hint}>
+                {panel.award.award}: give it to someone else, or take it back. The record keeps the earlier one.
+              </Text>
+              <ChipRow>
+                {page.minutes
+                  .filter((m) => m.playerId !== panel.award.playerId)
+                  .map((m) => (
+                    <Chip
+                      key={m.playerId}
+                      label={m.name}
+                      narrow
+                      selected={panel.to === m.playerId}
+                      onPress={() => setPanel({ ...panel, to: m.playerId, error: '' })}
+                    />
+                  ))}
+                <Chip label="Take it back" selected={panel.to === null} onPress={() => setPanel({ ...panel, to: null, error: '' })} />
+              </ChipRow>
+              <NoteBox
+                value={panel.note}
+                onChange={(note) => setPanel({ ...panel, note, error: '' })}
+                placeholder="Why? (needed after the day of the match)"
+              />
+              <PanelButtons error={panel.error} label="Save the change" onSave={submit} onCancel={() => setPanel(null)} />
+            </View>
+          )}
+          {actions && page.awardTypes.length > 0 && panel?.kind !== 'award' && (
+            <Pressable
+              onPress={() =>
+                setPanel({ kind: 'award', typeId: page.awardTypes[0].id, playerId: null, note: '', error: '' })
+              }
+              style={screen.linkHit}
+            >
+              <Text style={screen.link}>Add award</Text>
+            </Pressable>
+          )}
+          {panel?.kind === 'award' && (
+            <View style={local.panel}>
+              <ChipRow>
+                {page.awardTypes.map((t) => (
+                  <Chip
+                    key={t.id}
+                    label={t.name}
+                    selected={panel.typeId === t.id}
+                    onPress={() => setPanel({ ...panel, typeId: t.id, error: '' })}
+                  />
+                ))}
+              </ChipRow>
+              {page.awards.some((a) => a.awardTypeId === panel.typeId) && (
+                <Text style={screen.hint}>Already given: this adds a joint winner.</Text>
+              )}
+              <Text style={screen.hint}>Who for?</Text>
+              <ChipRow>
+                {page.minutes.map((m) => (
+                  <Chip
+                    key={m.playerId}
+                    label={m.name}
+                    narrow
+                    selected={panel.playerId === m.playerId}
+                    onPress={() => setPanel({ ...panel, playerId: m.playerId, error: '' })}
+                  />
+                ))}
+              </ChipRow>
+              <NoteBox value={panel.note} onChange={(note) => setPanel({ ...panel, note, error: '' })} placeholder="A note (optional)" />
+              <PanelButtons error={panel.error} label="Give the award" onSave={submit} onCancel={() => setPanel(null)} />
             </View>
           )}
 
