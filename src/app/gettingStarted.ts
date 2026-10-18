@@ -22,6 +22,8 @@
 import type { Match, Player, UUID } from '../types/index';
 import { matchProgress } from './fixtures';
 import type { SavedMatch } from './persistence';
+import { emptyLedger, isHidden, setMatchKind, type Ledger } from './ledger';
+import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { TEST_NAMES, TEST_OPPONENTS, addTestData } from './testKit';
 import { SEASON, addTestSeason, type TestSeasonInput } from './testSeason';
 
@@ -276,4 +278,101 @@ export function loadMadeUpTeam(input: TestSeasonInput): MadeUpTeam {
       ? `Made-up team loaded: ${added} players, ${fixtures} fixtures, ${played} played matches.`
       : `Made-up team loaded: ${added} players and ${fixtures} fixtures. ${season.summary}`;
   return { players: season.players, matches: season.matches, ledger: season.ledger, message };
+}
+
+// ---------------------------------------------------------------------------
+// The made-up guard (PO, `approve made-up guard`, 18 Oct)
+// ---------------------------------------------------------------------------
+
+/** The question, the first time a player is added while the made-up team is loaded. */
+export const MADE_UP_GUARD = {
+  question: 'This is the made-up team. Clear it and start your real squad?',
+  clear: 'Clear it and start',
+  keep: 'Keep exploring',
+  done: 'Made-up team cleared. Your real squad starts here.',
+} as const;
+
+/** The note on each made-up match voided from a record that also holds something else. */
+export const MADE_UP_CLEARED_NOTE = 'Made-up team cleared';
+
+export interface ClearMadeUpInput {
+  /** Everyone in the squad, retired included. */
+  players: Player[];
+  matches: SavedMatch[];
+  live: HeldMatch | null;
+  /** The minutes record, or null when this build may not write it. */
+  ledger: Ledger | null;
+  squadName: string;
+  now: Date;
+}
+
+export interface ClearedMadeUp {
+  players: Player[];
+  matches: SavedMatch[];
+  /** The held match was made up: let go of it without folding it back in. */
+  releaseLive: boolean;
+  /**
+   * The record afterwards. `fresh`: it held only the made-up team, so a new,
+   * empty one replaces it, as Forget everything does. `voided`: it also holds
+   * something else, which is kept untouched, and each made-up match is voided
+   * with a note (#194), hidden everywhere. `untouched`: no record to write.
+   */
+  ledger: Ledger | null;
+  record: 'fresh' | 'voided' | 'untouched';
+  removedPlayers: number;
+  removedMatches: number;
+}
+
+/**
+ * "Clear it and start" (approve made-up guard): take the made-up team off the
+ * phone, keeping anything real untouched, before the coach's first real
+ * player is added. A made-up child has a Test kit first name; a made-up match
+ * is against a made-up opponent, or was played by made-up children. ADR-021
+ * D3: made-up matches stay out of a real season's record.
+ */
+export function clearMadeUpTeam(input: ClearMadeUpInput): ClearedMadeUp {
+  const madeUpPlayers = new Set(input.players.filter((p) => TEST_NAMES.includes(p.firstName)).map((p) => p.id));
+  const byMadeUp = (m: { appearances: { playerId: UUID }[]; benchStints?: { playerId: UUID }[] }) =>
+    m.appearances.some((a) => madeUpPlayers.has(a.playerId)) ||
+    (m.benchStints ?? []).some((b) => madeUpPlayers.has(b.playerId));
+  const madeUpMatch = (m: SavedMatch) => MADE_UP_OPPONENTS.has(m.match.opponent ?? '') || byMadeUp(m);
+  const doomed = new Set(withLiveMatch(input.matches, input.live).filter(madeUpMatch).map((m) => m.match.id));
+
+  const players = input.players.filter((p) => !madeUpPlayers.has(p.id));
+  const matches = input.matches.filter((m) => !doomed.has(m.match.id));
+  const releaseLive = input.live !== null && doomed.has(input.live.state.match.id);
+  const removed = { removedPlayers: input.players.length - players.length, removedMatches: doomed.size };
+
+  const ledger = input.ledger;
+  if (!ledger) return { players, matches, releaseLive, ledger: null, record: 'untouched', ...removed };
+
+  const inRecord = (id: UUID) => doomed.has(id);
+  const madeUpInRecord = ledger.matches.filter(
+    (m) =>
+      inRecord(m.id) ||
+      MADE_UP_OPPONENTS.has(m.opponent ?? '') ||
+      m.intervals.some((i) => madeUpPlayers.has(i.playerId))
+  );
+  const onlyMadeUp =
+    madeUpInRecord.length === ledger.matches.length && ledger.players.every((p) => madeUpPlayers.has(p.id));
+  if (onlyMadeUp) {
+    // Nothing real in it: a new record, as Forget everything starts one.
+    return {
+      players,
+      matches,
+      releaseLive,
+      ledger: emptyLedger(ledger.squad.id, input.squadName, input.now),
+      record: 'fresh',
+      ...removed,
+    };
+  }
+  // Something else is in the record: it stays exactly as it is, and the
+  // made-up matches are voided with a note, never deleted (invariant 5).
+  let next = ledger;
+  for (const m of madeUpInRecord) {
+    if (isHidden(m)) continue;
+    const r = setMatchKind(next, m.id, 'void', MADE_UP_CLEARED_NOTE, input.now);
+    if (r.ok) next = r.ledger;
+  }
+  return { players, matches, releaseLive, ledger: next, record: 'voided', ...removed };
 }

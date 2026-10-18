@@ -75,7 +75,7 @@ import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
-import { emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
+import { MADE_UP_GUARD, emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
 import { NAME, sortSquadList } from '../app/tableSort';
 import { SortHeading, useTableSort } from './TableSort';
@@ -106,6 +106,7 @@ export function SquadScreen({
   onTryMadeUp = null,
   focusName = false,
   firstTime = null,
+  onClearMadeUp = null,
 }: {
   squadId: UUID;
   /** Everyone ever in the squad, retired players included (#77). */
@@ -126,6 +127,12 @@ export function SquadScreen({
   focusName?: boolean;
   /** #218 Q3: the squad views' next thing to do, before the first match. */
   firstTime?: { label: string; onPress: () => void } | null;
+  /**
+   * The made-up guard (approve made-up guard): passed while the made-up team
+   * is loaded. The first name added is then asked about first; "Clear it and
+   * start" hands it here, "Keep exploring" adds it to the made-up team.
+   */
+  onClearMadeUp?: ((firstName: string) => void) | null;
 }) {
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
@@ -136,6 +143,10 @@ export function SquadScreen({
   /** The views and child pages open (#121, #143); empty shows the list. */
   const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
+  /** The name waiting on the made-up guard's answer; screen state only. */
+  const [asking, setAsking] = useState<string | null>(null);
+  /** "Keep exploring" was chosen: not asked again while this screen is open. */
+  const [keptExploring, setKeptExploring] = useState(false);
   const onTab = onStartMatch === null && onLeave === null;
 
   const readiness = squadReadiness(players, onFieldCount);
@@ -162,11 +173,31 @@ export function SquadScreen({
       setError(check.message);
       return;
     }
+    if (onClearMadeUp && !keptExploring) {
+      setAsking(check.cleaned);
+      setError('');
+      return;
+    }
     onPlayers([...everyone, makePlayer(squadId, check.cleaned)]);
     setDraft('');
     setError('');
     nameInput.current?.focus();
-  }, [draft, everyone, onPlayers, squadId]);
+  }, [draft, everyone, onPlayers, squadId, onClearMadeUp, keptExploring]);
+
+  const keepExploring = () => {
+    if (asking === null) return;
+    onPlayers([...everyone, makePlayer(squadId, asking)]);
+    setKeptExploring(true);
+    setAsking(null);
+    setDraft('');
+    nameInput.current?.focus();
+  };
+  const clearAndStart = () => {
+    if (asking === null || !onClearMadeUp) return;
+    onClearMadeUp(asking);
+    setAsking(null);
+    setDraft('');
+  };
 
   const top = pages[pages.length - 1];
   if (top?.kind === 'view') {
@@ -236,6 +267,26 @@ export function SquadScreen({
             </View>
 
             {error !== '' && <Text style={screen.error}>{error}</Text>}
+
+            {asking !== null && (
+              <View style={local.guard}>
+                <Text style={local.guardText}>{MADE_UP_GUARD.question}</Text>
+                <Pressable
+                  onPress={clearAndStart}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.clear}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={keepExploring}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.keep}</Text>
+                </Pressable>
+              </View>
+            )}
 
             {players.length > 0 &&
               (season.countedMatches === 0 ? (
@@ -400,6 +451,16 @@ const local = StyleSheet.create({
   },
   // Colour only: a weight change re-measures and clips (theme.ts).
   retired: { color: colours.inkFaint },
+  guard: {
+    alignSelf: 'stretch',
+    backgroundColor: colours.pitchRaised,
+    borderColor: colours.warn,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  guardText: { alignSelf: 'stretch', color: colours.ink, fontSize: 16, includeFontPadding: false },
   // #222: the headings sit over the list, "a game" left of the Remove column.
   headings: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6 },
   headingName: { flex: 1 },

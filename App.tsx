@@ -42,6 +42,7 @@ import {
 import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './src/app/shapes';
 import {
   activePlayers,
+  makePlayer,
   playedPlayerIds,
   playersForMatch,
   squadReadiness,
@@ -158,7 +159,9 @@ import {
   PLAY_NOW_TOAST,
   TOAST_MS,
   UNDO_MS,
+  MADE_UP_GUARD,
   allStepsDone,
+  clearMadeUpTeam,
   isMadeUpTeam,
   loadMadeUpTeam,
   nextAction,
@@ -1572,6 +1575,43 @@ export default function App() {
     setStep('fixtures');
   }, [players, matches, squadId, squadName, format, totalMinutes, periodCount, commitLedger, persist, showToast]);
 
+  /**
+   * The made-up guard's "Clear it and start" (approve made-up guard, #218):
+   * the made-up squad, fixtures and matches leave the session and the record,
+   * anything real stays untouched (`clearMadeUpTeam`), then the coach's first
+   * real player is added.
+   */
+  const clearMadeUpAndAdd = useCallback(
+    (firstName: string) => {
+      const writable = !ledgerBlockedRef.current;
+      const out = clearMadeUpTeam({
+        players,
+        matches,
+        live: match,
+        ledger: writable ? ledgerRef.current : null,
+        squadName,
+        now: appNow(),
+      });
+      if (out.releaseLive) {
+        // Let go directly, not through releaseMatch, which would fold it back in.
+        setMatch(null);
+        setSubPlan([]);
+      }
+      if (out.ledger && out.ledger !== ledgerRef.current) commitLedger(out.ledger);
+      const nextPlayers = [...out.players, makePlayer(squadId, firstName)];
+      setPlayers(nextPlayers);
+      setMatches(out.matches);
+      persist({
+        players: nextPlayers,
+        matches: out.matches,
+        ...(out.releaseLive ? { state: null, matchFormat: null, periodSubs: null } : {}),
+      });
+      wasAllDone.current = null;
+      showToast(MADE_UP_GUARD.done);
+    },
+    [players, matches, match, squadName, squadId, commitLedger, persist, showToast]
+  );
+
   // --- routing --------------------------------------------------------------
 
   /** #194 AC1: every screen of a test match says so, with its clock speed. */
@@ -1852,6 +1892,7 @@ export default function App() {
           onTryMadeUp={offerMadeUpTeam(players) ? tryMadeUpTeam : null}
           focusName={focusName}
           firstTime={nextButton}
+          onClearMadeUp={isMadeUpTeam(players, everyMatch) ? clearMadeUpAndAdd : null}
         />
       );
     }
