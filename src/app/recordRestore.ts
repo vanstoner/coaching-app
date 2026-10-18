@@ -22,16 +22,14 @@ import type { Format, Player, UUID } from '../types/index';
 import { isHidden, type Ledger, type LedgerFixture, type LedgerPlayer, type LedgerSettings } from './ledger';
 import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
-import { formatForShape, makeFormat, type ShapeCode } from './shapes';
-import { DEFAULT_SHAPE } from './shapes';
+import { DEFAULT_SHAPE, formatForShape, makeFormat, readShapeCode } from './shapes';
 
 export const PLANS_NOT_RESTORED = 'Plans for upcoming matches are not in a minutes file, so none were restored.';
 
-const SHAPE_CODES: readonly string[] = ['2-3-1', '2-2-2'];
-
 /** The shape and names a record gives, as a format. Fresh ids: a format belongs to one phone. */
 export function formatFromRecord(shape: string | null, labels: readonly string[], fallback?: Format): Format {
-  const code = (shape && SHAPE_CODES.includes(shape) ? shape : null) as ShapeCode | null;
+  // Every shape this build knows, the 5-a-side ones included (#223).
+  const code = readShapeCode(shape);
   const base = code ? makeFormat(code) : (fallback ?? formatForShape(DEFAULT_SHAPE, null));
   if (labels.length !== base.positions.length) return base;
   return {

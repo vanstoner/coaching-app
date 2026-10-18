@@ -41,6 +41,13 @@ interface Position { id: UUID; formatId: UUID; label: string; kind: 'goalkeeper'
 ```
 
 - Exactly one `goalkeeper` position per format.
+- Four built-in shapes (`src/app/shapes.ts`), each a list of slots with a
+  renameable label and a fixed unit: **2-3-1 + GK** and **2-2-2 + GK**
+  (`name` "7-a-side", `onFieldCount` 7); **1-2-1 + GK** (GK, D, LM, RM, F) and
+  **2-2 + GK** (GK, LB, RB, LF, RF), "5-a-side", `onFieldCount` 5 (#223).
+  `shapeOfFormat` reads a shape from its unit counts, never its labels. Every
+  count of players (lineup, readiness, Getting started, plan, pitch, plan
+  image) is the match format's `onFieldCount`, never a fixed 7.
 - A match **snapshots** its format (ADR-012). Changing the squad default never
   reshapes a saved fixture. Renaming positions changes labels only (#166).
 
@@ -52,7 +59,7 @@ interface Match {
   id: UUID; squadId: UUID; formatId: UUID;
   opponent: string | null; competition: 'league' | 'cup' | 'friendly' | 'tournament' | null;
   kickoffAt: string | null;
-  totalMinutes: number;       // default 50
+  totalMinutes: number;       // default 50; offered 40, 50, 60, 75, 90 (40: #223)
   quarterCount: number;       // periods: 4 (quarters) or 2 (halves)
   status: MatchStatus; createdAt: string;
   test?: { clock: { offsetMs: number; speed: 1 | 5 | 10; sinceMs: number } }; // #194
@@ -213,7 +220,7 @@ interface Ledger {                          // key coaching-app/ledger/v2
 // profile  { playerId, keeperPreference, prefers, outfieldTarget, active, removed,
 //            fairness: 'counted' | 'not-counted', note }   // fairness changes only with a note (#190)
 // settings { squad, shape, labels[], totalMinutes, periodCount, buzzWhenSubDue }
-// structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction
+// structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction; shape '2-3-1' | '2-2-2' | '1-2-1' | '2-2', onField 7 or 5 (#223)
 // award-type { id, name, active, note }                        // #197; defaults 'player-of-the-week', 'mr-assister'
 // award      { matchId, awardTypeId, playerId, given, note }   // key includes the child: joint winners
 // event-type { id, label, tier: 'tally', credited: 'child' | 'team', active, note }   // #198; events of it: kind 'tally:<id>'

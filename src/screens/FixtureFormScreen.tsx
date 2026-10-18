@@ -145,7 +145,7 @@ export function FixtureFormScreen({
                 label={`${m}`}
                 selected={m === totalMinutes}
                 onPress={() => setTotalMinutes(m)}
-                narrow
+                compact
               />
             ))}
           </ChipRow>

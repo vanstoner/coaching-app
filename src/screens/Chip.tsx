@@ -22,12 +22,19 @@ import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function Chip({
   label,
-  /** The cue under the label, e.g. "2 defence · 3 midfield · 1 attack". */
+  /** The cue under the label, e.g. "7-a-side · 2 defence · 3 midfield · 1 attack". */
   detail,
   selected,
   onPress,
   /** For a row of numbers, where a full-width chip wastes the row. */
   narrow,
+  /**
+   * Narrower still, for a row of two-digit numbers that must fit one line:
+   * the five match lengths (#223 AC8) at 56 + 8 each are 320dp, inside a
+   * 360dp phone's 324dp pane, where `narrow` would push the fifth onto a
+   * line of its own.
+   */
+  compact,
   /** For a chip whose label needs the room, e.g. a shape and its cue. */
   wide,
 }: {
@@ -36,6 +43,7 @@ export function Chip({
   selected: boolean;
   onPress: () => void;
   narrow?: boolean;
+  compact?: boolean;
   wide?: boolean;
 }) {
   return (
@@ -46,6 +54,7 @@ export function Chip({
       style={({ pressed }) => [
         local.chip,
         narrow && local.narrow,
+        compact && local.compact,
         wide && local.wide,
         selected && local.selected,
         pressed && screen.buttonPressed,
@@ -87,6 +96,7 @@ const local = StyleSheet.create({
     marginBottom: 8,
   },
   narrow: { width: 66 },
+  compact: { width: 56 },
   wide: { width: 164 },
   selected: { backgroundColor: colours.accent, borderColor: colours.accent },
   label: {

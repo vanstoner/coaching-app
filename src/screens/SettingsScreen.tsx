@@ -121,7 +121,7 @@ export function SettingsScreen({
                 label={`${m}`}
                 selected={m === totalMinutes}
                 onPress={() => onTotalMinutes(m)}
-                narrow
+                compact
               />
             ))}
           </ChipRow>

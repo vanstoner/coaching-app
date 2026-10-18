@@ -11,7 +11,10 @@
  * > *"the match length and format are probably match specific - but happy to
  * > have defaults in the settings."*
  *
- * Two shapes, both 7-a-side. A shape is a list of slots, and a slot carries a
+ * Four shapes: two 7-a-side, and two 5-a-side added by #223 (PO, 18 Oct:
+ * *"Is it too late to add a 5 aside option? And with that option different
+ * formations.. 1121, 122"*, read as GK + 1-2-1 and GK + 2-2). A shape is a
+ * list of slots, and a slot carries a
  * **label the coach reads** and a **unit time is measured against**. The label
  * is a coaching cue for this match and may be renamed; the unit is one of the
  * four fixed primitives and never is. Renaming "LW" to "goes wherever" must
@@ -25,8 +28,12 @@
 import { uuid } from '../types/index';
 import type { Format, Position, PositionUnit } from '../types/index';
 
-/** The shapes this squad plays. Two, because those are the two the PO named. */
-export type ShapeCode = '2-3-1' | '2-2-2';
+/**
+ * The shapes this squad plays: the ones the PO named. Stored as written in a
+ * minutes file (`shape` on fixture, settings and structure records), so a
+ * code is never renamed once released.
+ */
+export type ShapeCode = '2-3-1' | '2-2-2' | '1-2-1' | '2-2';
 
 export interface ShapeSlot {
   /** What the coach sees. Theirs to rename; nothing is measured against it. */
@@ -39,6 +46,8 @@ export interface ShapeSlot {
 
 export interface ShapeSpec {
   code: ShapeCode;
+  /** "7-a-side", "5-a-side": the format's name, and how many are on the pitch. */
+  formatName: string;
   /** The chip a coach taps. */
   label: string;
   /** The cue underneath it, in the PO's own units. */
@@ -56,8 +65,9 @@ export const DEFAULT_SHAPE: ShapeCode = '2-3-1';
 export const SHAPES: readonly ShapeSpec[] = [
   {
     code: '2-3-1',
+    formatName: '7-a-side',
     label: '2-3-1',
-    description: '2 defence · 3 midfield · 1 attack',
+    description: '7-a-side · 2 defence · 3 midfield · 1 attack',
     // Deliberately the SAME seven labels the released app already uses, so a
     // coach upgrading sees the shape they have been playing named rather than
     // their position list quietly rewritten underneath them.
@@ -73,8 +83,9 @@ export const SHAPES: readonly ShapeSpec[] = [
   },
   {
     code: '2-2-2',
+    formatName: '7-a-side',
     label: '2-2-2',
-    description: '2 defence · 2 midfield · 2 attack',
+    description: '7-a-side · 2 defence · 2 midfield · 2 attack',
     slots: [
       { label: 'GK', unit: 'GK', roleCode: 'GK' },
       { label: 'LB', unit: 'DEF', roleCode: 'LB' },
@@ -85,7 +96,43 @@ export const SHAPES: readonly ShapeSpec[] = [
       { label: 'RF', unit: 'ATT', roleCode: 'ST' },
     ],
   },
+  // #223: five on the pitch, the keeper counted first, as the 7-a-side
+  // shapes are. The labels are cues the coach may rename (#166).
+  {
+    code: '1-2-1',
+    formatName: '5-a-side',
+    label: '1-2-1',
+    description: '5-a-side · 1 defence · 2 midfield · 1 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'D', unit: 'DEF', roleCode: 'CB' },
+      { label: 'LM', unit: 'MID', roleCode: 'LM' },
+      { label: 'RM', unit: 'MID', roleCode: 'RM' },
+      { label: 'F', unit: 'ATT', roleCode: 'ST' },
+    ],
+  },
+  {
+    code: '2-2',
+    formatName: '5-a-side',
+    label: '2-2',
+    description: '5-a-side · 2 defence · 2 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'LB', unit: 'DEF', roleCode: 'LB' },
+      { label: 'RB', unit: 'DEF', roleCode: 'RB' },
+      { label: 'LF', unit: 'ATT', roleCode: 'ST' },
+      { label: 'RF', unit: 'ATT', roleCode: 'ST' },
+    ],
+  },
 ] as const;
+
+/** Every shape code, for reading one back from a record. */
+export const SHAPE_CODES: readonly ShapeCode[] = SHAPES.map((s) => s.code);
+
+/** A stored shape string as a code this build knows; null for anything else. */
+export function readShapeCode(raw: unknown): ShapeCode | null {
+  return typeof raw === 'string' && (SHAPE_CODES as readonly string[]).includes(raw) ? (raw as ShapeCode) : null;
+}
 
 /** The spec for a shape code. */
 export function shapeSpec(code: ShapeCode): ShapeSpec {
@@ -118,7 +165,7 @@ export function makeFormat(code: ShapeCode): Format {
   }));
   return {
     id: formatId,
-    name: '7-a-side',
+    name: spec.formatName,
     onFieldCount: spec.slots.length,
     positions,
   };

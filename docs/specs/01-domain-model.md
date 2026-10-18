@@ -465,3 +465,4 @@ migration, and provenance comes for free.
 | 2026-09-17 | Squad recorded as the ownership boundary; formats become squad-owned copies of templates. Open question 1 ruled. | ADR-010 accepted, #19 |
 | 2026-09-17 | Quarter gains `effectiveEndElapsedMs`, `endChoiceRecordedAt`, `endChoice`. | Spec 02 § End-time choices, via #19 |
 | 2026-09-20 | A match copies length, period count and format at creation. Squad format is the default. Shapes: 2-3-1+GK and 2-2-2+GK. | ADR-012, #70 |
+| 2026-10-18 | 5-a-side shapes 1-2-1+GK and 2-2+GK join the two 7-a-side ones; 40 minutes joins the offered lengths. | PO ruling, #223 |

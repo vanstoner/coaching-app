@@ -45,8 +45,8 @@ export function formatSubTime(ms: number): string {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
 }
 
-/** The match lengths the coach can pick. PO ruling, 2026-09-18. */
-export const TOTAL_MINUTES_CHOICES = [50, 60, 75, 90] as const;
+/** The match lengths the coach can pick. PO ruling, 2026-09-18; 40 added by #223 AC8. */
+export const TOTAL_MINUTES_CHOICES = [40, 50, 60, 75, 90] as const;
 
 /** Halves or quarters. Every combination above divides exactly into both. */
 export const PERIOD_COUNT_CHOICES = [2, 4] as const;

@@ -288,6 +288,7 @@ describe('period naming', () => {
 describe('every offered match configuration is playable', () => {
   it('divides exactly, and the period length is what the coach expects', () => {
     const expected: Record<string, string> = {
+      '40-2': '20:00', '40-4': '10:00',
       '50-2': '25:00', '50-4': '12:30',
       '60-2': '30:00', '60-4': '15:00',
       '75-2': '37:30', '75-4': '18:45',
