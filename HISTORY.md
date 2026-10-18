@@ -280,3 +280,19 @@ analysis, iOS". Entries are added as each release ships.
     empty squad can *Try it with a made-up team*; a yellow line on Home says
     so, and Forget everything clears it. The unnamed team is "Your team"
     instead of "Example FC". A phone with a squad and matches looks as before.
+  - **Test matches from Settings, never recorded (#194).** Settings › Test
+    matches › Start a test match plays the squad on the real screens, each
+    marked "Test match · not recorded", at ×1, ×5 or ×10 (only that match
+    runs fast). It never enters the record, Home, Played or any figure, and
+    can be opened, deleted or deleted all from Settings. A played real match
+    can't be deleted; its report offers "Void, with a note", which takes it
+    off every screen, keeps it in the record, and lists it with the hidden
+    test matches to show again.
+  - **Squad list in order (#222).** The Squad tab lists children by minutes a
+    game, most first; tap Name or "a game" to re-sort (remembered). Children
+    with no matches keep their order below, the Main keeper last; lineup,
+    bench and plan are unchanged.
+  - **Clearing the made-up team (#218).** The first player added to the
+    made-up team asks "This is the made-up team. Clear it and start your real
+    squad?". Clear it and start removes the made-up children, fixtures and
+    matches, from the record too; Keep exploring adds them to it.
