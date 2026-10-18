@@ -38,7 +38,7 @@
  * kick-off.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -111,6 +111,9 @@ export function SquadScreen({
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
   const [draft, setDraft] = useState('');
+  // #219: the name box keeps the keyboard between names, so a squad goes in
+  // one after another without tapping back into it.
+  const nameInput = useRef<TextInput>(null);
   /** The views and child pages open (#121, #143); empty shows the list. */
   const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
@@ -134,6 +137,7 @@ export function SquadScreen({
     onPlayers([...everyone, makePlayer(squadId, check.cleaned)]);
     setDraft('');
     setError('');
+    nameInput.current?.focus();
   }, [draft, everyone, onPlayers, squadId]);
 
   const top = pages[pages.length - 1];
@@ -174,6 +178,7 @@ export function SquadScreen({
 
             <View style={[local.addRow, onTab && local.addRowUnderTiles]}>
               <TextInput
+                ref={nameInput}
                 style={[screen.input, local.nameInput]}
                 value={draft}
                 onChangeText={(t) => {
@@ -185,7 +190,10 @@ export function SquadScreen({
                 autoCapitalize="words"
                 autoCorrect={false}
                 maxLength={MAX_NAME_LENGTH + 8}
-                returnKeyType="done"
+                // "next", and submitting keeps focus: Done would close the
+                // keyboard after every name (#219).
+                returnKeyType="next"
+                submitBehavior="submit"
                 onSubmitEditing={add}
               />
               <Pressable

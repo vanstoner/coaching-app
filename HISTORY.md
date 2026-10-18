@@ -252,3 +252,5 @@ analysis, iOS". Entries are added as each release ships.
   remembers its sort on the phone. The first version bumped by the rule that
   every coach-visible change moves the version in the same pull request
   (#217).
+  Adding squad members keeps the name box focused, so a whole squad goes in
+  one name after another (#219).
