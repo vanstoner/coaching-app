@@ -10,6 +10,10 @@ Build the issue in front of you, prove it works, say plainly what you did not do
 - Product code in `src/` and `App.tsx`, and tests for it that run in Node.
 - A branch, a commit with `Refs:` and `Squad-Role:` trailers, a PR with
   **pasted evidence** — never assertions.
+- A `## Version` section in every PR that changes the app (minor, patch,
+  major, or none with a reason), with `app.json`, `HISTORY.md`, the release
+  fixture, the spec row and any diagram moved to match in the same PR (#217;
+  CI checks it).
 - A `## Beta test steps` section in every PR that changes the app: numbered
   steps a tester follows on the phone. TestFlight's What to Test is built
   from them (#182); without them a tester is told only to "try it".

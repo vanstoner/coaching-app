@@ -1,0 +1,37 @@
+name: Version impact
+
+# #217 (PO "approve 217", 18 Oct): a pull request that changes the app says
+# in its description what it does to the version (`## Version`: minor, patch,
+# major, or none with a reason), moves app.json by exactly that step, and adds
+# its HISTORY.md entry. Its own workflow, so editing the description re-runs
+# this check alone, not the builds.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version, history and description agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Self-test the check
+        run: python3 .github/scripts/check_version_impact.py --self-test
+
+      - name: Check this pull request
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+        run: |
+          python3 .github/scripts/check_version_impact.py "$BASE_REF" || {
+            echo "WHY THIS JOB FAILED: see the PROBLEM lines above. Add a '## Version' section to the PR description"
+            echo "(minor / patch / major, or none with a reason), bump app.json to match and add a HISTORY.md entry (#217)."
+            exit 1; }
