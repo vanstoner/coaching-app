@@ -323,3 +323,10 @@ analysis, iOS". Entries are added as each release ships.
     matches entered afterwards a dashed outline and "◐ reconstructed", with
     the reason on the match page. Squad's "Include reconstructed matches"
     shows every figure without them.
+  - **5-a-side, and 40-minute matches (#223).** Two 5-a-side shapes sit
+    beside 2-3-1 and 2-2-2 in Settings and on each fixture: 1-2-1 + GK (GK,
+    D, LM, RM, F) and 2-2 + GK (GK, LB, RB, LF, RF), renameable like any
+    other. Lineup, "enough players", Getting started, the plan, the clock's
+    sub list, the pitch and the shared plan follow the match's shape, and
+    the record keeps it through a restore. 40 minutes joins the lengths (40,
+    50, 60, 75, 90), in halves of 20 or quarters of 10.
