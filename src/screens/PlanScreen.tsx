@@ -35,7 +35,7 @@ import {
   benchSubOffChoices,
   clampSwapTime,
   formatDelta,
-  nextFreeSwapTimeMs,
+  newSubTimeMs,
   nudgeSwap,
   planBenchSub,
   SUB_STEP_MS,
@@ -211,7 +211,7 @@ export function PlanScreen({
     const existing = benchSubIndex(period, id);
     setBenchMenu(
       existing === -1
-        ? { playerId: id, atMs: nextFreeSwapTimeMs(period, periodMs), editing: true }
+        ? { playerId: id, atMs: newSubTimeMs(periodMs), editing: true }
         : { playerId: id, atMs: period.subs[existing].atMs, editing: false }
     );
   };

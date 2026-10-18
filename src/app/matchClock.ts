@@ -33,6 +33,18 @@ export function formatClock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * A planned sub's time as the coach and parents read it: "6:15", "12:30",
+ * "0:45". Minutes unpadded, seconds always two digits (#203 C9). The same
+ * form on the clock's sub list and on the shared plan (#205 AC3), so the two
+ * can never disagree about when a sub is. Exact, never rounded.
+ */
+export function formatSubTime(ms: number): string {
+  const safe = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  const totalSeconds = Math.floor(safe / 1000);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
 /** The match lengths the coach can pick. PO ruling, 2026-09-18. */
 export const TOTAL_MINUTES_CHOICES = [50, 60, 75, 90] as const;
 

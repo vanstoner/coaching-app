@@ -119,7 +119,7 @@ export function defaultSwapTimeMs(periodMs: number): number {
 export function addSwap(plan: MatchPlan, periodIndex: number, periodMs: number): MatchPlan {
   return withPeriod(plan, periodIndex, (period) => ({
     ...period,
-    subs: [...period.subs, { onId: null, offId: null, atMs: defaultSwapTimeMs(periodMs) }],
+    subs: [...period.subs, { onId: null, offId: null, atMs: newSubTimeMs(periodMs) }],
   }));
 }
 
@@ -206,22 +206,20 @@ export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: numb
 // ---------------------------------------------------------------------------
 
 /**
- * The first time for a new sub that no other sub this period already has:
- * the midpoint, then each 15-second step after it, then each step before it.
- * The midpoint again if every step is taken. `ignoreIndex` is a swap being
- * changed, whose own time does not count as taken.
+ * Where every new sub starts: the period's midpoint, 6:15 in a 12:30 quarter
+ * and 12:30 in a 25:00 half. The second and third subs too (#205 AC1).
+ *
+ * > *"I don't want to stagger subs automatically ... We usually bring them
+ * > all off and shove them all on, so we can lose that code."* — Rob,
+ * > 2026-10-17.
+ *
+ * This replaces the #120 rule that moved each further sub to the next free
+ * 15-second step. Nothing already saved is moved (#205 AC5): this only
+ * decides where a NEW sub starts, and the coach moves any one sub with the
+ * ± steps without touching the others (AC2).
  */
-export function nextFreeSwapTimeMs(
-  period: PlannedPeriod,
-  periodMs: number,
-  ignoreIndex = -1
-): number {
-  const taken = new Set(period.subs.filter((_, i) => i !== ignoreIndex).map((s) => s.atMs));
-  const start = clampSwapTime(defaultSwapTimeMs(periodMs), periodMs);
-  const max = clampSwapTime(Infinity, periodMs);
-  for (let t = start; t <= max; t += SUB_STEP_MS) if (!taken.has(t)) return t;
-  for (let t = start - SUB_STEP_MS; t >= SUB_STEP_MS; t -= SUB_STEP_MS) if (!taken.has(t)) return t;
-  return start;
+export function newSubTimeMs(periodMs: number): number {
+  return clampSwapTime(defaultSwapTimeMs(periodMs), periodMs);
 }
 
 /**

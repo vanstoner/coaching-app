@@ -12,8 +12,9 @@
  * What it carries, by Rob's rulings on #165:
  * - every period's starting pitch, with this match's own position names
  *   (#166 renames included) and each child's first name as stored;
- * - under each pitch, that period's planned subs, "Hal on for Eli – 6m",
- *   the minute counted from the start of that period, or "No subs this
+ * - under each pitch, that period's planned subs, "Hal on for Eli – 6:15",
+ *   the exact planned time counted from the start of that period (#205 AC3,
+ *   which replaced the earlier rounding to whole minutes), or "No subs this
  *   quarter"; then a "Bench: …" line;
  * - a header (us v them, date, kick-off, "4 quarters of 12½ min") and the
  *   footer that says it is a plan, not a promise.
@@ -28,7 +29,7 @@
 
 import type { Format, Match, Player, PositionUnit, UUID } from '../types/index';
 import { opponentLabel } from './fixtures';
-import { periodNoun } from './matchClock';
+import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
 import { slotSpots } from './pitchLayout';
 
@@ -57,7 +58,7 @@ export interface PlanImagePeriod {
   /** "Quarter 1", "Half 2". */
   title: string;
   slots: PlanImageSlot[];
-  /** "Hal on for Eli – 6m", in plan order; empty when none. */
+  /** "Hal on for Eli – 6:15", in plan order; empty when none. */
   subLines: string[];
   /** "No subs this quarter" when `subLines` is empty, else null. */
   noSubs: string | null;
@@ -114,17 +115,15 @@ export function lengthLine(totalMinutes: number, periodCount: number): string {
 }
 
 /**
- * The minute a sub reads as, counted from the start of its period: the
- * nearest whole minute. Sub times move in 15-second steps, so the midpoint
- * of a 12½-minute quarter is 06:15, and a parent reads that as "6m".
+ * "Hal on for Eli – 6:15". The dash is an en dash, as Rob wrote it.
+ *
+ * The exact planned time, in the same form as the clock's sub list (#205
+ * AC3, #203 C9). It used to round to the nearest whole minute ("6m"); Rob
+ * overturned that on 2026-10-17 because parents see it: "They need to be a
+ * bit more precise really."
  */
-export function subMinute(atMs: number): number {
-  return Math.round(atMs / 60_000);
-}
-
-/** "Hal on for Eli – 6m". The dash is an en dash, as Rob wrote it. */
 export function subLine(onName: string, offName: string, atMs: number): string {
-  return `${onName} on for ${offName} – ${subMinute(atMs)}m`;
+  return `${onName} on for ${offName} – ${formatSubTime(atMs)}`;
 }
 
 /**

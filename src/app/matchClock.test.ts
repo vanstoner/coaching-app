@@ -12,6 +12,7 @@ import { uuid } from '../types/index';
 import type { Format, Position, UUID } from '../types/index';
 import {
   formatClock,
+  formatSubTime,
   deriveClockView,
   currentQuarter,
   periodNoun,
@@ -331,5 +332,22 @@ describe('the clock repaints on each second (#96)', () => {
 
   it('repaints ten times as often at ×10 (#95)', () => {
     expect(msUntilNextSecond(12_000, 10)).toBe(100 + REPAINT_SLACK_MS);
+  });
+});
+
+// --- formatSubTime (#203 C9, #205 AC3) ---------------------------------------
+
+describe('formatSubTime', () => {
+  it('writes a planned sub time as "6:15": minutes unpadded, exact seconds', () => {
+    expect(formatSubTime(375_000)).toBe('6:15');
+    expect(formatSubTime(750_000)).toBe('12:30');
+    expect(formatSubTime(45_000)).toBe('0:45');
+    expect(formatSubTime(6 * 60_000)).toBe('6:00');
+  });
+
+  it('never rounds up, and clamps nonsense to 0:00', () => {
+    expect(formatSubTime(375_999)).toBe('6:15');
+    expect(formatSubTime(-1)).toBe('0:00');
+    expect(formatSubTime(Number.NaN)).toBe('0:00');
   });
 });

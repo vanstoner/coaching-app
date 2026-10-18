@@ -91,15 +91,37 @@ describe('the plan image (#165): healthy case', () => {
     expect(slot('GK').firstName).toBe('Ava');
     expect(slot('GK').keeper).toBe(true);
     expect(slot('ST').keeper).toBe(false);
-    expect(q1.subLines).toEqual(['Hal on for Eli – 6m']);
+    expect(q1.subLines).toEqual(['Hal on for Eli – 6:15']);
     expect(q1.noSubs).toBeNull();
     expect(q1.bench).toBe('Bench: Hal, Ivy, Jo');
   });
 
-  it('lists subs in the order they happen, minute counted into that period', () => {
+  it('lists subs in the order they happen, timed into that period', () => {
     const { format, players, plan } = setup();
     const img = planImage({ match: match(), squadName: 'Heart FC', format, plan, players });
-    expect(img.periods[1].subLines).toEqual(['Jo on for Dee – 4m', 'Ivy on for Ben – 8m']);
+    expect(img.periods[1].subLines).toEqual(['Jo on for Dee – 4:00', 'Ivy on for Ben – 8:00']);
+  });
+
+  it('#205 AC4: subs at the same time get one line each, in the order planned', () => {
+    const { format, players, id, plan } = setup();
+    plan.periods[0].subs = [
+      { onId: id('Hal'), offId: id('Eli'), atMs: 6 * MIN + 15_000 },
+      { onId: id('Jo'), offId: id('Fay'), atMs: 6 * MIN + 15_000 },
+      { onId: id('Ivy'), offId: id('Dee'), atMs: 6 * MIN + 15_000 },
+    ];
+    const img = planImage({ match: match(), squadName: 'H', format, plan, players });
+    expect(img.periods[0].subLines).toEqual([
+      'Hal on for Eli – 6:15',
+      'Jo on for Fay – 6:15',
+      'Ivy on for Dee – 6:15',
+    ]);
+  });
+
+  it('#205 AC3: halves read the exact time too, "– 12:30"', () => {
+    const { format, players, id, plan } = setup(2);
+    plan.periods[0].subs = [{ onId: id('Hal'), offId: id('Eli'), atMs: 12 * MIN + 30_000 }];
+    const img = planImage({ match: match({ quarterCount: 2 }), squadName: 'H', format, plan, players });
+    expect(img.periods[0].subLines).toEqual(['Hal on for Eli – 12:30']);
   });
 
   it('draws the pitch top to bottom, keeper last, left before right', () => {
@@ -199,16 +221,20 @@ describe('the plan image: renamed positions (#166)', () => {
 });
 
 describe('the plan image: the sub line', () => {
-  it('reads exactly "X on for Y – Nm", with an en dash', () => {
-    expect(subLine('Hal', 'Eli', 6 * MIN)).toBe('Hal on for Eli – 6m');
-    expect(subLine('Hal', 'Eli', 6 * MIN)).toMatch(/^\S+ on for \S+ – \d+m$/);
+  it('reads exactly "X on for Y – m:ss", with an en dash', () => {
+    expect(subLine('Hal', 'Eli', 6 * MIN + 15_000)).toBe('Hal on for Eli – 6:15');
+    expect(subLine('Hal', 'Eli', 6 * MIN)).toMatch(/^\S+ on for \S+ – \d{1,2}:\d{2}$/);
   });
 
-  it('rounds to the nearest whole minute into the period', () => {
-    expect(subLine('A', 'B', 6 * MIN + 15_000)).toBe('A on for B – 6m');
-    expect(subLine('A', 'B', 6 * MIN + 29_000)).toBe('A on for B – 6m');
-    expect(subLine('A', 'B', 6 * MIN + 30_000)).toBe('A on for B – 7m');
-    expect(subLine('A', 'B', 12 * MIN + 15_000)).toBe('A on for B – 12m');
+  // #205 AC3 replaces the #165 rounding to whole minutes ("6:15" read "6m"):
+  // Rob, 2026-10-17, "They need to be a bit more precise really, as parents
+  // will see them."
+  it('shows the exact planned time, never rounded', () => {
+    expect(subLine('A', 'B', 6 * MIN + 15_000)).toBe('A on for B – 6:15');
+    expect(subLine('A', 'B', 6 * MIN + 30_000)).toBe('A on for B – 6:30');
+    expect(subLine('A', 'B', 6 * MIN + 45_000)).toBe('A on for B – 6:45');
+    expect(subLine('A', 'B', 12 * MIN + 30_000)).toBe('A on for B – 12:30');
+    expect(subLine('A', 'B', 45_000)).toBe('A on for B – 0:45');
   });
 });
 
@@ -219,10 +245,15 @@ describe('the plan image: what it never shows', () => {
     const text = [
       img.title,
       img.footer,
-      ...img.periods.flatMap((p) => [p.title, p.bench, p.noSubs ?? '', ...p.subLines]),
+      ...img.periods.flatMap((p) => [p.title, p.bench, p.noSubs ?? '']),
       ...img.periods.flatMap((p) => p.slots.map((s) => `${s.label} ${s.firstName ?? ''}`)),
     ].join('\n');
     expect(text).not.toMatch(ALL_FIGURES);
+    // A sub line carries its planned time (#205 AC3) and nothing else that
+    // looks like a figure: no played minutes, no share.
+    for (const line of img.periods.flatMap((p) => p.subLines)) {
+      expect(line).toMatch(/^\S+ on for \S+ – \d{1,2}:\d{2}$/);
+    }
   });
 
   it('first names only: no suffix, no surname, nothing but the stored first name', () => {

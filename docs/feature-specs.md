@@ -1,7 +1,7 @@
 # Feature specs
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 
 One row per shipped feature. Acceptance criteria live in the issue; this is
 the contract the code enforces today. `session` = `coaching-app/session/v1`,
@@ -23,9 +23,9 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Add fixture | Home → Add | — | `newMatch` snapshots format, length, periods; today's active squad recorded as available | session `matches[]` | Saved immediately with the live match kept (a half-time add once dropped it) |
 | Delete fixture | Home | No period started (judged on the **live** state) | Played matches are never deleted (invariant 5) | session | Releases a held, unstarted match first so it is not written back |
 | Archive | Home | Match finished | Listing only; no event, no minutes change | session `archived` | — |
-| Plan a match | Home → Plan, or "Plan the rest" mid-match | — | Intent only; pre-fills the lineup; never moves a minute | session `matches[].plan` | Malformed plan dropped on load, match kept |
+| Plan a match | Home → Plan, or "Plan the rest" mid-match | — | Intent only; pre-fills the lineup; never moves a minute. Every new sub starts at the period's midpoint, the second and third too; none is staggered, and ± moves one sub only (#205) | session `matches[].plan` | Malformed plan dropped on load, match kept |
 | Rename positions | Plan or lineup | No period running (#166 Q1) | Labels only; optional copy to the squad default | session `matches[].format` | — |
-| Share plan | Plan | Plan has content | One image; absent players kept off the bench | none (shared file) | Share sheet cancelled: nothing happens |
+| Share plan | Plan | Plan has content | One image; absent players kept off the bench; each sub at its exact planned time, "Ava on for Ben – 6:15", one line each in plan order (#205) | none (shared file) | Share sheet cancelled: nothing happens |
 
 ## Match day (Saturday)
 
