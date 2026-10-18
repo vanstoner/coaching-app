@@ -22,12 +22,14 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Player } from '../types/index';
 import { wholeMinutes } from '../app/analysis';
-import { MAIN_KEEPER_NOTE, goalOutfieldLine, type ChildSeason } from '../app/childSeason';
+import { FILL_IN_NOTE, MAIN_KEEPER_NOTE, goalOutfieldLine, type ChildSeason } from '../app/childSeason';
+import type { FairnessChange } from '../app/ledger';
+import { whenOf } from '../app/ledgerChain';
 import { LENS_TITLE, childMatches, lensCards, positionsLine, type LensCard, type SquadViews } from '../app/squadViews';
 import {
   KEEPER_LABEL,
@@ -47,6 +49,7 @@ export function ChildScreen({
   views,
   everyone,
   onPlayers,
+  fairness,
   onBack,
   backLabel = 'Back to Squad',
 }: {
@@ -56,6 +59,8 @@ export function ChildScreen({
   /** The whole squad, so a preference change is written through `onPlayers`. */
   everyone: Player[];
   onPlayers: (p: Player[]) => void;
+  /** #190: counted in fairness or a fill-in, its history, and how to change it (a reason when refused). */
+  fairness: ChildFairness;
   onBack: () => void;
   /** "Back to Squad", or back to the view the child was opened from (#143). */
   backLabel?: string;
@@ -73,7 +78,12 @@ export function ChildScreen({
       case 'positions':
         return <PositionsCard views={views} player={player} name={name} />;
       case 'preference':
-        return <Preferences player={player} everyone={everyone} onPlayers={onPlayers} />;
+        return (
+          <>
+            <Preferences player={player} everyone={everyone} onPlayers={onPlayers} />
+            <FairnessMark name={name} fairness={fairness} />
+          </>
+        );
     }
   };
 
@@ -138,7 +148,7 @@ function PlayingTime({
       </Text>
     );
   }
-  const line = s.mainKeeper ? null : squadAverageMs;
+  const line = s.mainKeeper || s.fillIn ? null : squadAverageMs;
   const target = s.share.targetPct;
   const showKeeper = (s.goalMsPerGame ?? 0) > 0 || target !== null;
   return (
@@ -155,7 +165,13 @@ function PlayingTime({
       <View style={local.scale}>
         <Text style={local.scaleText}>0</Text>
         <Text style={local.scaleText}>
-          {line === null ? (s.mainKeeper ? MAIN_KEEPER_NOTE : '') : `Line: squad average ${wholeMinutes(line)}`}
+          {line === null
+            ? s.fillIn
+              ? FILL_IN_NOTE
+              : s.mainKeeper
+                ? MAIN_KEEPER_NOTE
+                : ''
+            : `Line: squad average ${wholeMinutes(line)}`}
         </Text>
         <Text style={local.scaleText}>{wholeMinutes(scaleMs)} min</Text>
       </View>
@@ -196,7 +212,8 @@ function PlayingTime({
 function MatchByMatch({ views, player, s }: { views: SquadViews; player: Player; s: ChildSeason }) {
   const [picked, setPicked] = useState<string | null>(null);
   const matches = childMatches(views, player.id);
-  const average = s.mainKeeper || views.season.squadAverageMs === null ? null : wholeMinutes(views.season.squadAverageMs);
+  const average =
+    s.mainKeeper || s.fillIn || views.season.squadAverageMs === null ? null : wholeMinutes(views.season.squadAverageMs);
   const keeper = matches.some((m) => (m.cell?.goal ?? 0) > 0);
   const columns: Column[] = matches.map((m) => ({
     // In goal at the foot, outfield above it: whole minutes that add up to the figure under the column.
@@ -300,6 +317,74 @@ function Preferences({
         ))}
       </ChipRow>
       <Text style={screen.hint}>Only decides who is suggested where. Minutes and fairness are not affected.</Text>
+    </>
+  );
+}
+
+export interface ChildFairness {
+  counted: boolean;
+  history: FairnessChange[];
+  set: (counted: boolean, note: string) => string | null;
+}
+
+/**
+ * #190: a fill-in from another team is recorded like anyone, and left out of
+ * the squad average, the fairness figures and "who's owed time" for the
+ * season. Changing it needs a note (invariant 5); every change is listed.
+ */
+function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairness }) {
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const save = () => {
+    const refused = fairness.set(!fairness.counted, note);
+    if (refused) {
+      setError(refused);
+      return;
+    }
+    setEditing(false);
+    setNote('');
+    setError('');
+  };
+  return (
+    <>
+      <Text style={screen.hint}>Fairness</Text>
+      <Text style={[local.line, local.left]}>
+        {fairness.counted ? 'Counted in the squad’s fairness figures' : FILL_IN_NOTE}
+      </Text>
+      {fairness.history.map((h, i) => (
+        <Text key={i} style={[screen.hint, local.left]}>
+          {`${whenOf(h.at)}: ${h.counted ? 'counted again' : 'marked a fill-in'}${h.note ? ` — ${h.note}` : ''}`}
+        </Text>
+      ))}
+      {editing ? (
+        <>
+          <TextInput
+            style={screen.input}
+            value={note}
+            onChangeText={(t) => {
+              setNote(t);
+              if (error) setError('');
+            }}
+            placeholder="Why? (needed)"
+            placeholderTextColor={colours.inkFaint}
+          />
+          {error !== '' && <Text style={screen.error}>{error}</Text>}
+          <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={save}>
+            <Text style={screen.buttonLabel}>{fairness.counted ? 'Mark as a fill-in' : 'Count them again'}</Text>
+          </Pressable>
+          <Pressable onPress={() => setEditing(false)} style={screen.linkHit}>
+            <Text style={screen.link}>Cancel</Text>
+          </Pressable>
+        </>
+      ) : (
+        <Pressable onPress={() => setEditing(true)} style={screen.linkHit}>
+          <Text style={screen.link}>
+            {fairness.counted ? `${name} is a fill-in: don’t count them in fairness` : 'Count them in fairness again'}
+          </Text>
+        </Pressable>
+      )}
+      <Text style={screen.hint}>Their minutes are always recorded. On the day they still get a fair share.</Text>
     </>
   );
 }

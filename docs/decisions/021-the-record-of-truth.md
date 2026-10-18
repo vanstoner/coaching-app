@@ -4,6 +4,18 @@
 **Date:** 2026-10-17
 **Decision maker:** Architect, for the Product Owner's ruling (epic #191)
 
+**Rulings so far.** D3, D4 and the build order: PO 17 Oct (`approve 1 2 3 4`,
+#191). **D1, D2 and D5: approved to build on (PO 18 Oct, #191); ADR stays
+Proposed.** The format is not locked at 1.3.0 (D6 unchanged).
+
+**As built (1.3.0, #195).** `fixture` carries the app's `totalMinutes`, not
+`periodMinutes` (50 minutes in quarters is 12.5 a period, and the chain holds
+whole numbers only, ADR-014 §6); it also carries `labels` (position names,
+#166) and `archived` (#76), and has no `homeAway` or `venue` (the app has
+neither). `profile` also carries `prefers` (outfield unit, #87), `active` and
+`removed`, per the 18 Oct ruling. `settings` also carries `labels` and
+`buzzWhenSubDue`.
+
 **Relationship:** extends [ADR-014](./014-ledger-hash-chain.md) §3 (new record
 types) and reverses part of its "HMAC or signatures" alternative (§D4 below).
 ADR-007, 008, 010, 011, 015, 017 and 020 stand. Nothing here moves data off the

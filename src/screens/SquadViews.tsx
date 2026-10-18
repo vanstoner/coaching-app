@@ -23,7 +23,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { UUID } from '../types/index';
-import { MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
 import { KEEPER_LABEL } from '../app/squad';
 import { UNIT_LABEL } from '../app/ledger';
 import {
@@ -347,7 +347,8 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
             </View>
           );
         }
-        const words = r.offset === null ? MAIN_KEEPER_NOTE : offsetWords(r.offset);
+        const outside = r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE;
+        const words = r.offset === null ? outside : offsetWords(r.offset);
         return (
           <Pressable
             key={r.playerId}
@@ -360,7 +361,7 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
               {r.name}
             </Text>
             {r.offset === null ? (
-              <Text style={local.dNote}>{MAIN_KEEPER_NOTE}</Text>
+              <Text style={local.dNote}>{outside}</Text>
             ) : (
               <BandDot value={r.perGame} average={f.average} gap={f.gap} lo={lo} hi={hi} />
             )}
@@ -459,13 +460,13 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
               onPress={() => onChild(r.playerId)}
               style={local.orow}
               accessibilityRole="button"
-              accessibilityLabel={`${r.name}, ${MAIN_KEEPER_NOTE}`}
+              accessibilityLabel={`${r.name}, ${r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}`}
             >
               <View style={local.oLine}>
                 <Text style={local.oName} numberOfLines={1}>
                   {r.name}
                 </Text>
-                <Text style={local.oNote}>{MAIN_KEEPER_NOTE}</Text>
+                <Text style={local.oNote}>{r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}</Text>
               </View>
             </Pressable>
           );

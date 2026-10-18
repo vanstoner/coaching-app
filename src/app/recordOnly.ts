@@ -31,6 +31,8 @@ export interface RecordOnlyMatch {
   score: { us: number; them: number } | null;
   /** The coach's note when it is left out of the figures (ADR-020); null when it counts. */
   leftOut: string | null;
+  /** Archived by the coach on the phone that played it (#76), carried by its `fixture` record (#195). */
+  archived: boolean;
 }
 
 /** Events still standing: a withdrawal takes back the event it names. */
@@ -60,6 +62,7 @@ const kickoffTime = (m: { kickoffAt: string | null }): number | null => {
  */
 export function recordOnlyMatches(ledger: Ledger | null, fixtureIds: ReadonlySet<UUID>): RecordOnlyMatch[] {
   if (!ledger) return [];
+  const archived = new Set((ledger.fixtures ?? []).filter((f) => f.archived).map((f) => f.id));
   return ledger.matches
     .filter((m) => m.status === 'completed' && !fixtureIds.has(m.id))
     .map((m) => ({
@@ -71,6 +74,7 @@ export function recordOnlyMatches(ledger: Ledger | null, fixtureIds: ReadonlySet
       periodCount: m.periodCount,
       score: scoreOf(m),
       leftOut: isExcluded(m) ? (m.excluded?.note ?? '') : null,
+      archived: archived.has(m.id),
     }))
     .sort((a, b) => {
       const ta = kickoffTime(a);

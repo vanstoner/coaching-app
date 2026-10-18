@@ -56,7 +56,7 @@ import {
 import { Text } from './Text';
 
 import type { Player, UUID } from '../types/index';
-import type { Ledger } from '../app/ledger';
+import { fairnessHistory, isCountedInFairness, type Ledger } from '../app/ledger';
 import {
   MAX_NAME_LENGTH,
   activePlayers,
@@ -70,7 +70,7 @@ import {
   validateName,
 } from '../app/squad';
 import { wholeMinutes } from '../app/analysis';
-import { MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
 import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
@@ -98,6 +98,7 @@ export function SquadScreen({
   ledger,
   kickoffs,
   onPlayers,
+  fairness,
   onFieldCount,
   /** Offered only on the way to a match; the tab has tabs instead. */
   onStartMatch,
@@ -118,6 +119,8 @@ export function SquadScreen({
   /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
   kickoffs: ReadonlyMap<UUID, string>;
   onPlayers: (p: Player[]) => void;
+  /** #190: mark a child not counted in fairness, or counted again; a reason when refused. */
+  fairness: { set: (playerId: UUID, counted: boolean, note: string) => string | null };
   onFieldCount: number;
   onStartMatch: (() => void) | null;
   onLeave: (() => void) | null;
@@ -215,6 +218,11 @@ export function SquadScreen({
         views={views}
         everyone={everyone}
         onPlayers={onPlayers}
+        fairness={{
+          counted: isCountedInFairness(ledger, child.id),
+          history: ledger ? fairnessHistory(ledger, child.id) : [],
+          set: (counted, note) => fairness.set(child.id, counted, note),
+        }}
         backLabel={under?.kind === 'view' ? `Back to ${VIEW_TITLE[under.view]}` : 'Back to Squad'}
         onBack={back}
       />
@@ -325,7 +333,7 @@ export function SquadScreen({
                     onPress={() => open({ kind: 'child', id: p.id })}
                     style={local.nameHit}
                     accessibilityRole="button"
-                    accessibilityLabel={`${displayName(p)}, ${figures}${s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
+                    accessibilityLabel={`${displayName(p)}, ${figures}${s?.fillIn ? `, ${FILL_IN_NOTE}` : s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
                   >
                     <Text style={screen.playerName} numberOfLines={1}>
                       {displayName(p)}
@@ -336,14 +344,21 @@ export function SquadScreen({
                     {s && s.averageMs !== null && (
                       <AverageBar
                         value={s.averageMs}
-                        line={s.mainKeeper ? null : season.squadAverageMs}
+                        line={s.mainKeeper || s.fillIn ? null : season.squadAverageMs}
                         scale={season.scaleMs}
                       />
                     )}
-                    {s?.mainKeeper && s.averageMs !== null && (
+                    {s?.fillIn ? (
                       <Text style={local.prefSummary} numberOfLines={1}>
-                        {MAIN_KEEPER_NOTE}
+                        {FILL_IN_NOTE}
                       </Text>
+                    ) : (
+                      s?.mainKeeper &&
+                      s.averageMs !== null && (
+                        <Text style={local.prefSummary} numberOfLines={1}>
+                          {MAIN_KEEPER_NOTE}
+                        </Text>
+                      )
                     )}
                     {summary !== '' && (
                       <Text style={local.prefSummary} numberOfLines={1}>

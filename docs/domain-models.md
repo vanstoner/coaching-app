@@ -1,7 +1,7 @@
 # Domain models
 
 Status: **Draft**, retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-17 (#173, #180, #184, #188, #192, #193, #202, #195 AC1)
+Last updated: 2026-10-18 (#173, #180, #184, #188, #192, #193, #202, #195, #190)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./specs/01-domain-model.md)) is the
@@ -201,10 +201,17 @@ interface Ledger {                          // key coaching-app/ledger/v2
   entries: LedgerEntry[];                   // the only stored part: hash-chained (ADR-014)
   // folded from entries, never stored:
   squad: { id: UUID; name: string }; players: LedgerPlayer[]; matches: LedgerMatch[];
+  fixtures: LedgerFixture[]; profiles: LedgerProfile[]; settings: LedgerSettings | null;   // #195
 }
 // entry: { seq, prev, at, kind, records, hash, device?, sig? }
 // record types: squad | player | match | interval | event | attendance
 //             | exclusion (ADR-020) | device (#193) | match-kind (#194)
+//             | fixture | profile | settings (#195, ADR-021 D2)
+// fixture  { id, kickoffAt, opponent, competition, totalMinutes, periodCount, shape, labels[],
+//            excludeFromStats, state: 'planned' | 'cancelled', archived, note }
+// profile  { playerId, keeperPreference, prefers, outfieldTarget, active, removed,
+//            fairness: 'counted' | 'not-counted', note }   // fairness changes only with a note (#190)
+// settings { squad, shape, labels[], totalMinutes, periodCount, buzzWhenSubDue }
 ```
 
 - **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
@@ -219,8 +226,20 @@ interface Ledger {                          // key coaching-app/ledger/v2
   with a note: `test` (the one-off clean-up) or `void` ("Void, with a note"
   on a played match's report) hides the match from every screen
   (`visibleLedger`); `real` shows it again. The chain keeps it either way.
-- **Proposed, not built:** the record types of ADR-021 D2 (fixture,
-  structure, awards, profiles, settings, origin).
+- **Fixtures, profiles and settings** (#195, ADR-021 D2): written by every
+  save when they change, latest wins. A save never decides a fairness mark,
+  a cancellation or a note; those are explicit acts with a note. A deleted
+  unplayed fixture is a `cancelled` record. A test match (#194) is never a
+  fixture in the record. Clearing the made-up team cancels its fixtures to
+  come and marks its children `removed`, so a restore never brings them back.
+  The released build carries all three untouched (tested against a frozen
+  1.2.0 reader).
+- **Not counted in fairness** (#190): `profile.fairness = 'not-counted'`,
+  for the whole season. Out of the squad average, fairness figures and owed
+  time; never out of the record, a match's totals or the planner's fair share
+  on the day.
+- **Proposed, not built yet:** the remaining ADR-021 D2 types (structure,
+  awards, event types, origin).
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.

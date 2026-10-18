@@ -96,18 +96,23 @@ import {
   storedFromHeld,
 } from './src/app/matchLifecycle';
 import {
+  cancelFixture,
   describeImport,
   emptyLedger,
   importLedger,
   parseLedger,
   recordMatches,
+  recordRemovedPlayers,
   setMatchExcluded,
+  setPlayerFairness,
   setMatchKind,
   visibleLedger,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
 import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
+import { setupFrom } from './src/app/ledgerSetup';
+import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord } from './src/app/recordRestore';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { installDeviceSigner } from './src/app/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
@@ -430,10 +435,29 @@ export default function App() {
           // A new chain after an unreadable one names where it was set aside (#100 AC7).
           opened.follows
         );
+      // #195 AC6: the first launch of this build also writes the phone's
+      // fixtures, profiles and settings into the record, in that same entry.
       commitLedger(
         saved
-          ? // A test match never enters the record (#194, ADR-021 D3).
-            recordMatches(base, recordable(saved.matches), saved.players, saved.squadName, appNow())
+          ? // A test match never enters the record (#194, ADR-021 D3), nor its fixture (#195).
+            recordMatches(
+              base,
+              recordable(saved.matches),
+              saved.players,
+              saved.squadName,
+              appNow(),
+              openedSession.writable
+                ? setupFrom({
+                    players: saved.players,
+                    matches: recordable(saved.matches),
+                    live: null,
+                    format: saved.format,
+                    totalMinutes: saved.totalMinutes,
+                    periodCount: saved.periodCount,
+                    buzzWhenSubDue: saved.buzzWhenSubDue,
+                  })
+                : undefined
+            )
           : base
       );
 
@@ -522,6 +546,8 @@ export default function App() {
         const live = 'state' in overrides ? overrides.state : (match?.state ?? null);
         const records: MatchRecord[] = [...(overrides.matches ?? matches)];
         if (live) records.push(live);
+        const input = sessionInput(overrides);
+        const liveFormat = input.matchFormat ?? match?.format ?? null;
         commitLedger(
           recordMatches(
             ledgerRef.current,
@@ -529,7 +555,20 @@ export default function App() {
             recordable(records),
             overrides.players ?? players,
             overrides.squadName ?? squadName,
-            appNow()
+            appNow(),
+            // #195 AC2, AC3: only from a session this launch may write (#173).
+            sessionWritableRef.current
+              ? setupFrom({
+                  players: input.players,
+                  // A test match is never a fixture in the record either (#194).
+                  matches: recordable(input.matches ?? []),
+                  live: live && liveFormat && !isTestMatch(live.match) ? { match: live.match, format: liveFormat } : null,
+                  format: input.format,
+                  totalMinutes: input.totalMinutes,
+                  periodCount: input.periodCount,
+                  buzzWhenSubDue: input.buzzWhenSubDue ?? true,
+                })
+              : undefined
           )
         );
       }
@@ -579,28 +618,57 @@ export default function App() {
     }
     commitLedger(report.ledger);
 
+    // #195 AC4: a phone with nothing on it is rebuilt from the record: squad,
+    // players and their profiles, settings and planned fixtures. AC5: one
+    // with data only gains what it is missing; nothing on it is overwritten.
     const fresh = players.length === 0 && matches.length === 0;
-    const known = new Set(players.map((p) => p.id));
-    const restored: Player[] = report.ledger.players
-      .filter((p) => !known.has(p.id))
-      .map((p) => ({
-        id: p.id,
-        squadId: fresh ? report.ledger.squad.id : squadId,
-        firstName: p.firstName,
-        displaySuffix: p.displaySuffix,
-        squadNumber: null,
-        active: p.active,
-        createdAt: appNow().toISOString(),
-      }));
-    const nextPlayers = [...players, ...restored];
-    const nextSquadId = fresh && report.ledger.squad.id ? report.ledger.squad.id : squadId;
-    const nextName = fresh && report.ledger.squad.name ? report.ledger.squad.name : squadName;
-    setPlayers(nextPlayers);
-    setSquadId(nextSquadId);
-    setSquadName(nextName);
-    persist({ players: nextPlayers, squadId: nextSquadId, squadName: nextName });
-    setLedgerMessage(importedMessage(describeImport(report), parsed.ledger, report.ledger));
-  }, [squadId, squadName, players, matches, persist, commitLedger]);
+    let restoredFixtures = 0;
+    if (fresh) {
+      const r = restoreFromRecord(report.ledger, squadId, format, appNow());
+      const nextName = r.squadName || squadName;
+      restoredFixtures = r.fixtures.length;
+      setPlayers(r.players);
+      setSquadId(r.squadId);
+      setSquadName(nextName);
+      setMatches(r.fixtures);
+      if (r.settings) {
+        setFormat(r.settings.format);
+        setTotalMinutes(r.settings.totalMinutes);
+        setPeriodCount(r.settings.periodCount);
+        setBuzzWhenSubDue(r.settings.buzzWhenSubDue);
+      }
+      persist({
+        players: r.players,
+        squadId: r.squadId,
+        squadName: nextName,
+        matches: r.fixtures,
+        ...(r.settings
+          ? {
+              format: r.settings.format,
+              totalMinutes: r.settings.totalMinutes,
+              periodCount: r.settings.periodCount,
+              buzzWhenSubDue: r.settings.buzzWhenSubDue,
+            }
+          : {}),
+      });
+    } else {
+      const x = extendFromRecord(report.ledger, players, matches, squadId, format, appNow());
+      restoredFixtures = x.addedFixtures;
+      setPlayers(x.players);
+      setMatches(x.matches);
+      persist({ players: x.players, matches: x.matches });
+    }
+    const said = describeImport(report);
+    setLedgerMessage(
+      importedMessage(
+        restoredFixtures > 0
+          ? `${said} ${restoredFixtures} upcoming ${restoredFixtures === 1 ? 'fixture' : 'fixtures'} added. ${PLANS_NOT_RESTORED}`
+          : said,
+        parsed.ledger,
+        report.ledger
+      )
+    );
+  }, [squadId, squadName, players, matches, format, persist, commitLedger]);
 
   useEffect(() => {
     if (step === 'loading' || step === 'resume') return;
@@ -757,8 +825,12 @@ export default function App() {
         matches: outcome.matches,
         ...(outcome.releaseLive ? { state: null, matchFormat: null } : {}),
       });
+      // #195 AC2: the record says it was cancelled; it is never deleted from it.
+      if (ledgerRef.current && !ledgerBlockedRef.current) {
+        commitLedger(cancelFixture(ledgerRef.current, matchId, appNow()));
+      }
     },
-    [matches, persist, match]
+    [matches, persist, match, commitLedger]
   );
 
   /**
@@ -1041,6 +1113,41 @@ export default function App() {
     setBackupMessage('Restored. What was on this phone before is kept aside, unchanged.');
     setLaunchKey((k) => k + 1);
   }, [pendingBackup, store]);
+
+  /**
+   * The squad changed on the Squad screen. A player taken out before ever
+   * playing is gone from the squad; the record says so, so a restore from it
+   * leaves them out (#195 AC4). The record itself keeps every player.
+   */
+  const changeSquad = useCallback(
+    (next: Player[]) => {
+      const kept = new Set(next.map((p) => p.id));
+      const gone = players.filter((p) => !kept.has(p.id)).map((p) => p.id);
+      setPlayers(next);
+      if (gone.length > 0 && ledgerRef.current && !ledgerBlockedRef.current) {
+        commitLedger(recordRemovedPlayers(ledgerRef.current, gone, appNow()));
+      }
+    },
+    [players, commitLedger]
+  );
+
+  /** #190: mark a child not counted in fairness, or counted again, with a note. */
+  const squadFairness = useMemo(
+    () => ({
+      set: (playerId: UUID, counted: boolean, note: string): string | null => {
+        if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+        // Saved first, so a child added a moment ago is in the record.
+        persist();
+        const current = ledgerRef.current;
+        if (!current) return 'There is no record on this phone yet.';
+        const r = setPlayerFairness(current, playerId, counted, note, appNow());
+        if (!r.ok) return r.reason;
+        commitLedger(r.ledger);
+        return null;
+      },
+    }),
+    [persist, commitLedger]
+  );
 
   /** #194: the ids of matches marked a test or void, kept off every list. */
   const hiddenIds = useMemo(() => new Set(hiddenMatches(ledger).map((m) => m.id)), [ledger]);
@@ -1885,7 +1992,8 @@ export default function App() {
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
           ledger={viewLedger}
           kickoffs={kickoffs()}
-          onPlayers={setPlayers}
+          onPlayers={changeSquad}
+          fairness={squadFairness}
           onFieldCount={format.onFieldCount}
           onStartMatch={forMatch ? () => beginMatch(false) : null}
           onLeave={forMatch ? goHome : null}
@@ -1984,7 +2092,7 @@ export default function App() {
         notClosed={notClosedIds(withLiveMatch(real, liveReal))}
         onDelete={deleteFixture}
         // #195: the record's played matches with no fixture here, archived fixtures included in "here".
-        recordOnly={recordOnlyList}
+        recordOnly={recordOnlyList.filter((m) => showArchived || !m.archived)}
         onOpenRecord={(id) => {
           setRecordId(id);
           setStep('record');
@@ -2016,7 +2124,7 @@ export default function App() {
           ),
           archived: new Set(real.filter((m) => m.archived).map((m) => m.match.id)),
           onArchive: archiveFixture,
-          archivedCount: real.filter((m) => m.archived).length,
+          archivedCount: real.filter((m) => m.archived).length + recordOnlyList.filter((m) => m.archived).length,
           showingArchived: showArchived,
           onToggleArchived: () => setShowArchived((v) => !v),
         }}

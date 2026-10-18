@@ -251,6 +251,8 @@ export interface FairnessRow {
   perGame: number | null;
   /** Outside the squad average: shown with the note, never against the band. */
   mainKeeper: boolean;
+  /** Not counted in fairness (#190): shown with the note, never against the band. */
+  fillIn: boolean;
   /** `perGame` minus the squad average, both as shown; null when not in the average. */
   offset: number | null;
 }
@@ -263,6 +265,8 @@ export interface Fairness {
   rows: FairnessRow[];
   /** Main keepers, by name: not in the average. */
   mainKeepers: string[];
+  /** Fill-ins, by name: not counted in fairness (#190). */
+  fillIns: string[];
 }
 
 /** The widest gap from the average, in the whole minutes shown. */
@@ -281,14 +285,16 @@ export function fairnessOf(season: SquadSeason): Fairness | null {
       name: c.name,
       perGame,
       mainKeeper: c.mainKeeper,
-      offset: perGame === null || c.mainKeeper ? null : perGame - average,
+      fillIn: c.fillIn,
+      offset: perGame === null || c.mainKeeper || c.fillIn ? null : perGame - average,
     };
   });
   return {
     average,
     gap: Math.max(0, ...rows.map((r) => (r.offset === null ? 0 : Math.abs(r.offset)))),
     rows,
-    mainKeepers: season.children.filter((c) => c.mainKeeper).map((c) => c.name),
+    mainKeepers: season.children.filter((c) => c.mainKeeper && !c.fillIn).map((c) => c.name),
+    fillIns: season.children.filter((c) => c.fillIn).map((c) => c.name),
   };
 }
 
@@ -340,7 +346,11 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
     }
     const soFar = children.map((c) => {
       const s = sums.get(c.playerId) as { ms: number; played: number };
-      return { mainKeeper: c.mainKeeper, averageMs: s.played === 0 ? null : Math.round(s.ms / s.played) };
+      return {
+        mainKeeper: c.mainKeeper,
+        fillIn: c.fillIn,
+        averageMs: s.played === 0 ? null : Math.round(s.ms / s.played),
+      };
     });
     const avgMs = squadAverage(soFar);
     if (avgMs === null) {
@@ -348,7 +358,9 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
       return { matchId: match.matchId, average: null, gap: null };
     }
     const average = wholeMinutes(avgMs);
-    const counted = soFar.map((c) => (c.mainKeeper || c.averageMs === null ? null : wholeMinutes(c.averageMs)));
+    const counted = soFar.map((c) =>
+      c.mainKeeper || c.fillIn || c.averageMs === null ? null : wholeMinutes(c.averageMs)
+    );
     carried = { average, gap: widestGap(counted, average) };
     return { matchId: match.matchId, average, gap: carried.gap };
   });
@@ -365,6 +377,8 @@ export interface OwedRow {
   perGame: number | null;
   played: number;
   mainKeeper: boolean;
+  /** Not counted in fairness (#190): never owed time. */
+  fillIn: boolean;
   /**
    * Whole minutes owed over the season: above zero owed, below zero had
    * more. Null when not in the squad average (a Main keeper) or not played.
@@ -395,16 +409,16 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
     }
     if (played > 0) exact.set(c.playerId, ms / played);
   }
-  const anyMain = season.children.some((c) => c.mainKeeper);
+  const anyMain = season.children.some((c) => c.mainKeeper && !c.fillIn);
   const counted = season.children
-    .filter((c) => !(anyMain && c.mainKeeper))
+    .filter((c) => !c.fillIn && !(anyMain && c.mainKeeper))
     .map((c) => exact.get(c.playerId))
     .filter((ms): ms is number => ms !== undefined);
   const avg = counted.length === 0 ? null : counted.reduce((sum, ms) => sum + ms, 0) / counted.length;
   return season.children.map((c) => {
     const own = exact.get(c.playerId);
     const owed =
-      avg === null || own === undefined || c.mainKeeper
+      avg === null || own === undefined || c.mainKeeper || c.fillIn
         ? null
         : Math.round(((avg - own) * c.played) / MIN) || 0; // never "-0"
     return {
@@ -413,6 +427,7 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
       perGame: c.averageMs === null ? null : wholeMinutes(c.averageMs),
       played: c.played,
       mainKeeper: c.mainKeeper,
+      fillIn: c.fillIn,
       owed,
       named: owed !== null && owed >= OWED_MIN,
     };

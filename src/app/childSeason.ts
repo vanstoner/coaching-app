@@ -21,7 +21,7 @@
  */
 
 import type { Player, UUID } from '../types/index';
-import type { Ledger } from './ledger';
+import { notCountedIds, type Ledger } from './ledger';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import {
   competitionBucket,
@@ -41,6 +41,13 @@ export const SEASON_POINTER = "Season figures are on each child's page in Squad"
 
 /** The Main keeper's note on their row and page (PO ruling, #121). */
 export const MAIN_KEEPER_NOTE = 'Main keeper, not in the squad average';
+
+/**
+ * A fill-in's note on their row and page (#190). Their minutes are recorded
+ * and shown; they are left out of the squad average, the fairness figures
+ * and "who's owed time" for the whole season (PO ruling, 18 Oct).
+ */
+export const FILL_IN_NOTE = 'Fill-in, not counted in fairness';
 
 /** The order competitions are read out in. */
 export const COMPETITION_LINES: readonly { key: CompetitionBucket; label: string; always: boolean }[] = [
@@ -76,6 +83,8 @@ export interface ChildSeason {
   averageMs: number | null;
   /** In-goal preference is Main keeper: not in the squad average. */
   mainKeeper: boolean;
+  /** Marked not counted in fairness (#190): out of the squad average, fairness and owed time. */
+  fillIn: boolean;
   competitions: CompetitionLine[];
   /** Per closed match attended; null when none attended. */
   goalMsPerGame: number | null;
@@ -129,11 +138,11 @@ export function seasonSummary(averageMs: number | null, played: number, of: numb
  * one, everyone in otherwise. Children without a closed match do not count.
  */
 export function squadAverage(
-  children: readonly Pick<ChildSeason, 'averageMs' | 'mainKeeper'>[]
+  children: readonly (Pick<ChildSeason, 'averageMs' | 'mainKeeper'> & { fillIn?: boolean })[]
 ): number | null {
-  const anyMain = children.some((c) => c.mainKeeper);
+  const anyMain = children.some((c) => c.mainKeeper && !c.fillIn);
   const counted = children
-    .filter((c) => !(anyMain && c.mainKeeper))
+    .filter((c) => !c.fillIn && !(anyMain && c.mainKeeper))
     .map((c) => c.averageMs)
     .filter((ms): ms is number => ms !== null);
   if (counted.length === 0) return null;
@@ -151,6 +160,7 @@ export function squadSeason(
 ): SquadSeason {
   const active = players.filter((p) => p.active !== false);
   const stats = ledger ? seasonStats(ledger, players, options) : null;
+  const fillIns = notCountedIds(ledger);
 
   // Per competition, who was in the squad; and goal / outfield over closed matches.
   const ofBucket = new Map<UUID, Record<CompetitionBucket, number>>();
@@ -206,6 +216,7 @@ export function squadSeason(
       of,
       averageMs,
       mainKeeper: p.keeper === 'main',
+      fillIn: fillIns.has(p.id),
       competitions,
       goalMsPerGame: played === 0 ? null : Math.round(g / played),
       outfieldMsPerGame: played === 0 ? null : Math.round(o / played),

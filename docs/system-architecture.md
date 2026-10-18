@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -48,7 +48,7 @@ sequenceDiagram
     A->>S: getItem getting-started/v1 (card closed on this phone? #218)
     A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
     A->>S: openStoredLedger (ledger/v2 + head)
-    A->>A: recordMatches(recordable(back-fill): test matches never, #194) → commitLedger
+    A->>A: recordMatches(recordable(back-fill): test matches never, #194; + fixtures, profiles, settings #195) → commitLedger
     A->>S: saveLedger (queued)
     A->>A: step = resume | fixtures
     Note over A: every state change
@@ -74,7 +74,7 @@ sequenceDiagram
 | Key | Contents | Writer | Versioning |
 |---|---|---|---|
 | `coaching-app/session/v1` | `SavedSession`: squad, defaults, every match (planned, live, played), plans | `saveSession` | `schemaVersion` 6, `MIGRATIONS` in `persistence.ts`, unknown fields kept |
-| `coaching-app/ledger/v2` | Minutes ledger: hash-chained entries (ADR-013, ADR-014) | `saveLedger` (serialised queue) | own format version; too-new → read-only |
+| `coaching-app/ledger/v2` | Minutes ledger: hash-chained entries (ADR-013, ADR-014); since #195 also fixtures, profiles and settings, so a phone can be restored from it | `saveLedger` (serialised queue) | own format version; too-new → read-only |
 | `coaching-app/ledger/head` | Last chain head, guards rollback | `saveLedger` | |
 | `coaching-app/ledger/v1` | Pre-v2 ledger, read for upgrade only | none | |
 | `coaching-app/ledger/v2/unreadable/<iso>` | A ledger that failed to verify, set aside intact | `openStoredLedger` | |

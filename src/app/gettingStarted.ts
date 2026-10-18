@@ -22,7 +22,7 @@
 import type { Match, Player, UUID } from '../types/index';
 import { matchProgress } from './fixtures';
 import type { SavedMatch } from './persistence';
-import { emptyLedger, isHidden, setMatchKind, type Ledger } from './ledger';
+import { cancelFixture, emptyLedger, isHidden, recordRemovedPlayers, setMatchKind, type Ledger } from './ledger';
 import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { TEST_NAMES, TEST_OPPONENTS, addTestData } from './testKit';
 import { SEASON, addTestSeason, type TestSeasonInput } from './testSeason';
@@ -374,5 +374,14 @@ export function clearMadeUpTeam(input: ClearMadeUpInput): ClearedMadeUp {
     const r = setMatchKind(next, m.id, 'void', MADE_UP_CLEARED_NOTE, input.now);
     if (r.ok) next = r.ledger;
   }
+  // #195: a restore from this record must not bring the made-up team back.
+  // Its fixtures still to come are cancelled, and its children marked taken
+  // out; both are new records, nothing is deleted (invariant 5).
+  for (const f of next.fixtures) {
+    if (f.state === 'planned' && (doomed.has(f.id) || MADE_UP_OPPONENTS.has(f.opponent ?? ''))) {
+      next = cancelFixture(next, f.id, input.now);
+    }
+  }
+  next = recordRemovedPlayers(next, [...madeUpPlayers], input.now);
   return { players, matches, releaseLive, ledger: next, record: 'voided', ...removed };
 }

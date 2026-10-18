@@ -63,6 +63,20 @@ import {
   type LedgerRecord,
 } from './ledgerChain';
 import { currentSigner, deviceRecord, publishes, signBody } from './entrySigning';
+import {
+  KEPT_BY_SAVE,
+  SETUP_FIELDS,
+  setupRecords,
+  toFixture,
+  toProfile,
+  toSettings,
+  type LedgerFixture,
+  type LedgerProfile,
+  type LedgerSettings,
+  type SetupInput,
+} from './ledgerSetup';
+
+export type { LedgerFixture, LedgerProfile, LedgerSettings, SetupInput } from './ledgerSetup';
 
 export type { LedgerEntry, LedgerRecord } from './ledgerChain';
 
@@ -199,6 +213,12 @@ export interface Ledger {
   squad: { id: UUID; name: string };
   players: LedgerPlayer[];
   matches: LedgerMatch[];
+  /** Fixtures as the coach made them, cancelled ones included (#195 AC2). */
+  fixtures: LedgerFixture[];
+  /** Each child's profile, where one is recorded (#195 AC3, #190). */
+  profiles: LedgerProfile[];
+  /** The squad's defaults, once recorded (#195 AC3). */
+  settings: LedgerSettings | null;
 }
 
 // --- fields this build knows, per record type ---------------------------------
@@ -226,6 +246,7 @@ const FIELDS: Record<string, readonly string[]> = {
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
+  ...SETUP_FIELDS,
 };
 
 /** Top-level fields of a file this build knows. The rest are carried. */
@@ -239,6 +260,9 @@ const FILE_FIELDS = [
   'squad',
   'players',
   'matches',
+  'fixtures',
+  'profiles',
+  'settings',
   'summary',
 ] as const;
 
@@ -317,7 +341,9 @@ function checkRecord(r: LedgerRecord): void {
 }
 
 /** The ledger's squad, players and matches, folded from its chain. */
-function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'matches'> {
+function foldView(
+  entries: LedgerEntry[]
+): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings'> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -326,6 +352,9 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
   const attendance = new Map<UUID, LedgerAttendance[]>();
   const exclusions = new Map<UUID, LedgerExclusion>();
   const kinds = new Map<UUID, LedgerMatchKind>();
+  const fixtures: LedgerFixture[] = [];
+  const profiles: LedgerProfile[] = [];
+  let settings: LedgerSettings | null = null;
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -411,6 +440,21 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
         matchFor(r.matchId as UUID);
         kinds.set(r.matchId as UUID, { kind: String(r.kind), note: typeof r.note === 'string' ? r.note : null });
         break;
+      // ADR-021 D2. A damaged one is left out rather than refusing the file:
+      // the released build, which does not fold them, would read it.
+      case 'fixture': {
+        const f = toFixture(r);
+        if (f) fixtures.push(f);
+        break;
+      }
+      case 'profile': {
+        const p = toProfile(r);
+        if (p) profiles.push(p);
+        break;
+      }
+      case 'settings':
+        settings = toSettings(r);
+        break;
     }
   }
 
@@ -431,6 +475,9 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
         ...(kind ? { matchKind: kind } : {}),
       };
     }),
+    fixtures,
+    profiles,
+    settings,
   };
 }
 
@@ -611,7 +658,13 @@ export function recordMatches(
   records: MatchRecord[],
   players: Player[],
   squadName: string,
-  now: Date
+  now: Date,
+  /**
+   * Fixtures, profiles and settings (#195 AC2, AC3). Only from a session this
+   * launch read and may write: defaults from an unreadable one must never be
+   * recorded over the coach's real settings.
+   */
+  setup?: SetupInput
 ): Ledger {
   if (!isWritable(ledger)) return ledger;
   const latest = new Map(latestRecords(ledger.entries));
@@ -684,7 +737,150 @@ export function recordMatches(
     for (const e of events) put(`event:${id}:${String(e.id)}`, e);
   }
 
+  if (setup) {
+    // A save never decides a fairness mark, a cancellation or a note: those
+    // are explicit acts (`setPlayerFairness`, `cancelFixture`). It carries
+    // them, and a record it does write for another reason starts without the
+    // earlier note, which belonged to the earlier change.
+    const squadId = ((latest.get('squad')?.id as string | undefined) ?? ledger.squad.id) as UUID;
+    for (const [key, record] of setupRecords(squadId, setup)) {
+      const have = latest.get(key);
+      const next: LedgerRecord = { ...unknownOf(have, FIELDS[record.type]), ...record };
+      if (have) {
+        for (const f of KEPT_BY_SAVE[record.type] ?? []) if (have[f] !== undefined) next[f] = have[f];
+        if (record.type === 'fixture' && have.state === 'cancelled') next.state = 'cancelled';
+        if (sameRecord(have, next)) continue;
+        if ('note' in next) next.note = null;
+      }
+      latest.set(key, next);
+      changed.push(next);
+    }
+  }
+
   return appendRecords(ledger, changed, now);
+}
+
+/** The latest record under `key`, or undefined. */
+function latestOf(ledger: Ledger, key: string): LedgerRecord | undefined {
+  return latestRecords(ledger.entries).get(key);
+}
+
+const READ_ONLY: CorrectionResult = { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+
+/**
+ * Mark a child as not counted in the squad's fairness figures, or counted
+ * again (#190 AC1, AC4). A new `profile` record with a mandatory note
+ * (invariant 5); the earlier one stays in the chain. The mark applies to the
+ * whole season (PO ruling, 18 Oct). No interval is touched (AC5).
+ */
+export function setPlayerFairness(
+  ledger: Ledger,
+  playerId: UUID,
+  counted: boolean,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  if (!ledger.players.some((p) => p.id === playerId)) {
+    return { ok: false, reason: 'That player is not in the record yet.' };
+  }
+  if (isCountedInFairness(ledger, playerId) === counted) {
+    return { ok: false, reason: counted ? 'They are already counted.' : 'They are already not counted.' };
+  }
+  const have = latestOf(ledger, `profile:${playerId}`);
+  const player = ledger.players.find((p) => p.id === playerId);
+  const base: LedgerRecord = have ?? {
+    type: 'profile',
+    playerId,
+    keeperPreference: null,
+    prefers: null,
+    outfieldTarget: null,
+    active: player?.active !== false,
+    removed: false,
+  };
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ ...base, type: 'profile', playerId, fairness: counted ? 'counted' : 'not-counted', note: trimmed }],
+      now
+    ),
+  };
+}
+
+/** True unless the record marks this child not counted in fairness (#190). */
+export function isCountedInFairness(ledger: Pick<Ledger, 'profiles'> | null, playerId: UUID): boolean {
+  return ledger?.profiles.find((p) => p.playerId === playerId)?.fairness !== 'not-counted';
+}
+
+/** Children the record marks not counted in fairness (#190): fill-ins. */
+export function notCountedIds(ledger: Pick<Ledger, 'profiles'> | null): Set<UUID> {
+  return new Set((ledger?.profiles ?? []).filter((p) => p.fairness === 'not-counted').map((p) => p.playerId));
+}
+
+export interface FairnessChange {
+  at: string;
+  counted: boolean;
+  note: string | null;
+}
+
+/** Every time the mark changed, oldest first, with its note (#190 AC4: kept with their history). */
+export function fairnessHistory(ledger: Ledger, playerId: UUID): FairnessChange[] {
+  const out: FairnessChange[] = [];
+  let was = 'counted';
+  for (const entry of ledger.entries) {
+    for (const r of entry.records) {
+      if (r.type !== 'profile' || r.playerId !== playerId) continue;
+      const now = typeof r.fairness === 'string' ? r.fairness : 'counted';
+      if (now === was) continue;
+      out.push({ at: entry.at, counted: now !== 'not-counted', note: typeof r.note === 'string' ? r.note : null });
+      was = now;
+    }
+  }
+  return out;
+}
+
+/**
+ * A fixture deleted before it was played (#195 AC2): a new `fixture` record
+ * saying it was cancelled, never a deletion from the record. Nothing to do
+ * for one the record never held, or one already cancelled.
+ */
+export function cancelFixture(ledger: Ledger, matchId: UUID, now: Date): Ledger {
+  if (!isWritable(ledger)) return ledger;
+  const have = latestOf(ledger, `fixture:${matchId}`);
+  if (!have || have.state === 'cancelled') return ledger;
+  return appendRecords(ledger, [{ ...have, state: 'cancelled', note: 'Deleted before it was played' }], now);
+}
+
+/**
+ * Players taken out of the squad before they ever played (`removePlayer`
+ * deletes them from the squad): a `profile` saying so, so a restore from the
+ * record leaves them out. Their `player` record stays, as everything does.
+ */
+export function recordRemovedPlayers(ledger: Ledger, playerIds: readonly UUID[], now: Date): Ledger {
+  if (!isWritable(ledger)) return ledger;
+  const records: LedgerRecord[] = [];
+  for (const playerId of playerIds) {
+    const have = latestOf(ledger, `profile:${playerId}`);
+    const player = ledger.players.find((p) => p.id === playerId);
+    if (have?.removed === true || (!have && !player)) continue;
+    records.push({
+      ...(have ?? {
+        type: 'profile',
+        playerId,
+        keeperPreference: null,
+        prefers: null,
+        outfieldTarget: null,
+        active: player?.active !== false,
+        fairness: 'counted',
+      }),
+      removed: true,
+      note: null,
+    });
+  }
+  return appendRecords(ledger, records, now);
 }
 
 export type CorrectionResult = { ok: true; ledger: Ledger } | { ok: false; reason: string };
