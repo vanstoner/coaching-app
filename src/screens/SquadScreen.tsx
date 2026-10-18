@@ -72,6 +72,7 @@ import {
 import { wholeMinutes } from '../app/analysis';
 import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
 import { positionLine, seasonPositionMinutes } from '../app/matchRecord';
+import { provenances, withoutReconstructed } from '../app/provenance';
 import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
@@ -155,8 +156,12 @@ export function SquadScreen({
 
   const readiness = squadReadiness(players, onFieldCount);
   const dupes = duplicatedNames(players);
+  // #199 AC4: a view choice, never saved and never written to the record.
+  const [includeReconstructed, setIncludeReconstructed] = useState(true);
+  const anyReconstructed = ledger ? [...provenances(ledger).values()].some((p) => p.state === 'reconstructed') : false;
+  const shown = ledger && !includeReconstructed ? withoutReconstructed(ledger) : ledger;
   // Every figure on this screen and the views, folded from the ledger on each draw (invariant 1).
-  const views = squadViews(ledger, everyone, { kickoffs });
+  const views = squadViews(shown, everyone, { kickoffs });
   const season = views.season;
   const seasonOf = (id: UUID) => season.children.find((c) => c.playerId === id);
   const open = (page: Page) => setPages((stack) => [...stack, page]);
@@ -245,6 +250,18 @@ export function SquadScreen({
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
+            {onTab && anyReconstructed && (
+              <Pressable
+                onPress={() => setIncludeReconstructed((v) => !v)}
+                style={screen.linkHit}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: includeReconstructed }}
+              >
+                <Text style={screen.link}>
+                  Include reconstructed matches: {includeReconstructed ? 'on' : 'off'}
+                </Text>
+              </Pressable>
+            )}
             {onTab && <SquadTiles views={views} onOpen={(view) => open({ kind: 'view', view })} />}
 
             <View style={[local.addRow, onTab && local.addRowUnderTiles]}>

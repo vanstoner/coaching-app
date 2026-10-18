@@ -247,7 +247,8 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
                       accessibilityLabel={c.text}
                     >
                       {c.goal > 0 && <View style={local.gkMark} />}
-                      <Text style={local.gTotal} numberOfLines={1}>
+                      {/* #199: a reconstructed match's figures, italic and muted, in a fixed-width cell. */}
+                      <Text style={[local.gTotal, c.reconstructed && local.gTainted]} numberOfLines={1}>
                         {c.total}
                       </Text>
                       {c.goal > 0 && (
@@ -268,6 +269,9 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
         <KeyItem shape="mark" label="GK 12: of which in goal" />
         <Text style={local.keyWords}>Blank: not there</Text>
         {matches.some((m) => !m.counted) && <Text style={local.keyWords}>Faded: left out of the figures</Text>}
+        {matches.some((m) => m.provenance === 'reconstructed') && (
+          <Text style={local.keyWords}>Italic: reconstructed, times may be approximate</Text>
+        )}
         <Text style={local.keyWords}>L, C, F, T: league, cup, friendly, tournament</Text>
       </View>
       <Text style={screen.hint}>
@@ -675,6 +679,7 @@ const local = StyleSheet.create({
   gCell: { width: GRID_CELL, height: '100%', alignItems: 'center', justifyContent: 'center' },
   /** A match the coach left out of the figures (ADR-020): still there, plainly set back. */
   gOff: { opacity: 0.4 },
+  gTainted: { fontStyle: 'italic', color: colours.taint },
   gDay: { width: GRID_CELL, textAlign: 'center', color: colours.inkMuted, fontSize: 12, includeFontPadding: false },
   gComp: { width: GRID_CELL, textAlign: 'center', color: colours.inkFaint, fontSize: 11, includeFontPadding: false },
   gTotal: { width: GRID_CELL, textAlign: 'center', color: colours.ink, fontSize: 16, includeFontPadding: false },

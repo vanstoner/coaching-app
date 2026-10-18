@@ -23,6 +23,7 @@ import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
 import { resultOf } from '../app/matchRecord';
+import { provenanceTag, type Provenance } from '../app/provenance';
 import {
   competitionLabel,
   fixtureList,
@@ -62,6 +63,7 @@ export function FixturesScreen({
   guide,
   nothingPlayed = null,
   highlightPlayNow = false,
+  provenance = new Map(),
 }: {
   squadName: string;
   matches: Match[];
@@ -113,9 +115,11 @@ export function FixturesScreen({
   nothingPlayed?: { label: string; onPress: () => void } | null;
   /** #218: the card's third step points at Play now for a moment. */
   highlightPlayNow?: boolean;
+  /** How far each played match can be trusted (#199), derived from the record. */
+  provenance?: ReadonlyMap<UUID, Provenance>;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -226,6 +230,7 @@ interface CardActions {
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
   notClosed: ReadonlySet<UUID>;
+  provenance: ReadonlyMap<UUID, Provenance>;
 }
 
 /** A bucket, omitted entirely when empty rather than shown as a bare heading. */
@@ -267,7 +272,13 @@ function PlayedSection({
         item.row ? (
           <FixtureCard key={item.key} row={item.row} {...actions} />
         ) : (
-          <RecordCard key={item.key} match={item.record!} now={actions.now} onOpen={onOpenRecord} />
+          <RecordCard
+            key={item.key}
+            match={item.record!}
+            now={actions.now}
+            onOpen={onOpenRecord}
+            state={actions.provenance.get(item.key) ?? 'reconstructed'}
+          />
         )
       )}
     </View>
@@ -275,16 +286,28 @@ function PlayedSection({
 }
 
 /**
- * A match from the record with no fixture on this phone. It was entered after
- * the fact by definition, so it carries the one reconstructed treatment from
- * the prototype: a dashed outline and "◐ reconstructed" (PO, `approve tag`).
+ * A match from the record with no fixture on this phone. Its treatment is the
+ * one every card uses (#199, replacing #195's "always reconstructed"): a
+ * dashed outline and "◐ reconstructed" when reconstructed, a fainter tag when
+ * live but unsigned, none when pristine.
  */
-function RecordCard({ match, now, onOpen }: { match: RecordOnlyMatch; now: Date; onOpen: (matchId: UUID) => void }) {
+function RecordCard({
+  match,
+  now,
+  onOpen,
+  state,
+}: {
+  match: RecordOnlyMatch;
+  now: Date;
+  onOpen: (matchId: UUID) => void;
+  state: Provenance;
+}) {
   const competition = competitionLabel(match.competition);
+  const tag = provenanceTag(state);
   return (
     <Pressable
       onPress={() => onOpen(match.id)}
-      style={({ pressed }) => [local.card, local.cardRecord, pressed && screen.buttonPressed]}
+      style={({ pressed }) => [local.card, state === 'reconstructed' && local.cardRecord, pressed && screen.buttonPressed]}
     >
       <Text style={local.opponent} numberOfLines={1}>
         {(match.opponent ?? '').trim() || 'Opponent not recorded'}
@@ -296,8 +319,8 @@ function RecordCard({ match, now, onOpen }: { match: RecordOnlyMatch; now: Date;
       <Text style={match.score ? local.score : local.meta} numberOfLines={1}>
         {scoreLabel(match.score)}
       </Text>
-      <Text style={local.reconstructed} numberOfLines={1}>
-        ◐ reconstructed · from the minutes record
+      <Text style={tag ? (state === 'reconstructed' ? local.reconstructed : local.unsigned) : local.meta} numberOfLines={1}>
+        {tag ? `${tag} · ` : ''}from the minutes record
       </Text>
       {match.leftOut !== null && (
         <Text style={local.meta} numberOfLines={1}>
@@ -319,7 +342,11 @@ function FixtureCard({
   scores,
   periods,
   notClosed,
+  provenance,
 }: { row: FixtureRow } & CardActions) {
+  // #199: only a played match has a provenance; a fixture to come has none.
+  const state = row.match.status === 'completed' ? provenance.get(row.match.id) : undefined;
+  const tag = provenanceTag(state);
   const { match } = row;
   const score = scores.get(match.id);
   const planned = plannedIds.has(match.id);
@@ -336,6 +363,7 @@ function FixtureCard({
       style={({ pressed }) => [
         local.card,
         row.bucket === 'current' && local.cardCurrent,
+        state === 'reconstructed' && local.cardRecord,
         pressed && screen.buttonPressed,
       ]}
     >
@@ -355,6 +383,11 @@ function FixtureCard({
           {/* #196 AC1: a closed match shows its result too. */}
           {match.status === 'completed' ? `${resultOf(score)} ` : ''}
           {score.us} – {score.them}
+        </Text>
+      )}
+      {tag && (
+        <Text style={state === 'reconstructed' ? local.reconstructed : local.unsigned} numberOfLines={1}>
+          {tag}
         </Text>
       )}
       {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
@@ -423,6 +456,7 @@ const local = StyleSheet.create({
   // #195 / #199: the one reconstructed treatment, border style and colour only.
   cardRecord: { borderStyle: 'dashed', borderColor: colours.taint },
   reconstructed: { color: colours.taint, fontSize: 13, includeFontPadding: false, marginTop: 4 },
+  unsigned: { color: colours.taint, opacity: 0.6, fontSize: 13, includeFontPadding: false, marginTop: 4 },
   opponent: {
     color: colours.ink,
     fontSize: 18,

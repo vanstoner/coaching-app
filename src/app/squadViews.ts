@@ -31,6 +31,7 @@
  * positions.
  */
 
+import { provenances, type Provenance } from './provenance';
 import type { Competition, KeeperPreference, Player, PositionUnit, UUID } from '../types/index';
 import { UNIT_LABEL, type Ledger } from './ledger';
 import { goalOutfieldSplit, isCounted, wholeMinuteParts, wholeMinutes, type SeasonOptions } from './analysis';
@@ -94,6 +95,8 @@ export interface SeasonMatch {
   minutes: ReadonlyMap<UUID, MatchMinutes>;
   /** False when the coach left this match out of the figures (ADR-020); still listed. */
   counted: boolean;
+  /** How far it can be trusted (#199), derived from the record. */
+  provenance: Provenance;
 }
 
 const blankUnits = (): Record<PositionUnit, number> => ({ GK: 0, DEF: 0, MID: 0, ATT: 0 });
@@ -152,6 +155,7 @@ export function seasonMatches(
     return a.index - b.index;
   });
 
+  const trust = provenances(ledger);
   return rows.map(({ t, m, minutes }) => {
     const at = Number.isFinite(t) ? new Date(t) : null;
     const opponent = (m.opponent ?? '').trim() || 'Opponent TBC';
@@ -169,6 +173,7 @@ export function seasonMatches(
       label: [date, competition, `v ${opponent}`, counted ? '' : 'not counted'].filter((s) => s !== '').join(' · '),
       minutes,
       counted,
+      provenance: trust.get(m.id)?.state ?? 'reconstructed',
     };
   });
 }
@@ -197,6 +202,8 @@ export interface GridCell {
   text: string;
   /** Present, and false, only when the match is left out of the figures (ADR-020). */
   counted?: false;
+  /** Present only for a reconstructed match (#199): its figures are drawn italic and muted. */
+  reconstructed?: true;
 }
 
 export interface GridRow {
@@ -212,7 +219,7 @@ export interface GridRow {
 /** One child's minutes in one match, as a cell and its words. */
 export function gridCell(
   name: string,
-  match: Pick<SeasonMatch, 'date' | 'opponent'> & { counted?: boolean },
+  match: Pick<SeasonMatch, 'date' | 'opponent'> & { counted?: boolean; provenance?: Provenance },
   m: MatchMinutes
 ): GridCell {
   const { total, goal, outfield } = goalOutfieldSplit(m.goalMs, m.pitchMs - m.goalMs);
@@ -222,8 +229,11 @@ export function gridCell(
     total,
     goal,
     outfield,
-    text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}${left ? ', not counted' : ''}`,
+    text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}${left ? ', not counted' : ''}${
+      match.provenance === 'reconstructed' ? ', reconstructed' : ''
+    }`,
     ...(left ? { counted: false as const } : {}),
+    ...(match.provenance === 'reconstructed' ? { reconstructed: true as const } : {}),
   };
 }
 

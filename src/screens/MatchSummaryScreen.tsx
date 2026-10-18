@@ -32,6 +32,8 @@ import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app
 import { SEASON_POINTER } from '../app/childSeason';
 import { resultOf, scoreWithRecord } from '../app/matchRecord';
 import { TALLY_CAPTION, matchTalliesWithGoals, tallyLineText } from '../app/tallies';
+import type { ProvenanceInfo } from '../app/provenance';
+import { TrustRow } from './RecordMatchScreen';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
@@ -68,6 +70,7 @@ export function MatchSummaryScreen({
   onVoid,
   backLabel = 'Back to Home',
   onOpenRecord,
+  trust = null,
   onBack,
 }: {
   engine: MatchEngine;
@@ -101,6 +104,8 @@ export function MatchSummaryScreen({
   backLabel?: string;
   /** #196: the match as the record holds it: how it was played, positions, goals with time unknown. */
   onOpenRecord?: () => void;
+  /** How far it can be trusted, and why (#199 AC3); null while it is not in the record. */
+  trust?: ProvenanceInfo | null;
   onBack: () => void;
 }) {
   // #208: the minutes table sorts by its numbers, Total most first by default.
@@ -180,6 +185,7 @@ export function MatchSummaryScreen({
         {(score.us !== report.score.us || score.them !== report.score.them) && (
           <Text style={screen.caption}>Includes goals added in the record with time unknown.</Text>
         )}
+        {closed && trust && <TrustRow trust={trust} />}
         {inLedger && onOpenRecord && (
           <Pressable onPress={onOpenRecord} style={screen.linkHit}>
             <Text style={screen.link}>In the record: how it was played, positions, goals with time unknown</Text>

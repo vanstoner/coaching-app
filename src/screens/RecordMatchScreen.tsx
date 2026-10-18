@@ -26,6 +26,7 @@ import { scoreLabel, type PageGoal, type RecordMatchPage } from '../app/recordOn
 import { NAME, sortRecordMinutes } from '../app/tableSort';
 import { TALLY_CAPTION, tallyLineText } from '../app/tallies';
 import { Chip, ChipRow } from './Chip';
+import { provenanceTag, type ProvenanceInfo } from '../app/provenance';
 import { colours, screen } from './theme';
 import { SortHeading, useTableSort } from './TableSort';
 
@@ -54,7 +55,7 @@ export function RecordMatchScreen({
   now,
   onBack,
   actions,
-  playedHere = false,
+  trust = null,
   backLabel = 'Back',
 }: {
   page: RecordMatchPage;
@@ -62,8 +63,8 @@ export function RecordMatchScreen({
   onBack: () => void;
   /** Null when the record cannot be written on this phone. */
   actions?: RecordActions | null;
-  /** Played on this phone: not reconstructed by definition. */
-  playedHere?: boolean;
+  /** How far it can be trusted, and why (#199 AC3), derived from the record. */
+  trust?: ProvenanceInfo | null;
   backLabel?: string;
 }) {
   const { match } = page;
@@ -129,12 +130,7 @@ export function RecordMatchScreen({
             {competition === '' ? '' : ` · ${competition}`}
           </Text>
           <Text style={match.score ? local.score : screen.caption}>{scoreLabel(match.score)}</Text>
-          {!playedHere && (
-            <Text style={local.reconstructed}>
-              ◐ Reconstructed: this match is in the minutes record but was not played on this phone, so its
-              times may be approximate.
-            </Text>
-          )}
+          {trust && <TrustRow trust={trust} />}
           {match.leftOut !== null && (
             <Text style={screen.hint}>
               Left out of the figures{match.leftOut ? `: "${match.leftOut}"` : ''}
@@ -389,6 +385,20 @@ export function RecordMatchScreen({
   );
 }
 
+/** #199 AC3: "How was this recorded?", in the same words wherever the match is shown. */
+export function TrustRow({ trust }: { trust: ProvenanceInfo }) {
+  const tag = provenanceTag(trust.state);
+  return (
+    <View style={local.trust}>
+      <Text style={screen.fieldLabel}>How was this recorded?</Text>
+      <Text style={trust.state === 'pristine' ? local.lineFaint : local.reconstructed}>
+        {tag ? `${tag}. ` : ''}
+        {trust.why}
+      </Text>
+    </View>
+  );
+}
+
 function NoteBox({ value, onChange, placeholder }: { value: string; onChange: (t: string) => void; placeholder: string }) {
   return (
     <TextInput
@@ -437,9 +447,10 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginTop: 4,
   },
+  trust: { alignSelf: 'stretch' },
   reconstructed: {
     alignSelf: 'stretch',
-    textAlign: 'center',
+    textAlign: 'left',
     color: colours.taint,
     fontSize: 13,
     includeFontPadding: false,

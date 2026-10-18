@@ -151,6 +151,7 @@ import {
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
+import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -1919,7 +1920,7 @@ export default function App() {
           now={appNow()}
           onBack={() => setStep(back)}
           backLabel={back === 'summary' ? 'Back to the report' : 'Back'}
-          playedHere={withLiveMatch(matches, match).some((m) => m.match.id === recordPage.match.id)}
+          trust={provenanceOf(viewLedger, recordPage.match.id)}
           actions={ledgerBlockedRef.current ? null : recordActions(recordPage.match.id)}
         />
       );
@@ -1946,6 +1947,7 @@ export default function App() {
             setAnalysisReturn('summary');
             setStep('analysis');
           }}
+          trust={provenanceOf(viewLedger, match.state.match.id)}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
             setRecordReturn('summary');
@@ -2234,6 +2236,7 @@ export default function App() {
         onDelete={deleteFixture}
         // #195: the record's played matches with no fixture here, archived fixtures included in "here".
         recordOnly={recordOnlyList.filter((m) => showArchived || !m.archived)}
+        provenance={new Map([...provenances(viewLedger)].map(([id, p]) => [id, p.state]))}
         onOpenRecord={(id) => {
           setRecordId(id);
           setRecordReturn('fixtures');

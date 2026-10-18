@@ -139,7 +139,8 @@ describe('AC5 what a marked match still shows', () => {
     const before = was.grid.flatMap((r) => r.cells[j]).filter((c) => c !== null);
     const after = v.grid.flatMap((r) => r.cells[j]).filter((c) => c !== null);
     expect(after.map((c) => c!.total)).toEqual(before.map((c) => c!.total));
-    expect(after.every((c) => c!.counted === false && c!.text.endsWith('not counted'))).toBe(true);
+    // #199: these test matches are written after the fact, so the words end "reconstructed".
+    expect(after.every((c) => c!.counted === false && c!.text.includes('not counted'))).toBe(true);
   });
 
   it('a cell for a match that counts is exactly as it was', () => {

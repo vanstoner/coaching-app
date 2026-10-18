@@ -258,8 +258,13 @@ interface Ledger {                          // key coaching-app/ledger/v2
 - **Tiers** (#198): `goal`, `assist`, `conceded` are core and feed the
   result. Everything else, and any kind this build does not know, is a
   coach's tally: shown apart, never in the score, minutes or fairness.
-- **Proposed, not built yet:** `origin` (ADR-021 D2): setting it by hand
-  waits until it is asked for (#199 ruling).
+- **Provenance** (#199, ADR-021 D4): `pristine | live-unsigned |
+  reconstructed`, derived in `provenance.ts` from entry signatures, entry
+  times against the match window, corrected intervals, records added after
+  the last period and any `origin` record. Never stored.
+- **Proposed, not built yet:** writing `origin` (ADR-021 D2): setting it by
+  hand waits until it is asked for (#199 ruling); one carried from a file is
+  read.
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.
