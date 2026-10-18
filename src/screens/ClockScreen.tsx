@@ -179,7 +179,8 @@ export function ClockScreen({
       const { engine: e, state: s } = latest.current;
       const running = s.quarters.find((q) => q.status === 'running');
       const wait = running
-        ? msUntilNextSecond(e.getQuarterElapsedMs(running), appClockSetting().speed)
+        ? // A test match's own ×5 or ×10 (#194) on top of the Test kit's.
+          msUntilNextSecond(e.getQuarterElapsedMs(running), appClockSetting().speed * (s.match.test?.clock.speed ?? 1))
         : 1000;
       id = setTimeout(() => {
         forceRepaint();

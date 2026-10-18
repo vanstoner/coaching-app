@@ -31,7 +31,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Feature | Trigger | Pre-conditions | Business invariant / rule | Persistence key | Error / edge state |
 |---|---|---|---|---|---|
 | Add fixture | Home → Add | — | `newMatch` snapshots format, length, periods; today's active squad recorded as available | session `matches[]` | Saved immediately with the live match kept (a half-time add once dropped it) |
-| Delete fixture | Home | No period started (judged on the **live** state) | Played matches are never deleted (invariant 5) | session | Releases a held, unstarted match first so it is not written back |
+| Delete fixture | Home | No period started (judged on the **live** state) | Played real matches are never deleted (invariant 5): on the report they are left out of the figures or voided, with a note. A test match deletes, from Settings › Test matches (#194) | session | Releases a held, unstarted match first so it is not written back |
 | Archive | Home | Match finished | Listing only; no event, no minutes change | session `archived` | — |
 | Plan a match | Home → Plan, or "Plan the rest" mid-match | — | Intent only; pre-fills the lineup; never moves a minute. Every new sub starts at the period's midpoint, the second and third too; none is staggered, and ± moves one sub only (#205) | session `matches[].plan` | Malformed plan dropped on load, match kept |
 | Rename positions | Plan or lineup | No period running (#166 Q1) | Labels only; optional copy to the squad default | session `matches[].format` | — |
@@ -42,6 +42,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | Feature | Trigger | Pre-conditions | Business invariant / rule | Persistence key | Error / edge state |
 |---|---|---|---|---|---|
 | Play now | Home | No match under way | Builds a match from defaults, no fixture form | session on next save | Too few players → squad editor, then lineup |
+| Start a test match | Settings › Test matches | Enough players; no real match under way | Today's squad on the real screens, each with a "Test match · not recorded" banner and its own ×1/×5/×10 clock (Heart FC Coach too). Never passed to `recordMatches`; on no list, view, attendance or figure; listed only in Settings with Open, Delete and Delete all, which remove it from the phone (#194) | session `matches[].match.test` only, never the ledger | Too few players or a match under way: the button is disabled and says why. Leave and Back return to Settings |
 | Mark absent / here | Lineup | Before kick-off | Absent players cannot be picked; snapshot at kick-off | session `availability`; ledger `attendance` | Between periods only "arrived" (a late arrival correction) |
 | Start period | Lineup → Start | Valid sheet, one GK, no duplicates | Records the actual sheet, never the plan; opens Appearances and BenchStints | session, `periodSubs` | Engine throws → nothing starts |
 | Clock | Clock screen | Period running | Elapsed from wall-clock anchors; timer only repaints (invariant 2) | `runningSinceWallClock` | Overtime shown, never auto-ended; phone clock change moves the figure |
@@ -54,7 +55,7 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 | End period | Clock | Period running | Freezes `accumulatedMs`; closes open stretches at the chosen end. Past planned + 1 min it asks: "Ended at planned time" (floored at the last thing recorded, e.g. "Ended at 13:00 (last sub)") or "Ended just now" (#180) | session; ledger `interval` | Last period → full time; "Still playing" changes nothing |
 | End match | Summary | Every period ended | `completed`; counts towards season averages | session; ledger `match` | — |
 | Correct attendance | Summary | Ledger writable | Noted correction appended, never edited | ledger `attendance` | Ledger blocked → refused with reason |
-| Leave | Every Saturday screen | — | Match keeps running and stays current | session `currentMatchId` | — |
+| Leave | Every Saturday screen | — | Match keeps running and stays current. A test match goes back to Settings (#194) | session `currentMatchId` | — |
 | Resume | Launch | A started, unfinished match | Running period → clock; between periods → lineup | session | Cannot rebuild → Home |
 
 ## Minutes ledger
@@ -63,7 +64,8 @@ the contract the code enforces today. `session` = `coaching-app/session/v1`,
 |---|---|---|---|---|---|
 | Record | Every save | Ledger writable | Only closed intervals; idempotent by id; hash-chained (ADR-013/014); each entry signed by the install (#193) | ledger | A failed write is retried on the next commit until one lands (#184) |
 | Leave a match out | Match report | — | An `exclusion` record with a note; out of averages, totals and games missed, still listed (ADR-020) | ledger `exclusion` | — |
-| Hide test matches | Settings › Test matches | #194 | Offers earlier matches with no opponent that were left out as a test or ended within a period; the coach confirms. A `match-kind` record (`test`, with a note) hides each from every screen (`visibleLedger`); listed only here, each can be shown again | ledger `match-kind` | — |
+| Void a match | Match report → "Void, with a note" | In the ledger; not a test match | A `match-kind` record (`void`, with a mandatory note) hides it from every screen and figure; the chain keeps it. Listed with the hidden test matches in Settings › Test matches, with Show it again (#194, PO 18 Oct) | ledger `match-kind` | Blank note: Void disabled. Ledger blocked → refused with reason |
+| Hide test matches | Settings › Test matches | #194 | Offers earlier matches with no opponent that were left out as a test or ended within a period; the coach confirms. A `match-kind` record (`test`, with a note) hides each from every screen (`visibleLedger`); listed only here with voided matches, each can be shown again | ledger `match-kind` | — |
 | Open at launch | Launch | — | Never overwrites: unreadable → set aside; too new → read-only. Same rules for the session (#173) | ledger, head, session, `unreadable/*` | Store read fails → blocked this session |
 | Export | Settings → Minutes | — | Explicit act to a place the coach chooses (ADR-011) | none | Shows count + fingerprint |
 | Import | Settings → Minutes | Not blocked | Extends the chain or is refused; never merged | ledger, session `players` | Diverged chain refused with reason |

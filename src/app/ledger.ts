@@ -528,6 +528,8 @@ export interface MatchRecord {
     status: MatchStatus;
     /** The fixture's initial choice (ADR-020); taken over by the ledger on first sight. */
     excludeFromStats?: boolean;
+    /** A test match (#194, ADR-021 D3): never recorded. */
+    test?: unknown;
   };
   quarters: { id: UUID; index: number; status?: string }[];
   appearances: Appearance[];
@@ -647,6 +649,9 @@ export function recordMatches(
   }
 
   for (const record of records) {
+    // A test match never enters the record (#194, ADR-021 D3). The app never
+    // passes one (`recordable`); this is the second lock on the same door.
+    if (record.match.test !== undefined && record.match.test !== null) continue;
     const intervals = intervalRecords(record);
     const events = eventRecords(record);
     const started = kickedOff(record);

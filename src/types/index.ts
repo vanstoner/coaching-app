@@ -108,6 +108,23 @@ export interface Match {
    * and a change after that is a noted correction there, never an edit here.
    */
   excludeFromStats?: boolean;
+  /**
+   * A test match, started from Settings (#194, ADR-021 D3): never written to
+   * the minutes record and on no screen but Settings › Test matches. It runs
+   * on its own clock so ×5 and ×10 touch nothing else. Absent: a real match.
+   */
+  test?: TestMatchMark;
+}
+
+/** What makes a match a test match (#194): its own clock, real time plus an offset. */
+export interface TestMatchMark {
+  clock: {
+    /** Time gained over the app's clock before `sinceMs`. Never negative. */
+    offsetMs: number;
+    speed: 1 | 5 | 10;
+    /** The app's time the current speed took effect. */
+    sinceMs: number;
+  };
 }
 
 export interface Quarter {

@@ -63,6 +63,8 @@ export function MatchSummaryScreen({
   onEndMatch,
   onCorrectAttendance,
   onSetExcluded,
+  onVoid,
+  backLabel = 'Back to Home',
   onBack,
 }: {
   engine: MatchEngine;
@@ -86,11 +88,20 @@ export function MatchSummaryScreen({
    * already played.
    */
   onSetExcluded?: (excluded: boolean, note: string) => string | null;
+  /**
+   * Void this played match, with a note (#194, PO ruling 18 Oct): hidden from
+   * every screen, kept in the record, listed in Settings › Test matches with
+   * Show it again. The reason if refused, else null.
+   */
+  onVoid?: (note: string) => string | null;
+  /** The way back: Home, or Settings for a test match (#194). */
+  backLabel?: string;
   onBack: () => void;
 }) {
   // #208: the minutes table sorts by its numbers, Total most first by default.
   const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
+  const [voiding, setVoiding] = useState<{ note: string; error: string } | null>(null);
   const scroller = useRef<ScrollView>(null);
   // Where the note box sits in the scrolled content, to bring it into view.
   const panelY = useRef(0);
@@ -104,7 +115,7 @@ export function MatchSummaryScreen({
   // edge and the window does not resize for it, #174), so while a note is
   // being typed, bring its box to the top of what is left. Without this the
   // coach types blind.
-  const typing = correcting !== null || marking !== null;
+  const typing = correcting !== null || marking !== null || voiding !== null;
   useEffect(() => {
     if (!typing) return;
     const toBox = () => scroller.current?.scrollTo({ y: Math.max(0, panelY.current - 12), animated: true });
@@ -328,6 +339,7 @@ export function MatchSummaryScreen({
               </Text>
             )}
             {onSetExcluded &&
+              voiding === null &&
               (marking === null ? (
                 <Pressable onPress={() => setMarking({ note: '', error: '' })} style={screen.linkHit}>
                   <Text style={screen.link}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
@@ -360,6 +372,42 @@ export function MatchSummaryScreen({
                   />
                 </View>
               ))}
+            {/* #194: a played match is never deleted. Voiding hides it and keeps it. */}
+            {onVoid &&
+              marking === null &&
+              (voiding === null ? (
+                <Pressable onPress={() => setVoiding({ note: '', error: '' })} style={screen.linkHit}>
+                  <Text style={screen.link}>Void, with a note</Text>
+                </Pressable>
+              ) : (
+                <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
+                  <Text style={screen.fieldLabel}>Void this match</Text>
+                  <Text style={screen.hint}>
+                    It goes from every screen and every figure. The record keeps it and why, and Settings › Test
+                    matches can show it again.
+                  </Text>
+                  <TextInput
+                    style={screen.input}
+                    value={voiding.note}
+                    onChangeText={(note) => setVoiding({ note, error: '' })}
+                    placeholder="Why? (needed)"
+                    placeholderTextColor={colours.inkFaint}
+                    maxLength={120}
+                    autoFocus
+                  />
+                  {voiding.error !== '' && <Text style={screen.error}>{voiding.error}</Text>}
+                  <NoteActions
+                    saveLabel="Void"
+                    disabled={voiding.note.trim() === ''}
+                    onSave={() => {
+                      const refused = onVoid(voiding.note);
+                      if (refused === null) setVoiding(null);
+                      else setVoiding({ ...voiding, error: refused });
+                    }}
+                    onCancel={() => setVoiding(null)}
+                  />
+                </View>
+              ))}
           </>
         )}
 
@@ -387,7 +435,7 @@ export function MatchSummaryScreen({
           ]}
           onPress={onBack}
         >
-          <Text style={screen.buttonLabel}>Back to Home</Text>
+          <Text style={screen.buttonLabel}>{backLabel}</Text>
         </Pressable>
       </ScrollView>
       </KeyboardAvoidingView>

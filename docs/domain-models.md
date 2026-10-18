@@ -55,8 +55,15 @@ interface Match {
   totalMinutes: number;       // default 50
   quarterCount: number;       // periods: 4 (quarters) or 2 (halves)
   status: MatchStatus; createdAt: string;
+  test?: { clock: { offsetMs: number; speed: 1 | 5 | 10; sinceMs: number } }; // #194
 }
 ```
+
+A **test match** (`test` set, #194, ADR-021 D3) is started from Settings, kept
+in the session only and never passed to `recordMatches` (`recordable`, with a
+second check inside `recordMatches`). Its engine reads its own clock
+(`matchClock`): the app's time at ×1, ×5 or ×10, so its speed reaches nothing
+else. It is on no screen but Settings › Test matches, and deletes outright.
 
 ```mermaid
 stateDiagram-v2
@@ -64,6 +71,8 @@ stateDiagram-v2
     planned --> in_progress: first startQuarter
     in_progress --> completed: endMatch (every period ended)
     planned --> [*]: delete (never started)
+    in_progress --> [*]: delete (test match only, #194)
+    completed --> [*]: delete (test match only, #194)
     note right of in_progress: 'abandoned' exists in the type, nothing sets it
 ```
 
@@ -73,7 +82,9 @@ stateDiagram-v2
 | `in_progress` | `completed` | `endMatch` → `engine.completeMatch` (ruling D) | every period `ended` |
 | any | `abandoned` | **nothing sets it** | read in `fixtures.ts`, `matchClosing.ts` only |
 
-Only a match with no started period may be deleted (`canDeleteFixture`).
+Only a match with no started period may be deleted (`canDeleteFixture`), or
+a test match, which was never in the record (`deleteTestMatches`). A played
+real match is left out (ADR-020) or voided (`match-kind: void`), never deleted.
 
 ## Period (`Quarter`)
 
@@ -193,7 +204,7 @@ interface Ledger {                          // key coaching-app/ledger/v2
 }
 // entry: { seq, prev, at, kind, records, hash, device?, sig? }
 // record types: squad | player | match | interval | event | attendance
-//             | exclusion (ADR-020) | device (#193)
+//             | exclusion (ADR-020) | device (#193) | match-kind (#194)
 ```
 
 - **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
@@ -204,8 +215,12 @@ interface Ledger {                          // key coaching-app/ledger/v2
   and `sig`); `hash` covers `sig`, so older builds still verify. Checking:
   `signatureStatuses` (`unsigned | valid | invalid | unknown-device`); a bad
   signature never refuses a chain.
+- **Hidden** (#194, ADR-021 D3): a `match-kind` record, latest wins, always
+  with a note: `test` (the one-off clean-up) or `void` ("Void, with a note"
+  on a played match's report) hides the match from every screen
+  (`visibleLedger`); `real` shows it again. The chain keeps it either way.
 - **Proposed, not built:** the record types of ADR-021 D2 (fixture,
-  structure, awards, profiles, settings, match-kind, origin).
+  structure, awards, profiles, settings, origin).
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.

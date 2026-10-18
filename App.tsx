@@ -32,7 +32,7 @@ import {
   openDestination,
   whenLabel,
 } from './src/app/fixtures';
-import { currentQuarter } from './src/app/matchClock';
+import { currentQuarter, periodNounPlural } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
   DEFAULT_TOTAL_MINUTES,
@@ -115,9 +115,22 @@ import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from '.
 import { MinutesSection } from './src/screens/MinutesSection';
 import { BackupSection } from './src/screens/BackupSection';
 import { RecordMatchScreen } from './src/screens/RecordMatchScreen';
-import { TestMatchesSection } from './src/screens/TestMatchesSection';
+import { TestMatchBanner, TestMatchesSection } from './src/screens/TestMatchesSection';
 import { formatClock } from './src/app/matchClock';
-import { CLEANUP_NOTE, hiddenMatches, playedMs, testMatchCandidates } from './src/app/testMatches';
+import {
+  CLEANUP_NOTE,
+  deleteTestMatches,
+  hiddenMatches,
+  isTestMatch,
+  matchClock,
+  newTestMark,
+  playedMs,
+  realMatches,
+  recordable,
+  testMatchCandidates,
+  testMatchesOnPhone,
+  withTestSpeed,
+} from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -196,6 +209,12 @@ import { screen } from './src/screens/theme';
  * Invariant 4: first names only, enforced in `src/app/squad.ts` at entry.
  * ADR-011: everything stays on this device.
  */
+
+/**
+ * An engine on the match's own clock: the app's for a real match, its own for
+ * a test match (#194), so a test match's ×5 or ×10 reaches nothing else.
+ */
+const engineFor = (state: MatchState) => new MatchEngine({ nowFn: matchClock(state, appNow) });
 
 /** The live match: the engine, its state, and the shape it is played in. */
 interface LiveMatch {
@@ -289,6 +308,15 @@ export default function App() {
    * silently delete the season it was meant to be keeping.
    */
   const [matches, setMatches] = useState<SavedMatch[]>([]);
+  /**
+   * What every screen and figure sees (#194 AC2): test matches left out. They
+   * are saved in `matches` with the session, never recorded, and listed only
+   * in Settings › Test matches. `matches` stays the list every save writes.
+   */
+  const real = useMemo(() => realMatches(matches), [matches]);
+  /** The held match when it is a real one; a held test match is on no list. */
+  const liveReal = match && !isTestMatch(match.state.match) ? match : null;
+  const heldTest = match && isTestMatch(match.state.match) ? match : null;
 
   /** Whether archived fixtures are listed (#76). A view choice, not saved. */
   const [showArchived, setShowArchived] = useState(false);
@@ -401,7 +429,8 @@ export default function App() {
         );
       commitLedger(
         saved
-          ? recordMatches(base, saved.matches, saved.players, saved.squadName, appNow())
+          ? // A test match never enters the record (#194, ADR-021 D3).
+            recordMatches(base, recordable(saved.matches), saved.players, saved.squadName, appNow())
           : base
       );
 
@@ -493,7 +522,8 @@ export default function App() {
         commitLedger(
           recordMatches(
             ledgerRef.current,
-            records,
+            // A test match is saved with the session and never recorded (#194).
+            recordable(records),
             overrides.players ?? players,
             overrides.squadName ?? squadName,
             appNow()
@@ -625,6 +655,20 @@ export default function App() {
     setSquadErrand('home');
     setStep('fixtures');
   }, [persist]);
+
+  /**
+   * Leave the lineup or the clock. A test match goes back to Settings, where
+   * it was started and is listed (#194): it is on no list at Home.
+   */
+  const leaveMatch = useCallback(() => {
+    if (match && isTestMatch(match.state.match)) {
+      persist();
+      setSquadErrand('home');
+      setStep('settings');
+      return;
+    }
+    goHome();
+  }, [match, persist, goHome]);
 
   /**
    * Hold a different live match, or none, without losing the one held now.
@@ -808,7 +852,7 @@ export default function App() {
       if (outcome.kind === 'not_found') return;
       const { state, format: matchFormat } = outcome.held;
       if (outcome.kind === 'open') {
-        releaseMatch({ engine: new MatchEngine({ nowFn: appNow }), state, format: matchFormat });
+        releaseMatch({ engine: engineFor(state), state, format: matchFormat });
         // Its running period's subs, if one is running (#139); else none.
         setSubPlan(outcome.subPlan);
       }
@@ -836,7 +880,7 @@ export default function App() {
    * its shape are its own from this moment, and changing Settings afterwards
    * does not touch it.
    */
-  const beginMatch = useCallback(() => {
+  const beginMatch = useCallback((test?: boolean) => {
     // The same builder as a saved fixture (#99 AC1). The match is held, not
     // added to the list: the next save folds it in on disk, and letting go of
     // it folds it into the list (matchesOnRelease), so it is never lost.
@@ -847,17 +891,19 @@ export default function App() {
         totalMinutes,
         periodCount,
         players: squad,
+        // #194: a test match from Settings, on its own clock, never recorded.
+        ...(test === true ? { test: newTestMark(appNow().getTime()) } : {}),
       },
       appNow
     );
-    releaseMatch({ engine: new MatchEngine({ nowFn: appNow }), ...held });
+    releaseMatch({ engine: engineFor(held.state), ...held });
     setSubPlan([]);
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch]);
 
   const playNow = useCallback(() => {
     if (squadReadiness(squad, format.onFieldCount).ready) {
-      beginMatch();
+      beginMatch(false);
       return;
     }
     // Not enough players yet. The squad editor, then the lineup — never the
@@ -878,7 +924,7 @@ export default function App() {
     }
     const stored = pending.matches.find((m) => m.match.id === state.match.id);
     setMatch({
-      engine: new MatchEngine({ nowFn: appNow }),
+      engine: engineFor(state),
       state,
       format: stored?.format ?? pending.format,
     });
@@ -908,7 +954,7 @@ export default function App() {
     if (state) {
       const stored = pending.matches.find((m) => m.match.id === state.match.id);
       setMatch({
-        engine: new MatchEngine({ nowFn: appNow }),
+        engine: engineFor(state),
         state,
         format: stored?.format ?? pending.format,
       });
@@ -1002,6 +1048,15 @@ export default function App() {
     return `${whenLabel(at ? new Date(at) : null, appNow())} · lasted ${formatClock(playedMs(m))}`;
   };
 
+  /** A test match on this phone (#194): "Sun 18 Oct · 10:02 · 2 of 4 quarters played". */
+  const sessionTestLabel = (m: SavedMatch) => {
+    // Created on the app's clock; its periods ran on the test match's own.
+    const at = m.match.createdAt;
+    const done = m.quarters.filter((q) => q.status === 'ended').length;
+    const of = `${done} of ${m.quarters.length} ${periodNounPlural(m.quarters.length).toLowerCase()} played`;
+    return `${whenLabel(at ? new Date(at) : null, appNow())} · ${of}`;
+  };
+
   /** #194 AC5: the coach confirmed the clean-up; each match is marked a test, with a note. */
   const hideTestMatches = useCallback(() => {
     if (ledgerBlockedRef.current || !ledgerRef.current) return;
@@ -1031,6 +1086,57 @@ export default function App() {
       setTestMatchMessage(r.ok ? 'Shown again on every screen.' : r.reason);
     },
     [commitLedger]
+  );
+
+  /** #194 AC1: Settings › Start a test match. Plays today's squad; never recorded. */
+  const startTestMatch = useCallback(() => {
+    if (!squadReadiness(squad, format.onFieldCount).ready) return;
+    if (liveReal && matchIsUnderway(liveReal.state.quarters)) return;
+    setTestMatchMessage('');
+    beginMatch(true);
+  }, [squad, format, liveReal, beginMatch]);
+
+  /** #194 AC3: delete test matches outright. They were never in the record. */
+  const deleteTests = useCallback(
+    (ids: UUID[]) => {
+      const outcome = deleteTestMatches(matches, match, ids);
+      if (outcome.deleted === 0) return;
+      setMatches(outcome.matches);
+      // Let go of a deleted held match directly, not through releaseMatch,
+      // which would fold it back into the list.
+      if (outcome.releaseLive) setMatch(null);
+      persist({
+        matches: outcome.matches,
+        ...(outcome.releaseLive ? { state: null, matchFormat: null } : {}),
+      });
+      setTestMatchMessage(
+        `${outcome.deleted === 1 ? 'Test match' : `${outcome.deleted} test matches`} deleted from this phone.`
+      );
+    },
+    [matches, match, persist]
+  );
+
+  /**
+   * Void this played match, with a note (#194, PO ruling 18 Oct). A
+   * `match-kind: void` record: hidden from every screen, kept in the record,
+   * shown again from Settings › Test matches. The reason when refused, else null.
+   */
+  const voidOnReport = useCallback(
+    (note: string): string | null => {
+      if (!match) return 'No match is open.';
+      if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+      const current = ledgerRef.current;
+      if (!current) return 'That match is not in the ledger.';
+      const result = setMatchKind(current, match.state.match.id, 'void', note, appNow());
+      if (!result.ok) return result.reason;
+      commitLedger(result.ledger);
+      // Nothing left to show: the match is on no screen now.
+      releaseMatch(null);
+      setStep('fixtures');
+      showToast('Match voided. Settings › Test matches can show it again.');
+      return null;
+    },
+    [match, commitLedger, releaseMatch, showToast]
   );
 
   const forgetEverything = useCallback(() => {
@@ -1075,6 +1181,21 @@ export default function App() {
   /** The engine changes the live match in place; this repaints after an absence mark. */
   const [, repaint] = useReducer((n: number) => n + 1, 0);
 
+  /** The test match's own clock speed (#194, PO ruling 18 Oct): ×1, ×5 or ×10. */
+  const setTestSpeed = useCallback(
+    (speed: ClockSpeed) => {
+      const mark = match?.state.match.test;
+      if (!match || !mark || mark.clock.speed === speed) return;
+      // The engine reads the mark on every call (matchClock), so the change is
+      // continuous: no jump, and every elapsed figure stays exact.
+      match.state.match = { ...match.state.match, test: withTestSpeed(mark, speed, appNow().getTime()) };
+      repaint();
+      persist();
+    },
+    [match, persist]
+  );
+
+
   /**
    * Mark a player absent, or present again, before kick-off (#102 AC1). The
    * ledger snapshots it at kick-off (ADR-014 §4); after that, nothing here
@@ -1083,6 +1204,15 @@ export default function App() {
   const toggleAbsent = useCallback(
     (playerId: UUID, absent: boolean) => {
       if (!match) return;
+      // #194: a test match has no record to correct. After kick-off an
+      // arrival is the engine's mark alone, and nothing is written.
+      if (isTestMatch(match.state.match) && !beforeKickoff(match.state)) {
+        if (absent || match.state.quarters.some((q) => q.status === 'running')) return;
+        match.engine.setAvailability(match.state, playerId, 'available');
+        repaint();
+        persist();
+        return;
+      }
       // Before kick-off a plain mark; between periods, marking an absent
       // child arrived is a late-arrival correction (ruling F, QA).
       const ledgerNow = ledgerBlockedRef.current ? null : ledgerRef.current;
@@ -1102,7 +1232,15 @@ export default function App() {
    */
   const noteLateArrival = useCallback(
     (playerId: UUID) => {
-      if (!match || ledgerBlockedRef.current) return;
+      if (!match) return;
+      // #194: a test match writes nothing; the arrival is the engine's mark alone.
+      if (isTestMatch(match.state.match)) {
+        if ((match.state.playerAvailability.get(playerId) ?? 'available') !== 'available') {
+          match.engine.setAvailability(match.state, playerId, 'available');
+        }
+        return;
+      }
+      if (ledgerBlockedRef.current) return;
       const result = recordLateArrival(match.engine, match.state, ledgerRef.current, playerId, appNow());
       if (result?.ok) commitLedger(result.ledger);
     },
@@ -1323,7 +1461,8 @@ export default function App() {
 
   // --- first open (#218): worked out on every draw, never stored -----------
 
-  const everyMatch = withLiveMatch(matches, match);
+  // #194 AC2: a test match ticks no step and counts as nothing played.
+  const everyMatch = withLiveMatch(real, liveReal);
   const startProgress = startSteps({
     activePlayers: squad.length,
     onFieldCount: format.onFieldCount,
@@ -1336,10 +1475,10 @@ export default function App() {
   const firstTime = nothingPlayedYet(everyMatch, recordOnlyList.length);
   const nextUp = inBucket(
     fixtureList(
-      matches.filter((m) => !m.archived && !hiddenIds.has(m.match.id)).map((m) => m.match),
+      real.filter((m) => !m.archived && !hiddenIds.has(m.match.id)).map((m) => m.match),
       appNow(),
-      match?.state.match.id ?? null,
-      progressById(matches, match)
+      liveReal?.state.match.id ?? null,
+      progressById(real, liveReal)
     ),
     'future'
   )[0]?.match;
@@ -1435,6 +1574,24 @@ export default function App() {
 
   // --- routing --------------------------------------------------------------
 
+  /** #194 AC1: every screen of a test match says so, with its clock speed. */
+  const testBanner = (() => {
+    if (effectiveStep === 'resume') {
+      const held = pending ? toMatchState(pending) : null;
+      return held?.match.test ? <TestMatchBanner speed={held.match.test.clock.speed} /> : null;
+    }
+    if (!heldTest?.state.match.test) return null;
+    const onMatchScreen =
+      effectiveStep === 'lineup' ||
+      effectiveStep === 'playing' ||
+      effectiveStep === 'summary' ||
+      effectiveStep === 'analysis' ||
+      (effectiveStep === 'plan' && planningId === heldTest.state.match.id);
+    return onMatchScreen ? (
+      <TestMatchBanner speed={heldTest.state.match.test.clock.speed} onSpeed={setTestSpeed} />
+    ) : null;
+  })();
+
   const body = (() => {
     if (effectiveStep === 'loading') {
       return (
@@ -1499,7 +1656,7 @@ export default function App() {
     }
 
     // Each match's kick-off, for ruling E: who was in the squad for it.
-    const kickoffs = () => kickoffTimes(withLiveMatch(matches, match));
+    const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
 
     if (effectiveStep === 'record' && recordPage) {
       return <RecordMatchScreen page={recordPage} now={appNow()} onBack={() => setStep('fixtures')} />;
@@ -1517,8 +1674,11 @@ export default function App() {
           now={appNow()}
           // Ruling D: after the last period, the coach closes the match here.
           onEndMatch={canEndMatch(match.state) ? closeMatch : undefined}
-          onCorrectAttendance={correctAttendanceOnReport}
-          onSetExcluded={setExcludedOnReport}
+          // #194: a test match has no record to correct, leave out or void.
+          onCorrectAttendance={heldTest ? undefined : correctAttendanceOnReport}
+          onSetExcluded={heldTest ? undefined : setExcludedOnReport}
+          onVoid={heldTest ? undefined : voidOnReport}
+          backLabel={heldTest ? 'Back to Settings' : 'Back to Home'}
           onAnalysis={() => {
             setAnalysisReturn('summary');
             setStep('analysis');
@@ -1529,7 +1689,8 @@ export default function App() {
             // into the list first, or the save that follows writes the copy
             // from before kick-off over it (match day 4).
             releaseMatch(null);
-            setStep('fixtures');
+            // A test match came from Settings and goes back there (#194).
+            setStep(heldTest ? 'settings' : 'fixtures');
           }}
         />
       );
@@ -1567,7 +1728,7 @@ export default function App() {
             <MinutesSection
               ledger={viewLedger}
               players={players}
-              kickoffs={kickoffTimes(withLiveMatch(matches, match))}
+              kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
               message={ledgerMessage}
               busy={ledgerBusy}
               onExport={() => void exportMinutes()}
@@ -1576,8 +1737,28 @@ export default function App() {
           }
           testMatches={
             <TestMatchesSection
+              start={{
+                onStart: startTestMatch,
+                blocked: !squadReadiness(squad, format.onFieldCount).ready
+                  ? `Add at least ${format.onFieldCount} players to the squad first.`
+                  : liveReal && matchIsUnderway(liveReal.state.quarters)
+                    ? 'A match is under way. Start a test match after it.'
+                    : null,
+              }}
+              played={testMatchesOnPhone(matches, match).map((m) => ({
+                id: m.match.id,
+                label: sessionTestLabel(m),
+              }))}
+              onOpen={(id) => openFixture(id as UUID)}
+              onDelete={(id) => deleteTests([id as UUID])}
+              onDeleteAll={() => deleteTests(testMatchesOnPhone(matches, match).map((m) => m.match.id))}
               candidates={testMatchCandidates(ledger).map((m) => ({ id: m.id, label: testMatchLabel(m) }))}
-              hidden={hiddenMatches(ledger).map((m) => ({ id: m.id, label: testMatchLabel(m), note: m.matchKind?.note ?? null }))}
+              hidden={hiddenMatches(ledger).map((m) => ({
+                id: m.id,
+                label: testMatchLabel(m),
+                note: m.matchKind?.note ?? null,
+                kind: m.matchKind?.kind === 'void' ? 'void' : 'test',
+              }))}
               message={testMatchMessage}
               onHideAll={hideTestMatches}
               onShow={showMatchAgain}
@@ -1666,7 +1847,7 @@ export default function App() {
           kickoffs={kickoffs()}
           onPlayers={setPlayers}
           onFieldCount={format.onFieldCount}
-          onStartMatch={forMatch ? beginMatch : null}
+          onStartMatch={forMatch ? () => beginMatch(false) : null}
           onLeave={forMatch ? goHome : null}
           onTryMadeUp={offerMadeUpTeam(players) ? tryMadeUpTeam : null}
           focusName={focusName}
@@ -1704,7 +1885,7 @@ export default function App() {
             ]
           }
           onStart={startQuarter}
-          onLeave={goHome}
+          onLeave={leaveMatch}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.
           names={
@@ -1735,7 +1916,7 @@ export default function App() {
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
-          onLeave={goHome}
+          onLeave={leaveMatch}
           onPlanRest={planTheRest}
           onAnalysis={() => {
             setAnalysisReturn('playing');
@@ -1749,17 +1930,17 @@ export default function App() {
     return (
       <FixturesScreen
         squadName={squadName}
-        matches={listedFixtures(matches, showArchived)
+        matches={listedFixtures(real, showArchived)
           .map((m) => m.match)
           // #194: a match marked a test or void is on no screen.
           .filter((m) => !hiddenIds.has(m.id))}
-        currentMatchId={match?.state.match.id ?? null}
+        currentMatchId={liveReal?.state.match.id ?? null}
         now={appNow()}
         onOpen={openFixture}
-        progress={progressById(matches, match)}
-        scores={scoresById(matches, match)}
-        periods={periodsById(matches, match)}
-        notClosed={notClosedIds(withLiveMatch(matches, match))}
+        progress={progressById(real, liveReal)}
+        scores={scoresById(real, liveReal)}
+        periods={periodsById(real, liveReal)}
+        notClosed={notClosedIds(withLiveMatch(real, liveReal))}
         onDelete={deleteFixture}
         // #195: the record's played matches with no fixture here, archived fixtures included in "here".
         recordOnly={recordOnlyList}
@@ -1772,33 +1953,33 @@ export default function App() {
           setPlanningId(id);
           setStep('plan');
         }}
-        plannedIds={new Set(matches.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
+        plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked
           // off a moment ago must not still be offered for deletion.
           deletable: new Set(
-            matches
+            real
               .filter((m) => {
-                const live = match?.state.match.id === m.match.id ? match.state : m;
+                const live = liveReal?.state.match.id === m.match.id ? liveReal.state : m;
                 return canDeleteFixture(live.quarters, live.match.status);
               })
               .map((m) => m.match.id)
           ),
           archivable: new Set(
-            matches
+            real
               .filter((m) => {
-                const live = match?.state.match.id === m.match.id ? match.state : m;
+                const live = liveReal?.state.match.id === m.match.id ? liveReal.state : m;
                 return canArchiveFixture(live.quarters, live.match.status);
               })
               .map((m) => m.match.id)
           ),
-          archived: new Set(matches.filter((m) => m.archived).map((m) => m.match.id)),
+          archived: new Set(real.filter((m) => m.archived).map((m) => m.match.id)),
           onArchive: archiveFixture,
-          archivedCount: matches.filter((m) => m.archived).length,
+          archivedCount: real.filter((m) => m.archived).length,
           showingArchived: showArchived,
           onToggleArchived: () => setShowArchived((v) => !v),
         }}
-        onPlayNow={match && matchIsUnderway(match.state.quarters) ? null : playNow}
+        onPlayNow={liveReal && matchIsUnderway(liveReal.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
         notice={sessionMessage}
         // #218: the made-up team's line (Q6) and Getting started (AC1, AC2).
@@ -1837,6 +2018,7 @@ export default function App() {
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
       <TableSortProvider key={sortsForgotten} store={store} remember={sortsForgotten === 0}>
         <View style={screen.column}>
+          {testBanner}
           {body}
           {toast && <Toast key={toast.id} text={toast.text} onUndo={toast.onUndo ?? null} />}
         </View>

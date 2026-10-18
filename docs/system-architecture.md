@@ -48,13 +48,13 @@ sequenceDiagram
     A->>S: getItem getting-started/v1 (card closed on this phone? #218)
     A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
     A->>S: openStoredLedger (ledger/v2 + head)
-    A->>A: recordMatches(back-fill) → commitLedger
+    A->>A: recordMatches(recordable(back-fill): test matches never, #194) → commitLedger
     A->>S: saveLedger (queued)
     A->>A: step = resume | fixtures
     Note over A: every state change
     A->>E: engine.substitute / startQuarter / endQuarter (mutates state)
     A->>S: saveSession (whole document, not queued)
-    A->>S: saveLedger (only if records changed)
+    A->>S: saveLedger (only if records changed; a test match is in the session only, #194)
 ```
 
 - **All durable state lives in `App.tsx`** `useState`s. Screens receive values
@@ -132,10 +132,17 @@ stateDiagram-v2
     plan --> playing: Done (planReturn)
     playing --> fixtures: Leave (match keeps running)
     lineup --> fixtures: Leave
+    settings --> lineup: Start a test match / Open (#194)
+    lineup --> settings: Leave (test match)
+    playing --> settings: Leave (test match)
+    summary --> settings: Back (test match released)
+    summary --> fixtures: Void, with a note (match released, #194)
 ```
 
 Every Saturday screen (lineup, playing, summary, analysis, plan from a match)
-is full screen with an explicit exit; the match keeps running when left.
+is full screen with an explicit exit; the match keeps running when left. A
+test match (#194) shows a banner on each with its own clock speed, and its
+exits lead back to Settings, where it was started and is listed.
 
 `effectiveStep` collapses any Saturday step without a held match to
 `fixtures`. The Android hardware back button is not handled: it backgrounds

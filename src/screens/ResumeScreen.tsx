@@ -27,6 +27,7 @@ import { toMatchState } from '../app/persistence';
 import { BuildLabel } from './BuildLabel';
 import { screen } from './theme';
 import { appNow } from '../app/appClock';
+import { matchClock } from '../app/testMatches';
 
 export function ResumeScreen({
   saved,
@@ -38,8 +39,9 @@ export function ResumeScreen({
   /** Back to Home, match untouched. */
   onLeave: () => void;
 }) {
-  const engine = useMemo(() => new MatchEngine({ nowFn: appNow }), []);
   const state = useMemo(() => toMatchState(saved), [saved]);
+  // A test match runs on its own clock (#194); a real one on the app's.
+  const engine = useMemo(() => new MatchEngine({ nowFn: state ? matchClock(state, appNow) : appNow }), [state]);
   const elapsed = state ? engine.getMatchElapsedMs(state) : 0;
   const played = state ? state.quarters.filter((q) => q.status === 'ended').length : 0;
 

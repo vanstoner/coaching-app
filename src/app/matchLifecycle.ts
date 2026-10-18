@@ -14,7 +14,7 @@
  */
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
-import type { AvailabilityStatus, Competition, Format, Player, UUID } from '../types/index';
+import type { AvailabilityStatus, Competition, Format, Player, TestMatchMark, UUID } from '../types/index';
 import { canDeleteFixture } from './fixtures';
 import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
@@ -38,6 +38,8 @@ export interface NewMatchInput {
   kickoffAt?: string | null;
   /** Leave this match out of averages and totals (#187, ADR-020). */
   excludeFromStats?: boolean;
+  /** A test match from Settings (#194): never recorded, on its own clock. */
+  test?: TestMatchMark;
 }
 
 export interface NewMatch {
@@ -66,6 +68,7 @@ export function newMatch(input: NewMatchInput, nowFn: () => Date): NewMatch {
     kickoffAt: input.kickoffAt ?? null,
     excludeFromStats: input.excludeFromStats === true,
   });
+  if (input.test) state.match.test = input.test;
   return {
     held: { state, format: input.format },
     // Through the same fold every save uses, so the stored shape cannot drift
