@@ -7,7 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MatchEngine } from './src/engine/MatchEngine';
 import type { MatchState } from './src/engine/MatchEngine';
 import { uuid } from './src/types/index';
-import type { AvailabilityStatus, Format, MatchEvent, Player, TapEventKind, UUID } from './src/types/index';
+import type { AvailabilityStatus, Format, MatchEvent, Player, TallyKind, TapEventKind, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
   appClockSetting,
@@ -96,6 +96,8 @@ import {
   storedFromHeld,
 } from './src/app/matchLifecycle';
 import {
+  addEventType,
+  setEventTypeActive,
   addAwardType,
   changeAward,
   giveAward,
@@ -128,6 +130,7 @@ import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from '.
 import { MinutesSection } from './src/screens/MinutesSection';
 import { BackupSection } from './src/screens/BackupSection';
 import { AwardsSection } from './src/screens/AwardsSection';
+import { TalliesSection } from './src/screens/TalliesSection';
 import { RecordMatchScreen } from './src/screens/RecordMatchScreen';
 import { TestMatchBanner, TestMatchesSection } from './src/screens/TestMatchesSection';
 import { formatClock } from './src/app/matchClock';
@@ -147,6 +150,7 @@ import {
 } from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { scoreWithRecord, type Score } from './src/app/matchRecord';
+import { tallyButtons } from './src/app/tallies';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
 import { FixturesScreen } from './src/screens/FixturesScreen';
@@ -1578,6 +1582,23 @@ export default function App() {
     [match, persist]
   );
 
+  /** A coach's own tally (#198). Null when the engine refuses it. */
+  const recordTally = useCallback(
+    (kind: TallyKind, playerId: UUID | null): MatchEvent | null => {
+      if (!match) return null;
+      const quarter = currentQuarter(match.state);
+      if (!quarter) return null;
+      try {
+        const event = match.engine.recordTally(match.state, quarter, kind, playerId);
+        persist();
+        return event;
+      } catch {
+        return null;
+      }
+    },
+    [match, persist]
+  );
+
   /** A goal's assist (#185). Null when the engine refuses it. */
   const recordAssist = useCallback(
     (goalId: UUID, playerId: UUID): MatchEvent | null => {
@@ -1990,6 +2011,14 @@ export default function App() {
                   onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
                 />
               )}
+              {/* #198 */}
+              {ledger && !ledgerBlockedRef.current && (
+                <TalliesSection
+                  types={ledger.eventTypes}
+                  onAdd={(label, credited) => applyToLedger((l) => addEventType(l, label, credited, appNow()))}
+                  onActive={(id, active) => applyToLedger((l) => setEventTypeActive(l, id, active, appNow()))}
+                />
+              )}
             </>
           }
           testMatches={
@@ -2172,6 +2201,8 @@ export default function App() {
           onLiveMove={liveMove}
           onRecord={recordEvent}
           onRecordAssist={recordAssist}
+          tallies={tallyButtons(ledger?.eventTypes ?? [])}
+          onRecordTally={recordTally}
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}

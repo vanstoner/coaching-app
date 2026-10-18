@@ -24,6 +24,7 @@ import {
   MatchEvent,
   MatchEventKind,
   TapEventKind,
+  TallyKind,
 } from '../types/index';
 
 // ============================================================================
@@ -659,6 +660,37 @@ export class MatchEngine {
     if (!stint) throw new MatchEngineError(`Cannot record a ${kind}; that player is not on the pitch`);
     if ((kind === 'save' || kind === 'conceded') && stint.positionKind !== 'goalkeeper') {
       throw new MatchEngineError(`Only the goalkeeper can be credited with a ${kind}`);
+    }
+    const event: MatchEvent = {
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      kind,
+      playerId,
+      atElapsedMs: this.getMatchElapsedMs(state),
+      recordedAt: this.now().toISOString(),
+      refersTo: null,
+      note: null,
+    };
+    (state.events ??= []).push(event);
+    return event;
+  }
+
+  /**
+   * A coach's own tally (#198), added in Settings: while a period runs, for a
+   * player on the pitch, or for the team (`playerId` null). Never in the
+   * score, the minutes or fairness.
+   */
+  recordTally(state: MatchState, quarter: Quarter, kind: TallyKind, playerId: UUID | null): MatchEvent {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(`Cannot record a tally in quarter ${quarter.index}; status is ${quarter.status}`);
+    }
+    if (!kind.startsWith('tally:') || kind.length <= 'tally:'.length) throw new MatchEngineError('Not a tally kind');
+    if (
+      playerId !== null &&
+      !state.appearances.some((a) => a.quarterId === quarter.id && a.playerId === playerId && a.endElapsedMs === null)
+    ) {
+      throw new MatchEngineError('Cannot record a tally; that player is not on the pitch');
     }
     const event: MatchEvent = {
       id: uuid(),

@@ -24,6 +24,7 @@ import { formatClock } from '../app/matchClock';
 import { parsePeriodLengths, positionLine, structureLabel } from '../app/matchRecord';
 import { scoreLabel, type PageGoal, type RecordMatchPage } from '../app/recordOnly';
 import { NAME, sortRecordMinutes } from '../app/tableSort';
+import { TALLY_CAPTION, tallyLineText } from '../app/tallies';
 import { Chip, ChipRow } from './Chip';
 import { colours, screen } from './theme';
 import { SortHeading, useTableSort } from './TableSort';
@@ -69,6 +70,7 @@ export function RecordMatchScreen({
   // #208: most minutes first by default; a tap on a heading re-sorts.
   const { sort, onSort } = useTableSort('recordMinutes');
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [moreStats, setMoreStats] = useState(false);
   const competition = competitionLabel(match.competition);
   const st = page.structure;
 
@@ -331,6 +333,25 @@ export function RecordMatchScreen({
               <NoteBox value={panel.note} onChange={(note) => setPanel({ ...panel, note, error: '' })} placeholder="A note (optional)" />
               <PanelButtons error={panel.error} label="Give the award" onSave={submit} onCancel={() => setPanel(null)} />
             </View>
+          )}
+
+          {/* #198 AC3: the coach's tallies, collapsed and apart from the core. */}
+          {page.tallies.length > 0 && (
+            <>
+              <Pressable onPress={() => setMoreStats((v) => !v)} style={screen.linkHit} accessibilityRole="button">
+                <Text style={screen.link}>{moreStats ? 'Hide more stats' : `More stats (${page.tallies.length})`}</Text>
+              </Pressable>
+              {moreStats && (
+                <>
+                  <Text style={local.lineFaint}>{TALLY_CAPTION}.</Text>
+                  {page.tallies.map((t) => (
+                    <Text key={t.kind} style={local.line} numberOfLines={3}>
+                      {tallyLineText(t)}
+                    </Text>
+                  ))}
+                </>
+              )}
+            </>
           )}
 
           <Text style={screen.fieldLabel}>Minutes on the pitch</Text>

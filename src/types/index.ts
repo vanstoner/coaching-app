@@ -265,10 +265,17 @@ export type MatchEventKind =
   | 'corner'
   | 'free_kick'
   | 'assist'
-  | 'withdrawn';
+  | 'withdrawn'
+  | TallyKind;
 
-/** What a tap on one player records on its own: everything but an assist (#185). */
-export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist'>;
+/**
+ * A tally kind the coach added in Settings › Tallies (#198): `tally:` and the
+ * `event-type` record's id. Its label lives in the record, not in a release.
+ */
+export type TallyKind = `tally:${string}`;
+
+/** What a tap on one player records on its own: everything but an assist (#185) or a coach's own tally. */
+export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist' | TallyKind>;
 
 /**
  * One entry on the match's time stream. Append-only: never edited, never

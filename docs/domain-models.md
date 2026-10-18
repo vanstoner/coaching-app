@@ -142,7 +142,8 @@ interface MatchEvent {
   id: UUID; matchId: UUID; quarterId: UUID;
   kind: 'goal' | 'shot_on_target' | 'save' | 'conceded'
       | 'tackle' | 'corner' | 'free_kick'      // in-play tallies (#185)
-      | 'assist' | 'withdrawn';
+      | 'assist' | 'withdrawn'
+      | `tally:${string}`;                     // a coach's own kind (#198)
   playerId: UUID | null;    // for 'conceded', the keeper in goal at the time
   atElapsedMs: number; recordedAt: string;
   refersTo: UUID | null;    // 'withdrawn': the event taken back; 'assist': its goal
@@ -215,6 +216,7 @@ interface Ledger {                          // key coaching-app/ledger/v2
 // structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction
 // award-type { id, name, active, note }                        // #197; defaults 'player-of-the-week', 'mr-assister'
 // award      { matchId, awardTypeId, playerId, given, note }   // key includes the child: joint winners
+// event-type { id, label, tier: 'tally', credited: 'child' | 'team', active, note }   // #198; events of it: kind 'tally:<id>'
 // interval  + role?: 'RB' | 'LW' | …       // #196 AC4; absent on older intervals, which read per unit
 // event     + timeKnown?: false           // #196 AC2; then period 0, atMs 0 (the released build needs a number)
 ```
@@ -253,8 +255,11 @@ interface Ledger {                          // key coaching-app/ledger/v2
   or none: it is never rewritten to add one.
 - **Awards** (#197): individual performance (ADR-017), shown for one match;
   never a fairness or minutes input. A change is new records, never an edit.
-- **Proposed, not built yet:** the remaining ADR-021 D2 types (event types,
-  origin).
+- **Tiers** (#198): `goal`, `assist`, `conceded` are core and feed the
+  result. Everything else, and any kind this build does not know, is a
+  coach's tally: shown apart, never in the score, minutes or fairness.
+- **Proposed, not built yet:** `origin` (ADR-021 D2): setting it by hand
+  waits until it is asked for (#199 ruling).
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.

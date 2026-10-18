@@ -178,7 +178,9 @@ export interface StreamRow {
 export function timeStream(
   appearances: Appearance[],
   events: MatchEvent[] | undefined,
-  players: Player[]
+  players: Player[],
+  /** The coach's own tally kinds' names (#198), by kind. */
+  tallyLabels: ReadonlyMap<string, string> = new Map()
 ): StreamRow[] {
   const name = (id: UUID | null) =>
     (id && players.find((p) => p.id === id)?.firstName) || 'someone';
@@ -227,7 +229,8 @@ export function timeStream(
       rows.push({ atMs: e.atElapsedMs, text: `Withdrawn: ${e.note ?? ''}`, eventId: null, withdrawn: false });
       continue;
     }
-    const text = eventText(e, events ?? [], name);
+    const custom = tallyLabels.get(e.kind);
+    const text = custom ? `${custom}: ${e.playerId ? name(e.playerId) : 'team'}` : eventText(e, events ?? [], name);
     rows.push({ atMs: e.atElapsedMs, text, eventId: e.id, withdrawn: isWithdrawn(events, e.id) });
   }
 

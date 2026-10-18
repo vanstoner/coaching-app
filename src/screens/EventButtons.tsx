@@ -12,7 +12,7 @@ import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { TAP_LABEL, eventGridColumns, eventGridRows } from '../app/matchEvents';
-import type { TapEventKind } from '../types/index';
+import type { TallyKind, TapEventKind } from '../types/index';
 import { Text } from './Text';
 import { TOUCH_TARGET, colours, screen } from './theme';
 
@@ -131,6 +131,48 @@ export function EventButtons({
               <Sticker glyphs={PICTURE[kind]} size={TILE_STICKER} />
               <Text style={local.label} numberOfLines={1}>
                 {TAP_LABEL[kind]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The coach's own tally kinds (#198, PO ruling 12): appended after the
+ * picture buttons, each with a plain counter picture and its name.
+ */
+export function TallyButtons({
+  tallies,
+  onPress,
+}: {
+  tallies: { kind: TallyKind; label: string; team: boolean }[];
+  onPress: (kind: TallyKind, team: boolean) => void;
+}) {
+  if (tallies.length === 0) return null;
+  const wide = eventGridColumns(tallies.length) <= 2;
+  return (
+    <View style={local.grid}>
+      {eventGridRows(tallies).map((row, r) => (
+        <View key={r} style={local.row}>
+          {row.map((t) => (
+            <Pressable
+              key={t.kind}
+              accessibilityRole="button"
+              accessibilityLabel={t.team ? `${t.label}, for the team` : t.label}
+              onPress={() => onPress(t.kind, t.team)}
+              style={({ pressed }) => [
+                local.tile,
+                wide ? local.tileWide : local.tileThird,
+                { backgroundColor: '#e8e8e8' },
+                pressed && local.pressed,
+              ]}
+            >
+              <Sticker glyphs={[{ name: 'counter', size: 36, colour: INK }]} size={TILE_STICKER} />
+              <Text style={local.label} numberOfLines={1}>
+                {t.label}
               </Text>
             </Pressable>
           ))}

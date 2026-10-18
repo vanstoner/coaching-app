@@ -29,6 +29,7 @@ import {
   type Result,
   type Structure,
 } from './matchRecord';
+import { matchTalliesWithGoals, type TallyLine } from './tallies';
 
 export interface RecordOnlyMatch {
   id: UUID;
@@ -126,6 +127,8 @@ export interface RecordMatchPage {
   awards: { awardTypeId: UUID; award: string; playerId: UUID; name: string; note: string | null }[];
   /** Award types that can be given now: not retired (#197 AC1). */
   awardTypes: { id: UUID; name: string }[];
+  /** The coach's tallies, apart from the core (#198 AC3). */
+  tallies: TallyLine[];
 }
 
 /** The read-only page for one match in the record. Null if the record has no such match. */
@@ -188,5 +191,6 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
             ledger.awardTypes.findIndex((t) => t.id === b.awardTypeId) || a.name.localeCompare(b.name)
       ),
     awardTypes: ledger.awardTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name })),
+    tallies: matchTalliesWithGoals(m.events, ledger.eventTypes, (id) => name(id)),
   };
 }

@@ -262,6 +262,19 @@ export interface Ledger {
   settings: LedgerSettings | null;
   /** Award types, the defaults first, retired ones included (#197). */
   awardTypes: LedgerAwardType[];
+  /** Tally kinds the coach added in Settings (#198); the built-in ones are not records. */
+  eventTypes: LedgerEventType[];
+}
+
+/** A kind of coach's tally added without a release (#198 AC2). Its events' kind is `tally:<id>`. */
+export interface LedgerEventType {
+  id: UUID;
+  label: string;
+  /** Always 'tally' from this build; a later build's 'core' kind is carried, never counted as core here. */
+  tier: string;
+  /** Credited to the child tapped, or to the team. */
+  credited: 'child' | 'team';
+  active: boolean;
 }
 
 /** A kind of award (#197): Player of the Week, Mr Assister, or one the coach added. */
@@ -314,6 +327,7 @@ const FIELDS: Record<string, readonly string[]> = {
   structure: ['type', 'matchId', 'periodCount', 'periodMs', 'shape', 'onField', 'note'],
   'award-type': ['type', 'id', 'name', 'active', 'note'],
   award: ['type', 'matchId', 'awardTypeId', 'playerId', 'given', 'note'],
+  'event-type': ['type', 'id', 'label', 'tier', 'credited', 'active', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
@@ -335,6 +349,7 @@ const FILE_FIELDS = [
   'profiles',
   'settings',
   'awardTypes',
+  'eventTypes',
   'summary',
 ] as const;
 
@@ -415,7 +430,7 @@ function checkRecord(r: LedgerRecord): void {
 /** The ledger's squad, players and matches, folded from its chain. */
 function foldView(
   entries: LedgerEntry[]
-): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes'> {
+): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes'> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -430,6 +445,7 @@ function foldView(
   const structures = new Map<UUID, LedgerStructure>();
   const awardTypes = new Map<UUID, LedgerAwardType>(DEFAULT_AWARD_TYPES.map((t) => [t.id, t]));
   const awards = new Map<UUID, LedgerAward[]>();
+  const eventTypes = new Map<UUID, LedgerEventType>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -542,6 +558,17 @@ function foldView(
           awardTypes.set(r.id as UUID, { id: r.id as UUID, name: r.name, active: r.active !== false });
         }
         break;
+      case 'event-type':
+        if (typeof r.id === 'string' && typeof r.label === 'string') {
+          eventTypes.set(r.id as UUID, {
+            id: r.id as UUID,
+            label: r.label,
+            tier: typeof r.tier === 'string' ? r.tier : 'tally',
+            credited: r.credited === 'team' ? 'team' : 'child',
+            active: r.active !== false,
+          });
+        }
+        break;
       case 'award':
         if (typeof r.matchId === 'string' && typeof r.awardTypeId === 'string' && typeof r.playerId === 'string' && r.given !== false) {
           push(awards, r.matchId as UUID, {
@@ -579,6 +606,7 @@ function foldView(
     profiles,
     settings,
     awardTypes: [...awardTypes.values()],
+    eventTypes: [...eventTypes.values()],
   };
 }
 
@@ -1244,6 +1272,45 @@ export function correctStructure(
       now
     ),
   };
+}
+
+// --- the coach's tallies (#198) ---------------------------------------------------
+
+const TALLY_LABEL_MAX = 20;
+/** Built-in kinds' words, so a new kind cannot be confused with one (#198 AC1). */
+const BUILT_IN_WORDS = ['goal', 'assist', 'conceded', 'save', 'tackle', 'corner won', 'free kick won', 'shot on target'];
+
+/**
+ * Settings › Tallies: a new kind of coach's tally, without a release (#198
+ * AC2). An `event-type` record; the released build carries it untouched.
+ */
+export function addEventType(ledger: Ledger, label: string, credited: 'child' | 'team', now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const clean = label.trim().replace(/\s+/g, ' ');
+  if (clean === '' || clean.length > TALLY_LABEL_MAX) {
+    return { ok: false, reason: `A tally needs a name of up to ${TALLY_LABEL_MAX} letters.` };
+  }
+  const lower = clean.toLowerCase();
+  if (BUILT_IN_WORDS.includes(lower) || ledger.eventTypes.some((t) => t.label.toLowerCase() === lower)) {
+    return { ok: false, reason: 'There is already a tally with that name.' };
+  }
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ type: 'event-type', id: uuid(), label: clean, tier: 'tally', credited, active: true, note: null }],
+      now
+    ),
+  };
+}
+
+/** Stop offering a tally kind, or offer it again (#198). Its events stay in the record. */
+export function setEventTypeActive(ledger: Ledger, id: UUID, active: boolean, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const have = ledger.eventTypes.find((t) => t.id === id);
+  if (!have) return { ok: false, reason: 'That tally is not in the record.' };
+  if (have.active === active) return { ok: false, reason: 'Nothing has changed.' };
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'event-type', ...have, active, note: null }], now) };
 }
 
 // --- awards (#197) ---------------------------------------------------------------

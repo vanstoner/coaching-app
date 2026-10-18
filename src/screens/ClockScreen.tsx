@@ -45,7 +45,7 @@ import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
-import type { Format, MatchEvent, Player, TapEventKind, UUID } from '../types/index';
+import type { Format, MatchEvent, Player, TallyKind, TapEventKind, UUID } from '../types/index';
 import {
   currentQuarter,
   deriveClockView,
@@ -86,7 +86,7 @@ import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
-import { AssistButton, EventButtons } from './EventButtons';
+import { AssistButton, EventButtons, TallyButtons } from './EventButtons';
 import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
@@ -119,6 +119,8 @@ export function ClockScreen({
   onLiveMove,
   onRecord,
   onRecordAssist,
+  tallies = [],
+  onRecordTally,
   onWithdraw,
   onEndQuarter,
   onFinish,
@@ -153,6 +155,9 @@ export function ClockScreen({
   onRecord: (kind: TapEventKind, playerId: UUID) => MatchEvent | null;
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
+  /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
+  tallies?: { kind: TallyKind; label: string; team: boolean }[];
+  onRecordTally?: (kind: TallyKind, playerId: UUID | null) => MatchEvent | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -335,6 +340,17 @@ export function ClockScreen({
     if (kind === 'goal') setAssistFor(event);
   };
 
+  const tally = (kind: TallyKind, team: boolean, id: UUID) => {
+    setSheetFor(null);
+    const event = onRecordTally?.(kind, team ? null : id) ?? null;
+    if (!event) {
+      setNotice('That could not be recorded.');
+      return;
+    }
+    const label = tallies.find((t) => t.kind === kind)?.label ?? 'Tally';
+    offerUndo(team ? `${label} (team)` : `${label}: ${nameOf(id)}`, () => onWithdraw(event.id, UNDO_NOTE));
+  };
+
   /** Withdrawing the goal takes its assist with it (#185 AC5), so Undo stays one tap. */
   const assist = (goal: MatchEvent, id: UUID) => {
     setAssistFor(null);
@@ -346,7 +362,7 @@ export function ClockScreen({
     offerUndo(`Goal: ${scorer}, assist ${nameOf(id)}`, () => onWithdraw(goal.id, UNDO_NOTE));
   };
 
-  const stream = timeStream(state.appearances, state.events, players);
+  const stream = timeStream(state.appearances, state.events, players, new Map(tallies.map((t) => [t.kind, t.label])));
 
   return (
     <View style={screen.safe}>
@@ -564,7 +580,10 @@ export function ClockScreen({
         {sheetFor && (
           <>
             {onIds.has(sheetFor) && (
-              <EventButtons kinds={tapEventsFor(sheetFor === keeper)} onPress={(kind) => record(kind, sheetFor)} />
+              <>
+                <EventButtons kinds={tapEventsFor(sheetFor === keeper)} onPress={(kind) => record(kind, sheetFor)} />
+                <TallyButtons tallies={tallies} onPress={(kind, team) => tally(kind, team, sheetFor)} />
+              </>
             )}
             <SheetButton
               label="Move or swap…"

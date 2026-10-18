@@ -31,6 +31,7 @@ import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
 import { resultOf, scoreWithRecord } from '../app/matchRecord';
+import { TALLY_CAPTION, matchTalliesWithGoals, tallyLineText } from '../app/tallies';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
@@ -135,6 +136,7 @@ export function MatchSummaryScreen({
   const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
   const excluded = inLedger ? isExcluded(inLedger) : false;
   const report = matchReport(engine, state, players, format);
+  const [moreStats, setMoreStats] = useState(false);
   // #196 AC1: the phone's events plus any the record holds that it does not.
   const score = scoreWithRecord(report.score, new Set((state.events ?? []).map((e) => e.id)), inLedger);
   const chart = matchChart(report, ledger, players, { kickoffs });
@@ -142,6 +144,7 @@ export function MatchSummaryScreen({
     (id && report.players.find((p) => p.playerId === id)?.name) ||
     (id && players.find((p) => p.id === id)?.firstName) ||
     'someone';
+  const tallies = matchTalliesWithGoals(state.events, ledger?.eventTypes ?? [], (id) => nameOf(id));
 
   const competition = competitionLabel(report.competition);
   const details = [
@@ -194,29 +197,50 @@ export function MatchSummaryScreen({
           ))
         )}
 
-        {report.play.length > 0 && (
-          <>
-            <Text style={screen.fieldLabel}>Play</Text>
-            {report.play.map((p) => (
-              <Text key={p.playerId} style={local.line} numberOfLines={2}>
-                {p.name} · {playLine(p)}
-              </Text>
-            ))}
-          </>
+        {/* #198: an assist is core, so it sits with the goals. */}
+        {report.play.some((p) => p.assists > 0) && (
+          <Text style={local.lineFaint} numberOfLines={2}>
+            Assists:{' '}
+            {report.play
+              .filter((p) => p.assists > 0)
+              .map((p) => `${p.name} ${p.assists}`)
+              .join(', ')}
+          </Text>
         )}
 
         <Text style={screen.fieldLabel}>In goal</Text>
-        <Text style={local.line}>
-          {report.saves} {report.saves === 1 ? 'save' : 'saves'} · {report.conceded} conceded
-        </Text>
-        {report.keepers.map((k) => (
-          <Text key={k.playerId} style={local.lineFaint} numberOfLines={1}>
-            {k.name} · {k.saves} {k.saves === 1 ? 'save' : 'saves'} · {k.conceded} conceded
-          </Text>
-        ))}
-        <Text style={local.lineFaint} numberOfLines={1}>
-          Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
-        </Text>
+        <Text style={local.line}>{report.conceded} conceded</Text>
+        {report.keepers
+          .filter((k) => k.conceded > 0)
+          .map((k) => (
+            <Text key={k.playerId} style={local.lineFaint} numberOfLines={1}>
+              {k.name} · {k.conceded} conceded
+            </Text>
+          ))}
+
+        {/* #198 AC3: the coach's tallies, collapsed, never mixed into the core. */}
+        {tallies.length > 0 && (
+          <>
+            <Pressable onPress={() => setMoreStats((v) => !v)} style={screen.linkHit} accessibilityRole="button">
+              <Text style={screen.link}>
+                {moreStats ? 'Hide more stats' : `More stats (${tallies.length})`}
+              </Text>
+            </Pressable>
+            {moreStats && (
+              <>
+                <Text style={local.lineFaint}>{TALLY_CAPTION}.</Text>
+                {tallies.map((t) => (
+                  <Text key={t.kind} style={local.line} numberOfLines={3}>
+                    {tallyLineText(t)}
+                  </Text>
+                ))}
+                <Text style={local.lineFaint} numberOfLines={1}>
+                  Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
+                </Text>
+              </>
+            )}
+          </>
+        )}
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
         <Text style={local.lineFaint}>
@@ -552,18 +576,4 @@ const local = StyleSheet.create({
   noteGap: { marginRight: 10 },
   pointer: { marginTop: 14 },
 });
-
-/** "3 shots on target · 2 assists · 1 tackle", leaving out what is zero (#185 AC7, #202 AC3). */
-function playLine(p: { shotsOnTarget: number; assists: number; tackles: number; corners: number; freeKicks: number }): string {
-  const part = (n: number, one: string, many: string) => (n === 0 ? null : `${n} ${n === 1 ? one : many}`);
-  return [
-    part(p.shotsOnTarget, 'shot on target', 'shots on target'),
-    part(p.assists, 'assist', 'assists'),
-    part(p.tackles, 'tackle', 'tackles'),
-    part(p.corners, 'corner won', 'corners won'),
-    part(p.freeKicks, 'free kick won', 'free kicks won'),
-  ]
-    .filter((x) => x !== null)
-    .join(' · ');
-}
 

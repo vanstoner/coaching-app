@@ -22,6 +22,9 @@ import {
   type Ledger,
 } from './ledger';
 import * as released from './fixtures/reader-1.2.0/ledger';
+
+/** This build's matches, handed to the 1.2.0 reader as a 1.2.0 phone would hold them. */
+const asReleased = (records: readonly unknown[]) => records as Parameters<typeof released.recordMatches>[1];
 import { latestRecords } from './ledgerChain';
 import {
   parsePeriodLengths,
@@ -155,7 +158,7 @@ describe('goals with time unknown: the 3 Oct cup match, 4–1 (#196 AC1, AC2)', 
     if (!old.ok) throw new Error(old.reason);
     expect(released.foldLedger(old.ledger)).toEqual(foldLedger(l));
     // And what it writes back still has them.
-    const again = parseLedger(released.serialiseLedger(released.recordMatches(old.ledger, [m], players, 'Test FC', NOW)));
+    const again = parseLedger(released.serialiseLedger(released.recordMatches(old.ledger, asReleased([m]), players, 'Test FC', NOW)));
     if (!again.ok) throw new Error(again.reason);
     expect(recordOnlyMatches(again.ledger, new Set())[0].score).toEqual({ us: 4, them: 1 });
   });
@@ -206,7 +209,7 @@ describe('structure: how the match was actually played (#196 AC3)', () => {
   it('a match recorded before this reads as its planned structure', () => {
     const m = played(4, 12);
     // As 1.2.0 recorded it: the same match, with no structure record.
-    const l = released.recordMatches(released.emptyLedger(squadId, 'Test FC', NOW), [m], players, 'Test FC', NOW);
+    const l = released.recordMatches(released.emptyLedger(squadId, 'Test FC', NOW), asReleased([m]), players, 'Test FC', NOW);
     const parsed = parseLedger(released.serialiseLedger(l));
     if (!parsed.ok) throw new Error(parsed.reason);
     const st = structureOf(parsed.ledger.matches[0]);
@@ -239,7 +242,7 @@ describe('minutes in positions (#196 AC4, AC5)', () => {
 
   it('an interval already in the chain is never rewritten to add a role; it reads per unit', () => {
     const m = played(2, 20);
-    const old = released.recordMatches(released.emptyLedger(squadId, 'Test FC', NOW), [m], players, 'Test FC', NOW);
+    const old = released.recordMatches(released.emptyLedger(squadId, 'Test FC', NOW), asReleased([m]), players, 'Test FC', NOW);
     const parsed = parseLedger(released.serialiseLedger(old));
     if (!parsed.ok) throw new Error(parsed.reason);
     const next = recordMatches(parsed.ledger, [{ ...m, format }], players, 'Test FC', NOW);

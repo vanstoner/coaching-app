@@ -23,6 +23,9 @@ import {
   type Ledger,
 } from './ledger';
 import * as released from './fixtures/reader-1.2.0/ledger';
+
+/** This build's matches, handed to the 1.2.0 reader as a 1.2.0 phone would hold them. */
+const asReleased = (records: readonly unknown[]) => records as Parameters<typeof released.recordMatches>[1];
 import { setupFrom } from './ledgerSetup';
 import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
@@ -225,7 +228,7 @@ describe('the released 1.2.0 parser reads a ledger with the new records (#195 AC
     expect(verifyChain(old.ledger.entries)).toEqual({ ok: true });
     expect(released.foldLedger(old.ledger)).toEqual(foldLedger(fairness.ledger));
     // The released build records over it and the new records ride along.
-    const written = released.recordMatches(old.ledger, p.matches, p.players, 'Test FC', LATER);
+    const written = released.recordMatches(old.ledger, asReleased(p.matches), p.players, 'Test FC', LATER);
     const back = parseLedger(released.serialiseLedger(written));
     if (!back.ok) throw new Error(back.reason);
     expect(back.ledger.fixtures.find((f) => f.id === p.fixtures[0].match.id)?.state).toBe('cancelled');
