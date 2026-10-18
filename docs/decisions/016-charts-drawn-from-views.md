@@ -53,7 +53,10 @@ iOS is coming (#107), so a native dependency costs on two platforms.
      for example "Ava 32 · avg 28".
    - **Order:** decided and tested in the module. By default the player
      furthest below their usual comes first, because that is the subbing
-     question.
+     question. *Superseded by #208 (PO, 2026-10-17, `approve 208
+     charts-follow`): the bars follow the sort heading above them
+     (`tableSort.ts`): on the match report by the distance from their usual,
+     most above first; on match analysis by this match's minutes, most first.*
    - Absent players get no bar, which would be a fabricated zero. They are
      listed by first name underneath.
 5. **Visual contract: season (#105 AC2, #103).** There is one group per

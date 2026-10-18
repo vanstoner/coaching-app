@@ -144,10 +144,10 @@ export function minutesRowSeconds(row: {
 }
 
 /**
- * Rows in squad order: the order of `players`, as the Squad list and the
- * squad views show them (#143 AC7, PO ruling Q1: nothing is ranked). Anyone
- * not in `players` (known to the ledger only) follows, in the order given.
- * Never by minutes.
+ * Rows in squad order: the order of `players`, as the Squad list shows them.
+ * Anyone not in `players` (known to the ledger only) follows, in the order
+ * given. The analytics tables sort these by their numbers (#208,
+ * `tableSort.ts`); squad order is what keeps their ties still (#208 AC4).
  */
 export function inSquadOrder<T extends { playerId: UUID }>(
   rows: readonly T[],
@@ -218,7 +218,7 @@ export interface MatchReport {
   conceded: number;
   /** #202: every save and every goal against was a shot on target by them. Derived. */
   theirShotsOnTarget: number;
-  /** Everyone available at kick-off, in squad order (PO ruling Q1, #143). */
+  /** Everyone available at kick-off, in squad order: the tie order the table's sort keeps (#208). */
   players: ReportPlayer[];
   /**
    * Total pitch time this match ÷ the players who attended it: what each
@@ -261,7 +261,7 @@ export function matchReport(
   const totalPitch = minutes.reduce((sum, m) => sum + m.outfieldMs + m.goalkeeperMs, 0);
   const fairShareMs = minutes.length === 0 ? 0 : Math.round(totalPitch / minutes.length);
 
-  // PO ruling Q1 (#143 AC7): squad order, never by minutes.
+  // Squad order: the screen sorts by the figures (#208), keeping it for ties.
   const rows: ReportPlayer[] = inSquadOrder(minutes, players)
     .map((m) => {
       const totalMs = m.outfieldMs + m.goalkeeperMs;
@@ -555,9 +555,9 @@ export interface MatchChart {
  * match's bar from being half of its own shadow. It is "their usual, from the
  * other matches", which is the question asked when subbing.
  *
- * **Order: furthest below their usual first** (ADR-016 §4), the subbing
- * question. Players with no average yet follow, least played first. Ties by
- * name, so the order does not shuffle between repaints.
+ * **Order: the report's, squad order.** The screen sorts the bars by the
+ * heading chosen (#208, `tableSort.sortMatchBars`), squad order kept for
+ * ties, so the order does not shuffle between repaints.
  */
 export function matchChart(
   report: MatchReport,
@@ -583,17 +583,6 @@ export function matchChart(
         shadowMs === null ? 'no average yet' : `avg ${wholeMinutes(shadowMs)}`
       }`,
     };
-  });
-
-  rows.sort((a, b) => {
-    if (a.shadowMs !== null && b.shadowMs !== null) {
-      return (
-        a.thisMatchMs - a.shadowMs - (b.thisMatchMs - b.shadowMs) || a.name.localeCompare(b.name)
-      );
-    }
-    if (a.shadowMs !== null) return -1;
-    if (b.shadowMs !== null) return 1;
-    return a.thisMatchMs - b.thisMatchMs || a.name.localeCompare(b.name);
   });
 
   const maxMs = Math.max(

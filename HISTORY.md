@@ -243,3 +243,14 @@ analysis, iOS". Entries are added as each release ships.
   the coach confirms, each is marked a test in the record, with a note, and
   disappears from every screen. The record keeps them, and each can be shown
   again.
+- **18 October — Heart FC Coach 1.2.0: tables sorted by their numbers
+  (#208).** Rob: *"all analytics screens should be in order of their
+  numbers … We're trying to highlight discrepancies."* Every analytics table
+  opens on its figure, most first (distance from the average in one straight
+  run, +6 … −5), and a tap on a heading re-sorts it; charts follow their
+  table, the Main keeper stays last in the squad views, and each table
+  remembers its sort on the phone. The first version bumped by the rule that
+  every coach-visible change moves the version in the same pull request
+  (#217).
+  Adding squad members keeps the name box focused, so a whole squad goes in
+  one name after another (#219).

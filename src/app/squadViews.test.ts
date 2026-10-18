@@ -146,12 +146,13 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(v.trend.map((t) => t.matchId)).toEqual(v.matches.map((m) => m.matchId));
   });
 
-  it('Going into Saturday: owed 5 min or more over the season, in squad order, never the Main keeper (AC4, ruling 24)', () => {
+  it('Going into Saturday: owed 5 min or more over the season, never the Main keeper (AC4, ruling 24)', () => {
     const named = v.owed.filter((r) => r.named).map((r) => `${r.name} ${r.owed}`);
     expect(named).toEqual(['Dee 6', 'Gus 9', 'Ivy 20', 'Jo 14']);
-    expect(saturdayTile(v.owed, v.fairness)).toBe('Owed time: Dee, Gus, Ivy, Jo');
+    // #208 (overturning PO ruling Q1's squad order): the tile names the most owed first.
+    expect(saturdayTile(v.owed, v.fairness)).toBe('Owed time: Ivy, Jo, Gus, Dee');
     expect(row(v.owed, 'Ava')).toMatchObject({ mainKeeper: true, owed: null, named: false });
-    // Squad order, everyone listed.
+    // Folded in squad order, everyone listed: the tie order the table's sort keeps (#208 AC4).
     expect(v.owed.map((r) => r.name)).toEqual(players.map((p) => p.firstName));
     // (squad average − their average) × matches played, from the averages, rounded once.
     const avg = v.season.squadAverageMs as number;
@@ -187,7 +188,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(squadTiles(v)).toEqual([
       { view: 'grid', title: 'Season grid', answer: '9 matches, 8 Aug to 3 Oct' },
       { view: 'fairness', title: 'Fairness', answer: 'Everyone within 5 min a game' },
-      { view: 'saturday', title: 'Going into Saturday', answer: 'Owed time: Dee, Gus, Ivy, Jo' },
+      { view: 'saturday', title: 'Going into Saturday', answer: 'Owed time: Ivy, Jo, Gus, Dee' },
       { view: 'positions', title: 'Positions tried', answer: 'Time in GK, DEF, MID, FWD' },
     ]);
     expect(VIEW_TITLE.fairness).toBe('Fairness at a glance');
@@ -253,13 +254,14 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(back.owed.filter((r) => r.owed !== null && r.owed < 5).every((r) => !r.named)).toBe(true);
   });
 
-  it('Going into Saturday keeps the squad order the coach set, whatever the figures (AC4, AC7)', () => {
+  it('Going into Saturday folds in the squad order the coach set; the tile names the most owed first (#208)', () => {
     const order = ['Jo', 'Ivy', 'Ava', 'Gus', 'Ben', 'Hal', 'Dee', 'Cal', 'Fay', 'Eli'];
     const reordered = order.map((n) => players.find((p) => p.firstName === n)!);
     const r = squadViews(ledger, reordered);
     expect(r.owed.map((x) => x.name)).toEqual(order);
     expect(r.owed.filter((x) => x.named).map((x) => x.name)).toEqual(['Jo', 'Ivy', 'Gus', 'Dee']);
-    expect(saturdayTile(r.owed, r.fairness)).toBe('Owed time: Jo, Ivy, Gus, Dee');
+    // The squad's order no longer decides the tile: Ivy 20, Jo 14, Gus 9, Dee 6.
+    expect(saturdayTile(r.owed, r.fairness)).toBe('Owed time: Ivy, Jo, Gus, Dee');
   });
 
   it('a retired child never enters the trend or the headline (T3)', () => {
@@ -406,7 +408,9 @@ describe('a squad with no Main keeper: shared gloves, everyone counts (AC7, AC8,
 });
 
 describe('the rules that hold in every view (AC7)', () => {
-  it('keeps the squad order, never ranks, and leaves retired children out', () => {
+  // #208 overturned PO ruling Q1 ("never ranked") for these views: the folds
+  // still hand over squad order, which the table sorts keep for ties.
+  it('folds in squad order, the tie order of every table sort, and leaves retired children out', () => {
     const sq = squad();
     const ledger = ledgerOf(sq, [play(sq)]);
     const order = ['Jo', 'Gus', 'Ava', 'Ivy', 'Cal', 'Ben', 'Hal', 'Dan', 'Fin', 'Eve'];
