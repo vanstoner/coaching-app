@@ -254,3 +254,7 @@ analysis, iOS". Entries are added as each release ships.
   (#217).
   Adding squad members keeps the name box focused, so a whole squad goes in
   one name after another (#219).
+- **Heart FC Coach 1.3.0 (in progress).** Rob, 18 Oct: *"I want all the
+  stuff above built … as 1.3.0 … that's probably a version I'll draw a line
+  under and release."* Each feature adds its line here as it lands on the
+  1.3.0 branch.
