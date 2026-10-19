@@ -56,6 +56,7 @@ import type {
   UUID,
 } from '../types/index';
 import {
+  keyOf,
   latestRecords,
   makeEntry,
   sameRecord,
@@ -683,6 +684,25 @@ function appendRecords(ledger: Ledger, changed: LedgerRecord[], now: Date): Ledg
     },
     carriedOf(ledger)
   );
+}
+
+/**
+ * Append `from`'s records whose key `pick` keeps onto `into`, one entry per
+ * entry of `from` that holds any, at that entry's time, so each record's
+ * history (and its notes) comes too. Nothing kept, nothing appended.
+ */
+export function carryRecords(into: Ledger, from: Ledger, pick: (key: string) => boolean): Ledger {
+  let next = into;
+  for (const entry of from.entries) {
+    const records = entry.records.filter((r) => {
+      const key = keyOf(r);
+      return key !== null && pick(key);
+    });
+    const at = new Date(entry.at);
+    next = appendRecords(next, records, Number.isNaN(at.getTime()) ? new Date(0) : at);
+  }
+  // Older entries' times are kept on the entries; the file is written now-ish.
+  return next === into || next.writtenAt >= into.writtenAt ? next : { ...next, writtenAt: into.writtenAt };
 }
 
 /** True when this build may append to the ledger (#99 AC2, ADR-014 §10). */
@@ -1741,11 +1761,12 @@ function holdsPlayerTime(ledger: Ledger): boolean {
 }
 
 /**
- * Import a verified file (ADR-014 §9, #100 AC2). Extends, never merges:
+ * Import a verified file (ADR-014 §9, #100 AC2). Extends; a diverged chain is never merged:
  *
  * - this phone holds no player time yet: the file's chain is adopted (a new
- *   phone's own genesis and squad are not player time; the working document
- *   still holds its squad and records it again on the next save);
+ *   phone's own genesis and squad are not player time), and this phone's own
+ *   records are appended on top of it, so nothing it held is lost (#195 AC5,
+ *   #190 AC4): see `carryRecords`;
  * - this phone's chain is a prefix of the file's: the extra entries are
  *   appended verbatim;
  * - the file's chain is a prefix of this phone's: nothing new;
@@ -1762,7 +1783,21 @@ export function importLedger(ours: Ledger, file: Ledger): ImportResult {
   });
 
   if (!holdsPlayerTime(ours)) {
-    return { ok: true, ledger: file, addedEntries: file.entries.length, ...counts(file) };
+    // The file's chain is adopted, and this phone's own records ride on top
+    // of it (#195 AC5, #190 AC4): its children, fixtures, profiles, tally
+    // kinds and award types. Where the file holds the same key, the file's
+    // stands, unless this phone's latest is a noted act (a fill-in mark):
+    // that is never overwritten (invariant 5).
+    const theirs = latestRecords(file.entries);
+    const mine = latestRecords(ours.entries);
+    const next = carryRecords(file, ours, (key) => {
+      if (key === 'squad') return false;
+      const have = theirs.get(key);
+      const own = mine.get(key);
+      if (!have || !own) return true;
+      return typeof own.note === 'string' && own.note !== '' && !sameRecord(have, own);
+    });
+    return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next) };
   }
 
   const shared = Math.min(ours.entries.length, file.entries.length);
