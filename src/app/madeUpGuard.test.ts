@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid, type UUID } from '../types/index';
-import { emptyLedger, isHidden, recordMatches, visibleLedger, type Ledger } from './ledger';
+import { addAwardType, addEventType, emptyLedger, isHidden, recordMatches, visibleLedger, type Ledger } from './ledger';
 import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
 import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from './placeholderSquad';
@@ -164,5 +164,25 @@ describe('the made-up guard (approve made-up guard)', () => {
     expect(out.record).toBe('untouched');
     expect(out.ledger).toBeNull();
     expect(out.players).toEqual([]);
+  });
+
+  it("keeps the coach's tally kinds and award types when the record held only made-up data (QA 1.3.0 finding 4)", () => {
+    const team = madeUp();
+    let l = team.ledger;
+    const tally = addEventType(l, 'Headers', 'child', NOW);
+    if (!tally.ok) throw new Error(tally.reason);
+    const award = addAwardType(tally.ledger, 'Best tackle', NOW);
+    if (!award.ok) throw new Error(award.reason);
+    l = award.ledger;
+
+    const out = clearMadeUpTeam({ players: team.players, matches: team.matches, live: null, ledger: l, squadName: 'Your team', now: NOW });
+    expect(out.record).toBe('fresh');
+    // The made-up team, its matches and fixtures are gone ...
+    expect(out.ledger!.matches).toEqual([]);
+    expect(out.ledger!.players).toEqual([]);
+    expect(out.ledger!.fixtures).toEqual([]);
+    // ... and what the coach added in Settings stays.
+    expect(out.ledger!.eventTypes.map((t) => t.label)).toEqual(['Headers']);
+    expect(out.ledger!.awardTypes.map((t) => t.name)).toContain('Best tackle');
   });
 });

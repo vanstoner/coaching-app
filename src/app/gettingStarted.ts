@@ -22,7 +22,7 @@
 import type { Match, Player, UUID } from '../types/index';
 import { matchProgress } from './fixtures';
 import type { SavedMatch } from './persistence';
-import { cancelFixture, emptyLedger, isHidden, recordRemovedPlayers, setMatchKind, type Ledger } from './ledger';
+import { cancelFixture, carryRecords, emptyLedger, isHidden, recordRemovedPlayers, setMatchKind, type Ledger } from './ledger';
 import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { TEST_NAMES, TEST_OPPONENTS, addTestData } from './testKit';
 import { SEASON, addTestSeason, type TestSeasonInput } from './testSeason';
@@ -356,12 +356,15 @@ export function clearMadeUpTeam(input: ClearMadeUpInput): ClearedMadeUp {
   const onlyMadeUp =
     madeUpInRecord.length === ledger.matches.length && ledger.players.every((p) => madeUpPlayers.has(p.id));
   if (onlyMadeUp) {
-    // Nothing real in it: a new record, as Forget everything starts one.
+    // Nothing real in it: a new record, as Forget everything starts one. The
+    // tally kinds and award types the coach added are theirs, not made-up
+    // data, so they come across with their history (QA 1.3.0 finding 4).
+    const settingsWork = (key: string) => key.startsWith('event-type:') || key.startsWith('award-type:');
     return {
       players,
       matches,
       releaseLive,
-      ledger: emptyLedger(ledger.squad.id, input.squadName, input.now),
+      ledger: carryRecords(emptyLedger(ledger.squad.id, input.squadName, input.now), ledger, settingsWork),
       record: 'fresh',
       ...removed,
     };
