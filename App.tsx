@@ -188,6 +188,7 @@ import {
   offerMadeUpTeam,
   offerShowAgain,
   parseCardClosed,
+  recordedMatchCount,
   serialiseCardClosed,
   showCard,
   startSteps,
@@ -1684,7 +1685,7 @@ export default function App() {
     activePlayers: squad.length,
     onFieldCount: format.onFieldCount,
     matches: everyMatch,
-    ledgerMatches: ledger?.matches.length ?? 0,
+    ledgerMatches: recordedMatchCount(ledger),
   });
   const everyStepDone = allStepsDone(startProgress);
   const recordOnlyList = recordOnlyMatches(viewLedger, new Set(everyMatch.map((m) => m.match.id)));

@@ -103,6 +103,14 @@ export interface PhoneContents {
   ledgerMatches: number;
 }
 
+/**
+ * Matches in the record that count as played for Getting started: a voided
+ * one (the made-up team, cleared) does not (#218; QA 1.3.0 finding 7).
+ */
+export function recordedMatchCount(ledger: Pick<Ledger, 'matches'> | null): number {
+  return ledger ? ledger.matches.filter((m) => !isHidden(m)).length : 0;
+}
+
 /** True once any match has been kicked off, here or in an imported record. */
 export function anyKickedOff(matches: readonly MatchLike[], ledgerMatches: number): boolean {
   return (

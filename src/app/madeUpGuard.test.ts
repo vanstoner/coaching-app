@@ -5,6 +5,8 @@
  * Made-up first names only (invariant 4).
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid, type UUID } from '../types/index';
@@ -14,7 +16,16 @@ import type { SavedMatch } from './persistence';
 import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from './placeholderSquad';
 import { makePlayer } from './squad';
 import { sheetFromSelection, toTeamSheet } from './teamSheet';
-import { MADE_UP_CLEARED_NOTE, MADE_UP_GUARD, clearMadeUpTeam, isMadeUpTeam, loadMadeUpTeam } from './gettingStarted';
+import {
+  MADE_UP_CLEARED_NOTE,
+  MADE_UP_GUARD,
+  allStepsDone,
+  clearMadeUpTeam,
+  isMadeUpTeam,
+  loadMadeUpTeam,
+  recordedMatchCount,
+  startSteps,
+} from './gettingStarted';
 
 const NOW = new Date('2026-10-20T18:00:00Z');
 const format = makeSevenASideFormat();
@@ -184,5 +195,42 @@ describe('the made-up guard (approve made-up guard)', () => {
     // ... and what the coach added in Settings stays.
     expect(out.ledger!.eventTypes.map((t) => t.label)).toEqual(['Headers']);
     expect(out.ledger!.awardTypes.map((t) => t.name)).toContain('Best tackle');
+  });
+
+  it('after clearing on the voided path, "Press Play now" is not ticked by the voided matches (QA 1.3.0 finding 7)', () => {
+    const team = madeUp();
+    // A real child is in the record, so the made-up matches are voided, not dropped.
+    const nia = makePlayer(team.squadId, 'Nia');
+    const recorded = recordMatches(team.ledger, [], [...team.players, nia], 'Your team', NOW);
+    const out = clearMadeUpTeam({
+      players: [...team.players, nia],
+      matches: team.matches,
+      live: null,
+      ledger: recorded,
+      squadName: 'Your team',
+      now: NOW,
+    });
+    expect(out.record).toBe('voided');
+    expect(out.ledger!.matches.length).toBeGreaterThan(0); // still in the chain, voided
+    expect(recordedMatchCount(out.ledger)).toBe(0);
+    const s = startSteps({
+      activePlayers: out.players.length,
+      onFieldCount: format.onFieldCount,
+      matches: out.matches,
+      ledgerMatches: recordedMatchCount(out.ledger),
+    });
+    expect(s.find((x) => x.key === 'play')?.done).toBe(false);
+    expect(allStepsDone(s)).toBe(false);
+  });
+
+  it('a real recorded match still ticks it', () => {
+    expect(recordedMatchCount(null)).toBe(0);
+    const team = madeUp();
+    expect(recordedMatchCount(team.ledger)).toBe(team.ledger.matches.length);
+  });
+
+  it('App counts recorded matches for Getting started through recordedMatchCount', () => {
+    const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf-8');
+    expect(app).toMatch(/ledgerMatches: recordedMatchCount\(ledger\)/);
   });
 });
