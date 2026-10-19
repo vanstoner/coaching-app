@@ -187,3 +187,12 @@ export function positionLine(parts: readonly PositionMinutes[]): string {
   if (parts.length === 0) return '';
   return `${parts.map((p) => `${p.label} ${Math.round(p.ms / MIN)}`).join(' · ')} min`;
 }
+
+/**
+ * The child page's position line, from the ledger the page is showing (#196
+ * AC4). With reconstructed matches left out (#199 AC4), it is given the
+ * filtered ledger, so this figure follows the toggle like every other.
+ */
+export function childPositionLine(shown: { matches: readonly LedgerMatch[] } | null, playerId: UUID): string {
+  return positionLine(seasonPositionMinutes(shown?.matches ?? [], playerId));
+}

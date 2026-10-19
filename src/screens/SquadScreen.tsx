@@ -71,7 +71,7 @@ import {
 } from '../app/squad';
 import { wholeMinutes } from '../app/analysis';
 import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
-import { positionLine, seasonPositionMinutes } from '../app/matchRecord';
+import { childPositionLine } from '../app/matchRecord';
 import { provenances, withoutReconstructed } from '../app/provenance';
 import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
@@ -224,7 +224,7 @@ export function SquadScreen({
         views={views}
         everyone={everyone}
         onPlayers={onPlayers}
-        roleLine={positionLine(seasonPositionMinutes(ledger?.matches ?? [], child.id))}
+        roleLine={childPositionLine(shown, child.id)}
         fairness={{
           counted: isCountedInFairness(ledger, child.id),
           history: ledger ? fairnessHistory(ledger, child.id) : [],

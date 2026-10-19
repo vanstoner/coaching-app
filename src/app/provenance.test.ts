@@ -5,6 +5,8 @@
  * ledger, signed with made-up keys. Made-up first names only (invariant 4).
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
 import { uuid, type Player } from '../types/index';
@@ -18,6 +20,7 @@ import {
   type Ledger,
 } from './ledger';
 import { makeEntry, verifyChain } from './ledgerChain';
+import { childPositionLine } from './matchRecord';
 import { setEntrySigner, signerFromSecret } from './entrySigning';
 import { provenanceOf, provenanceTag, provenances, withoutReconstructed } from './provenance';
 import { makeFormat } from './shapes';
@@ -197,5 +200,24 @@ describe('the Squad list sort follows the toggle (#199 with #222)', () => {
     expect(halAvg(withoutReconstructed(both))).toBe(0);
     expect(listed(both)).toHaveLength(players.length);
     expect(listed(withoutReconstructed(both))).toEqual([...listed(withoutReconstructed(both)).filter((n) => n !== hal), hal]);
+  });
+});
+
+describe("the child page's position line follows the toggle (#199 AC4; QA 1.3.0 finding 5)", () => {
+  it('with reconstructed matches left out, minutes from them leave the line', () => {
+    const live = playLive({ kickoffAt: KICKOFF + 7 * DAY, opponent: 'Live Town' });
+    const late = playLive({ lateMs: 21 * DAY, pick: ids.slice(1, 8) });
+    const both = recordMatches(live.ledger, [{ ...late.state }], players, 'Test FC', new Date(KICKOFF + 21 * DAY));
+    const hal = players[7].id; // on the pitch only in the reconstructed match
+    expect(childPositionLine(both, hal)).not.toBe('');
+    expect(childPositionLine(withoutReconstructed(both), hal)).toBe('');
+    const bo = players[1].id; // played in both
+    expect(childPositionLine(withoutReconstructed(both), bo)).not.toBe(childPositionLine(both, bo));
+  });
+
+  it("Squad hands the child page the toggled ledger, not the whole record's matches", () => {
+    const src = readFileSync(join(__dirname, '..', 'screens', 'SquadScreen.tsx'), 'utf-8');
+    expect(src).toMatch(/roleLine=\{childPositionLine\(shown, child\.id\)\}/);
+    expect(src).not.toMatch(/ledger\?\.matches/);
   });
 });
