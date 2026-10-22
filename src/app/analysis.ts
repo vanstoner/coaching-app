@@ -27,6 +27,10 @@
  *   later version's, carried in the ledger) goes to "Other", shown only
  *   when it holds something.
  * - **The shadow** excludes the match being viewed (§9).
+ * - **Dominating format** (§6a, #223): fairness uses the matches of the
+ *   season's dominating format only, by the number on the pitch. A counted
+ *   match in another format keeps its minutes in the totals and is out of
+ *   every average; a match whose format is not recorded is never left out.
  *
  * Synthetic first names only in tests (invariant 4).
  */
@@ -198,6 +202,8 @@ export interface MatchReport {
   periodCount: number;
   /** "7-a-side", when the match's own shape is known (ADR-012). */
   formatName: string | null;
+  /** Its on-field count, keeper included, when its format is known (§6a). */
+  onField: number | null;
   score: Score;
   /** Each scorer once, most goals first. */
   scorers: { playerId: UUID; name: string; goals: number }[];
@@ -307,6 +313,7 @@ export function matchReport(
     totalMinutes: state.match.totalMinutes,
     periodCount: state.match.quarterCount,
     formatName: format?.name ?? null,
+    onField: format?.onFieldCount ?? null,
     score,
     scorers: tallies
       .filter((t) => t.goals > 0)
@@ -353,6 +360,141 @@ export function isCounted(match: Pick<LedgerMatch, 'status' | 'excluded'>): bool
   return match.status === 'completed' && !isExcluded(match);
 }
 
+// ============================================================================
+// The dominating format (ADR-015 §6a, #223)
+// ============================================================================
+
+/**
+ * A match's format: the number on the pitch, keeper included, as its
+ * structure record holds it (R1). Never its shape: 2-3-1 and 2-2-2 are both
+ * 7-a-side. Null when the record does not say (every match before 1.3.0, and
+ * one imported without it).
+ */
+export function sideOf(match: Pick<LedgerMatch, 'structure'>): number | null {
+  const n = match.structure?.onField;
+  return typeof n === 'number' && n > 0 ? n : null;
+}
+
+/** One counted match's say in the dominating format. */
+export interface SideVote {
+  /** `sideOf` the match; null does not vote (R2). */
+  side: number | null;
+  /** When it was played, in ms; NaN when not known (it then sorts after the dated ones). */
+  at: number;
+}
+
+/**
+ * The dominating format (ADR-015 §6a): the side with the most counted
+ * matches; on a tie, the side of the latest counted match whose side is known
+ * (R3). "Latest" is `seasonMatches`' order: dated matches by time, the ledger's
+ * order on a tie, then undated ones in the ledger's order. Votes come in the
+ * ledger's order. Null when no counted match has a known side: then nothing
+ * is left out (R2, and a season with no matches yet).
+ */
+export function dominantSide(votes: readonly SideVote[]): number | null {
+  const counts = new Map<number, number>();
+  for (const v of votes) if (v.side !== null) counts.set(v.side, (counts.get(v.side) ?? 0) + 1);
+  if (counts.size === 0) return null;
+  const most = Math.max(...counts.values());
+  const leaders = [...counts].filter(([, n]) => n === most).map(([side]) => side);
+  if (leaders.length === 1) return leaders[0];
+  const ordered = votes
+    .map((v, index) => ({ v, index }))
+    .sort((a, b) => {
+      const known = (t: number) => Number.isFinite(t);
+      if (known(a.v.at) && known(b.v.at)) return a.v.at - b.v.at || a.index - b.index;
+      if (known(a.v.at) !== known(b.v.at)) return known(a.v.at) ? -1 : 1;
+      return a.index - b.index;
+    });
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const side = ordered[i].v.side;
+    if (side !== null && leaders.includes(side)) return side;
+  }
+  return null;
+}
+
+/**
+ * When each match was played, in ms, as `seasonMatches` orders them: its
+ * kick-off, else its first period's start, else when the ledger first saw
+ * it. NaN when none is known.
+ */
+export function matchTimes(ledger: Ledger, kickoffs?: ReadonlyMap<UUID, string>): Map<UUID, number> {
+  const seen = firstSeen(ledger);
+  const entryAt = new Map(ledger.entries.map((e) => [e.seq, e.at]));
+  const out = new Map<UUID, number>();
+  for (const m of ledger.matches) {
+    const firstEntry = seen.get(`match:${m.id}`);
+    const iso =
+      m.kickoffAt ?? kickoffs?.get(m.id) ?? (firstEntry === undefined ? undefined : entryAt.get(firstEntry)) ?? null;
+    out.set(m.id, iso === null ? NaN : Date.parse(iso));
+  }
+  return out;
+}
+
+/**
+ * The season's dominating side, over the counted matches of the ledger given
+ * (R4: the caller passes the matches the screen shows: hidden ones and,
+ * when toggled off, reconstructed ones already removed). Worked out on every
+ * read, never stored (invariant 1).
+ */
+export function seasonSide(ledger: Ledger, kickoffs?: ReadonlyMap<UUID, string>): number | null {
+  const times = matchTimes(ledger, kickoffs);
+  return dominantSide(
+    ledger.matches.filter((m) => isCounted(m)).map((m) => ({ side: sideOf(m), at: times.get(m.id) ?? NaN }))
+  );
+}
+
+/**
+ * A counted match in another format than the dominating one: its minutes
+ * stay in the totals; it is out of every fairness figure (§6a). A match
+ * whose format is not recorded is never left out (R2).
+ */
+export function isOffFormat(match: Pick<LedgerMatch, 'status' | 'excluded' | 'structure'>, side: number | null): boolean {
+  const own = sideOf(match);
+  return isCounted(match) && side !== null && own !== null && own !== side;
+}
+
+/** In the fairness figures: counted (§6, ADR-020) and in the dominating format (§6a). */
+export function inFairness(match: Pick<LedgerMatch, 'status' | 'excluded' | 'structure'>, side: number | null): boolean {
+  return isCounted(match) && !isOffFormat(match, side);
+}
+
+const SIDE_WORDS: Record<number, string> = { 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 11: 'eleven' };
+
+/** "7-a-side". */
+export function sideName(side: number): string {
+  return `${side}-a-side`;
+}
+
+/** "five-a-side", as a count reads it: "1 five-a-side match". */
+function sideWords(side: number): string {
+  return `${SIDE_WORDS[side] ?? side}-a-side`;
+}
+
+/**
+ * The note on every screen whose figures leave matches out (§6a): "Fairness
+ * uses 7-a-side matches: 1 five-a-side match left out". Null when none is.
+ * `sides` are the left-out matches' own sides.
+ */
+export function formatNote(side: number | null, sides: readonly number[]): string | null {
+  if (side === null || sides.length === 0) return null;
+  const n = sides.length;
+  const one = sides.every((s) => s === sides[0]);
+  const what = one ? `${sideWords(sides[0])} ${n === 1 ? 'match' : 'matches'}` : `matches in other formats`;
+  return `Fairness uses ${sideName(side)} matches: ${n} ${what} left out`;
+}
+
+/**
+ * R5: a child who played only matches left out (§6a) has no fairness figure,
+ * and has played: "Played 1 five-a-side match, not in fairness".
+ */
+export function offFormatOnlyText(sides: readonly number[]): string {
+  const n = sides.length;
+  const one = n > 0 && sides.every((s) => s === sides[0]);
+  const what = one ? sideWords(sides[0]) : 'other-format';
+  return `Played ${n} ${what} ${n === 1 ? 'match' : 'matches'}, not in fairness`;
+}
+
 const KNOWN_COMPETITIONS: readonly string[] = ['league', 'cup', 'friendly', 'tournament'];
 
 /** A competition, or "other" for one this build does not know. */
@@ -392,6 +534,11 @@ export interface SeasonPlayer {
   /** ADR-015 §7. Null when no counted match attended. */
   averageMs: number | null;
   byCompetition: Record<CompetitionBucket, Bucket>;
+  /**
+   * The sides of the counted matches they attended in another format than
+   * the dominating one (§6a): in `pitchMs`, in nothing else. R5's words.
+   */
+  offFormatSides: number[];
 }
 
 export interface SeasonStats {
@@ -399,6 +546,12 @@ export interface SeasonStats {
   countedMatches: number;
   /** Counted matches whose attendance was inferred (§5): the season view says so. */
   inferredMatches: number;
+  /** The dominating format's on-field count (§6a); null when none is known. */
+  side: number | null;
+  /** The sides of the counted matches left out for their format (§6a), one per match. */
+  offFormatSides: number[];
+  /** "Fairness uses 7-a-side matches: 1 five-a-side match left out"; null when none is. */
+  formatNote: string | null;
 }
 
 export interface SeasonOptions {
@@ -435,6 +588,7 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
     missed: number;
     pitchMs: number;
     buckets: Record<CompetitionBucket, Bucket>;
+    offFormatSides: number[];
   }
   const acc = new Map<UUID, Acc>();
   const of = (id: UUID): Acc => {
@@ -444,6 +598,7 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
         attended: 0,
         missed: 0,
         pitchMs: 0,
+        offFormatSides: [],
         buckets: {
           league: emptyBucket(),
           cup: emptyBucket(),
@@ -466,6 +621,9 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
   let inferredMatches = 0;
   const timeline: SquadTimeline = { players, kickoffs: options.kickoffs };
   const seen = firstSeen(ledger);
+  // Worked out once, over every counted match: the shadow's own match too.
+  const side = seasonSide(ledger, options.kickoffs);
+  const offFormatSides: number[] = [];
 
   for (const m of ledger.matches) {
     // A match the coach left out is in neither the totals nor the averages
@@ -478,7 +636,16 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
     // Season totals: every other match's minutes (§6).
     for (const [id, ms] of pitch) of(id).pitchMs += ms;
 
-    if (!isCounted(m) || m.id === options.excludeMatchId) continue;
+    if (!isCounted(m)) continue;
+    // Another format (§6a): its minutes are in the totals above, and it is in
+    // nothing else: not attended, not missed, in no average.
+    if (isOffFormat(m, side)) {
+      const own = sideOf(m) as number;
+      offFormatSides.push(own);
+      for (const id of countedAttendance(ledger, m, timeline, seen).attended) of(id).offFormatSides.push(own);
+      continue;
+    }
+    if (m.id === options.excludeMatchId) continue;
     countedMatches++;
 
     const { inferred, attended, missed } = countedAttendance(ledger, m, timeline, seen);
@@ -515,10 +682,18 @@ export function seasonStats(ledger: Ledger, players: Player[], options: SeasonOp
       pitchMs: a.pitchMs,
       averageMs: a.attended === 0 ? null : Math.round(countedMs / a.attended),
       byCompetition,
+      offFormatSides: a.offFormatSides,
     };
   });
 
-  return { players: rows, countedMatches, inferredMatches };
+  return {
+    players: rows,
+    countedMatches,
+    inferredMatches,
+    side,
+    offFormatSides,
+    formatNote: formatNote(side, offFormatSides),
+  };
 }
 
 // ============================================================================
@@ -543,6 +718,11 @@ export interface MatchChart {
   maxMs: number;
   /** Not available at kick-off: named underneath, never a zero bar. */
   absent: string[];
+  /**
+   * §6a: why the outlines leave matches out, or why this match has none (it
+   * is in another format than the dominating one). Null when nothing is left out.
+   */
+  formatNote: string | null;
 }
 
 /**
@@ -568,7 +748,14 @@ export function matchChart(
   const season = ledger
     ? seasonStats(ledger, players, { ...options, excludeMatchId: report.matchId })
     : null;
-  const shadowOf = (id: UUID) => season?.players.find((p) => p.playerId === id)?.averageMs ?? null;
+  // §6a: a match in another format than the dominating one has no average
+  // to stand against. Its own format is the record's; a match the record
+  // does not hold yet goes by the format it is being played in.
+  const inLedger = ledger?.matches.find((m) => m.id === report.matchId);
+  const ownSide = inLedger ? sideOf(inLedger) : report.onField;
+  const offFormat = season !== null && season.side !== null && ownSide !== null && ownSide !== season.side;
+  const shadowOf = (id: UUID) =>
+    offFormat ? null : (season?.players.find((p) => p.playerId === id)?.averageMs ?? null);
 
   const rows: MatchChartRow[] = report.players.map((p) => {
     const shadowMs = shadowOf(p.playerId);
@@ -580,7 +767,7 @@ export function matchChart(
       outfieldMs: p.outfieldMs,
       shadowMs,
       label: `${p.name} ${wholeMinutes(p.totalMs)} · ${
-        shadowMs === null ? 'no average yet' : `avg ${wholeMinutes(shadowMs)}`
+        offFormat ? 'not in fairness' : shadowMs === null ? 'no average yet' : `avg ${wholeMinutes(shadowMs)}`
       }`,
     };
   });
@@ -591,5 +778,9 @@ export function matchChart(
     ...rows.map((r) => r.shadowMs ?? 0)
   );
 
-  return { rows, maxMs, absent: report.absentees.map((a) => a.name) };
+  const note =
+    offFormat && season?.side != null && ownSide !== null
+      ? `A ${sideName(ownSide)} match. Fairness uses ${sideName(season.side)} matches, so there is no average to compare it with`
+      : (season?.formatNote ?? null);
+  return { rows, maxMs, absent: report.absentees.map((a) => a.name), formatNote: note };
 }

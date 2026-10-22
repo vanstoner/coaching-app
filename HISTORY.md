@@ -333,3 +333,6 @@ analysis, iOS". Entries are added as each release ships.
     without enough players now counts the squad against its own shape, and
     the squad editor's Start plays that fixture, with its opponent, rather
     than a Play-now match from the defaults.
+  - **Fairness uses the season's main format (#223).** If a season mixes 5-
+    and 7-a-side, fairness counts the format played most; the other matches'
+    minutes stay in each child's totals, and Squad says how many are left out.

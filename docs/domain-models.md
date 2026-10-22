@@ -230,6 +230,12 @@ interface Ledger {                          // key coaching-app/ledger/v2
 
 - **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
   with a note after kick-off. Views use `isCounted`; the file summary does not.
+- **Dominating format** (ADR-015 §6a, #223): derived on every read, never
+  stored. `seasonSide` takes the on-field count (`structure.onField`) with the
+  most counted matches, latest known on a tie; `inFairness` leaves a match in
+  another format out of every average, owed time and the trend, and keeps its
+  minutes in totals. A match with no recorded format never votes and is never
+  left out.
 - **Signed** (#193, ADR-021 D4): each install has an Ed25519 key in the
   platform's secure store and publishes its public key once in a `device`
   record. Its entries carry `device` and `sig` (over the entry without `hash`

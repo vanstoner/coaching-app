@@ -96,7 +96,18 @@ interface ViewProps {
   firstTime?: { label: string; onPress: () => void } | null;
 }
 
-function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => void; children: ReactNode }) {
+function ViewFrame({
+  view,
+  onBack,
+  note = null,
+  children,
+}: {
+  view: SquadView;
+  onBack: () => void;
+  /** ADR-015 §6a (#223): how many matches the figures leave out for their format, and why. */
+  note?: string | null;
+  children: ReactNode;
+}) {
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
@@ -104,6 +115,7 @@ function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => 
           <Text style={screen.link}>Back to Squad</Text>
         </Pressable>
         <Text style={screen.title}>{VIEW_TITLE[view]}</Text>
+        {note !== null && <Text style={screen.caption}>{note}.</Text>}
         {children}
         <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={onBack}>
           <Text style={screen.buttonLabel}>Back to Squad</Text>
@@ -168,7 +180,7 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
     );
   }
   return (
-    <ViewFrame view="grid" onBack={onBack}>
+    <ViewFrame view="grid" onBack={onBack} note={views.season.formatNote}>
       <Text style={screen.caption}>Minutes on the pitch each match, oldest first</Text>
       <View style={local.grid}>
         {/* The name and "a game" columns stay put while the matches scroll. */}
@@ -268,7 +280,13 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
       <View style={local.key}>
         <KeyItem shape="mark" label="GK 12: of which in goal" />
         <Text style={local.keyWords}>Blank: not there</Text>
-        {matches.some((m) => !m.counted) && <Text style={local.keyWords}>Faded: left out of the figures</Text>}
+        {matches.some((m) => !m.counted && m.offFormat === null) && (
+          <Text style={local.keyWords}>Faded: left out of the figures</Text>
+        )}
+        {/* §6a: still the child's minutes, in their totals; only fairness leaves them out. */}
+        {matches.some((m) => m.offFormat !== null) && (
+          <Text style={local.keyWords}>Faded: another format, not in fairness</Text>
+        )}
         {matches.some((m) => m.provenance === 'reconstructed') && (
           <Text style={local.keyWords}>Italic: reconstructed, times may be approximate</Text>
         )}
@@ -312,7 +330,7 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
   }));
 
   return (
-    <ViewFrame view="fairness" onBack={onBack}>
+    <ViewFrame view="fairness" onBack={onBack} note={views.season.formatNote}>
       <View accessible accessibilityLabel={`Everyone within ${f.gap} min a game of the squad average, ${f.average}`}>
         <Text style={local.heroLine}>Everyone within</Text>
         <Text style={local.heroFigure} numberOfLines={1}>
@@ -416,7 +434,7 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
   const named = sortOwed(views.owed, TABLE_DEFAULTS.squadSaturday).filter((r) => r.named);
   const max = Math.max(1, ...views.owed.map((r) => Math.abs(r.owed ?? 0)));
   return (
-    <ViewFrame view="saturday" onBack={onBack}>
+    <ViewFrame view="saturday" onBack={onBack} note={views.season.formatNote}>
       <View style={local.owedBox}>
         {named.length > 0 ? (
           <>

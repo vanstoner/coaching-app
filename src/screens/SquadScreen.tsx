@@ -334,6 +334,10 @@ export function SquadScreen({
                   )}
                 </View>
               ))}
+            {/* ADR-015 §6a (#223): how many matches the figures leave out for their format, and why. */}
+            {players.length > 0 && season.formatNote !== null && (
+              <Text style={screen.hint}>{season.formatNote}.</Text>
+            )}
             {players.length > 1 && (
               <View style={local.headings}>
                 <SortHeading label="Name" column={NAME} align="left" style={local.headingName} {...listSort} />

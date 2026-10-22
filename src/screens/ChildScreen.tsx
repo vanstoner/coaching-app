@@ -74,7 +74,13 @@ export function ChildScreen({
     switch (lens) {
       case 'playing':
         return (
-          <PlayingTime name={name} s={s} squadAverageMs={views.season.squadAverageMs} scaleMs={views.season.scaleMs} />
+          <PlayingTime
+            name={name}
+            s={s}
+            squadAverageMs={views.season.squadAverageMs}
+            scaleMs={views.season.scaleMs}
+            formatNote={views.season.formatNote}
+          />
         );
       case 'matches':
         return s ? <MatchByMatch views={views} player={player} s={s} /> : null;
@@ -138,12 +144,26 @@ function PlayingTime({
   s,
   squadAverageMs,
   scaleMs,
+  formatNote,
 }: {
   name: string;
   s: ChildSeason | undefined;
   squadAverageMs: number | null;
   scaleMs: number;
+  /** ADR-015 §6a (#223): the matches left out for their format, and why; null when none is. */
+  formatNote: string | null;
 }) {
+  // §6a: the squad average and this child's figures use the dominating format's matches only.
+  const note = formatNote !== null ? <Text style={screen.hint}>{formatNote}.</Text> : null;
+  if (s !== undefined && s.averageMs === null && s.offFormat > 0) {
+    // R5: they have played, in the other format only. Never "No matches yet".
+    return (
+      <>
+        <Text style={[screen.caption, local.empty]}>{s.summary}.</Text>
+        {note}
+      </>
+    );
+  }
   if (s === undefined || s.averageMs === null) {
     return (
       <Text style={[screen.caption, local.empty]}>
@@ -179,6 +199,7 @@ function PlayingTime({
         <Text style={local.scaleText}>{wholeMinutes(scaleMs)} min</Text>
       </View>
       <Text style={screen.hint}>Minutes a game counts only the matches {name} played.</Text>
+      {note}
 
       <Text style={screen.fieldLabel}>By competition</Text>
       {s.competitions.map((c) => (

@@ -250,9 +250,13 @@ describe('a 5-a-side plan and match give correct fair shares (#223 AC3, AC6)', (
     }
     const v = squadViews(ledger, sq.players);
     expect(v.matches).toHaveLength(3);
-    // (43.75 + 25 + 52.5) ÷ 3 = 40.42 a game, the same for everyone.
-    expect(v.fairness?.average).toBe(40);
+    // PO ruling 19 Oct, approved 22 Oct (ADR-015 §6a): fairness uses the
+    // dominating format only. Two 7-a-side matches to one 5-a-side, so the
+    // 5-a-side match is left out: (43.75 + 52.5) ÷ 2 = 48.1 a game. This
+    // replaces the old expectation of 40, the average over all three.
+    expect(v.fairness?.average).toBe(48);
     expect(v.fairness?.gap).toBe(0);
+    expect(v.season.formatNote).toBe('Fairness uses 7-a-side matches: 1 five-a-side match left out');
     for (const r of v.owed) expect(r.owed).toBe(0);
     expect(v.owed.some((r) => r.named)).toBe(false);
     // The grid shows each match's own minutes: 44, 25, 53 (whole, as shown).
