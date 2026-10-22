@@ -329,4 +329,7 @@ analysis, iOS". Entries are added as each release ships.
     other. Lineup, "enough players", Getting started, the plan, the clock's
     sub list, the pitch and the shared plan follow the match's shape, and
     the record keeps it through a restore. 40 minutes joins the lengths (40,
-    50, 60, 75, 90), in halves of 20 or quarters of 10.
+    50, 60, 75, 90), in halves of 20 or quarters of 10. A fixture opened
+    without enough players now counts the squad against its own shape, and
+    the squad editor's Start plays that fixture, with its opponent, rather
+    than a Play-now match from the defaults.

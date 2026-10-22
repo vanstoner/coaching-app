@@ -79,6 +79,7 @@ import { forgetAppData } from './src/app/forget';
 import { createDeviceStore } from './src/app/storage';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
+import { PLAY_NOW_ROUTE, routeFormat, startOnRoute, type MatchRoute } from './src/app/matchRoute';
 import { kickoffTimes } from './src/app/attendance';
 import {
   canEndMatch,
@@ -344,6 +345,11 @@ export default function App() {
    * the same in both — see `SquadErrand`.
    */
   const [squadErrand, setSquadErrand] = useState<SquadErrand>('home');
+  /**
+   * On the match errand, which match it is for: Play now, or the fixture that
+   * was opened without enough players (#223 AC2). Read only on that errand.
+   */
+  const [matchRoute, setMatchRoute] = useState<MatchRoute>(PLAY_NOW_ROUTE);
 
   /**
    * Every match on disk: planned fixtures, played history, and the one being
@@ -978,7 +984,11 @@ export default function App() {
         state.match.status,
         squadReadiness(squad, matchFormat.onFieldCount).ready
       );
-      if (to === 'squad') setSquadErrand('match');
+      if (to === 'squad') {
+        // Squad counts against, and Start opens, THIS fixture (#223 AC2).
+        setSquadErrand('match');
+        setMatchRoute({ kind: 'fixture', matchId });
+      }
       setStep(to);
     },
     [matches, squad, format, match, releaseMatch]
@@ -1023,6 +1033,7 @@ export default function App() {
     // Not enough players yet. The squad editor, then the lineup — never the
     // fixture form, which is the thing Play now exists to skip.
     setSquadErrand('match');
+    setMatchRoute(PLAY_NOW_ROUTE);
     setStep('squad');
   }, [squad, format, beginMatch]);
 
@@ -2136,8 +2147,13 @@ export default function App() {
           kickoffs={kickoffs()}
           onPlayers={changeSquad}
           fairness={squadFairness}
-          onFieldCount={format.onFieldCount}
-          onStartMatch={forMatch ? () => beginMatch(false) : null}
+          // #223 AC2: a fixture's own shape and Start, never the defaults.
+          onFieldCount={forMatch ? routeFormat(matchRoute, match, matches, format).onFieldCount : format.onFieldCount}
+          onStartMatch={
+            forMatch
+              ? () => startOnRoute(matchRoute, { playNow: () => beginMatch(false), openFixture })
+              : null
+          }
           onLeave={forMatch ? goHome : null}
           onTryMadeUp={offerMadeUpTeam(players) ? tryMadeUpTeam : null}
           focusName={focusName}
