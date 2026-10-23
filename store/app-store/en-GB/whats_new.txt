@@ -1,11 +1,11 @@
-The biggest update since launch: subs on cue, every result, and a season you can't lose.
+The biggest update since launch: subs on cue, every result recorded, and your season backed up.
 
 SUBS ON CUE
 • The clock now lists this quarter's subs with their times. Thirty seconds before each one it rises green, turns amber, then red if you're late, and the phone buzzes once. Tap Done and the sub is made.
 • Planned subs start together at the half-period, and the plan you share with parents shows exact times.
 
 EVERY MATCH, PROPERLY RECORDED
-• Results on every played match ("W 4 – 1"), worked out from the goals. Add a goal afterwards even if you don't know the minute.
+• Results on played matches ("W 4 – 1"), worked out from the goals. Add a goal afterwards even if you don't know the minute.
 • Awards: Player of the Week, Mr Assister, or your own, with joint winners.
 • Your own tallies (saves, tackles, anything you like), each with its own button during play.
 • Each match shows how far it can be trusted: live and signed, or entered afterwards.
@@ -19,7 +19,7 @@ FAIR SHARES, AT A GLANCE
 
 YOUR SEASON, SAFE
 • Back up the whole app to one file, and restore it on a new phone: squad, preferences, fixtures and every match.
-• Importing onto a squad you've typed in matches children by name, so nobody appears twice.
+• Importing onto a squad you've typed in offers to match children by name, so the same child isn't added twice.
 
 EASIER TO START
 • First open shows a new coach three steps, or try it with a made-up team.
