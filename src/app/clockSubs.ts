@@ -330,3 +330,20 @@ export function moveSubTime(
 export function removeSub(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
   return setSubFor(clearSubTime(plan, playerId), playerId, null);
 }
+
+// ---------------------------------------------------------------------------
+// The collapsed list (#228, Dee's clutter fix 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The clock's one-line plan: the next sub still to make that is not already
+ * in a prompt, and how many more are still to make besides it ("+1 ▾"). The
+ * prompt panel above is untouched; the full list opens from this line.
+ */
+export function nextSubLine(
+  list: SubList,
+  prompted: ReadonlySet<UUID>
+): { line: SubListLine | null; more: number } {
+  const pending = list.lines.filter((l) => !l.done && !prompted.has(l.playerId));
+  return { line: pending[0] ?? null, more: Math.max(0, pending.length - 1) };
+}

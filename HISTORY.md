@@ -371,3 +371,10 @@ analysis, iOS". Entries are added as each release ships.
       opens the awards. End match asks for any award still to give, and
       "Give them later" closes the match as before. The report lists the
       awards given. Test matches have none.
+    - **Less at the top of the screen.** The clock's period, time left,
+      clock and score share one strip, the sub plan folds to its next line
+      ("+1 ▾" opens the rest), and the standing hint is gone, so the pitch
+      starts much higher. Home puts Play now and "+ Fixture" side by side.
+      The match report has the opponent and score on one line, one "Not
+      closed" or "Closed" pill, goals added later marked on their own lines,
+      and "In the record ›" at the foot.

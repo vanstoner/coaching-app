@@ -32,7 +32,7 @@ import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
-import { resultOf, scoreWithRecord } from '../app/matchRecord';
+import { recordOnlyGoals, resultOf, scoreWithRecord } from '../app/matchRecord';
 import { TALLY_CAPTION, matchTalliesWithGoals, tallyLineText } from '../app/tallies';
 import type { ProvenanceInfo } from '../app/provenance';
 import { TrustRow } from './RecordMatchScreen';
@@ -160,7 +160,9 @@ export function MatchSummaryScreen({
   const report = matchReport(engine, state, players, format);
   const [moreStats, setMoreStats] = useState(false);
   // #196 AC1: the phone's events plus any the record holds that it does not.
-  const score = scoreWithRecord(report.score, new Set((state.events ?? []).map((e) => e.id)), inLedger);
+  const phoneIds = new Set((state.events ?? []).map((e) => e.id));
+  const score = scoreWithRecord(report.score, phoneIds, inLedger);
+  const extraGoals = recordOnlyGoals(phoneIds, inLedger);
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
@@ -184,30 +186,28 @@ export function MatchSummaryScreen({
         behavior="padding"
       >
       <ScrollView ref={scroller} contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={screen.title} numberOfLines={1}>
-          {opponentLabel(state.match)}
-        </Text>
-        <Text style={screen.caption}>{details.join(' · ')}</Text>
-        {closed && <Text style={screen.caption}>Closed. It counts towards season averages.</Text>}
-        {!closed && onEndMatch && (
-          <Text style={[screen.caption, local.notClosed]}>
-            Not closed yet. Read it through, then End match at the bottom.
+        {/* #228 (Dee's clutter fix 3): opponent and score on one line, details, one status pill. */}
+        <View style={local.reportHead}>
+          <Text style={local.headName} numberOfLines={1}>
+            v {opponentLabel(state.match)}
           </Text>
+          <Text style={local.headScore} numberOfLines={1}>
+            {closed ? `${resultOf(score)} ` : ''}
+            {score.us} – {score.them}
+          </Text>
+        </View>
+        <Text style={[screen.caption, local.left]}>{details.join(' · ')}</Text>
+        {closed && (
+          <View style={[local.pill, local.pillClosed]}>
+            <Text style={local.pillClosedText}>Closed · counts towards season averages</Text>
+          </View>
         )}
-
-        <Text style={local.score}>
-          {closed ? `${resultOf(score)} ` : ''}
-          {score.us} – {score.them}
-        </Text>
-        {(score.us !== report.score.us || score.them !== report.score.them) && (
-          <Text style={screen.caption}>Includes goals added in the record with time unknown.</Text>
+        {!closed && onEndMatch && (
+          <View style={[local.pill, local.pillOpen]}>
+            <Text style={local.pillOpenText}>Not closed · End match is at the bottom ↓</Text>
+          </View>
         )}
         {closed && trust && <TrustRow trust={trust} />}
-        {inLedger && onOpenRecord && (
-          <Pressable onPress={onOpenRecord} style={screen.linkHit}>
-            <Text style={screen.link}>In the record: how it was played, positions, goals with time unknown</Text>
-          </Pressable>
-        )}
 
         <Text style={screen.fieldLabel}>Goals</Text>
         {report.scorers.length === 0 ? (
@@ -219,6 +219,14 @@ export function MatchSummaryScreen({
             </Text>
           ))
         )}
+        {/* #228: a goal added in the record with time unknown is marked on its own line. */}
+        {extraGoals
+          .filter((g) => g.kind === 'goal')
+          .map((g) => (
+            <Text key={g.id} style={local.line} numberOfLines={1}>
+              {g.playerId ? nameOf(g.playerId) : 'Scorer not recorded'} · 1 goal · time unknown, from the record
+            </Text>
+          ))}
 
         {/* #198: an assist is core, so it sits with the goals. */}
         {report.play.some((p) => p.assists > 0) && (
@@ -233,6 +241,13 @@ export function MatchSummaryScreen({
 
         <Text style={screen.fieldLabel}>In goal</Text>
         <Text style={local.line}>{report.conceded} conceded</Text>
+        {extraGoals
+          .filter((g) => g.kind === 'conceded')
+          .map((g) => (
+            <Text key={g.id} style={local.lineFaint} numberOfLines={1}>
+              1 conceded · time unknown, from the record
+            </Text>
+          ))}
         {report.keepers
           .filter((k) => k.conceded > 0)
           .map((k) => (
@@ -473,6 +488,12 @@ export function MatchSummaryScreen({
           </>
         )}
 
+        {/* #228: the record's link moved to the foot, shortened. */}
+        {inLedger && onOpenRecord && (
+          <Pressable onPress={onOpenRecord} style={screen.linkHit} accessibilityRole="link">
+            <Text style={screen.link}>In the record ›</Text>
+          </Pressable>
+        )}
         {onAnalysis && (
           <Pressable
             style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
@@ -585,15 +606,6 @@ function NoteActions({
 }
 
 const local = StyleSheet.create({
-  score: {
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    color: colours.ink,
-    fontSize: 40,
-    fontWeight: '700',
-    includeFontPadding: false,
-    marginTop: 4,
-  },
   line: { alignSelf: 'stretch', color: colours.ink, fontSize: 16, paddingVertical: 3, includeFontPadding: false },
   lineFaint: {
     alignSelf: 'stretch',
@@ -626,7 +638,15 @@ const local = StyleSheet.create({
     paddingRight: 4,
   },
   faint: { color: colours.inkFaint },
-  notClosed: { color: colours.warn },
+  reportHead: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  headName: { flex: 1, color: colours.ink, fontSize: 24, fontWeight: '700', includeFontPadding: false },
+  headScore: { flexShrink: 0, marginLeft: 10, color: colours.ink, fontSize: 30, fontWeight: '700', includeFontPadding: false },
+  left: { alignSelf: 'stretch', textAlign: 'left' },
+  pill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  pillOpen: { backgroundColor: '#3b2f12' },
+  pillOpenText: { color: colours.warn, fontSize: 13, includeFontPadding: false },
+  pillClosed: { borderWidth: 1, borderColor: colours.line },
+  pillClosedText: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
   panel: { alignSelf: 'stretch', marginTop: 8 },
   noteActions: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 12 },
   // Same margin and height on both, so they line up; the gap is on Cancel.

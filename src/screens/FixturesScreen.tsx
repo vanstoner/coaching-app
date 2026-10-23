@@ -137,30 +137,36 @@ export function FixturesScreen({
             start one come next, so they never scroll away as Played grows. */}
         <Section title="Now" rows={current} {...cardProps} />
 
-        {onPlayNow && (
+        {/* #228 (Dee's clutter fix 2): Play now and + Fixture side by side; the hint went. */}
+        <View style={local.startRow}>
+          {onPlayNow && (
+            <Pressable
+              style={({ pressed }) => [
+                screen.button,
+                local.startButton,
+                local.startGap,
+                highlightPlayNow && local.playNowHighlight,
+                pressed && screen.buttonPressed,
+              ]}
+              onPress={onPlayNow}
+              accessibilityRole="button"
+            >
+              <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
+                Play now
+              </Text>
+            </Pressable>
+          )}
           <Pressable
-            style={({ pressed }) => [
-              screen.button,
-              highlightPlayNow && local.playNowHighlight,
-              pressed && screen.buttonPressed,
-            ]}
-            onPress={onPlayNow}
+            style={({ pressed }) => [screen.buttonQuiet, local.startButton, pressed && screen.buttonPressed]}
+            onPress={onAdd}
+            accessibilityRole="button"
+            accessibilityLabel="Add a fixture"
           >
-            <Text style={screen.buttonLabel}>Play now</Text>
+            <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
+              + Fixture
+            </Text>
           </Pressable>
-        )}
-        {onPlayNow && (
-          <Text style={screen.hint}>
-            An unplanned kickabout, using your defaults. No form to fill in.
-          </Text>
-        )}
-
-        <Pressable
-          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-          onPress={onAdd}
-        >
-          <Text style={screen.buttonLabel}>Add a fixture</Text>
-        </Pressable>
+        </View>
 
         {rows.length === 0 && recordOnly.length === 0 ? (
           housekeeping.archivedCount > 0 ? (
@@ -435,6 +441,10 @@ function FixtureCard({
 }
 
 const local = StyleSheet.create({
+  startRow: { flexDirection: 'row', alignSelf: 'stretch', alignItems: 'stretch', marginTop: 14 },
+  startButton: { flex: 1, alignSelf: 'auto', marginTop: 0 },
+  startGap: { marginRight: 10 },
+  startLabel: { alignSelf: 'stretch', textAlign: 'center', flexShrink: 0 },
   section: { alignSelf: 'stretch' },
   emptyUnderLabel: { marginTop: 4 },
   // The same outer size as the plain button: the border takes 3 of the 15

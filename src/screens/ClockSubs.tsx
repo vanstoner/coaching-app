@@ -15,12 +15,13 @@
  * weight; fixed widths with `flexShrink: 0` for anything showing a time.
  */
 
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { UUID } from '../types/index';
 import { formatSubTime } from '../app/matchClock';
-import { subCountdown, type SubBand, type SubList } from '../app/clockSubs';
+import { nextSubLine, subCountdown, type SubBand, type SubList } from '../app/clockSubs';
 import { isPlanned, type PlannedSub } from '../app/subPlan';
 import { Chip, ChipRow } from './Chip';
 import { ActionSheet, SheetButton } from './Sheet';
@@ -247,6 +248,68 @@ export function SubPlanList({
   );
 }
 
+/**
+ * The plan collapsed to one line (#228, Dee's clutter fix 1): "Next: Zara on
+ * for Isla · 10:00", with "+1 ▾" when more are still to make. A tap on the
+ * sub opens its sheet; a tap on "▾" opens the whole list. The prompt panel
+ * above is untouched.
+ */
+export function SubPlanNext({
+  title,
+  list,
+  prompted,
+  nameOf,
+  onOpen,
+}: {
+  /** "Subs this quarter", the full list's heading. */
+  title: string;
+  list: SubList;
+  /** The subs already in a prompt panel: never repeated on this line. */
+  prompted: ReadonlySet<UUID>;
+  nameOf: (id: UUID) => string;
+  onOpen: (playerId: UUID) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { line, more } = nextSubLine(list, prompted);
+  if (list.lines.length === 0 && list.notPlanned.length === 0) return null;
+  return (
+    <View>
+      <View style={[local.line, local.nextLine]}>
+        {line ? (
+          <Pressable
+            onPress={() => onOpen(line.playerId)}
+            style={({ pressed }) => [local.nextHit, pressed && local.linePressed]}
+            accessibilityRole="button"
+          >
+            <View style={[local.dot, line.band && { backgroundColor: DOT[line.band] }]} />
+            <Text style={local.lineText} numberOfLines={1}>
+              Next: {line.text}
+            </Text>
+            {line.status !== '' && (
+              <Text style={[local.status, line.band && { color: STATUS[line.band] }]} numberOfLines={1}>
+                {line.status}
+              </Text>
+            )}
+          </Pressable>
+        ) : (
+          <Text style={[local.lineText, local.nextNone]} numberOfLines={1}>
+            {title}
+          </Text>
+        )}
+        <Pressable
+          onPress={() => setOpen((v) => !v)}
+          style={local.moreHit}
+          accessibilityRole="button"
+          accessibilityLabel={open ? `Hide ${title.toLowerCase()}` : `Show ${title.toLowerCase()}`}
+        >
+          <Text style={local.more}>{open ? '▴' : more > 0 ? `+${more} ▾` : '▾'}</Text>
+        </Pressable>
+      </View>
+      {open && <SubPlanList title={title} list={list} nameOf={nameOf} onOpen={onOpen} />}
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The sheet
 // ---------------------------------------------------------------------------
@@ -441,6 +504,12 @@ const local = StyleSheet.create({
     includeFontPadding: false,
   },
   chevron: { width: 14, flexShrink: 0, textAlign: 'right', color: colours.inkMuted, fontSize: 18, includeFontPadding: false },
+  nextLine: { paddingLeft: 0, paddingRight: 0, borderBottomWidth: 1, borderBottomColor: '#164f3c', marginTop: 4 },
+  nextHit: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: TOUCH_TARGET, paddingLeft: 12 },
+  nextNone: { paddingLeft: 12, color: colours.inkMuted },
+  // A fixed box, never sized to its text (the clipped-glyph trap).
+  moreHit: { width: 64, minHeight: TOUCH_TARGET, justifyContent: 'center', paddingRight: 8, flexShrink: 0 },
+  more: { alignSelf: 'stretch', textAlign: 'right', color: colours.inkMuted, fontSize: 14, includeFontPadding: false, flexShrink: 0 },
   notPlanned: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: 12 },
   notPlannedLabel: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginRight: 4 },
   notPlannedHit: { minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: 6 },

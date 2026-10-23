@@ -52,6 +52,7 @@ import {
   formatClock,
   msUntilNextSecond,
   periodNoun,
+  shortPeriodLabel,
 } from '../app/matchClock';
 import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
@@ -89,7 +90,7 @@ import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
 import { AwardCard } from './AwardCard';
 import { awardsLine, type AwardRow } from '../app/matchAwards';
-import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
+import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 import { UNDO_TOAST } from './subPromptColours';
 
@@ -388,33 +389,32 @@ export function ClockScreen({
       {/* #174: keeps the withdraw note above the keyboard on Android too. */}
       <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
-        <View style={local.scoreRow}>
-          <Text style={[local.team]} numberOfLines={1}>
-            {squadName || PLACEHOLDER_SQUAD_NAME}
+        {/* #228 (Dee's clutter fix 1): period, time left, clock and score in one strip. */}
+        <View style={local.strip} accessibilityLabel={`${squadName || PLACEHOLDER_SQUAD_NAME} ${score.us}, ${opponentLabel(state.match)} ${score.them}`}>
+          <View style={local.stripSide}>
+            <Text style={local.stripPeriod} numberOfLines={1}>
+              {shortPeriodLabel(view, quarter?.index ?? null, state.match.quarterCount)}
+            </Text>
+            <Text style={[local.stripSub, view.isOvertime && screen.overtime]} numberOfLines={1}>
+              {view.isMatchOver
+                ? `${formatClock(view.matchElapsedMs)} played`
+                : view.isOvertime
+                  ? `${periodNoun(state.match.quarterCount)} over`
+                  : `${formatClock(view.quarterRemainingMs)} left`}
+            </Text>
+          </View>
+          <Text style={local.clock} numberOfLines={1}>
+            {formatClock(view.quarterElapsedMs)}
           </Text>
-          <Text style={local.score}>
-            {score.us} – {score.them}
-          </Text>
-          <Text style={[local.team, local.them]} numberOfLines={1}>
-            {opponentLabel(state.match)}
-          </Text>
+          <View style={local.stripSide}>
+            <Text style={[local.stripScore, local.right]} numberOfLines={1}>
+              {score.us}–{score.them}
+            </Text>
+            <Text style={[local.stripSub, local.right]} numberOfLines={1}>
+              v {opponentLabel(state.match)}
+            </Text>
+          </View>
         </View>
-        <Text style={screen.period}>{view.quarterLabel}</Text>
-        <Text style={local.clock} numberOfLines={1} adjustsFontSizeToFit>
-          {formatClock(view.quarterElapsedMs)}
-        </Text>
-
-        {view.isMatchOver ? (
-          <Text style={screen.caption}>
-            Full time — {formatClock(view.matchElapsedMs)} played
-          </Text>
-        ) : (
-          <Text style={[screen.caption, view.isOvertime && screen.overtime]}>
-            {view.isOvertime
-              ? `${periodNoun(state.match.quarterCount)} over — end it when play stops`
-              : `${formatClock(view.quarterRemainingMs)} left in this ${noun}`}
-          </Text>
-        )}
 
         {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
         {awards && !running && !view.isMatchOver && (
@@ -465,9 +465,10 @@ export function ClockScreen({
           />
         )}
         {list && (
-          <SubPlanList
+          <SubPlanNext
             title={`Subs this ${noun}`}
             list={list}
+            prompted={new Set(prompts.flat().map((s) => s.playerId))}
             nameOf={nameOf}
             onOpen={setPlanSheetFor}
           />
@@ -475,11 +476,12 @@ export function ClockScreen({
 
         {running && (
           <>
-            <Text style={screen.hint}>
-              {selected
-                ? `Now tap where ${nameOf(selected)} goes, or tap ${nameOf(selected)} again to cancel.`
-                : 'Tap a player for Goal, Save or Move. Or drag them.'}
-            </Text>
+            {/* #228: the standing hint went (Getting started teaches it); a pick still says what next. */}
+            {selected && (
+              <Text style={screen.hint}>
+                {`Now tap where ${nameOf(selected)} goes, or tap ${nameOf(selected)} again to cancel.`}
+              </Text>
+            )}
             <PitchView
               format={format}
               sheet={sheet}
@@ -775,26 +777,32 @@ export function ClockScreen({
 }
 
 const local = StyleSheet.create({
-  scoreRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
-  team: { flex: 1, color: colours.inkMuted, fontSize: 15, fontWeight: '600', includeFontPadding: false },
-  them: { textAlign: 'right' },
-  score: {
-    color: colours.ink,
-    fontSize: 34,
-    fontWeight: '700',
-    includeFontPadding: false,
-    flexShrink: 0,
-    width: 110,
-    textAlign: 'center',
+  strip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colours.pitchRaised,
+    borderColor: colours.line,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
+  stripSide: { flex: 1 },
+  stripPeriod: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
+  stripSub: { color: colours.inkMuted, fontSize: 14, includeFontPadding: false },
+  stripScore: { color: colours.ink, fontSize: 24, fontWeight: '700', includeFontPadding: false },
+  right: { alignSelf: 'stretch', textAlign: 'right' },
   clock: {
     color: colours.ink,
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '300',
-    letterSpacing: 2,
-    width: '100%',
+    letterSpacing: 1,
+    // A fixed box, never sized to the digits it shows (the clipped-glyph trap).
+    width: 124,
     textAlign: 'center',
-    paddingHorizontal: 8,
+    includeFontPadding: false,
+    flexShrink: 0,
   },
   streamRow: {
     flexDirection: 'row',

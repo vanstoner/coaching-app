@@ -188,3 +188,14 @@ export function msUntilNextSecond(elapsedMs: number, speed = 1): number {
   const toBoundary = 1000 - (safe % 1000);
   return Math.ceil(toBoundary / Math.max(1, speed)) + REPAINT_SLACK_MS;
 }
+
+/**
+ * The strip's period, short (#228, Dee's clutter fix 1): "Q2" in quarters,
+ * "Half 1" in halves (any other count: its noun and number), "Full time" once
+ * every period has ended.
+ */
+export function shortPeriodLabel(view: Pick<ClockView, 'isMatchOver'>, index: number | null, periodCount: number): string {
+  if (view.isMatchOver || index === null) return 'Full time';
+  if (periodCount === 4) return `Q${index}`;
+  return periodCount === 1 ? periodNoun(1) : `${periodNoun(periodCount)} ${index}`;
+}

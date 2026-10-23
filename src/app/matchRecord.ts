@@ -80,6 +80,22 @@ export function scoreWithRecord(
   };
 }
 
+/**
+ * The goals and goals against the record holds that this phone did not see:
+ * entered later with time unknown (#196). The report marks each on its own
+ * line instead of a caption under the score (#228, Dee's clutter fix 3).
+ * The same events `scoreWithRecord` counts as extra.
+ */
+export function recordOnlyGoals(
+  phoneEventIds: ReadonlySet<UUID>,
+  recorded: Pick<LedgerMatch, 'events'> | undefined
+): { id: UUID; kind: 'goal' | 'conceded'; playerId: UUID | null }[] {
+  if (!recorded?.events) return [];
+  return standingEvents(recorded.events)
+    .filter((e) => !phoneEventIds.has(e.id) && (e.kind === 'goal' || e.kind === 'conceded'))
+    .map((e) => ({ id: e.id as UUID, kind: e.kind as 'goal' | 'conceded', playerId: (e.playerId as UUID | null) ?? null }));
+}
+
 // --- structure (AC3) ---------------------------------------------------------
 
 export interface Structure {
