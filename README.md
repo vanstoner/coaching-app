@@ -39,6 +39,13 @@ request; `store-listing.yml`, run by hand from `main` and approved in the
 `app-store` environment, sends it to App Store Connect and reads it back. The
 privacy policy is [PRIVACY.md](PRIVACY.md).
 
+`whats_new.txt` is the App Store's "What's New in This Version", plain text
+for a coach. Every version bump rewrites it (`version-impact.yml` refuses one
+that leaves it unchanged). A merge that bumps the version, once Rob approves
+its `testflight.yml` run, uploads the build to TestFlight, sends the listing
+text and What's New, and submits that version for review set to release
+automatically when Apple approves it ([#226](https://github.com/vanstoner/coaching-app/issues/226)).
+
 The screenshots in `store/app-store/screenshots/` (iPhone 6.9" and iPad 13")
 are made by `store-media.yml`, run by hand, from a build that opens with the
 made-up season; the same listing run uploads them.
