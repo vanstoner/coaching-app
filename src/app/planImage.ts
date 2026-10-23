@@ -28,6 +28,7 @@
  */
 
 import type { Format, Match, Player, PositionUnit, UUID } from '../types/index';
+import type { Distribution } from './distribution';
 import { opponentLabel } from './fixtures';
 import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
@@ -38,6 +39,20 @@ export type PlanImageLayout = 'grid' | 'row';
 
 /** The PNG's width in pixels, not the phone's screen width (#165 ruling). */
 export const PLAN_IMAGE_WIDTH: Record<PlanImageLayout, number> = { grid: 1200, row: 1600 };
+
+/**
+ * What Share plan does first (#165, #226). Quarters ask "2 × 2 or four in a
+ * row"; halves sit side by side either way, so they go straight to the grid.
+ *
+ * The `store` build (screenshots only, simulator only, ADR-017) goes straight
+ * to the 2 × 2 as well: the question is an ActionSheet, a Modal whose buttons
+ * Maestro cannot find on iOS, and shot 03-plan is that 2 × 2. Every coach's
+ * build (`app`, `beta`, `demo`) asks as before.
+ */
+export function shareFirstStep(periodCount: number, distribution: Distribution): 'ask' | 'grid' {
+  if (distribution === 'store') return 'grid';
+  return periodCount === 4 ? 'ask' : 'grid';
+}
 
 export const PLAN_IMAGE_FOOTER = 'The plan, not a promise: it can change on the day.';
 

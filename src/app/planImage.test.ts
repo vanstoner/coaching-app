@@ -19,8 +19,10 @@ import {
   lengthLine,
   minutesLabel,
   planImage,
+  shareFirstStep,
   subLine,
 } from './planImage';
+import type { Distribution } from './distribution';
 
 const MIN = 60_000;
 const NAMES = ['Ava', 'Ben', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo'];
@@ -325,5 +327,23 @@ describe('the header', () => {
 
   it('the footer is the agreed sentence', () => {
     expect(PLAN_IMAGE_FOOTER).toBe('The plan, not a promise: it can change on the day.');
+  });
+});
+
+describe('Share plan: what it does first (#165, #226)', () => {
+  it('every coach\'s build asks 2 × 2 or four in a row for quarters', () => {
+    for (const d of ['app', 'beta', 'demo'] as Distribution[]) {
+      expect(shareFirstStep(4, d)).toBe('ask');
+    }
+  });
+
+  it('halves go straight to the grid in every build', () => {
+    for (const d of ['app', 'beta', 'demo', 'store'] as Distribution[]) {
+      expect(shareFirstStep(2, d)).toBe('grid');
+    }
+  });
+
+  it('only the store build skips the question, for screenshot 03-plan', () => {
+    expect(shareFirstStep(4, 'store')).toBe('grid');
   });
 });

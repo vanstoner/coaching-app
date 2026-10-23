@@ -35,13 +35,14 @@
 # - A relaunch without clearState may open on Resume or straight on Home
 #   (the iPad opened on Home). The flow handles both (`to Home` below).
 #
-# A fixture card is one accessible element ("Mock Albion, Sat 24 Oct ·
-# 10:00, 50 min · Quarters, Edit the plan, Remove"). Its links are not
-# separate elements, and a tap lands on the card's centre, which is the
-# "Edit the plan" / "Plan this match" link (card 174 pt: 12 padding, 61 of
-# text, then the 44 pt link at 73-117). That is right for 03-plan. For
-# 07-five the card's top must be tapped. Taps by position depend on the
-# display, so store-media.yml passes DEVICE (iphone or ipad).
+# A fixture card's lines are one accessible element, "Open Mock Albion,
+# Sat 24 Oct · 10:00, 50 min · Quarters", and each of its links is its own
+# ("Edit the plan", "Plan this match", "Remove"), since ws-130-hooks (#226).
+# So 07-five and 03-plan tap by label, never by point. The store build asks
+# nothing on Share plan: it makes the 2 × 2 at once (shareFirstStep), so
+# 03-plan needs no tap in the ActionSheet Maestro cannot see on iOS.
+# store-media.yml still passes DEVICE (iphone or ipad), for the plan's
+# edge swipe only.
 appId: com.vanstoner.coachingapp
 env:
   # Resume screen (ResumeScreen.tsx)
@@ -63,8 +64,9 @@ env:
   BACK_FROM_CHILD: "Back to.*"
   # Home's fixtures: a played match, the 5-a-side card, the planned match
   PLAYED_MATCH: ".*Trial Town.*"
-  FIVE_A_SIDE_CARD: "Practice Park, .*Plan this match.*"
-  PLANNED_CARD: "Mock Albion, .*Edit the plan.*"
+  FIVE_A_SIDE_CARD: "Open Practice Park, .*"
+  PLANNED_CARD: "Open Mock Albion, .*"
+  EDIT_PLAN: "Edit the plan"
   # The line-up (LineupScreen.tsx) and the plan (PlanScreen.tsx)
   LINEUP: "On the pitch"
   PLAN_STARTING: "Starting"
@@ -142,8 +144,8 @@ env:
 - takeScreenshot: 04-report
 
 # 07-five: the Practice Park card under Coming up opens the 1-2-1 + GK
-# line-up. A relaunch puts Home back at the top, where the card's top sits
-# at a known point; its centre would be "Plan this match".
+# line-up. Its lines are tapped by their label, "Open Practice Park, …";
+# "Plan this match" is a separate element below them.
 - launchApp:
     stopApp: true
 - extendedWaitUntil:
@@ -157,24 +159,7 @@ env:
 - extendedWaitUntil:
     visible: ${FIVE_A_SIDE_CARD}
     timeout: 20000
-# The card's top lines, per display (logical 440x956 and 1032x1376). iPad:
-# the card is [234,613][798,787] in run 40001608860, so 46% is 633, 20 pt in.
-# iPhone, worked out from that: the clock strip starts 30 pt lower than on the
-# iPad (76 against 46 in the same run), and the made-up-team line keeps its
-# 44 pt height on two lines, so the card is about [643,817]. 71% is 679,
-# 36 pt in. The "Plan this match" link starts 73 pt in.
-- runFlow:
-    when:
-      true: ${DEVICE == "ipad"}
-    commands:
-      - tapOn:
-          point: "50%,46%"
-- runFlow:
-    when:
-      true: ${DEVICE != "ipad"}
-    commands:
-      - tapOn:
-          point: "50%,71%"
+- tapOn: ${FIVE_A_SIDE_CARD}
 - extendedWaitUntil:
     visible: ${LINEUP}
     timeout: 10000
@@ -244,12 +229,11 @@ env:
 
 # --- launch 2: 03-plan, last --------------------------------------------------
 # A fresh seed (the forgotten season is back). Home, then the Mock Albion
-# card: its centre is "Edit the plan" (only Mock Albion has a plan). Share
-# plan is below the plan's pitches, reached by swiping down the screen's edge,
-# never from the centre, where a pill would take the gesture.
-# The share choice ("2 × 2, best on a phone") is in an ActionSheet, a Modal
-# whose buttons Maestro cannot find on iOS (run 9), so it is tapped at
-# a point worked out from Sheet.tsx and each device's bottom inset.
+# card's "Edit the plan" link (only Mock Albion has a plan, so the label is
+# unique). Share plan is below the plan's pitches, reached by swiping down
+# the screen's edge, never from the centre, where a pill would take the
+# gesture. In the store build Share plan makes the 2 × 2 at once: no
+# ActionSheet, whose buttons Maestro cannot find on iOS (run 9).
 - launchApp:
     clearState: true
 - extendedWaitUntil:
@@ -263,7 +247,7 @@ env:
 - extendedWaitUntil:
     visible: ${PLANNED_CARD}
     timeout: 20000
-- tapOn: ${PLANNED_CARD}
+- tapOn: ${EDIT_PLAN}
 - extendedWaitUntil:
     visible: ${PLAN_STARTING}
     timeout: 10000
@@ -291,22 +275,6 @@ env:
                 end: 2%,35%
                 duration: 700
 - tapOn: ${SHARE_PLAN}
-- waitForAnimationToEnd:
-    timeout: 3000
-# "2 x 2": iPad 1164-1216 of 1376 (86% is 1183), iPhone 730-782 of 956
-# (79% is 755), from Sheet.tsx over a 20 or 34 pt bottom inset.
-- runFlow:
-    when:
-      true: ${DEVICE == "ipad"}
-    commands:
-      - tapOn:
-          point: "50%,86%"
-- runFlow:
-    when:
-      true: ${DEVICE != "ipad"}
-    commands:
-      - tapOn:
-          point: "50%,79%"
 # The share sheet is up once the PNG is written; give it a moment.
 - extendedWaitUntil:
     visible: "__never__"
