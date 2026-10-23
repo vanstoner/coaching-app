@@ -170,6 +170,8 @@ export function ClockScreen({
    */
   awards?: {
     rows: AwardRow[];
+    /** Every period ended and not closed (`awardCardAtFullTime`): the card shows under the strip. */
+    atFullTime: boolean;
     childrenInMatch: { playerId: UUID; name: string }[];
     onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
@@ -236,6 +238,8 @@ export function ClockScreen({
   const [awardFor, setAwardFor] = useState<UUID | null>(null);
   /** #228: the award card under the clock at a break between periods. */
   const [awardsOpen, setAwardsOpen] = useState(false);
+  /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
+  const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
   /** #180: when the period ended, asked only when End comes past the margin. */
   const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
@@ -415,6 +419,21 @@ export function ClockScreen({
             </Text>
           </View>
         </View>
+
+        {/* #228 (PO ruling `both`): at full time the award card sits under the strip. */}
+        {awards?.atFullTime && !fullTimeAwardsHidden && (
+          <AwardCard
+            rows={awards.rows}
+            childrenInMatch={awards.childrenInMatch}
+            onGive={awards.onGive}
+            onTakeBack={awards.onTakeBack}
+            footer={
+              <Pressable onPress={() => setFullTimeAwardsHidden(true)} style={screen.linkHit} accessibilityRole="button">
+                <Text style={screen.link}>Give them later</Text>
+              </Pressable>
+            }
+          />
+        )}
 
         {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
         {awards && !running && !view.isMatchOver && (

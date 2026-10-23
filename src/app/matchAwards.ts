@@ -76,6 +76,17 @@ export function awardPromptDue(ledger: Ledger | null, state: LiveMatchLike): boo
   return awardRows(ledger, state.match.id, () => '').some((r) => r.winners.length === 0);
 }
 
+/**
+ * Whether the clock shows the award card at full time (PO ruling `both`,
+ * 23 Oct, on #228): as soon as every period has ended and until the match is
+ * closed, whenever awards are offered. It shows awards already given, so it
+ * comes whether or not every award has a winner; End match still asks only
+ * while one has none (`awardPromptDue`).
+ */
+export function awardCardAtFullTime(ledger: Ledger | null, state: LiveMatchLike): boolean {
+  return canEndMatch(state) && awardsOffered(ledger, state);
+}
+
 /** The children an award can go to: everyone who took part in this match, in squad order. */
 export function childrenInMatch(
   players: readonly { id: UUID; firstName: string }[],

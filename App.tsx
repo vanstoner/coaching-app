@@ -159,7 +159,7 @@ import {
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
-import { awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
+import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
 import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -1326,6 +1326,7 @@ export default function App() {
       rows: awardRows(l, id, nameOfChild),
       childrenInMatch: childrenInMatch(players, match.state.appearances),
       due: awardPromptDue(l, match.state),
+      atFullTime: awardCardAtFullTime(l, match.state),
       onGive: (typeId: UUID, playerId: UUID, note: string) =>
         act((cur) => giveAward(cur, id, typeId, playerId, note, appNow())),
       onTakeBack: (typeId: UUID, playerId: UUID, note: string) =>

@@ -370,7 +370,9 @@ analysis, iOS". Entries are added as each release ships.
       player and "Give Maya an award ›"; at a break, "Awards: 1 of 2 given ›"
       opens the awards. End match asks for any award still to give, and
       "Give them later" closes the match as before. The report lists the
-      awards given. Test matches have none.
+      awards given. Test matches have none. At full time the clock shows the
+      award card straight away, with "Give them later"; End match still asks
+      while an award has no winner (Rob's ruling `both`).
     - **Less at the top of the screen.** The clock's period, time left,
       clock and score share one strip, the sub plan folds to its next line
       ("+1 ▾" opens the rest), and the standing hint is gone, so the pitch
