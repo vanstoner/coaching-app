@@ -148,6 +148,16 @@ export function startSteps(phone: PhoneContents): StartStep[] {
   ];
 }
 
+/** How many of the steps are done (#228: the one-line progress bar). */
+export function stepsDone(steps: readonly StartStep[]): number {
+  return steps.filter((s) => s.done).length;
+}
+
+/** "1 of 3", beside the bar on Home's one line (#228, Dee's clutter fix 2). */
+export function progressLabel(steps: readonly StartStep[]): string {
+  return `${stepsDone(steps)} of ${steps.length}`;
+}
+
 export function allStepsDone(steps: readonly StartStep[]): boolean {
   return steps.every((s) => s.done);
 }

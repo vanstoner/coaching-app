@@ -178,7 +178,7 @@ import {
 import { ResumeScreen } from './src/screens/ResumeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TestKitSection } from './src/screens/TestKitSection';
-import { GettingStartedCard, MadeUpBanner, Toast } from './src/screens/GettingStarted';
+import { GettingStartedLine, MadeUpBanner, Toast } from './src/screens/GettingStarted';
 import {
   FORGOTTEN_TOAST,
   GETTING_STARTED_KEY,
@@ -2393,7 +2393,7 @@ export default function App() {
           <>
             {isMadeUpTeam(players, everyMatch) && <MadeUpBanner onSettings={() => goToTab('settings')} />}
             {showCard(cardClosed, startProgress) && (
-              <GettingStartedCard
+              <GettingStartedLine
                 steps={startProgress}
                 onStep={onStartStep}
                 onClose={closeCard}

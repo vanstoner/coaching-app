@@ -376,7 +376,9 @@ analysis, iOS". Entries are added as each release ships.
     - **Less at the top of the screen.** The clock's period, time left,
       clock and score share one strip, the sub plan folds to its next line
       ("+1 ▾" opens the rest), and the standing hint is gone, so the pitch
-      starts much higher. Home puts Play now and "+ Fixture" side by side.
+      starts much higher. On Home, Getting started is one line with a
+      progress bar ("1 of 3 ›", its steps a tap away), and Play now and
+      "+ Fixture" sit side by side.
       The match report has the opponent and score on one line, one "Not
       closed" or "Closed" pill, goals added later marked on their own lines,
       and "In the record ›" at the foot.

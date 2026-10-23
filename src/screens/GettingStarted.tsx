@@ -2,7 +2,8 @@
  * First open — #218. What a new coach sees, drawn from the rules in
  * `src/app/gettingStarted.ts`, as the approved prototype draws it:
  *
- * - the Getting started card on Home (AC1, AC2, AC4);
+ * - Getting started on Home: one line with a progress bar, its steps in a
+ *   sheet (#228, superseding AC4's full card on a fresh Home);
  * - the dashed box an empty screen gets where nothing has happened yet (AC3);
  * - the yellow line while the made-up team is on the phone (Q6);
  * - the message at the foot of the screen, with Undo after closing the card.
@@ -13,7 +14,9 @@
  */
 
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { ActionSheet } from './Sheet';
 import { Text } from './Text';
 
 import {
@@ -23,12 +26,25 @@ import {
   PURPOSE_LINE,
   TRY_HINT,
   TRY_MADE_UP_TEAM,
+  progressLabel,
+  stepsDone,
   type StartStep,
   type StepKey,
 } from '../app/gettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
-export function GettingStartedCard({
+/** Dee's one-line Getting started: dark ink on a pale green, as in her prototype. */
+const LINE_BG = '#e9f5ef';
+const LINE_INK = '#14231d';
+const LINE_TRACK = '#cfe3d8';
+
+/**
+ * #228 (Dee's clutter fix 2, PO ruling `both`, 23 Oct): Getting started on
+ * Home is one line with a progress bar, "Getting started ▬▬ 1 of 3 ›". A tap
+ * opens the purpose line and the three steps in a sheet; the close icon still
+ * closes it (Q4). This supersedes #218 AC4's full card on a fresh Home.
+ */
+export function GettingStartedLine({
   steps,
   onStep,
   onClose,
@@ -40,52 +56,78 @@ export function GettingStartedCard({
   /** Q5: only while the squad is empty; null hides it. */
   onTry: (() => void) | null;
 }) {
+  const [open, setOpen] = useState(false);
+  const done = stepsDone(steps);
   return (
-    <View style={local.card} accessibilityLabel={CARD_TITLE}>
-      <View style={local.head}>
-        <Text style={local.label}>{CARD_TITLE}</Text>
+    <>
+      <View style={local.line}>
+        <Pressable
+          onPress={() => setOpen(true)}
+          style={({ pressed }) => [local.lineHit, pressed && screen.buttonPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`${CARD_TITLE}, ${progressLabel(steps)} steps done. Open the steps.`}
+        >
+          <Text style={local.lineTitle} numberOfLines={1}>
+            {CARD_TITLE}
+          </Text>
+          <View style={local.bar}>
+            <View style={[local.barFill, { flex: done }]} />
+            <View style={{ flex: steps.length - done }} />
+          </View>
+          <Text style={local.lineCount} numberOfLines={1}>
+            {progressLabel(steps)} ›
+          </Text>
+        </Pressable>
         <Pressable
           onPress={onClose}
-          style={local.close}
+          style={local.lineClose}
           accessibilityRole="button"
           accessibilityLabel="Close Getting started"
         >
-          <MaterialCommunityIcons name="close" size={24} color={colours.inkMuted} />
+          <MaterialCommunityIcons name="close" size={20} color={LINE_INK} />
         </Pressable>
       </View>
-      <Text style={local.purpose}>{PURPOSE_LINE}</Text>
-      <Text style={local.sub}>{CARD_SUBTITLE}</Text>
-      {steps.map((s) => (
-        <Pressable
-          key={s.key}
-          onPress={() => onStep(s.key)}
-          style={({ pressed }) => [local.step, pressed && screen.buttonPressed]}
-          accessibilityRole="button"
-          accessibilityLabel={`${s.name}, ${s.done ? 'done' : 'not done yet'}. ${s.detail}`}
-        >
-          <View style={[local.tick, s.done && local.tickDone]}>
-            {s.done && <MaterialCommunityIcons name="check-bold" size={16} color={colours.ink} />}
-          </View>
-          <View style={local.stepText}>
-            {/* Colour only when done: a weight change re-measures and clips. */}
-            <Text style={[local.stepName, s.done && local.stepNameDone]}>{s.name}</Text>
-            <Text style={local.stepDetail}>{s.detail}</Text>
-          </View>
-          <Text style={local.chevron}>›</Text>
-        </Pressable>
-      ))}
-      {onTry && (
-        <>
+      <ActionSheet visible={open} title={CARD_TITLE} onClose={() => setOpen(false)} closeLabel="Close">
+        <Text style={local.purpose}>{PURPOSE_LINE}</Text>
+        <Text style={local.sub}>{CARD_SUBTITLE}</Text>
+        {steps.map((s) => (
           <Pressable
-            onPress={onTry}
-            style={({ pressed }) => [screen.buttonQuiet, local.smallButton, pressed && screen.buttonPressed]}
+            key={s.key}
+            onPress={() => {
+              setOpen(false);
+              onStep(s.key);
+            }}
+            style={({ pressed }) => [local.step, pressed && screen.buttonPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`${s.name}, ${s.done ? 'done' : 'not done yet'}. ${s.detail}`}
           >
-            <Text style={local.smallButtonLabel}>{TRY_MADE_UP_TEAM}</Text>
+            <View style={[local.tick, s.done && local.tickDone]}>
+              {s.done && <MaterialCommunityIcons name="check-bold" size={16} color={colours.ink} />}
+            </View>
+            <View style={local.stepText}>
+              {/* Colour only when done: a weight change re-measures and clips. */}
+              <Text style={[local.stepName, s.done && local.stepNameDone]}>{s.name}</Text>
+              <Text style={local.stepDetail}>{s.detail}</Text>
+            </View>
+            <Text style={local.chevron}>›</Text>
           </Pressable>
-          <Text style={screen.hint}>{TRY_HINT}</Text>
-        </>
-      )}
-    </View>
+        ))}
+        {onTry && (
+          <>
+            <Pressable
+              onPress={() => {
+                setOpen(false);
+                onTry();
+              }}
+              style={({ pressed }) => [screen.buttonQuiet, local.smallButton, pressed && screen.buttonPressed]}
+            >
+              <Text style={local.smallButtonLabel}>{TRY_MADE_UP_TEAM}</Text>
+            </Pressable>
+            <Text style={screen.hint}>{TRY_HINT}</Text>
+          </>
+        )}
+      </ActionSheet>
+    </>
   );
 }
 
@@ -141,33 +183,30 @@ export function Toast({ text, onUndo }: { text: string; onUndo?: (() => void) | 
 }
 
 const local = StyleSheet.create({
-  card: {
-    alignSelf: 'stretch',
-    backgroundColor: colours.pitchRaised,
-    borderColor: colours.accent,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingTop: 2,
-    paddingBottom: 14,
-    marginTop: 10,
-    marginBottom: 2,
-  },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  label: {
-    color: colours.inkMuted,
-    fontSize: 13,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    includeFontPadding: false,
-  },
-  close: {
-    width: TOUCH_TARGET,
-    height: TOUCH_TARGET,
+  line: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -10,
+    alignSelf: 'stretch',
+    backgroundColor: LINE_BG,
+    borderRadius: 12,
+    marginTop: 8,
+    minHeight: TOUCH_TARGET,
   },
+  lineHit: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: TOUCH_TARGET, paddingLeft: 12 },
+  lineTitle: { color: LINE_INK, fontSize: 15, fontWeight: '700', includeFontPadding: false, flexShrink: 0 },
+  bar: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: LINE_TRACK,
+    marginHorizontal: 10,
+  },
+  barFill: { backgroundColor: colours.accent },
+  // A fixed box, never sized to its text (the clipped-glyph trap).
+  lineCount: { width: 64, textAlign: 'right', color: LINE_INK, fontSize: 15, includeFontPadding: false, flexShrink: 0 },
+  lineClose: { width: TOUCH_TARGET, height: TOUCH_TARGET, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   purpose: {
     alignSelf: 'stretch',
     color: colours.ink,
