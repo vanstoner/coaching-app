@@ -361,7 +361,9 @@ export function SquadScreen({
                     <Text style={screen.playerName} numberOfLines={1}>
                       {displayName(p)}
                     </Text>
-                    <Text style={local.figures} numberOfLines={1}>
+                    {/* Two lines (#223 QA N2): the R5 line "Played 1 five-a-side
+                        match, not in fairness" lost its tail on a narrow phone. */}
+                    <Text style={local.figures} numberOfLines={2}>
                       {figures}
                     </Text>
                     {s && s.averageMs !== null && (
