@@ -1298,7 +1298,20 @@ export function correctStructure(
 
 const TALLY_LABEL_MAX = 20;
 /** Built-in kinds' words, so a new kind cannot be confused with one (#198 AC1). */
-const BUILT_IN_WORDS = ['goal', 'assist', 'conceded', 'save', 'tackle', 'corner won', 'free kick won', 'shot on target'];
+const BUILT_IN_WORDS = [
+  'goal',
+  'assist',
+  'conceded',
+  'save',
+  'tackle',
+  // #228 AC6: the short labels and the old words are both taken.
+  'shot',
+  'corner',
+  'free kick',
+  'corner won',
+  'free kick won',
+  'shot on target',
+];
 
 /**
  * Settings › Tallies: a new kind of coach's tally, without a release (#198

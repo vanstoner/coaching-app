@@ -349,3 +349,9 @@ analysis, iOS". Entries are added as each release ships.
     the chosen name and Done were brown on dark brown (2.67:1); they are now
     amber on dark brown (7.9:1). Every word of the prompt, in green, amber
     and red, reads at 4.5:1 or better, and a test checks it.
+  - **Beta tidy-up (#228).** Rob, 23 Oct: *"Nearly there."*
+    - **Shorter labels.** The tap sheet's "Shot on target", "Corner won" and
+      "Free kick won" read **Shot**, **Corner** and **Free kick**, and so do
+      the time stream, Undo, More stats and Settings › Tallies. Only the
+      words changed: the record's kinds are the same, and a shot still means
+      on target.

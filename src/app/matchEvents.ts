@@ -101,13 +101,17 @@ export function talliesOf(events: MatchEvent[] | undefined): PlayerTally[] {
   return [...rows.values()].map((r) => ({ ...r, shotsOnTarget: r.shotsOnTarget + r.goals }));
 }
 
-/** The word under each picture button (#185 AC1). */
+/**
+ * The word under each picture button (#185 AC1). #228 item 3: the words are
+ * short so they never truncate; the kinds (`shot_on_target`, `corner`,
+ * `free_kick`) are unchanged, and "Shot" still means on target (Q1).
+ */
 export const TAP_LABEL: Record<TapEventKind, string> = {
   goal: 'Goal',
-  shot_on_target: 'Shot on target',
+  shot_on_target: 'Shot',
   tackle: 'Tackle',
-  corner: 'Corner won',
-  free_kick: 'Free kick won',
+  corner: 'Corner',
+  free_kick: 'Free kick',
   save: 'Save',
   conceded: 'Conceded',
 };
@@ -247,13 +251,13 @@ function eventText(e: MatchEvent, events: MatchEvent[], name: (id: UUID | null) 
     case 'conceded':
       return `Conceded (${name(e.playerId)} in goal)`;
     case 'shot_on_target':
-      return `Shot on target: ${name(e.playerId)}`;
+      return `${TAP_LABEL.shot_on_target}: ${name(e.playerId)}`;
     case 'tackle':
       return `Tackle: ${name(e.playerId)}`;
     case 'corner':
-      return `Corner won: ${name(e.playerId)}`;
+      return `${TAP_LABEL.corner}: ${name(e.playerId)}`;
     case 'free_kick':
-      return `Free kick won: ${name(e.playerId)}`;
+      return `${TAP_LABEL.free_kick}: ${name(e.playerId)}`;
     case 'assist': {
       const scorer = events.find((g) => g.id === e.refersTo)?.playerId ?? null;
       return `Assist: ${name(e.playerId)} (${name(scorer)}'s goal)`;

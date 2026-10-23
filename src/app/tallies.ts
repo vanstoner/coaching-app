@@ -22,13 +22,13 @@ export const TALLY_CAPTION = "Coach's tally, not validated";
 
 export const CORE_KINDS: readonly string[] = ['goal', 'assist', 'conceded'];
 
-/** The built-in tallies, in the order they are read out. */
+/** The built-in tallies, in the order they are read out. #228: short words; the kinds are unchanged. */
 export const BUILT_IN_TALLIES: readonly { kind: string; one: string; many: string }[] = [
-  { kind: 'shot_on_target', one: 'shot on target', many: 'shots on target' },
+  { kind: 'shot_on_target', one: 'shot', many: 'shots' },
   { kind: 'save', one: 'save', many: 'saves' },
   { kind: 'tackle', one: 'tackle', many: 'tackles' },
-  { kind: 'corner', one: 'corner won', many: 'corners won' },
-  { kind: 'free_kick', one: 'free kick won', many: 'free kicks won' },
+  { kind: 'corner', one: 'corner', many: 'corners' },
+  { kind: 'free_kick', one: 'free kick', many: 'free kicks' },
 ];
 
 /** Core, tally, or null for a withdrawal (not something that happened). A kind this build does not know is a tally: never core. */

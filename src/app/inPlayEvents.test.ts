@@ -187,8 +187,9 @@ describe('the time stream and the summary (AC6, AC7)', () => {
     const rows = timeStream(state.appearances, state.events, players);
     expect(rows.map((r) => r.text)).toEqual([
       'Tackle: P3',
-      'Corner won: P4',
-      'Free kick won: P4',
+      // #228 item 3 overturned "Corner won" / "Free kick won".
+      'Corner: P4',
+      'Free kick: P4',
       'Goal: P5',
       "Assist: P6 (P5's goal)",
     ]);

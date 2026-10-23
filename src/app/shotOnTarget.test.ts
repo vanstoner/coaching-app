@@ -38,7 +38,7 @@ describe('recording a shot on target (#202 AC1)', () => {
   it('is offered to anyone on the pitch, keeper included, next to Goal', () => {
     expect(tapEventsFor(false).slice(0, 2)).toEqual(['goal', 'shot_on_target']);
     expect(tapEventsFor(true)).toContain('shot_on_target');
-    expect(TAP_LABEL.shot_on_target).toBe('Shot on target');
+    expect(TAP_LABEL.shot_on_target).toBe('Shot'); // #228 item 3
   });
 
   it('is credited to the shooter at the match time of the tap, and reads on the time stream', () => {
@@ -47,7 +47,7 @@ describe('recording a shot on target (#202 AC1)', () => {
     const e = engine.recordEvent(state, q, 'shot_on_target', ids[3]);
     expect(e.playerId).toBe(ids[3]);
     expect(e.atElapsedMs).toBe(4 * MIN);
-    expect(timeStream(state.appearances, state.events, players).map((r) => r.text)).toContain('Shot on target: P4');
+    expect(timeStream(state.appearances, state.events, players).map((r) => r.text)).toContain('Shot: P4');
   });
 
   it('Undo takes it back, and it no longer counts', () => {
@@ -111,7 +111,7 @@ describe('period end (#202 AC4)', () => {
     advance(PERIOD_END_MARGIN_MS);
     const choices = periodEndChoices(engine, state, q)!;
     expect(choices.planned.atMs).toBe(planned + 20_000);
-    expect(choices.planned.label).toMatch(/\(last shot on target\)$/);
+    expect(choices.planned.label).toMatch(/\(last shot\)$/) // #228 item 3;
   });
 });
 

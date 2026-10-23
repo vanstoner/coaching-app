@@ -127,14 +127,14 @@ describe('core and tally are kept apart in every fold (#198 AC3–AC5)', () => {
     const lines = matchTallies(state.events, ledger.eventTypes, nameOf);
     expect(lines.map((l) => l.kind).some((k) => CORE_KINDS.includes(k))).toBe(false);
     expect(lines.map(tallyLineText)).toEqual([
-      '1 shot on target: Flo 1',
+      '1 shot: Flo 1', // #228 item 3: was "shot on target"
       '1 save: Ada 1',
       '1 tackle: Ed 1',
       '2 Throw-in won: Ed 2',
       '1 Kick-off',
     ]);
     const withGoals = matchTalliesWithGoals(state.events, ledger.eventTypes, nameOf);
-    expect(tallyLineText(withGoals[0])).toBe('2 shots on target: Cy 1, Flo 1');
+    expect(tallyLineText(withGoals[0])).toBe('2 shots: Cy 1, Flo 1');
   });
 
   it('tallies never feed the result, minutes or fairness', () => {
