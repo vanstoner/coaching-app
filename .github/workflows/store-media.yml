@@ -189,7 +189,11 @@ jobs:
           shots() {  # UDID display
             mkdir -p "media/maestro-$2" "media/debug-$2" "media/raw-$2"
             touch "$RUNNER_TEMP/flow-start-$2"
-            ( cd "media/maestro-$2" && maestro --device "$1" test --test-output-dir "$GITHUB_WORKSPACE/media/debug-$2" \
+            # DEVICE picks the flow's taps by position (a card's top line, the
+            # share sheet's "2 x 2", a swipe outside the pitch), which differ
+            # between the 440x956 iPhone and the 1032x1376 iPad.
+            ( cd "media/maestro-$2" && maestro --device "$1" test -e "DEVICE=$2" \
+                --test-output-dir "$GITHUB_WORKSPACE/media/debug-$2" \
                 "$FLOWS/screenshots.yaml" ) || { echo "MEDIA PROBLEM: the $2 screenshot flow failed"; fail=1; }
             # Maestro writes takeScreenshot to the working directory or the
             # output directory, by version: the NN-name.png files, from either.
