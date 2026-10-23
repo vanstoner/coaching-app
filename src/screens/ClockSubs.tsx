@@ -25,13 +25,10 @@ import { isPlanned, type PlannedSub } from '../app/subPlan';
 import { Chip, ChipRow } from './Chip';
 import { ActionSheet, SheetButton } from './Sheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { SUB_PROMPT } from './subPromptColours';
 
-/** Each band's panel, and the ink on it (C3: dark ink on the brighter amber). */
-const BAND: Record<SubBand, { bg: string; ink: string; onInk: string }> = {
-  green: { bg: colours.accent, ink: colours.ink, onInk: '#075236' },
-  amber: { bg: colours.amber, ink: colours.amberInk, onInk: '#8a5600' },
-  red: { bg: colours.late, ink: colours.ink, onInk: '#7a1c13' },
-};
+/** Each band's panel, and the ink on it (C3: dark ink on the brighter amber; #227: 4.5:1). */
+const BAND = SUB_PROMPT;
 
 /** The list's dot and status colours, on the dark pitch. */
 const DOT: Record<SubBand, string> = { green: '#4fd18b', amber: colours.amber, red: '#ff6b57' };

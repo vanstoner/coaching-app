@@ -345,3 +345,7 @@ analysis, iOS". Entries are added as each release ships.
   - **Fairness uses the season's main format (#223).** If a season mixes 5-
     and 7-a-side, fairness counts the format played most; the other matches'
     minutes stay in each child's totals, and Squad says how many are left out.
+  - **The amber sub prompt is readable (#227).** In amber, the countdown,
+    the chosen name and Done were brown on dark brown (2.67:1); they are now
+    amber on dark brown (7.9:1). Every word of the prompt, in green, amber
+    and red, reads at 4.5:1 or better, and a test checks it.

@@ -89,6 +89,7 @@ import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, EventButtons, TallyButtons } from './EventButtons';
 import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { UNDO_TOAST } from './subPromptColours';
 
 /**
  * Two short pulses (#137). Android reads it as wait, buzz, pause, buzz. iOS
@@ -730,15 +731,15 @@ const local = StyleSheet.create({
     bottom: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1d2a25',
+    backgroundColor: UNDO_TOAST.bg,
     borderColor: colours.line,
     borderWidth: 1,
     borderRadius: 12,
     padding: 10,
   },
-  toastText: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
+  toastText: { flex: 1, color: UNDO_TOAST.text, fontSize: 15, includeFontPadding: false },
   toastButton: {
-    backgroundColor: colours.warn,
+    backgroundColor: UNDO_TOAST.buttonBg,
     borderRadius: 10,
     minHeight: TOUCH_TARGET,
     minWidth: 80,
@@ -746,5 +747,5 @@ const local = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  toastButtonText: { color: '#3a2a00', fontSize: 15, fontWeight: '700', includeFontPadding: false },
+  toastButtonText: { color: UNDO_TOAST.buttonText, fontSize: 15, fontWeight: '700', includeFontPadding: false },
 });
