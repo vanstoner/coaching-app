@@ -43,6 +43,15 @@
 # 03-plan needs no tap in the ActionSheet Maestro cannot see on iOS.
 # store-media.yml still passes DEVICE (iphone or ipad), for the plan's
 # edge swipe only.
+#
+# Run 40033174404 (1a7f432) taught a third thing. On iOS, Maestro's
+# hierarchy holds elements below the fold: the iPhone Home lists
+# "Sample United" at [861,1041] on a 956-high screen. So "visible" in
+# extendedWaitUntil, assertVisible and `while: notVisible` means "on the
+# screen or below it", and tapOn taps such an element's centre wherever it
+# is. A tap on anything that may be below the fold therefore comes after a
+# scrollUntilVisible, which measures against the screen
+# (visibilityPercentage 100) and does not swipe if it is already in view.
 appId: com.vanstoner.coachingapp
 env:
   # Resume screen (ResumeScreen.tsx)
@@ -72,8 +81,10 @@ env:
   PLAN_STARTING: "Starting"
   SHARE_PLAN: "Share plan"
   # Settings › Forget everything, confirmed inline
-  FORGET: "Forget everything"
-  FORGET_YES: "Yes, forget everything"
+  FORGET: "^Forget everything$"
+  FORGET_YES: "^Yes, forget everything$"
+  # A child of the made-up season: gone once Forget everything has worked
+  SEASON_CHILD: "Dee,.*"
   # Squad: the name field and its button; Home's card after one step
   NAME_FIELD: "First name"
   ADD_NAME: "Add"
@@ -185,11 +196,22 @@ env:
 - scrollUntilVisible:
     element: ${FORGET}
 - tapOn: ${FORGET}
+# Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
+# everything", under the tab bar. A tap at its centre landed on the Squad tab
+# ([146,866][293,922], centre x 220). Nothing was forgotten, and the seven
+# names joined the made-up season. Bring it into view first.
+- scrollUntilVisible:
+    element: ${FORGET_YES}
 - tapOn: ${FORGET_YES}
 - extendedWaitUntil:
     visible: ${TAB_SQUAD}
     timeout: 20000
 - tapOn: ${TAB_SQUAD}
+# Proof Forget worked: the season's children are gone from Squad, in view or
+# not (the hierarchy holds rows below the fold).
+- extendedWaitUntil:
+    notVisible: ${SEASON_CHILD}
+    timeout: 10000
 - tapOn: ${NAME_FIELD}
 - inputText: "Abi"
 - tapOn: ${ADD_NAME}
@@ -251,10 +273,13 @@ env:
 - extendedWaitUntil:
     visible: ${PLAN_STARTING}
     timeout: 10000
+# Run 40033174404, iPad: `while: notVisible` saw Share plan in the
+# hierarchy below the fold ("Add a sub" ends at 1381 of 1376), so the repeat
+# never swiped and the tap landed off the screen. So: five slow edge swipes,
+# always (past the end is harmless), then scrollUntilVisible as the check.
+# It only swipes, from the centre, if Share plan is still not fully in view.
 - repeat:
-    times: 8
-    while:
-      notVisible: ${SHARE_PLAN}
+    times: 5
     commands:
       # x outside the pitch, inside the scroll view: iPad 22% (227 of
       # [216,234]), iPhone 2% (9 of [0,18]). Whole percents only.
@@ -274,6 +299,8 @@ env:
                 start: 2%,80%
                 end: 2%,35%
                 duration: 700
+- scrollUntilVisible:
+    element: ${SHARE_PLAN}
 - tapOn: ${SHARE_PLAN}
 # The share sheet is up once the PNG is written; give it a moment.
 - extendedWaitUntil:
