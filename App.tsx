@@ -10,11 +10,9 @@ import { uuid } from './src/types/index';
 import type { AvailabilityStatus, Format, MatchEvent, Player, TallyKind, TapEventKind, UUID } from './src/types/index';
 import { currentBuildLabel } from './src/app/buildLabel';
 import {
-  appClockSetting,
   appNow,
   parseClockSetting,
-  setAppClock,
-  setAppClockSpeed,
+  adoptStoredClock,
   type ClockSpeed,
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app/testKit';
@@ -393,7 +391,6 @@ export default function App() {
   // ref is the value; the state is only so Settings repaints.
   // --- the Test kit (#95): Heart FC Beta Coach, the demo (#146) and dev builds (#134)
   const testKitOn = useMemo(() => showTestKit(currentBuildLabel(), __DEV__, currentDistribution()), []);
-  const [clockSpeed, setClockSpeed] = useState<ClockSpeed>(1);
   const [testKitMessage, setTestKitMessage] = useState('');
 
   const ledgerRef = useRef<Ledger | null>(null);
@@ -447,9 +444,10 @@ export default function App() {
     (async () => {
       // The beta's clock first (#95), before anything reads the time: its
       // stored offset keeps the clock from running backwards across a relaunch.
+      // #228 Q4: a clock left at ×5 or ×10 runs at ×1 from now, keeping its offset.
       if (testKitOn) {
-        setAppClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
-        setClockSpeed(appClockSetting().speed);
+        const clock = adoptStoredClock(parseClockSetting(await store.getItem(TEST_CLOCK_KEY).catch(() => null)));
+        if (clock.changed) void store.setItem(TEST_CLOCK_KEY, JSON.stringify(clock.setting)).catch(() => undefined);
       }
 
       // #193: this install's key, before anything is recorded, so every entry
@@ -2143,12 +2141,6 @@ export default function App() {
           testKit={
             testKitOn ? (
               <TestKitSection
-                speed={clockSpeed}
-                onSpeed={(speed) => {
-                  const setting = setAppClockSpeed(speed);
-                  void store.setItem(TEST_CLOCK_KEY, JSON.stringify(setting)).catch(() => undefined);
-                  setClockSpeed(speed);
-                }}
                 onAddTestData={() => {
                   const data = addTestData(
                     players,

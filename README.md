@@ -20,8 +20,8 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
   builds green publishes one.
 - **Heart FC Beta Coach** — the `beta` prerelease, rebuilt from each open pull
   request. It installs as a separate app (its own id, storage and orange icon),
-  so testing never touches the real squad. Its Test kit adds made-up players, a
-  past season and a faster clock. After a merge, `beta` holds no APK, just a
+  so testing never touches the real squad. Its Test kit adds made-up players and a
+  past season; a test match (Settings › Test matches) runs at ×1, ×5 or ×10. After a merge, `beta` holds no APK, just a
   note pointing at the new Heart FC Coach build, until the next pull request.
 - **Heart FC Beta Coach — demo** — the [`demo` prerelease](https://github.com/vanstoner/coaching-app/releases/tag/demo),
   for sharing. It is Heart FC Beta Coach, built from `main` when asked, and it opens
@@ -99,8 +99,8 @@ xcrun simctl install booted HeartFCCoach.app   # or drag the .app onto the simul
 xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coachingapp.beta
 ```
 
-The beta zip is the one with the **Test kit** (made-up players, a past season,
-a faster clock): install `HeartFCBetaCoach.app` and open Settings › Test kit.
+The beta zip is the one with the **Test kit** (made-up players and a past
+season): install `HeartFCBetaCoach.app` and open Settings › Test kit.
 
 To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
 `npm run android:beta`) once route 2 below works. It builds **Coaching

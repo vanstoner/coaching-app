@@ -65,7 +65,8 @@ sequenceDiagram
 - **Time** is never counted. `getQuarterElapsedMs` = `accumulatedMs + now −
   runningSinceWallClock`. `ClockScreen` reschedules a `setTimeout` to the next
   displayed second, only to repaint. `appNow()` (`src/app/appClock.ts`) is the
-  single clock, sped up by the Test kit in beta builds.
+  single clock. A beta phone's stored offset is kept, but the Test kit no
+  longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
   memory. The ledger's writes run one at a time per store; the session's do not.
 
@@ -83,7 +84,7 @@ sequenceDiagram
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
 | `coaching-app/getting-started/v1` | `{"closed":true}` once the coach closes Getting started early, a view choice on this phone (#218) | `App.tsx` (`closeCard`) | Never in the record; removed by Forget everything, Undo or Show Getting started again |
 | Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
-| `TEST_CLOCK_KEY` | Beta clock offset and speed | Test kit only | |
+| `TEST_CLOCK_KEY` | Beta clock offset (speed folded to ×1 at launch since #228) | Beta builds only | |
 
 Nothing leaves the device except a minutes file, an app backup (#192) or a
 plan image the coach shares explicitly (ADR-011). Android `allowBackup` is **true** for Heart FC Coach and

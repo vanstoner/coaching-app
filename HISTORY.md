@@ -358,3 +358,7 @@ analysis, iOS". Entries are added as each release ships.
     - **A calmer amber.** The sub prompt's 15-second orange, and End quarter
       once a period runs over, are one sand colour with dark ink (9.6:1). End
       quarter's white label on orange read at 3.3:1.
+    - **No speed buttons in the Test kit.** Settings › Test kit › Clock
+      speed is gone: Start a test match has its own ×1, ×5 and ×10. A beta
+      phone left fast runs at ×1 from its next launch, and its clock never
+      goes backwards.
