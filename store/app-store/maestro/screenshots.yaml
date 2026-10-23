@@ -165,7 +165,13 @@ env:
 - extendedWaitUntil:
     visible: ${GETTING_STARTED}
     timeout: 10000
-- waitForAnimationToEnd
+# Option A (Claude, under Rob's approved shot set): open the strip so the
+# shot shows the three steps its caption names. The steps are in an
+# ActionSheet (a Modal), which Maestro can screenshot but not wait on, so
+# the wait is on the animation, not on its text.
+- tapOn: ${GETTING_STARTED}
+- waitForAnimationToEnd:
+    timeout: 3000
 - takeScreenshot: 08-start
 
 # --- launch 2: 03-plan, last --------------------------------------------------
