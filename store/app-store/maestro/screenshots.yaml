@@ -1,142 +1,188 @@
 # App Store screenshots for 1.3.0: Dee's eight shots (#226, PO "approve
 # 1234"). Run by store-media.yml on an iPhone 6.9" and an iPad 13"
-# simulator against the `store` build, which seeds only made-up names
-# (invariant 4). Each takeScreenshot is NN-name.png, the name its caption
-# has in store/app-store/en-GB/screenshot_captions.txt; composite_shots.py
-# frames and captions each one, and the file-name order is the store order.
+# simulator against the `store` build. On an empty store it seeds made-up
+# names only (invariant 4) and every state the shots need (demoSeed.ts,
+# Ellis, 99594b8). Each clearState re-seeds with a fresh start time. Each
+# takeScreenshot is NN-name.png, named as in
+# store/app-store/en-GB/screenshot_captions.txt. composite_shots.py frames
+# and captions each one, and the file-name order is the store order.
 #
-# Captured in the order the seeds allow, not the store order:
-#   A  01-alert            a live match in its amber sub window
-#   B  02, 04, 05, 06      the made-up season
-#   C  07-five             a 5-a-side, 40-minute fixture
-#   D  08-start            a squad with nothing planned or played
-#   E  03-plan             LAST: the share sheet stays up, and store-media.yml
-#                          then copies the PNG the app wrote from the
-#                          simulator's app container (Maestro cannot reach the
-#                          iOS share sheet, run 9). Any later clearState would
-#                          wipe that file.
+# Captured in the order the seed allows, not in the store order:
+#   launch 1   01-alert (retried from a fresh seed if it reads late), then
+#              05-squad, 02-fairness, 06-child, 04-report, 07-five, then
+#              Forget everything and seven names for 08-start
+#   launch 2   03-plan, LAST. The flow ends with the share sheet up, so the
+#              PNG the app captured is still in its container's tmp/;
+#              store-media.yml copies it out (Maestro cannot reach the iOS
+#              share sheet, run 9). The app deletes that PNG when the plan
+#              screen closes, so nothing may follow it.
 #
-# Maestro matches a pressable by its whole accessible text, so a player's row
-# is "Dee,.*" and a tile is "Fairness.*". Every label here is 1.3.0's before
-# the #228 tidy-ups: check each one against the app once they land.
-#
-# TODO(Ellis, demoSeed.ts): every `arguments: {storeShot: ...}` below is a
-# placeholder for the launch argument (or tap) that selects a seed state.
-# Today the store build has one state, the made-up season, seeded on first
-# open. Replace each placeholder with what Ellis reports, keeping clearState.
+# Every on-screen text the flow matches is in `env` below, in one place,
+# because #228 may change labels. Maestro matches a pressable by its whole
+# accessible text (a regex), so a player's row is "Dee,.*". This flow has not
+# been run on a simulator yet.
 appId: com.vanstoner.coachingapp
+env:
+  # Resume screen, and leaving the clock (ResumeScreen.tsx, ClockScreen.tsx)
+  BACK_TO_MATCH: "Back to the match"
+  LEAVE_CLOCK: "Leave — the match keeps running"
+  # Shot 1: the amber prompt, still counting down ("in 0:14", not "late 0:02")
+  SUB_PROMPT: "Bring on Hal for:"
+  COUNTING_DOWN: "in 0:[0-9]{2}"
+  # Tabs
+  TAB_HOME: "Home"
+  TAB_SQUAD: "Squad"
+  TAB_SETTINGS: "Settings"
+  # Squad views
+  FAIRNESS_TILE: "Fairness.*"
+  BACK_TO_SQUAD: "Back to Squad"
+  CHILD_ROW: "Dee,.*"
+  BACK_FROM_CHILD: "Back to.*"
+  # Home's fixtures: a played match, the 5-a-side card, the planned match
+  PLAYED_MATCH: ".*Trial Town.*"
+  FIVE_A_SIDE_CARD: ".*Practice Park.*"
+  EDIT_PLAN: "Edit the plan"
+  SHARE_PLAN: "Share plan"
+  # Settings › Forget everything, confirmed inline
+  FORGET: "Forget everything"
+  FORGET_YES: "Yes, forget everything"
+  # Squad: the name field and its button; Home's card after one step
+  NAME_FIELD: "First name"
+  ADD_NAME: "Add"
+  GETTING_STARTED: "Getting started.*"
 ---
-# --- A. 01-alert: the clock, amber "Bring on Hal for:" ----------------------
-# TODO(Ellis): a seed with a live match, Quarter 1 at about 06:03, 1-0 v
-# Sample Town, Hal planned on for Eli at 6:15 and Jo for Fay at 9:15, Eli
-# picked to come off. Time comes from anchors, so the amber band (15 s) starts
-# a fixed time after the seed is written. Ask for its start at least 3 s
-# after seeding, and the app to open straight onto the clock (or name the tap
-# that resumes it): the shot must land inside the band.
-- launchApp:
-    clearState: true
-    arguments:
-      storeShot: alert
+# --- launch 1 ---------------------------------------------------------------
+# 01-alert. The seed makes Hal's sub fall due 14 s after it runs
+# (STORE_SUB_DUE_AFTER_LAUNCH_MS), so the prompt is amber from launch. If a
+# slow start lets it turn late, start again from a fresh seed.
+- retry:
+    maxRetries: 2
+    commands:
+      - launchApp:
+          clearState: true
+      - extendedWaitUntil:
+          visible: ${BACK_TO_MATCH}
+          timeout: 60000
+      - tapOn: ${BACK_TO_MATCH}
+      - extendedWaitUntil:
+          visible: ${SUB_PROMPT}
+          timeout: 10000
+      - assertVisible: ${COUNTING_DOWN}
+      - takeScreenshot: 01-alert
+- scrollUntilVisible:
+    element: ${LEAVE_CLOCK}
+- tapOn: ${LEAVE_CLOCK}
 - extendedWaitUntil:
-    visible: "Bring on Hal for:"
+    visible: ${TAB_SQUAD}
     timeout: 20000
-- takeScreenshot: 01-alert
 
-# --- B. The made-up season: 02-fairness, 04-report, 05-squad, 06-child ------
-# The store build's seed today. TODO(Ellis): if the season becomes one of
-# several states, the argument that selects it.
-- launchApp:
-    clearState: true
-    arguments:
-      storeShot: season
-- extendedWaitUntil:
-    visible: "Squad"
-    timeout: 60000
-- tapOn: "Squad"
+# 05-squad, 02-fairness, 06-child: the made-up season, as before.
+- tapOn: ${TAB_SQUAD}
 - waitForAnimationToEnd
-# 05-squad: the squad in order of minutes a game.
 - takeScreenshot: 05-squad
-
-- tapOn: "Fairness.*"
+- tapOn: ${FAIRNESS_TILE}
 - waitForAnimationToEnd
 - takeScreenshot: 02-fairness
 - scrollUntilVisible:
-    element: "Back to Squad"
-- tapOn: "Back to Squad"
-
+    element: ${BACK_TO_SQUAD}
+- tapOn: ${BACK_TO_SQUAD}
 - scrollUntilVisible:
-    element: "Dee,.*"
-- tapOn: "Dee,.*"
+    element: ${CHILD_ROW}
+- tapOn: ${CHILD_ROW}
 - waitForAnimationToEnd
 - takeScreenshot: 06-child
 - scrollUntilVisible:
-    element: "Back to.*"
-- tapOn: "Back to.*"
+    element: ${BACK_FROM_CHILD}
+- tapOn: ${BACK_FROM_CHILD}
 
-# 04-report: Played › Trial Town, W 4-0 (already in the season).
-# TODO(Ellis): confirm the path to a played match's report in 1.3.0; this is
-# Home's Played list and the match's row.
-- tapOn: "Home"
+# 04-report: Trial Town, under Played.
+- tapOn: ${TAB_HOME}
 - scrollUntilVisible:
-    element: "Trial Town.*"
-- tapOn: "Trial Town.*"
+    element: ${PLAYED_MATCH}
+- tapOn: ${PLAYED_MATCH}
 - waitForAnimationToEnd
 - takeScreenshot: 04-report
 
-# --- C. 07-five: the lineup of a 5-a-side, 40-minute fixture --------------
-# TODO(Ellis): a seed with a 5-a-side fixture in quarters (1-2-1 + GK), and
-# the tap that opens its lineup (Start on the fixture, per Dee's table).
+# 07-five: the Practice Park card under Coming up opens the 1-2-1 + GK
+# line-up. index 0: a played Practice Park also shows, under Played, below.
+# Home is reached again by relaunching (state kept): Resume, then Leave.
 - launchApp:
-    clearState: true
-    arguments:
-      storeShot: five
-- extendedWaitUntil:
-    visible: "Home"
-    timeout: 60000
-- tapOn: "Start.*"
-- waitForAnimationToEnd
+    stopApp: true
+- tapOn: ${BACK_TO_MATCH}
+- scrollUntilVisible:
+    element: ${LEAVE_CLOCK}
+- tapOn: ${LEAVE_CLOCK}
 - tapOn:
-    text: "Use suggestion"
-    optional: true
+    text: ${FIVE_A_SIDE_CARD}
+    index: 0
 - waitForAnimationToEnd
 - takeScreenshot: 07-five
 
-# --- D. 08-start: Home with the Getting started card ----------------------
-# TODO(Ellis): a seed with a squad and no fixture, nothing played, so the
-# card shows with step 1 ticked. Dee: drop this shot if it costs too much; if
-# dropped, delete this block AND its line in screenshot_captions.txt (the
-# compositor refuses a caption with no shot).
+# 08-start: forget everything, add seven made-up first names, then Home
+# shows Getting started with step 1 ticked.
 - launchApp:
-    clearState: true
-    arguments:
-      storeShot: start
+    stopApp: true
+- tapOn: ${BACK_TO_MATCH}
+- scrollUntilVisible:
+    element: ${LEAVE_CLOCK}
+- tapOn: ${LEAVE_CLOCK}
+- tapOn: ${TAB_SETTINGS}
+- scrollUntilVisible:
+    element: ${FORGET}
+- tapOn: ${FORGET}
+- tapOn: ${FORGET_YES}
+- tapOn: ${TAB_SQUAD}
+- tapOn: ${NAME_FIELD}
+- inputText: "Abi"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Bram"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Cleo"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Dax"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Elsie"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Fen"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Gwen"
+- tapOn: ${ADD_NAME}
+- tapOn: ${TAB_HOME}
 - extendedWaitUntil:
-    visible: "Getting started.*"
-    timeout: 60000
+    visible: ${GETTING_STARTED}
+    timeout: 10000
 - waitForAnimationToEnd
 - takeScreenshot: 08-start
 
-# --- E. 03-plan: the plan picture, from the app's container ---------------
-# LAST, and nothing after it may clear state. The app captures the 2 x 2
-# picture to its tmp folder, then opens the share sheet; store-media.yml
-# copies the newest PNG from the app container's tmp/ and puts it on a black
-# screen as raw 03-plan.png.
-# TODO(Ellis): a seed with a fixture v Sample Town (Sat 31 Oct 10:00,
-# quarters) and a saved plan with subs at 6:15, and the tap that opens its
-# plan. The share choice ("2 x 2, best on a phone") is in an ActionSheet, a
-# Modal whose buttons Maestro cannot find on iOS (run 9). Simpler route,
-# recommended: a launch argument that, in the store build only, opens this
-# plan and starts the 2 x 2 share itself, so the flow taps nothing in a Modal.
-# Until then the flow taps the sheet's first button by position, which is
-# untested on both simulators.
+# --- launch 2: 03-plan, last --------------------------------------------------
+# A fresh seed (the forgotten season is back). Home › Edit the plan (only
+# Mock Albion has one) › Share plan › "2 × 2, best on a phone". That choice
+# is in an ActionSheet, a Modal whose buttons Maestro cannot find on iOS
+# (run 9), so it is tapped by position: the sheet's first, highlighted
+# button. UNTESTED on both simulators; if it misses, the run says "no plan
+# picture" and debug-*/ shows where the sheet sits.
 - launchApp:
     clearState: true
-    arguments:
-      storeShot: plan
 - extendedWaitUntil:
-    visible: "Share plan"
+    visible: ${BACK_TO_MATCH}
     timeout: 60000
-- tapOn: "Share plan"
+- tapOn: ${BACK_TO_MATCH}
+- scrollUntilVisible:
+    element: ${LEAVE_CLOCK}
+- tapOn: ${LEAVE_CLOCK}
+- scrollUntilVisible:
+    element: ${EDIT_PLAN}
+- tapOn: ${EDIT_PLAN}
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: ${SHARE_PLAN}
+- tapOn: ${SHARE_PLAN}
 - waitForAnimationToEnd
 - tapOn:
     point: "50%,82%"
