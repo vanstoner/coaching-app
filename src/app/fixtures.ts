@@ -312,3 +312,15 @@ export function matchIsUnderway(quarters: QuarterLike[]): boolean {
 export function lengthLabel(match: Match): string {
   return `${match.totalMinutes} min · ${periodNounPlural(match.quarterCount)}`;
 }
+
+/**
+ * What a screen reader (and Maestro) calls the part of a fixture card that
+ * opens the match (#226): "Open Practice Park, Sat 24 Oct · 10:00, 50 min ·
+ * Quarters". The card's links (Plan this match, Edit the plan, Archive,
+ * Remove) are elements of their own, so each can be reached and pressed
+ * alone. Empty lines are dropped.
+ */
+export function fixtureOpenLabel(lines: readonly (string | null | undefined | false)[]): string {
+  const [first, ...rest] = lines.filter((l): l is string => typeof l === 'string' && l.trim() !== '');
+  return [`Open ${first ?? 'match'}`, ...rest].join(', ');
+}

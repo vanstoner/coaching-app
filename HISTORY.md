@@ -258,6 +258,11 @@ analysis, iOS". Entries are added as each release ships.
   stuff above built … as 1.3.0 … that's probably a version I'll draw a line
   under and release."* Each feature adds its line here as it lands on the
   1.3.0 branch.
+  - **A screen reader reaches each part of a fixture card (#226).** A card on
+    Home was one spoken element, its links buried inside it. Now its lines
+    read as one button, "Open Practice Park, Sat 24 Oct …", and Plan this
+    match, Edit the plan, Archive and Remove are each a button of their own.
+    A finger works the card exactly as before.
   - **Planned subs start together, and the shared plan shows exact times
     (#205).** Every new sub in Plan the match starts at the half-period (6:15
     in a quarter, 12:30 in a half); nothing is moved to a free slot any more,

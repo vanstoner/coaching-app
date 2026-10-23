@@ -35,6 +35,7 @@ import {
   type MatchProgress,
   type StartedPeriod,
   type FixtureRow,
+  fixtureOpenLabel,
 } from '../app/fixtures';
 import { NO_MATCHES_YET, NOTHING_PLAYED_YET } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
@@ -363,9 +364,26 @@ function FixtureCard({
   // Two taps, in place, no dialog module. A fixture is cheap to re-add, but
   // deleting one the coach meant to keep is not cheap to undo.
   const [confirming, setConfirming] = useState(false);
+  const opponent = opponentLabel(match);
+  const when = `${kickoffLabel(match, now, periods.get(match.id))}${competition === '' ? '' : ` · ${competition}`}`;
+  const length = lengthLabel(match);
+  // #196 AC1: a closed match shows its result too.
+  const scoreLine = score
+    ? `${match.status === 'completed' ? `${resultOf(score)} ` : ''}${score.us} – ${score.them}`
+    : null;
+  const inProgress = row.bucket === 'current' ? 'In progress' : null;
+  // Ruling D: played, but the coach has not pressed End match yet.
+  const notClosedLine = notClosed.has(match.id) ? 'Not closed: open it to End match' : null;
+  const archivedLine = isArchived ? 'Archived' : null;
   return (
+    // #226: the card is not one accessible element. Its lines are one
+    // ("Open Practice Park, …") and each link is its own, so a screen reader,
+    // or Maestro, can reach and press each alone. A finger is unchanged: the
+    // whole card still opens the match and the links still take their taps.
     <Pressable
       onPress={() => onOpen(match.id)}
+      accessible={false}
+      focusable={false}
       style={({ pressed }) => [
         local.card,
         row.bucket === 'current' && local.cardCurrent,
@@ -373,41 +391,47 @@ function FixtureCard({
         pressed && screen.buttonPressed,
       ]}
     >
-      <Text style={local.opponent} numberOfLines={1}>
-        {opponentLabel(match)}
-      </Text>
-      <Text style={local.meta} numberOfLines={1}>
-        {kickoffLabel(match, now, periods.get(match.id))}
-        {competition === '' ? '' : ` · ${competition}`}
-      </Text>
-      {/* This match's OWN length and periods, not the squad default (#70). */}
-      <Text style={local.meta} numberOfLines={1}>
-        {lengthLabel(match)}
-      </Text>
-      {score && (
-        <Text style={local.score} numberOfLines={1}>
-          {/* #196 AC1: a closed match shows its result too. */}
-          {match.status === 'completed' ? `${resultOf(score)} ` : ''}
-          {score.us} – {score.them}
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={fixtureOpenLabel([opponent, when, length, scoreLine, tag, inProgress, notClosedLine, archivedLine])}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === 'activate') onOpen(match.id);
+        }}
+      >
+        <Text style={local.opponent} numberOfLines={1}>
+          {opponent}
         </Text>
-      )}
-      {tag && (
-        <Text style={state === 'reconstructed' ? local.reconstructed : local.unsigned} numberOfLines={1}>
-          {tag}
+        <Text style={local.meta} numberOfLines={1}>
+          {when}
         </Text>
-      )}
-      {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
-      {/* Ruling D: played, but the coach has not pressed End match yet. */}
-      {notClosed.has(match.id) && (
-        <Text style={local.nowTag} numberOfLines={1}>
-          Not closed: open it to End match
+        {/* This match's OWN length and periods, not the squad default (#70). */}
+        <Text style={local.meta} numberOfLines={1}>
+          {length}
         </Text>
-      )}
-      {isArchived && <Text style={local.meta}>Archived</Text>}
+        {scoreLine && (
+          <Text style={local.score} numberOfLines={1}>
+            {scoreLine}
+          </Text>
+        )}
+        {tag && (
+          <Text style={state === 'reconstructed' ? local.reconstructed : local.unsigned} numberOfLines={1}>
+            {tag}
+          </Text>
+        )}
+        {inProgress && <Text style={local.nowTag}>{inProgress}</Text>}
+        {notClosedLine && (
+          <Text style={local.nowTag} numberOfLines={1}>
+            {notClosedLine}
+          </Text>
+        )}
+        {archivedLine && <Text style={local.meta}>{archivedLine}</Text>}
+      </View>
 
       {/* Only before kick-off: once a match is played its plan is history. */}
       {match.status === 'planned' && (
-        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit}>
+        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit} accessibilityRole="button">
           <Text style={local.plan}>{planned ? 'Edit the plan' : 'Plan this match'}</Text>
         </Pressable>
       )}
@@ -416,6 +440,7 @@ function FixtureCard({
         <Pressable
           onPress={() => housekeeping.onArchive(match.id, !isArchived)}
           style={local.confirmHit}
+          accessibilityRole="button"
         >
           <Text style={local.remove}>{isArchived ? 'Unarchive' : 'Archive'}</Text>
         </Pressable>
@@ -424,15 +449,15 @@ function FixtureCard({
       {canDelete &&
         (confirming ? (
           <View style={local.confirmRow}>
-            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit}>
+            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit} accessibilityRole="button">
               <Text style={local.deleteConfirm}>Delete this fixture</Text>
             </Pressable>
-            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit}>
+            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit} accessibilityRole="button">
               <Text style={local.keep}>Keep</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit}>
+          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit} accessibilityRole="button">
             <Text style={local.remove}>Remove</Text>
           </Pressable>
         ))}
