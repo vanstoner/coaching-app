@@ -18,7 +18,17 @@ import { BUZZ_WHEN_SUB_DUE_DEFAULT } from './settings';
 import { makePlayer } from './squad';
 import { TEST_NAMES, TEST_OPPONENTS } from './testKit';
 import { SEASON, addTestSeason } from './testSeason';
-import { seedDemo, shouldAutoSeed, storeContents, type SessionDefaults, type StoreContents } from './demoSeed';
+import { STORE_OPPONENTS, STORE_SUB_DUE_AFTER_LAUNCH_MS, seedDemo, seedFor, shouldAutoSeed, storeContents, type SessionDefaults, type StoreContents } from './demoSeed';
+import { MatchEngine } from '../engine/MatchEngine';
+import { subBand, subCountdown } from './clockSubs';
+import { MADE_UP_OPPONENTS, isMadeUpTeam, showCard, startSteps } from './gettingStarted';
+import { planHasContent } from './matchPlan';
+import { scoreOf } from './matchEvents';
+import { hasMatchUnderway, savedMatchById, toMatchState, type SavedSession } from './persistence';
+import { shapeOfFormat } from './shapes';
+import { restoreSubPlan } from './subPlan';
+
+const toSavedMatch = (s: SavedSession) => savedMatchById(s, s.currentMatchId)!;
 
 const NOW = new Date('2026-10-06T09:00:00Z'); // a Tuesday
 const EMPTY: StoreContents = { players: 0, matches: 0, ledgerPlayers: 0, ledgerMatches: 0, ledgerWritable: true };
@@ -50,7 +60,7 @@ async function launch(store: ReturnType<typeof createMemoryStore>, distribution:
     : null;
   const seeds = shouldAutoSeed(distribution, storeContents(saved, opened));
   if (seeds) {
-    const seeded = seedDemo(saved, ledger, d, NOW);
+    const seeded = seedFor(distribution)(saved, ledger, d, NOW);
     ledger = seeded.ledger;
     saved = seeded.session;
   }
@@ -229,5 +239,108 @@ describe('the first screen of a fresh demo (#146, for the smoke test)', () => {
     const rows = fixtureList(session.matches.map((m) => m.match), later, null, progressById(session.matches, null));
     expect(rows[0].bucket).toBe('future');
     expect(rows[0].match.opponent).toBe('Test Rovers');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The App Store screenshots' states (#226): the store build only
+// ---------------------------------------------------------------------------
+
+describe('the store build opens with every screenshot state (#226)', () => {
+  const seedStore = (d = defaults()) =>
+    seedFor('store')(null, emptyLedger(d.squadId, d.squadName, NOW), d, NOW);
+  const nameOf = (session: { players: { id: string; firstName: string }[] }, id: string | null) =>
+    session.players.find((p) => p.id === id)?.firstName;
+
+  it('only the store build gets the store seed; the demo keeps its own', () => {
+    expect(seedFor('store')).not.toBe(seedDemo);
+    expect(seedFor('demo')).toBe(seedDemo);
+    // Neither is ever called for these: shouldAutoSeed says no (above).
+    expect(seedFor('app')).toBe(seedDemo);
+    expect(seedFor('beta')).toBe(seedDemo);
+  });
+
+  it('shot 1: a match in progress against Sample Town, 1–0, and Hal for Eli amber from launch', () => {
+    const { session } = seedStore();
+    expect(hasMatchUnderway(session)).toBe(true);
+    const state = toMatchState(session)!;
+    expect(state.match.opponent).toBe(STORE_OPPONENTS.live);
+    expect(scoreOf(state.events)).toEqual(expect.objectContaining({ us: 1, them: 0 }));
+
+    const running = state.quarters.find((q) => q.status === 'running')!;
+    expect(running.index).toBe(1);
+    const at = (ms: number) => new MatchEngine({ nowFn: () => new Date(NOW.getTime() + ms) }).getQuarterElapsedMs(running);
+    // 6:01 into Quarter 1 at launch, from the anchor (invariant 2).
+    expect(at(0)).toBe(6 * 60_000 + 15_000 - STORE_SUB_DUE_AFTER_LAUNCH_MS);
+
+    const plan = restoreSubPlan(toSavedMatch(session).periodSubs, state);
+    const planned = plan.filter((s) => s.atMs > 0).map((s) => [nameOf(session, s.playerId), nameOf(session, s.forPlayerId), s.atMs]);
+    expect(planned).toEqual([
+      ['Hal', 'Eli', 6 * 60_000 + 15_000],
+      ['Jo', 'Fay', 9 * 60_000 + 15_000],
+    ]);
+    const hal = plan.find((s) => nameOf(session, s.playerId) === 'Hal')!;
+    // Amber at launch, and for the next 14 s; red from then.
+    expect(subBand(hal, at(0))).toBe('amber');
+    expect(subCountdown(hal, at(0))).toBe('in 0:14');
+    expect(subBand(hal, at(STORE_SUB_DUE_AFTER_LAUNCH_MS - 1))).toBe('amber');
+    expect(subBand(hal, at(STORE_SUB_DUE_AFTER_LAUNCH_MS))).toBe('red');
+    // Eli and Fay are on; Hal and Jo are not.
+    const on = new Set(state.appearances.filter((a) => a.endElapsedMs === null).map((a) => nameOf(session, a.playerId)));
+    expect([...on].sort()).toEqual(['Ava', 'Ben', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus']);
+  });
+
+  it('shot 3: next Saturday against Mock Albion, its plan saved with a sub at 6:15 each quarter', () => {
+    const { session } = seedStore();
+    const fixture = session.matches.find((m) => m.match.status === 'planned' && m.match.opponent === STORE_OPPONENTS.planned)!;
+    expect(new Date(fixture.match.kickoffAt!).getDay()).toBe(6);
+    expect(planHasContent(fixture.plan)).toBe(true);
+    expect(fixture.plan!.periods).toHaveLength(4);
+    for (const period of fixture.plan!.periods) {
+      expect(Object.values(period.slots).filter(Boolean)).toHaveLength(7);
+      expect(period.subs.map((s) => s.atMs)).toEqual([6 * 60_000 + 15_000]);
+    }
+  });
+
+  it('shot 7: a 5-a-side fixture, 1-2-1 + GK, 40 minutes in quarters', () => {
+    const { session } = seedStore();
+    const five = session.matches.find((m) => m.match.status === 'planned' && m.match.opponent === STORE_OPPONENTS.fiveASide)!;
+    expect(shapeOfFormat(five.format!)).toBe('1-2-1');
+    expect(five.match.totalMinutes).toBe(40);
+    expect(five.quarters).toHaveLength(4);
+  });
+
+  it('shots 2, 4, 5, 6: the made-up season is all there, and Test Rovers is not', () => {
+    const { session } = seedStore();
+    for (const s of SEASON) expect(session.matches.some((m) => m.match.opponent === s.opponent)).toBe(true);
+    expect(session.matches.some((m) => m.match.opponent === TEST_OPPONENTS[0])).toBe(false);
+  });
+
+  it('invented first names and made-up opponents only (invariant 4); still read as the made-up team', () => {
+    const { session } = seedStore();
+    expect(session.players.every((p) => TEST_NAMES.includes(p.firstName))).toBe(true);
+    for (const m of session.matches) expect(MADE_UP_OPPONENTS.has(m.match.opponent ?? '')).toBe(true);
+    expect(isMadeUpTeam(session.players, session.matches)).toBe(true);
+  });
+
+  it('through the real launch and save: the record verifies and holds the match in progress', async () => {
+    const store = createMemoryStore();
+    const first = await launch(store, 'store');
+    expect(first.seeds).toBe(true);
+    const opened = await openStoredLedger(store, NOW);
+    expect(verifyChain(opened.ledger!.entries)).toEqual({ ok: true });
+    expect(opened.ledger!.matches.filter((m) => m.status === 'completed')).toHaveLength(SEASON.length);
+    // The match in progress: its opponent and its goal, as a save during play writes them.
+    const live = opened.ledger!.matches.find((m) => m.id === first.saved!.currentMatchId)!;
+    expect(live.opponent).toBe(STORE_OPPONENTS.live);
+    expect(live.events?.filter((e) => e.kind === 'goal')).toHaveLength(1);
+    // A second launch finds data and seeds nothing over it.
+    expect((await launch(store, 'store')).seeds).toBe(false);
+  });
+
+  it('shot 8: after Forget everything, seven names typed in show Getting started with step 1 ticked', () => {
+    const steps = startSteps({ activePlayers: 7, onFieldCount: 7, matches: [], ledgerMatches: 0 });
+    expect(steps.map((s) => s.done)).toEqual([true, false, false]);
+    expect(showCard(false, steps)).toBe(true);
   });
 });

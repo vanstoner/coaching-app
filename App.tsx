@@ -21,7 +21,7 @@ import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app
 import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/phoneBackup';
 import { addTestSeason } from './src/app/testSeason';
 import { currentDistribution } from './src/app/distribution';
-import { seedDemo, shouldAutoSeed, storeContents } from './src/app/demoSeed';
+import { seedFor, shouldAutoSeed, storeContents } from './src/app/demoSeed';
 import {
   canArchiveFixture,
   canDeleteFixture,
@@ -520,8 +520,9 @@ export default function App() {
       // kit's squad and past season (demoSeed.ts). The season is recorded
       // into the ledger here as it is played; the session goes on as if it
       // had been loaded, and the save after launch writes it.
+      // The store build's seed also carries its screenshots' states (#226).
       if (shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
-        const seeded = seedDemo(
+        const seeded = seedFor(currentDistribution())(
           saved,
           ledgerRef.current,
           { squadName, squadId, format, totalMinutes, periodCount, buzzWhenSubDue },
