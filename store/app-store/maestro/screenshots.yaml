@@ -19,8 +19,11 @@
 #
 # Every on-screen text the flow matches is in `env` below, in one place,
 # because #228 may change labels. Maestro matches a pressable by its whole
-# accessible text (a regex), so a player's row is "Dee,.*". This flow has not
-# been run on a simulator yet.
+# accessible text (a regex), so a player's row is "Dee,.*". Every value was
+# checked against the source after #228's tidy-up (ccbbb48): none changed.
+# The clock's new strip and "Next: …" line are not matched; the prompt panel
+# and its "in 0:14" countdown are as before, and the full-time award card
+# cannot show mid-Q1. This flow has not been run on a simulator yet.
 appId: com.vanstoner.coachingapp
 env:
   # Resume screen, and leaving the clock (ResumeScreen.tsx, ClockScreen.tsx)
@@ -112,6 +115,8 @@ env:
 - scrollUntilVisible:
     element: ${LEAVE_CLOCK}
 - tapOn: ${LEAVE_CLOCK}
+- scrollUntilVisible:
+    element: ${FIVE_A_SIDE_CARD}
 - tapOn:
     text: ${FIVE_A_SIDE_CARD}
     index: 0
@@ -119,7 +124,10 @@ env:
 - takeScreenshot: 07-five
 
 # 08-start: forget everything, add seven made-up first names, then Home
-# shows Getting started with step 1 ticked.
+# shows Getting started with step 1 ticked. Since #228 (PO `both`) that is a
+# one-line strip, "Getting started", a bar, "1 of 3 ›"; the flow shoots the
+# strip as Home shows it. Dee's shot was the full card: to show the steps,
+# tap ${GETTING_STARTED} before the shot (an open question to Dee and Rob).
 - launchApp:
     stopApp: true
 - tapOn: ${BACK_TO_MATCH}
