@@ -61,6 +61,10 @@ solution. Before writing a document, ask whether an issue comment would do.
 - **Escalate ambiguity; never silently "fix" a spec.** A confident wrong guess
   is the most expensive failure mode here.
 - **Report partial work as partial.** A known gap reported is a managed risk.
+- **Every handoff that stops short leaves Rob a checklist (#229).** List what is
+  his (merge, approve a run) and what he *could* do by hand, and give a
+  copy-paste prompt for anything a fresh session can pick up. Sessions die to
+  limits; the work should not.
 - **Every app change moves the version and brings its notes (#217).** A PR
   that touches `App.tsx`, `src/` or `assets/` opens its description with
   `## Version`: **minor** (something new a coach can see or do), **patch** (a
