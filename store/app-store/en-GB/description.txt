@@ -3,7 +3,7 @@ Who comes off next, and is everyone getting a fair share? Heart of the Game: Coa
 NEW IN 1.3.0
 • Sub alerts: 30 seconds before each planned sub, the clock's prompt rises green, turns amber, then red if you're late, and the phone buzzes once. Tap Done and the sub is made.
 • The plan you share with parents shows every sub's exact time.
-• Results, awards and your own tallies for every match.
+• Results from your goals, awards, and your own tallies on each match.
 • 5-a-side formations and 40-minute matches, beside 7-a-side.
 • Back up the whole app to one file and restore it on a new phone.
 

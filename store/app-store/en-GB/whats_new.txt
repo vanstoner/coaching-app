@@ -3,9 +3,11 @@ New in 1.3.0:
 • Sub alerts: green, amber, then red, with a buzz
 • Exact sub times on the plan you share with parents
 • Results and goals, even when you missed the minute
-• Awards and your own tallies, a button each
+• Awards to give during or after the match
+• Your own tallies, a button each
 • 5-a-side formations and 40-minute matches
 • Fill-in players who don't skew your fairness figures
 • Squad ranked by minutes a game
-• Back up and restore to a new phone, matching children by name
+• Back up and restore to a new phone
+• Imports match children by name, so nobody is added twice
 • A getting-started guide and test matches at up to 10x speed
