@@ -9,9 +9,16 @@ are Apple's, in characters: name 30, subtitle 30, keywords 100, promotional
 text 170, description 4,000; both URLs https; a copyright line. D1: keywords include "heart".
 D4: the description claims nothing v1 does not do, so words for features it
 does not have (sync, a parent app, paid features) fail the check.
+
+#226: whats_new.txt is the en-GB "What's New in This Version" the release run
+sets before it submits: 1 to 4,000 characters, plain text for a coach, so no
+issue numbers, no Markdown and no TestFlight instructions. Its placeholder
+line passes here; the release run refuses to submit it (asc_api.py). A version
+bump that leaves it unchanged is check_version_impact.py's to refuse.
 """
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -26,6 +33,7 @@ FIELDS = {  # file -> (required, max characters or None)
     "privacy_url.txt": (True, None),
     "copyright.txt": (True, None),
     "review_notes.txt": (True, 4000),
+    "whats_new.txt": (True, 4000),
 }
 NAME = "Heart of the Game: Coach"
 NOT_IN_V1 = ("sync", "cloud account", "parent app", "parents' app", "subscription", "premium",
@@ -63,6 +71,13 @@ def problems(folder):
         v = values.get(f)
         if v and not v.startswith("https://"):
             out.append(f"{f} is not an https URL")
+    new = values.get("whats_new.txt") or ""
+    if re.search(r"#\d", new):
+        out.append("whats_new.txt has an issue number; it is written for a coach (#226)")
+    if re.search(r"\*\*|__|`|\]\(|^#", new, re.M):
+        out.append("whats_new.txt has Markdown; the App Store shows plain text (#226)")
+    if "testflight" in new.lower():
+        out.append("whats_new.txt mentions TestFlight; it is for the App Store (#226)")
     desc = (values.get("description.txt") or "").lower()
     for phrase in NOT_IN_V1:
         if phrase in desc:
@@ -75,8 +90,11 @@ def self_test():
     here = os.path.dirname(os.path.abspath(__file__))
     real = os.path.join(here, "..", "..", "store", "app-store", "en-GB")
 
+    total = [0]
+
     def case(name, edit, should_pass):
         nonlocal failed
+        total[0] += 1
         with tempfile.TemporaryDirectory() as d:
             for f in os.listdir(real):
                 shutil.copy(os.path.join(real, f), d)
@@ -94,6 +112,8 @@ def self_test():
 
     case("healthy: the committed listing", lambda d: None, True)
     case("healthy: no promotional text (optional)", remove("promotional_text.txt"), True)
+    case("healthy: a coach's What's New with plain bullets, at exactly 4000",
+         write("whats_new.txt", ("- Tables sort by their numbers.\n" * 200)[:4000]), True)
     case("subtitle 31 characters", write("subtitle.txt", "x" * 31), False)
     case("keywords 101 characters", write("keywords.txt", "heart," + "k" * 95), False)
     case("keywords without heart", write("keywords.txt", "football,coach"), False)
@@ -104,7 +124,13 @@ def self_test():
     case("the wrong name", write("name.txt", "Heart FC"), False)
     case("no description", remove("description.txt"), False)
     case("no copyright (Apple requires it to submit)", remove("copyright.txt"), False)
-    print(f"{12 - failed} expectation(s) passed, {failed} failed.")
+    case("no What's New", remove("whats_new.txt"), False)
+    case("an empty What's New", write("whats_new.txt", "\n"), False)
+    case("What's New over 4000", write("whats_new.txt", "a" * 4001), False)
+    case("What's New with an issue number", write("whats_new.txt", "Tables sort (#208)."), False)
+    case("What's New in Markdown", write("whats_new.txt", "**Tables** sort."), False)
+    case("What's New with TestFlight steps", write("whats_new.txt", "Open TestFlight and tap Update."), False)
+    print(f"{total[0] - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
 
