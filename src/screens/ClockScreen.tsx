@@ -87,6 +87,8 @@ import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
+import { AwardCard } from './AwardCard';
+import { awardsLine, type AwardRow } from '../app/matchAwards';
 import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 import { UNDO_TOAST } from './subPromptColours';
@@ -122,6 +124,7 @@ export function ClockScreen({
   onRecordAssist,
   tallies = [],
   onRecordTally,
+  awards = null,
   onWithdraw,
   onEndQuarter,
   onFinish,
@@ -159,6 +162,17 @@ export function ClockScreen({
   /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
   tallies?: { kind: TallyKind; label: string; team: boolean; slot: number }[];
   onRecordTally?: (kind: TallyKind, playerId: UUID | null) => MatchEvent | null;
+  /**
+   * #228 item 6: awards for this match, from Q1 until it is closed; null when
+   * not offered (a test match, no award types, no record to write). The
+   * existing award records (#197). Each act: the reason when refused, else null.
+   */
+  awards?: {
+    rows: AwardRow[];
+    childrenInMatch: { playerId: UUID; name: string }[];
+    onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  } | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -217,6 +231,10 @@ export function ClockScreen({
   const [undo, setUndo] = useState<{ label: string; until: number; run: () => void } | null>(null);
   const [withdrawing, setWithdrawing] = useState<{ id: UUID; note: string } | null>(null);
   const [notice, setNotice] = useState('');
+  /** #228: the child whose award sheet is open, from the tap sheet's "Give … an award". */
+  const [awardFor, setAwardFor] = useState<UUID | null>(null);
+  /** #228: the award card under the clock at a break between periods. */
+  const [awardsOpen, setAwardsOpen] = useState(false);
   /** #180: when the period ended, asked only when End comes past the margin. */
   const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
@@ -396,6 +414,32 @@ export function ClockScreen({
               ? `${periodNoun(state.match.quarterCount)} over — end it when play stops`
               : `${formatClock(view.quarterRemainingMs)} left in this ${noun}`}
           </Text>
+        )}
+
+        {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
+        {awards && !running && !view.isMatchOver && (
+          <>
+            <Pressable
+              onPress={() => setAwardsOpen((v) => !v)}
+              style={screen.linkHit}
+              accessibilityRole="button"
+            >
+              <Text style={screen.link}>{awardsLine(awards.rows)} ›</Text>
+            </Pressable>
+            {awardsOpen && (
+              <AwardCard
+                rows={awards.rows}
+                childrenInMatch={awards.childrenInMatch}
+                onGive={awards.onGive}
+                onTakeBack={awards.onTakeBack}
+                footer={
+                  <Pressable onPress={() => setAwardsOpen(false)} style={screen.linkHit}>
+                    <Text style={screen.link}>Hide</Text>
+                  </Pressable>
+                }
+              />
+            )}
+          </>
         )}
 
         {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
@@ -597,8 +641,46 @@ export function ClockScreen({
                 setSheetFor(null);
               }}
             />
+            {/* #228 (Dee): during the match, one row at the foot of the tap sheet. */}
+            {awards && (
+              <SheetButton
+                label={`Give ${nameOf(sheetFor)} an award ›`}
+                onPress={() => {
+                  setAwardFor(sheetFor);
+                  setSheetFor(null);
+                }}
+              />
+            )}
           </>
         )}
+      </ActionSheet>
+
+      {/* #228: the award types for one child; pick one and it is given, with Undo. */}
+      <ActionSheet
+        visible={awardFor !== null && awards !== null}
+        title={awardFor ? `An award for ${nameOf(awardFor)}` : ''}
+        onClose={() => setAwardFor(null)}
+      >
+        {awardFor &&
+          awards?.rows.map((row) =>
+            row.winners.some((w) => w.playerId === awardFor) ? (
+              <Text key={row.typeId} style={screen.hint}>
+                {row.name}: {nameOf(awardFor)} has it
+              </Text>
+            ) : (
+              <SheetButton
+                key={row.typeId}
+                label={row.winners.length > 0 ? `${row.name} (joint winner)` : row.name}
+                onPress={() => {
+                  const id = awardFor;
+                  setAwardFor(null);
+                  const refused = awards.onGive(row.typeId, id, '');
+                  if (refused) setNotice(refused);
+                  else offerUndo(`${row.name}: ${nameOf(id)}`, () => void awards.onTakeBack(row.typeId, id, UNDO_NOTE));
+                }}
+              />
+            )
+          )}
       </ActionSheet>
 
       {/* #203 AC2: change one planned sub. The plan only; nothing is recorded. */}

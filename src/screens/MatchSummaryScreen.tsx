@@ -21,6 +21,8 @@
  * correction (invariant 5). Leaving without either keeps everything.
  */
 
+import { AwardCard } from './AwardCard';
+import type { AwardRow } from '../app/matchAwards';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
@@ -71,6 +73,7 @@ export function MatchSummaryScreen({
   backLabel = 'Back to Home',
   onOpenRecord,
   trust = null,
+  awards = null,
   onBack,
 }: {
   engine: MatchEngine;
@@ -106,8 +109,22 @@ export function MatchSummaryScreen({
   onOpenRecord?: () => void;
   /** How far it can be trusted, and why (#199 AC3); null while it is not in the record. */
   trust?: ProvenanceInfo | null;
+  /**
+   * #228 item 6: awards for this match before it is closed, or null when they
+   * are not offered (a test match, no award types, no record to write). `due`
+   * is whether End match asks first (Q5).
+   */
+  awards?: {
+    rows: AwardRow[];
+    childrenInMatch: { playerId: UUID; name: string }[];
+    due: boolean;
+    onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  } | null;
   onBack: () => void;
 }) {
+  /** #228 Q5: End match was tapped with an award still to give; the card asks first. */
+  const [askingAwards, setAskingAwards] = useState(false);
   // #208: the minutes table sorts by its numbers, Total most first by default.
   const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
@@ -464,10 +481,45 @@ export function MatchSummaryScreen({
             <Text style={screen.buttonLabel}>Match analysis</Text>
           </Pressable>
         )}
-        {onEndMatch && (
+        {/* #228 AC24: awards already given, from the record. */}
+        {(inLedger?.awards ?? []).length > 0 && !(askingAwards && awards) && (
+          <>
+            <Text style={screen.fieldLabel}>Awards</Text>
+            {(inLedger?.awards ?? []).map((a) => (
+              <Text key={`${a.awardTypeId}:${a.playerId}`} style={local.line} numberOfLines={2}>
+                {ledger?.awardTypes.find((t) => t.id === a.awardTypeId)?.name ?? 'Award'}: {nameOf(a.playerId)}
+                {a.note ? ` (${a.note})` : ''}
+              </Text>
+            ))}
+          </>
+        )}
+        {/* #228 AC19–AC22 (Q5): End match asks for awards first while one is still to give. */}
+        {onEndMatch && askingAwards && awards && (
+          <AwardCard
+            rows={awards.rows}
+            childrenInMatch={awards.childrenInMatch}
+            onGive={awards.onGive}
+            onTakeBack={awards.onTakeBack}
+            footer={
+              <>
+                <Pressable
+                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+                  onPress={onEndMatch}
+                  accessibilityRole="button"
+                >
+                  <Text style={screen.buttonLabel}>End match</Text>
+                </Pressable>
+                <Pressable onPress={onEndMatch} style={screen.linkHit} accessibilityRole="button">
+                  <Text style={screen.link}>Give them later</Text>
+                </Pressable>
+              </>
+            }
+          />
+        )}
+        {onEndMatch && !(askingAwards && awards) && (
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-            onPress={onEndMatch}
+            onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())}
             accessibilityRole="button"
           >
             <Text style={screen.buttonLabel}>End match</Text>

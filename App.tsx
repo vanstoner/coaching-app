@@ -159,6 +159,7 @@ import {
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
+import { awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
 import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -1299,6 +1300,39 @@ export default function App() {
     [commitLedger]
   );
 
+  /**
+   * #228 item 6: awards for the match in hand, from Q1 until it is closed,
+   * or null when they are not offered (a test match, before kick-off, no
+   * active award type, or no record this phone can write). The existing
+   * award records (#197); the live match is recorded first if it is not yet.
+   */
+  const liveAwards = (() => {
+    const l = ledgerBlockedRef.current ? null : ledger;
+    if (!match || !l || !awardsOffered(l, match.state)) return null;
+    const id = match.state.match.id;
+    const nameOfChild = (pid: UUID) => players.find((p) => p.id === pid)?.firstName ?? 'Unknown';
+    const act = (run: (cur: Ledger) => { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
+      if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
+      // Bea: a real match enters the record with the first save after kick-off.
+      if (!ledgerRef.current?.matches.some((m) => m.id === id)) persist();
+      const cur = ledgerRef.current;
+      if (!cur) return 'Player minutes cannot be written on this phone.';
+      const r = run(cur);
+      if (!r.ok) return r.reason;
+      commitLedger(r.ledger);
+      return null;
+    };
+    return {
+      rows: awardRows(l, id, nameOfChild),
+      childrenInMatch: childrenInMatch(players, match.state.appearances),
+      due: awardPromptDue(l, match.state),
+      onGive: (typeId: UUID, playerId: UUID, note: string) =>
+        act((cur) => giveAward(cur, id, typeId, playerId, note, appNow())),
+      onTakeBack: (typeId: UUID, playerId: UUID, note: string) =>
+        act((cur) => changeAward(cur, id, typeId, playerId, null, note, appNow())),
+    };
+  })();
+
   /** A noted act on the record from Settings: the reason when refused, else null. */
   const applyToLedger = useCallback(
     (act: (l: Ledger) => { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
@@ -2020,6 +2054,7 @@ export default function App() {
             setStep('analysis');
           }}
           trust={provenanceOf(viewLedger, match.state.match.id)}
+          awards={liveAwards}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
             setRecordReturn('summary');
@@ -2279,6 +2314,7 @@ export default function App() {
           onRecordAssist={recordAssist}
           tallies={tallyButtons(ledger?.eventTypes ?? [])}
           onRecordTally={recordTally}
+          awards={liveAwards}
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}

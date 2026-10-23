@@ -366,3 +366,8 @@ analysis, iOS". Entries are added as each release ships.
       across, and a tally you add is the same size as Goal or Save. Each of
       your tallies gets its own colour and picture, in the order you added
       them, and keeps it for good.
+    - **Awards before the match is closed.** From the first period, tap a
+      player and "Give Maya an award ›"; at a break, "Awards: 1 of 2 given ›"
+      opens the awards. End match asks for any award still to give, and
+      "Give them later" closes the match as before. The report lists the
+      awards given. Test matches have none.

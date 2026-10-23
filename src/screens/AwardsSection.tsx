@@ -43,7 +43,10 @@ export function AwardsSection({
   return (
     <View style={local.section}>
       <Text style={screen.fieldLabel}>Awards</Text>
-      <Text style={screen.hint}>Given on a played match’s page. They never count towards minutes or fairness.</Text>
+      <Text style={screen.hint}>
+        Given during a match (tap a player, or at a break), when you End match, or later on a played match’s
+        page. They never count towards minutes or fairness.
+      </Text>
       {types.map((t) =>
         renaming?.id === t.id ? (
           <View key={t.id} style={local.row}>
