@@ -61,7 +61,10 @@ cancels a submission, deletes a version or releases one by hand. To finish
 after a refusal with no new build: `-f app_store_for=SHA`. `-f dry_run=true`
 signs, exports and checks, uploads nothing, and prints the App Store plan;
 `-f app_store_for=SHA -f dry_run=true` prints the plan alone, reading every
-version and its state: the client refuses any write. The unsigned device
+version and its state: the client refuses any write. A dry run has its own
+concurrency group, so it never cancels a real run. Nothing is ever written to
+a live App Information or version: when no editable App Information exists, the
+run sends nothing there, and refuses if the files would change it. The unsigned device
 build is ios.yml's `device-build`, on every PR. Never add a `pull_request`
 trigger to it.
 

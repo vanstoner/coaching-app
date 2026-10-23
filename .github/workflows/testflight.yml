@@ -64,10 +64,13 @@ on:
         type: string
         default: ""
 
-# A plan-only run (app_store_for with dry_run) writes nothing, so it has its own
-# group: it never cancels a real run that is waiting for Rob's approval.
+# Every dry run (the full one, or the plan alone with app_store_for) writes
+# nothing, so it has its own group: it never cancels a real run, waiting for
+# Rob's approval or part-way through (#226 QA R4). A newer dry run cancels an
+# older one; a newer real run cancels an older real run, which a re-run (or
+# app_store_for) finishes.
 concurrency:
-  group: testflight-${{ (inputs.dry_run && inputs.app_store_for != '') && 'plan' || 'write' }}
+  group: testflight-${{ inputs.dry_run && 'dry' || 'write' }}
   cancel-in-progress: true
 
 permissions:
@@ -435,7 +438,8 @@ jobs:
             elif [ "${{ steps.appstore.outcome }}" = success ]; then
               cat "$RUNNER_TEMP/app-store.txt"
             else
-              echo "Uploaded to TestFlight (build $IOS_BUILD_NUMBER). Not submitted for review: see WHY THIS JOB FAILED."
+              cat "$RUNNER_TEMP/app-store.txt" 2>/dev/null \
+                || echo "Uploaded to TestFlight (build $IOS_BUILD_NUMBER). Not submitted for review: see WHY THIS JOB FAILED."
             fi
           } | tee -a "$GITHUB_STEP_SUMMARY"
 

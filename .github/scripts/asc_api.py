@@ -211,13 +211,29 @@ def listing_diff(wanted, have):
     return [(w, a, have.get((w, a)), v) for (w, a), v in sorted(wanted.items()) if have.get((w, a)) != v]
 
 
+# States in which Apple lets an app info or a version's page be edited. Any
+# other state (READY_FOR_SALE, READY_FOR_DISTRIBUTION, IN_REVIEW, ...) is
+# never written: the live listing is not this script's to change (#226 QA R1).
+WRITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "READY_FOR_REVIEW"}
+
+
+def record_state(attrs):
+    """An app info's or a version's state, under either of Apple's attribute names."""
+    s = attrs.get("appVersionState") or attrs.get("state") or attrs.get("appStoreState") or "UNKNOWN"
+    return {"READY_FOR_SALE": "READY_FOR_DISTRIBUTION"}.get(s, s)
+
+
+def writable_info(infos):
+    """(id of the app info that may be written or None, id of the one to read)."""
+    ok = [i["id"] for i in infos if record_state(i["attributes"]) in WRITABLE]
+    return (ok[0] if ok else None), (ok[0] if ok else infos[0]["id"])
+
+
 def listing(bundle_id, version, folder, dry_run=False, asc=None):
     asc = asc or Asc(read_only=dry_run)
     app = asc.app_id(bundle_id)
     infos = asc.call("GET", f"/apps/{app}/appInfos")["data"]
-    editable = [i for i in infos if i["attributes"].get("appStoreState", i["attributes"].get("state"))
-                not in ("READY_FOR_SALE", "READY_FOR_DISTRIBUTION")] or infos
-    info_id = editable[0]["id"]
+    info_id, read_info_id = writable_info(infos)
     q = urllib.parse.urlencode({"filter[versionString]": version, "filter[platform]": "IOS"})
     versions = [v for v in asc.call("GET", f"/apps/{app}/appStoreVersions?{q}")["data"]
                 if v["attributes"].get("versionString") == version]
@@ -225,9 +241,10 @@ def listing(bundle_id, version, folder, dry_run=False, asc=None):
         raise SystemExit(f"WHY THIS JOB FAILED: App Store Connect has no iOS version {version}; "
                          "its version page must read exactly this (#108).")
     version_id = versions[0]["id"]
+    version_state_now = record_state(versions[0]["attributes"])
 
     def locs():
-        info = [x for x in asc.call("GET", f"/appInfos/{info_id}/appInfoLocalizations")["data"]
+        info = [x for x in asc.call("GET", f"/appInfos/{read_info_id}/appInfoLocalizations")["data"]
                 if x["attributes"]["locale"] == LOCALE]
         ver = [x for x in asc.call("GET", f"/appStoreVersions/{version_id}/appStoreVersionLocalizations")["data"]
                if x["attributes"]["locale"] == LOCALE]
@@ -248,6 +265,18 @@ def listing(bundle_id, version, folder, dry_run=False, asc=None):
         raise SystemExit("WHY THIS JOB FAILED: version " + version + " has no App Review Information yet. "
                          "Save the contact details on its page in App Store Connect once, then re-run.")
     diff = listing_diff(wanted, have)
+    info_diff = [a for w, a, _, _ in diff if w == "info"]
+    page_diff = [f"{w}.{a}" for w, a, _, _ in diff if w != "info"]
+    if info_id is None and info_diff:
+        raise SystemExit("WHY THIS JOB FAILED: no editable app info (the only one is "
+                         f"{record_state(infos[0]['attributes'])}), and the files change its {', '.join(info_diff)}. "
+                         "Nothing was sent to the live listing. Change those files back, or send them while "
+                         "App Store Connect shows an editable App Information (after a version is added).")
+    if info_id is None and not info_diff:
+        print("app info: no editable app info; name, subtitle and privacy URL already match, nothing sent to it")
+    if version_state_now not in WRITABLE and page_diff:
+        raise SystemExit(f"WHY THIS JOB FAILED: version {version} is {version_state_now}, not editable, and the "
+                         f"files change its {', '.join(page_diff)}. Nothing was sent to it.")
     for w, a, old, new in diff:
         print(f"{'would change' if dry_run else 'changing'} {w}.{a}: {len(old or '')} -> {len(new)} characters")
     if not diff:
@@ -260,7 +289,7 @@ def listing(bundle_id, version, folder, dry_run=False, asc=None):
     ver_attrs = {a: v for (w, a), v in wanted.items() if w == "version"}
     own_attrs = {a: v for (w, a), v in wanted.items() if w == "appversion"}
     review_attrs = {a: v for (w, a), v in wanted.items() if w == "review"}
-    if info_attrs:
+    if info_attrs and info_diff and info_id is not None:
         asc.call("PATCH", f"/appInfoLocalizations/{info_loc}",
                  {"data": {"type": "appInfoLocalizations", "id": info_loc, "attributes": info_attrs}})
     if ver_attrs:
@@ -322,6 +351,10 @@ def version_localization(asc, bundle_id, version):
                 if v["attributes"].get("versionString") == version]
     if not versions:
         raise SystemExit(f"WHY THIS JOB FAILED: App Store Connect has no iOS version {version}")
+    state = record_state(versions[0]["attributes"])
+    if state not in WRITABLE:
+        raise SystemExit(f"WHY THIS JOB FAILED: version {version} is {state}, not editable; "
+                         "its screenshots are not changed (#226 QA R1).")
     locs = [x for x in asc.call("GET", f"/appStoreVersions/{versions[0]['id']}/appStoreVersionLocalizations")["data"]
             if x["attributes"]["locale"] == LOCALE]
     if not locs:
@@ -329,11 +362,11 @@ def version_localization(asc, bundle_id, version):
     return locs[0]["id"]
 
 
-def screenshots(bundle_id, version, folder, dry_run=False):
+def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
     plan = screenshot_plan(folder)
     if not plan:
         raise SystemExit(f"WHY THIS JOB FAILED: no iphone/ or ipad/ screenshots in {folder}")
-    asc = Asc(read_only=dry_run)
+    asc = asc or Asc(read_only=dry_run)
     loc = version_localization(asc, bundle_id, version)
     sets = {s["attributes"]["screenshotDisplayType"]: s["id"]
             for s in asc.call("GET", f"/appStoreVersionLocalizations/{loc}/appScreenshotSets")["data"]}
@@ -639,7 +672,11 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
     done = []
 
     def progress():
-        return ", ".join(done) + ", not submitted" if done else "nothing changed in App Store Connect"
+        if not done:
+            return "nothing changed in App Store Connect"
+        if "submitted" in done:
+            return ", ".join(done) + "; not yet read back as Waiting for Review"
+        return ", ".join(done) + ", not submitted"
 
     step = "read App Store Connect"
     try:
@@ -762,7 +799,9 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
         print(f"read back: state {state}, build {got_build}, releaseType {own.get('releaseType')}")
         if state not in SUBMITTED or str(got_build) != n or own.get("releaseType") != AFTER_APPROVAL:
             raise Refused(step, f"after submitting, {target} reads state {state}, build {got_build}, "
-                          f"releaseType {own.get('releaseType')}.", f"Look at {target} in {ASC_PAGE}.")
+                          f"releaseType {own.get('releaseType')}.",
+                          f"Apple may still be updating it: look at {target} in {ASC_PAGE}, then re-run the "
+                          "App Store steps, which say 'nothing to do' once it reads Waiting for Review.")
         return 0, (f"Heart FC Coach {target} (build {n}) submitted for review; "
                    f"it releases automatically when Apple approves{' (phased over 7 days)' if phased else ''}.")
     except Refused as r:
@@ -772,6 +811,9 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
                   "then re-run the App Store steps (no new build needed).")
     except SystemExit as e:
         why_block(step, trim(e.code), progress(), "Fix what the message names, then re-run the App Store steps.")
+    if "submitted" in done:
+        return 1, (f"Uploaded to TestFlight (build {n}) and submitted for review, but not yet read back as "
+                   "Waiting for Review: see WHY THIS JOB FAILED.")
     return 1, f"Uploaded to TestFlight (build {n}). Not submitted for review: see WHY THIS JOB FAILED."
 
 
@@ -882,10 +924,14 @@ FULL_SHOTS = {"APP_IPHONE_67": 7, "APP_IPAD_PRO_3GEN_129": 7}
 
 
 class FakeAsc(Asc):
-    def __init__(self, versions, builds, submissions=(), read_only=False):
+    def __init__(self, versions, builds, submissions=(), read_only=False, info=None, info_on_create=True):
+        """info: the live app info's en-GB fields (name, subtitle, privacyPolicyUrl).
+        info_on_create: whether creating a version also makes an editable app
+        info, as App Store Connect does when a new version is added (assumed)."""
         self.read_only, self.jwt, self.sent, self.ids = read_only, "unused", [], 0
         self.v, self.locs, self.b, self.subs, self.review = {}, {}, {}, {}, {}
-        self.info = {"locale": LOCALE}
+        self.infos = {"I0": {"attrs": {"appStoreState": "READY_FOR_SALE"}, "loc": dict(info or {}, locale=LOCALE)}}
+        self.info_on_create = info_on_create
         for n, (number, pre, state, enc) in enumerate(builds):
             self.b[f"B{n}"] = {"version": str(number), "pre": pre, "processingState": state,
                                "usesNonExemptEncryption": enc, "expired": False}
@@ -927,11 +973,11 @@ class FakeAsc(Asc):
                              ("versionString", "appVersionState", "releaseType")}} for k, x in self.v.items()
                              if q.get("filter[versionString]") in (None, x["versionString"])]}
             if p[0] == "apps" and p[2] == "appInfos":
-                return 200, {"data": [{"id": "I1", "attributes": {"appStoreState": "READY_FOR_DISTRIBUTION"}}]}
+                return 200, {"data": [{"id": k, "attributes": dict(x["attrs"])} for k, x in self.infos.items()]}
             if p[0] == "appInfos" and p[2] == "ageRatingDeclaration":
                 return 200, {"data": {"id": "AR", "attributes": {"gambling": False, "violenceRealistic": "NONE"}}}
             if p[0] == "appInfos" and p[2] == "appInfoLocalizations":
-                return 200, {"data": [{"id": "IL", "attributes": dict(self.info)}]}
+                return 200, {"data": [{"id": "L" + p[1], "attributes": dict(self.infos[p[1]]["loc"])}]}
             if p[0] == "appStoreVersions" and len(p) > 2 and p[2] == "appStoreReviewDetail":
                 return 200, {"data": {"id": f"R~{p[1]}", "attributes": dict(self.review[p[1]])}}
             if path == "/builds":
@@ -972,6 +1018,9 @@ class FakeAsc(Asc):
                                     "page": {k: v for k, v in (live or {"attrs": {}})["attrs"].items()
                                              if k in FULL_PAGE},
                                     "shots": (live or {}).get("shots", {})})
+            if self.info_on_create:
+                self.infos[f"I{len(self.infos)}"] = {"attrs": {"state": "PREPARE_FOR_SUBMISSION"},
+                                                "loc": dict(self.infos["I0"]["loc"])}
             return 201, {"data": {"id": vid}}
         if method == "PATCH" and p[0] == "appStoreVersions" and len(p) == 2:
             self.v[p[1]].update(attrs)
@@ -988,7 +1037,7 @@ class FakeAsc(Asc):
                     x["phased"] = None
             return 204, {}
         if method == "PATCH" and p[0] == "appInfoLocalizations":
-            self.info.update(attrs)
+            self.infos[p[1][1:]]["loc"].update(attrs)
             return 200, {"data": {"id": p[1]}}
         if method == "PATCH" and p[0] == "appStoreReviewDetails":
             self.review[p[1].split("~")[1]].update(attrs)
@@ -1235,12 +1284,65 @@ def self_test():
     expect("healthy: with the committed listing files, the text is sent to 1.3.0 and read back before submitting",
            code == 0 and "read back: all 9 fields match the listing files" in out.getvalue()
            and f"PATCH /appStoreReviewDetails/R~{vid}" in f.writes()
-           and f.writes().index("PATCH /appInfoLocalizations/IL") < f.writes().index("POST /reviewSubmissions")
+           and f.writes().index("PATCH /appInfoLocalizations/LI1") < f.writes().index("POST /reviewSubmissions")
            and "eyJ" not in out.getvalue())
-    live_ids = {k for k, x in f.v.items() if x["versionString"] == "1.0.1"}
-    live_ids |= {k for k, x in f.locs.items() if x["version"] in live_ids}
-    expect("no write touches the live 1.0.1, its page or its review details (AC14)",
-           not any(w.rsplit("/", 1)[-1].split("~")[-1] in live_ids for w in f.writes()))
+
+    def live_writes(fake):
+        """Writes that land on anything live: the 1.0.1 version, its page, its
+        review details, the live app info or its localisation (AC14, QA R1)."""
+        ids = {k for k, x in fake.v.items() if x["versionString"] == "1.0.1"}
+        ids |= {k for k, x in fake.locs.items() if x["version"] in ids}
+        ids |= {"I0", "LI0"}
+        return [w for w in fake.writes() if w.rsplit("/", 1)[-1].split("~")[-1] in ids]
+
+    expect("no write touches the live 1.0.1, its page, its review details or the live app info (AC14)",
+           live_writes(f) == [])
+    listing_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "store", "app-store", "en-GB")
+    f = FakeAsc([v101], [b412], info_on_create=False)
+    out = quiet()
+    with contextlib.redirect_stdout(out):
+        code, line = release(f, "com.example", "1.3.0", 412, text, folder=listing_dir,
+                             wait_minutes=0, sleep=lambda s: None)
+    expect("refuses: only a live app info, and its name, subtitle or privacy URL differ: nothing written to it, "
+           "not submitted (QA R1)",
+           code == 1 and live_writes(f) == [] and not any("reviewSubmission" in w for w in f.writes())
+           and "Nothing was sent to the live listing" in out.getvalue())
+    wanted_info = {a: v for (w, a), v in listing_wanted(listing_dir).items() if w == "info"}
+    f = FakeAsc([v101], [b412], info_on_create=False, info=wanted_info)
+    out = quiet()
+    with contextlib.redirect_stdout(out):
+        code, line = release(f, "com.example", "1.3.0", 412, text, folder=listing_dir,
+                             wait_minutes=0, sleep=lambda s: None)
+    expect("healthy: only a live app info that already matches: skipped with a line, the rest sent and submitted",
+           code == 0 and live_writes(f) == [] and "PATCH /reviewSubmissions/S5" in f.writes()
+           and "app info: no editable app info; name, subtitle and privacy URL already match" in out.getvalue())
+    class SlowApple(FakeAsc):
+        """Takes the submission but has not shown Waiting for Review yet."""
+        def send(self, method, url, body):
+            out = super().send(method, url, body)
+            if method == "PATCH" and "/reviewSubmissions/" in url:
+                for x in self.v.values():
+                    if x["appVersionState"] == "WAITING_FOR_REVIEW":
+                        x["appVersionState"] = "READY_FOR_REVIEW"
+            return out
+
+    f = SlowApple([v101], [b412])
+    code, line, log = run(f)
+    expect("refuses truthfully: submitted but not yet read back says so, never 'not submitted' (QA R2)",
+           code == 1 and "got as far as: 1.3.0 created, build 412 attached, What's New set, submitted; "
+           "not yet read back as Waiting for Review" in log and "not submitted" not in log.split("WHY THIS JOB")[1]
+           and line.startswith("Uploaded to TestFlight (build 412) and submitted for review, but not yet read back"))
+    f = FakeAsc([v101], [b412])
+    shots = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "store", "app-store", "screenshots")
+    try:
+        with contextlib.redirect_stdout(quiet()):
+            screenshots("com.example", "1.0.1", shots, asc=f)
+        expect("refuses: screenshots for the live 1.0.1 are never replaced (QA R1)", False)
+    except SystemExit as e:
+        expect("refuses: screenshots for the live 1.0.1 are never replaced (QA R1)",
+               f.writes() == [] and "not editable" in str(e.code))
+    except Exception:  # noqa: BLE001 — it tried to write and the fake had no route for it
+        expect("refuses: screenshots for the live 1.0.1 are never replaced (QA R1)", False)
     f = FakeAsc([v101], [b412], read_only=True)
     try:
         f.call("POST", "/appStoreVersions", {})
