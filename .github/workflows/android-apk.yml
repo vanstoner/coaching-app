@@ -586,7 +586,16 @@ jobs:
       # 320x640 (good.png), NOT yet from an emulator frame: the first run's
       # frame-assertions.txt is the evidence to confirm or move it by. The
       # demo seeds the made-up team, so its card is gone (every step done).
-      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Your team|Test Rovers' || 'Your team|Who comes off next' }}
+      #
+      # #228 (PO ruling `both`) makes Getting started one line with a progress
+      # bar, so the purpose line leaves a fresh Home. "Getting started" stays:
+      # it is the card's title today (CARD_TITLE, read as "GETTING STARTED" in
+      # run 39959317273's OCR, beside "Your team") and the one line after.
+      # Play now was not chosen: its label is white on the accent green, which
+      # tesseract missed for "Add a fixture" (above), and today it sits below
+      # the 320x640 fold under the full card (that run's OCR ends at the card).
+      # Dry-run on good.png and good-one-line.png (test_smoke_assert.py).
+      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Your team|Test Rovers' || 'Your team|Getting started' }}
       SMOKE_OUT: smoke-evidence
       # #145: what Settings must show. 'beta' on a PR: every beta-only
       # feature. Empty on main: none. The same condition as APP_VARIANT in

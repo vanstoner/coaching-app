@@ -291,6 +291,8 @@ def main() -> int:
             print(f"\nEnd-to-end against rendered fixtures ({version})")
             cases = (
                 ("good.png", 0, "a rendered fresh-install Home ('Your team', #218) PASSES"),
+                ("good-one-line.png", 0,
+                 "the fresh-install Home after #228, Getting started on one line ('Your team') PASSES"),
                 ("blank-white.png", 1, "a blank white screen FAILS"),
                 ("wrong-text.png", 1, "a screen rendering the wrong squad FAILS"),
             )
@@ -320,13 +322,26 @@ def main() -> int:
             # which is how a gate quietly becomes a no-op.
             print("\nRepeated --expect requires every expectation")
             good = os.path.join(FIXTURES, "good.png")
+            one_line = os.path.join(FIXTURES, "good-one-line.png")
             multi = (
                 (["Your team"], 0, "one expectation that is present PASSES"),
                 (
-                    ["Your team", "Who comes off next"],
+                    ["Your team", "Getting started"],
                     0,
                     "two expectations both present PASSES — the pair the "
-                    "workflow asserts on a fresh install (#218)",
+                    "workflow asserts on a fresh install (#228), on today's full card",
+                ),
+                (
+                    ["Your team", "Getting started"],
+                    0,
+                    "the same pair PASSES on the one-line Getting started (#228, PO `both`)",
+                    one_line,
+                ),
+                (
+                    ["Your team", "Who comes off next"],
+                    1,
+                    "the old pair FAILS on the one-line Home: why the workflow moved off it",
+                    one_line,
                 ),
                 (
                     ["Your team", "Substitution due"],
@@ -340,11 +355,12 @@ def main() -> int:
                     "neither present FAILS",
                 ),
             )
-            for expects, want, label in multi:
-                if not os.path.exists(good):
-                    check(label, False, f"missing fixture {good}")
+            for expects, want, label, *frame in multi:
+                frame = frame[0] if frame else good
+                if not os.path.exists(frame):
+                    check(label, False, f"missing fixture {frame}")
                     continue
-                argv = [sys.executable, os.path.join(HERE, "smoke_assert.py"), good]
+                argv = [sys.executable, os.path.join(HERE, "smoke_assert.py"), frame]
                 for e in expects:
                     argv += ["--expect", e]
                 argv += ["--workdir", tmp, "--quiet"]
