@@ -603,6 +603,21 @@ describe('33–36: Q1–Q4 as settled', () => {
     expect(again.restored).toHaveLength(10);
   });
 
+  it('criterion 34 (QA F1): a setup-only file re-imported after Match and a save is nothing new', () => {
+    const phone = squad([...TEN, 'Kit']);
+    const file = squad(TEN, 'File');
+    const first = runImport(phone, file.ledger, 'match');
+    const ps = first.session.players;
+    const saved = recordMatches(first.ledger, [], ps, 'Phone', LATER,
+      setupFrom({ players: ps, matches: [], live: null, format, totalMinutes: 50, periodCount: 4, buzzWhenSubDue: true }));
+    const r = importLedger(saved, file.ledger, undefined, LATER);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.ledger.entries.map((e) => e.hash)).toEqual(saved.entries.map((e) => e.hash));
+    expect(saved.entries.every((e, i) => r.ledger.entries[i]?.hash === e.hash)).toBe(true);
+    expect(r.addedEntries).toBe(0);
+    expect(describeImport(r)).toBe('Nothing new in that file — everything in it is already here.');
+  });
+
   it('criterion 35: a file child with no profile takes the phone child’s whole profile', () => {
     const phone = squad([{ name: 'Ben', edit: (p) => ({ ...p, keeper: 'main', outfieldTargetPct: 70, prefers: 'MID' }) }]);
     const file = squad(['Ben'], 'File', { profiles: false });

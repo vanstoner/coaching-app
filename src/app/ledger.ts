@@ -1879,6 +1879,17 @@ export function importLedger(ours: Ledger, file: Ledger, choice?: ImportChoice, 
     addedPlayers: next.players.filter((p) => !ours.players.some((o) => o.id === p.id)).length,
   });
 
+  // The file's chain is already contained in this phone's: nothing new, on
+  // every path. Checked before adopting, or a phone with no player time yet
+  // would re-adopt a file it already holds and drop its own later entries
+  // (#195 criterion 34, QA F1 on 1.3.0).
+  if (
+    file.entries.length <= ours.entries.length &&
+    file.entries.every((e, i) => ours.entries[i].hash === e.hash)
+  ) {
+    return { ok: true, ledger: ours, addedEntries: 0, addedMatches: 0, addedPlayers: 0 };
+  }
+
   if (!holdsPlayerTime(ours)) {
     // The file's chain is adopted, and this phone's own records ride on top
     // of it (#195 AC5, #190 AC4): its children, fixtures, profiles, tally
