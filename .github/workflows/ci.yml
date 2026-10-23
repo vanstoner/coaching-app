@@ -110,11 +110,23 @@ jobs:
 
       # #108 E: the screenshot and preview checks run on a Mac in
       # store-media.yml; their self-test runs here on every PR, healthy first.
-      - name: Prove the App Store media checks
+      # #226: so does the compositor's (Pillow pinned by hash), and the
+      # committed screenshots must be exactly the captioned set, because the
+      # release run uploads them before it submits. Until a store-media run's
+      # shots are approved and committed, this names the gap.
+      - name: Prove the App Store media checks and the compositor
         run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --require-hashes --only-binary=:all: -r .github/scripts/requirements-media.txt
           python3 .github/scripts/check_store_media.py --self-test
-          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/iphone iphone
-          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/ipad ipad
+          python3 .github/scripts/composite_shots.py --self-test
+          python3 .github/scripts/composite_shots.py check-captions store/app-store/en-GB/screenshot_captions.txt
+          python3 .github/scripts/check_store_media.py set store/app-store/screenshots \
+            store/app-store/en-GB/screenshot_captions.txt || {
+            echo "WHY THIS JOB FAILED: store/app-store/screenshots/ is not the approved, captioned set."
+            echo "Run store-media.yml on this branch, show Rob the shots, and commit them there."
+            exit 1
+          }
 
       # #167: released data survives every update. The upgrade test runs in
       # vitest; this gate makes a version bump freeze the previous release's

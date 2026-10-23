@@ -48,7 +48,10 @@ Test from the release note (`testflight_notes.py`, `asc_api.py`).
 (bounded, `PROCESSING_WAIT_MINUTES`) for Apple to process the build, creates
 or reuses the App Store version for `app.json`'s version, attaches this
 build, sets "Automatically release this version" (`AFTER_APPROVAL`), sends
-the listing text, sets What's New from `store/app-store/en-GB/whats_new.txt`
+the listing text, puts the approved screenshots on the version (the
+committed `store/app-store/screenshots/`, exactly the shots
+`screenshot_captions.txt` names; a set already holding them is not
+re-uploaded, and missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
 (a bump that leaves it unchanged fails `version-impact.yml`), checks the page
 is complete and submits it for review (`asc_api.py release`). Apple's
 approval releases it; Rob never opens App Store Connect. Every step checks

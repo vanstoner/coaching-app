@@ -47,8 +47,12 @@ text and What's New, and submits that version for review set to release
 automatically when Apple approves it ([#226](https://github.com/vanstoner/coaching-app/issues/226)).
 
 The screenshots in `store/app-store/screenshots/` (iPhone 6.9" and iPad 13")
-are made by `store-media.yml`, run by hand, from a build that opens with the
-made-up season; the same listing run uploads them.
+are made by `store-media.yml`, run by hand (on a PR branch too), from a build
+that opens with made-up data, then framed and captioned in CI
+(`composite_shots.py`, captions in `store/app-store/en-GB/screenshot_captions.txt`).
+Once Rob approves them they are committed there, and CI checks they are
+exactly the captioned set. The release run puts them on the new version
+before it submits it; the listing run can also upload them.
 
 The website, [vanstoner.github.io/coaching-app](https://vanstoner.github.io/coaching-app/),
 is `site/` with the privacy page made from PRIVACY.md; `pages.yml` checks it

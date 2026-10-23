@@ -26,7 +26,10 @@ name: TestFlight
 # creates or reuses the App Store version for app.json's version, attaches
 # this build, sets "Automatically release this version" (AFTER_APPROVAL),
 # sends the listing text, sets What's New from store/app-store/en-GB/whats_new.txt
-# and submits it for review (asc_api.py release). Rob's approvals are the same
+# puts the approved screenshots (store/app-store/screenshots/, exactly the
+# shots screenshot_captions.txt names) on the version, uploading only a set
+# that differs, and submits it for review (asc_api.py release), which refuses
+# before any write if those shots are missing. Rob's approvals are the same
 # two: the merge, and this environment. Apple's approval then releases it.
 # Every step checks before it acts, so a re-run finishes what an earlier run
 # started. Anything unexpected (another editable version, a rejected one, a
@@ -422,6 +425,7 @@ jobs:
           [ "$DRY_RUN" = true ] && DRY="--dry-run"
           python3 .github/scripts/asc_api.py release com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" \
             store/app-store/en-GB/whats_new.txt --listing store/app-store/en-GB --phased "$PHASED_RELEASE" \
+            --screenshots store/app-store/screenshots --captions store/app-store/en-GB/screenshot_captions.txt \
             --wait-minutes "$PROCESSING_WAIT_MINUTES" --summary "$RUNNER_TEMP/app-store.txt" $DRY
 
       - name: Say what happened
@@ -487,6 +491,7 @@ jobs:
         run: |
           python3 .github/scripts/asc_api.py --self-test
           python3 .github/scripts/check_listing.py store/app-store/en-GB
+          python3 .github/scripts/check_store_media.py set store/app-store/screenshots store/app-store/en-GB/screenshot_captions.txt
 
       - name: Write and check the API key
         env:
@@ -506,6 +511,7 @@ jobs:
           [ "$DRY_RUN" = true ] && DRY="--dry-run"
           python3 .github/scripts/asc_api.py release com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" \
             store/app-store/en-GB/whats_new.txt --listing store/app-store/en-GB --phased "$PHASED_RELEASE" \
+            --screenshots store/app-store/screenshots --captions store/app-store/en-GB/screenshot_captions.txt \
             --wait-minutes "$PROCESSING_WAIT_MINUTES" --summary "$RUNNER_TEMP/app-store.txt" $DRY
 
       - name: Say what happened

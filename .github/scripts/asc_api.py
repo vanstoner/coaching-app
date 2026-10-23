@@ -21,15 +21,20 @@
     asc_api.py screenshots BUNDLE_ID VERSION FOLDER [--dry-run]
         #108 E: FOLDER/iphone/*.png and FOLDER/ipad/*.png (store-media.yml's
         shots, checked by check_store_media.py) to that VERSION's en-GB page,
-        in file-name order, replacing what each display's set held. Then read
-        back: the count, and no screenshot Apple marked FAILED.
+        in file-name order, replacing what each display's set held, unless it
+        already holds exactly those files (names and checksums). Then read
+        back: the names in order, and no screenshot Apple marked FAILED.
 
-    asc_api.py release BUNDLE_ID VERSION BUILD WHATS_NEW_FILE [--listing FOLDER]
-               [--phased on|off] [--wait-minutes N] [--summary FILE] [--dry-run]
-        #226: waits (bounded) for Apple to process BUILD, then creates or
-        reuses VERSION, attaches BUILD, sets "release automatically after
-        approval" (AFTER_APPROVAL), phased release on or off, sends FOLDER's
-        listing, sets What's New, checks the page is complete, and submits it
+    asc_api.py release BUNDLE_ID VERSION BUILD WHATS_NEW_FILE --screenshots FOLDER
+               [--captions FILE] [--listing FOLDER] [--phased on|off]
+               [--wait-minutes N] [--summary FILE] [--dry-run]
+        #226: refuses first, writing nothing, unless FOLDER holds the approved
+        screenshots for both displays (with --captions: exactly the shots
+        that file captions). Then waits (bounded) for Apple to process BUILD,
+        creates or reuses VERSION, attaches BUILD, sets "release automatically
+        after approval" (AFTER_APPROVAL), phased release on or off, sends the
+        listing, puts the screenshots on the version (a set already holding
+        them is left alone), sets What's New, checks the page is complete, and submits it
         for review (reviewSubmissions). Every step checks before it acts, so a
         re-run finishes what an earlier one started and never duplicates.
         Refuses, red, with a WHY THIS JOB FAILED block, on anything it does not
@@ -159,6 +164,12 @@ class Asc:
                 return {"data": None}
             detail = trim(e.read().decode(errors="replace"))
             raise RuntimeError(f"{method} {url.split('?')[0]}: HTTP {e.code} {detail}") from None
+
+    def upload(self, op, part):
+        """One of Apple's upload operations for an asset (a PUT to Apple's asset host)."""
+        if self.read_only:
+            raise ReadOnlyViolation("dry run: refused to upload a screenshot")
+        put_part(op, part)
 
     def app_id(self, bundle_id):
         q = urllib.parse.urlencode({"filter[bundleId]": bundle_id, "limit": 1})
@@ -362,16 +373,53 @@ def version_localization(asc, bundle_id, version):
     return locs[0]["id"]
 
 
-def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
-    plan = screenshot_plan(folder)
-    if not plan:
-        raise SystemExit(f"WHY THIS JOB FAILED: no iphone/ or ipad/ screenshots in {folder}")
-    asc = asc or Asc(read_only=dry_run)
-    loc = version_localization(asc, bundle_id, version)
-    sets = {s["attributes"]["screenshotDisplayType"]: s["id"]
-            for s in asc.call("GET", f"/appStoreVersionLocalizations/{loc}/appScreenshotSets")["data"]}
+def md5(path):
+    with open(path, "rb") as fh:
+        return hashlib.md5(fh.read()).hexdigest()
+
+
+def shots_wanted(plan):
+    """{display: [(file name, md5), ...]} in upload order."""
+    return {display: [(os.path.basename(f), md5(f)) for f in files] for display, files in plan.items()}
+
+
+def shots_held(asc, set_id):
+    """[(file name, checksum, delivery state)] of one screenshot set, in Apple's order."""
+    out = []
+    for x in asc.call("GET", f"/appScreenshotSets/{set_id}/appScreenshots")["data"]:
+        a = x.get("attributes") or {}
+        out.append((a.get("fileName"), a.get("sourceFileChecksum"),
+                    (a.get("assetDeliveryState") or {}).get("state"), x["id"]))
+    return out
+
+
+SHOT_NOT_DONE = {"FAILED", "AWAITING_UPLOAD"}
+
+
+def same_shots(held, wanted):
+    """True when the set already holds exactly these files, in this order, all delivered (#226)."""
+    return ([(n, c) for n, c, _, _ in held] == list(wanted)
+            and not any(st in SHOT_NOT_DONE for _, _, st, _ in held))
+
+
+def sync_screenshots(asc, loc, plan, dry_run=False):
+    """Make each display's set on version localisation `loc` hold exactly the
+    plan's files, in order. A set that already holds them (same names and
+    checksums, delivered) is left alone, so a re-run uploads nothing twice.
+    The caller has checked `loc` belongs to an editable version.
+    Returns the displays that changed (or would)."""
+    wanted = shots_wanted(plan)
+    sets = {x["attributes"]["screenshotDisplayType"]: x["id"]
+            for x in asc.call("GET", f"/appStoreVersionLocalizations/{loc}/appScreenshotSets")["data"]}
+    changed = []
     for display, files in plan.items():
-        print(f"{display}: {len(files)} screenshot(s): {', '.join(os.path.basename(f) for f in files)}")
+        held = shots_held(asc, sets[display]) if display in sets else []
+        names = ", ".join(n for n, _ in wanted[display])
+        if same_shots(held, wanted[display]):
+            print(f"{display}: already holds these {len(files)} screenshot(s); nothing uploaded")
+            continue
+        changed.append(display)
+        print(f"{display}: {'would replace' if dry_run else 'replacing'} {len(held)} with {len(files)}: {names}")
         if dry_run:
             continue
         set_id = sets.get(display)
@@ -380,8 +428,8 @@ def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
                 "type": "appScreenshotSets", "attributes": {"screenshotDisplayType": display},
                 "relationships": {"appStoreVersionLocalization": {
                     "data": {"type": "appStoreVersionLocalizations", "id": loc}}}}})["data"]["id"]
-        for old in asc.call("GET", f"/appScreenshotSets/{set_id}/appScreenshots")["data"]:
-            asc.call("DELETE", f"/appScreenshots/{old['id']}")
+        for *_, old in held:
+            asc.call("DELETE", f"/appScreenshots/{old}")
         for path in files:
             with open(path, "rb") as fh:
                 data = fh.read()
@@ -390,19 +438,49 @@ def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
                 "attributes": {"fileName": os.path.basename(path), "fileSize": len(data)},
                 "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})["data"]
             for op, part in chunks(data, shot["attributes"]["uploadOperations"]):
-                put_part(op, part)
+                asc.upload(op, part)
             asc.call("PATCH", f"/appScreenshots/{shot['id']}", {"data": {
                 "type": "appScreenshots", "id": shot["id"],
                 "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
-        back = asc.call("GET", f"/appScreenshotSets/{set_id}/appScreenshots")["data"]
-        failed = [b["attributes"].get("fileName") for b in back
-                  if (b["attributes"].get("assetDeliveryState") or {}).get("state") == "FAILED"]
-        if len(back) != len(files) or failed:
-            raise SystemExit(f"WHY THIS JOB FAILED: {display} holds {len(back)} of {len(files)}; failed: {failed}")
-        print(f"read back: {display} holds all {len(files)}")
+        back = shots_held(asc, set_id)
+        failed = [n for n, _, st, _ in back if st == "FAILED"]
+        if [(n, c) for n, c, _, _ in back] != wanted[display] or failed:
+            raise SystemExit(f"WHY THIS JOB FAILED: {display} reads back {len(back)} of {len(files)} "
+                             f"({', '.join(n or '?' for n, *_ in back)}); failed: {failed}")
+        print(f"read back: {display} holds all {len(files)}, in order")
+    return changed
+
+
+def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
+    plan = screenshot_plan(folder)
+    if not plan:
+        raise SystemExit(f"WHY THIS JOB FAILED: no iphone/ or ipad/ screenshots in {folder}")
+    asc = asc or Asc(read_only=dry_run)
+    loc = version_localization(asc, bundle_id, version)
+    sync_screenshots(asc, loc, plan, dry_run)
     if dry_run:
         print("Dry run: nothing was changed.")
     return 0
+
+
+def screenshot_refusal(folder, captions=None):
+    """Why the release must not use FOLDER's screenshots, or None. Read before
+    anything is written: both displays present, each within Apple's rules,
+    and (with the captions file) exactly the approved set (#226)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import check_store_media as media  # noqa: PLC0415 — beside this script, stdlib only
+
+    if captions:
+        problems = media.set_problems(folder, captions)
+    else:
+        problems = []
+        for sub in DISPLAYS:
+            d = os.path.join(folder, sub)
+            if not os.path.isdir(d) or not any(f.lower().endswith(".png") for f in os.listdir(d)):
+                problems.append(f"no {sub} screenshots in {d}")
+            else:
+                problems.extend(f"{sub}: {p}" for p in media.shot_problems(d, sub))
+    return "; ".join(problems) if problems else None
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +498,10 @@ def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
 #   GET    /v1/appStoreVersions/{id}/appStoreVersionLocalizations
 #   PATCH  /v1/appStoreVersionLocalizations/{id}                whatsNew
 #   GET    /v1/appStoreVersionLocalizations/{id}/appScreenshotSets
-#   GET    /v1/appScreenshotSets/{id}/appScreenshots
+#   GET    /v1/appScreenshotSets/{id}/appScreenshots            fileName, sourceFileChecksum, state
+#   POST   /v1/appScreenshotSets                                a display's set, on the editable version
+#   DELETE /v1/appScreenshots/{id}                              a shot on the editable version only
+#   POST   /v1/appScreenshots, PUT (uploadOperations), PATCH {uploaded, sourceFileChecksum}
 #   GET    /v1/builds?filter[app]&filter[preReleaseVersion.version]&filter[version]
 #                                                               processingState, usesNonExemptEncryption
 #   GET    /v1/apps/{id}/appInfos, /v1/appInfos/{id}/ageRatingDeclaration
@@ -455,13 +536,15 @@ def version_state(attrs):
     return STATE_ALIASES.get(s, s)
 
 
-def decide(versions, target, build_number, build, whats_new, phased=False, dry_run=False):
+def decide(versions, target, build_number, build, whats_new, phased=False, dry_run=False, shots=False):
     """The release plan, from what App Store Connect holds. Pure: no calls.
 
     versions: [{"id", "version", "state", "releaseType", "build", "phased"}], the
       last three read for the target only (build is its number, or None).
     build: this run's build as Apple has it, {"processing", "encryption",
       "expired"}, or None if Apple does not have it (yet).
+    shots: whether the run carries the approved screenshots, which go on the
+      version after the listing and before anything is submitted (#226).
     Returns {"outcome": "act" | "nothing" | "refuse", "lines": [...] (what a
     person reads), "steps": [(kind, value)], "version_id", "why", "fix"}.
     """
@@ -558,6 +641,10 @@ def decide(versions, target, build_number, build, whats_new, phased=False, dry_r
     lines.append(f"phased release: {'on' if have_phased else 'off'} -> {'on (7 days)' if phased else 'off'}"
                  if have_phased != bool(phased) else f"phased release: {'on' if phased else 'off'} already")
     steps.append(("listing", None))
+    if shots:
+        steps.append(("screenshots", None))
+        lines.append("screenshots: the approved set onto the en-GB page, before submitting "
+                     "(sets that already hold them are left alone)")
     steps.append(("whats_new", text))
     lines.append(f"What's New ({len(text)} characters):")
     lines.extend("  | " + ln for ln in text.splitlines())
@@ -665,9 +752,10 @@ def print_preconditions(asc, app, versions):
 
 
 def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased=False, dry_run=False,
-            wait_minutes=30, sleep=time.sleep, clock=time.time):
+            wait_minutes=30, sleep=time.sleep, clock=time.time, shots_folder=None, captions=None):
     """Create or reuse `target`, attach build_number, release after approval,
-    set What's New and submit. Returns (exit code, one-line summary)."""
+    send the listing and the screenshots, set What's New and submit.
+    Returns (exit code, one-line summary)."""
     n = str(build_number)
     done = []
 
@@ -678,14 +766,24 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
             return ", ".join(done) + "; not yet read back as Waiting for Review"
         return ", ".join(done) + ", not submitted"
 
-    step = "read App Store Connect"
+    step = "check the screenshots"
     try:
+        # Before anything is read or written: a version is never created, or
+        # submitted, without the approved shots to put on it (#226).
+        if shots_folder is not None:
+            why = screenshot_refusal(shots_folder, captions)
+            if why:
+                raise Refused(step, f"the screenshots for {target} are missing or not the approved set: {why}",
+                              "Run store-media.yml on the branch, have Rob approve the shots, and commit them "
+                              "under store/app-store/screenshots/ (one per caption in screenshot_captions.txt).")
+            shot_plan = screenshot_plan(shots_folder)
+        step = "read App Store Connect"
         app = asc.app_id(bundle_id)
         versions = read_versions(asc, app, target)
         print_preconditions(asc, app, versions)
         step = "wait for Apple to process the build"
         build_id, build = read_build(asc, app, target, n, 0 if dry_run else wait_minutes, sleep, clock)
-        plan = decide(versions, target, n, build, whats_new, phased, dry_run)
+        plan = decide(versions, target, n, build, whats_new, phased, dry_run, shots=shots_folder is not None)
         print("--- plan" + (" (dry run: nothing will be changed)" if dry_run else "") + " ---")
         for ln in plan["lines"]:
             print(ln)
@@ -698,6 +796,14 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
             if vid and folder:
                 step = "listing (dry run)"
                 listing(bundle_id, target, folder, dry_run=True, asc=asc)
+            if shots_folder is not None:
+                step = "screenshots (dry run)"
+                loc = en_gb(asc, vid) if vid else None
+                if loc:
+                    sync_screenshots(asc, loc["id"], shot_plan, dry_run=True)
+                else:
+                    for display, files in shot_plan.items():
+                        print(f"{display}: would upload {len(files)} to {target} once it is created")
             if vid:
                 loc = en_gb(asc, vid)
                 gaps = page_gaps(dict(loc["attributes"], whatsNew=whats_new) if loc else {},
@@ -749,6 +855,15 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
             elif kind == "listing" and folder:
                 listing(bundle_id, target, folder, asc=asc)
                 done.append("listing sent")
+            elif kind == "screenshots":
+                loc = en_gb(asc, vid)
+                if not loc:
+                    raise Refused(kind, f"{target} has no {LOCALE} page.", f"Add {LOCALE} to {target} in {ASC_PAGE}.")
+                if version_state(asc.call("GET", f"/appStoreVersions/{vid}")["data"]["attributes"]) not in EDITABLE:
+                    raise Refused(kind, f"{target} is no longer editable, so its screenshots were not touched.",
+                                  f"Look at {target} in {ASC_PAGE}.")
+                if sync_screenshots(asc, loc["id"], shot_plan):
+                    done.append("screenshots uploaded")
             elif kind == "whats_new":
                 loc = en_gb(asc, vid)
                 if not loc:
@@ -827,16 +942,17 @@ def why_block(step, why, got_to, fix):
     print("==============================================================")
 
 
-def release_command(argv):
-    """release BUNDLE_ID VERSION BUILD WHATS_NEW_FILE [--listing FOLDER] [--phased on|off]
-       [--wait-minutes N] [--summary FILE] [--dry-run]"""
+def release_command(argv, asc_factory=None):
+    """release BUNDLE_ID VERSION BUILD WHATS_NEW_FILE --screenshots FOLDER [--captions FILE]
+       [--listing FOLDER] [--phased on|off] [--wait-minutes N] [--summary FILE] [--dry-run]"""
     args = argv[2:]
     if len(args) < 4:
         print(release_command.__doc__)
         return 2
     bundle_id, version, build, text_file = args[:4]
     rest = args[4:]
-    opts = {"--listing": None, "--phased": "off", "--wait-minutes": "30", "--summary": None}
+    opts = {"--listing": None, "--phased": "off", "--wait-minutes": "30", "--summary": None,
+            "--screenshots": None, "--captions": None}
     dry = "--dry-run" in rest
     rest = [r for r in rest if r != "--dry-run"]
     for k, v in zip(rest[::2], rest[1::2]):
@@ -847,13 +963,19 @@ def release_command(argv):
     if opts["--listing"] and not os.path.isdir(opts["--listing"]):
         print(f"WHY THIS JOB FAILED: no listing folder {opts['--listing']}")
         return 2
+    if not opts["--screenshots"]:
+        print("WHY THIS JOB FAILED: --screenshots FOLDER is required: a version is never submitted "
+              "without the approved screenshots on it (#226).")
+        return 2
     if opts["--phased"] not in ("on", "off"):
         print("--phased is on or off")
         return 2
     with open(text_file, encoding="utf-8") as f:
         text = f.read()
-    code, line = release(Asc(read_only=dry), bundle_id, version, build, text, folder=opts["--listing"],
-                         phased=opts["--phased"] == "on", dry_run=dry, wait_minutes=int(opts["--wait-minutes"]))
+    asc = (asc_factory or Asc)(read_only=dry)
+    code, line = release(asc, bundle_id, version, build, text, folder=opts["--listing"],
+                         phased=opts["--phased"] == "on", dry_run=dry, wait_minutes=int(opts["--wait-minutes"]),
+                         shots_folder=opts["--screenshots"], captions=opts["--captions"])
     print(line)
     if opts["--summary"]:
         with open(opts["--summary"], "w", encoding="utf-8") as f:
@@ -929,6 +1051,7 @@ class FakeAsc(Asc):
         info_on_create: whether creating a version also makes an editable app
         info, as App Store Connect does when a new version is added (assumed)."""
         self.read_only, self.jwt, self.sent, self.ids = read_only, "unused", [], 0
+        self.shot_ids, self.uploaded, self.shot_writes = 0, {}, []
         self.v, self.locs, self.b, self.subs, self.review = {}, {}, {}, {}, {}
         self.infos = {"I0": {"attrs": {"appStoreState": "READY_FOR_SALE"}, "loc": dict(info or {}, locale=LOCALE)}}
         self.info_on_create = info_on_create
@@ -955,8 +1078,43 @@ class FakeAsc(Asc):
         loc = self.new_id("L")
         self.locs[loc] = {"version": vid, "attrs": dict(spec.get("page", FULL_PAGE), locale=LOCALE,
                                                         whatsNew=spec.get("whatsNew")),
-                          "shots": dict(spec.get("shots", FULL_SHOTS))}
+                          "shots": {d: self.shots_from(x) for d, x in spec.get("shots", FULL_SHOTS).items()}}
         return vid
+
+    def shots_from(self, spec):
+        """A display's set: a count of old shots, or [(file name, md5)], or a set to copy."""
+        if isinstance(spec, int):
+            spec = [(f"old-{i}.png", f"old{i}") for i in range(spec)]
+        out = []
+        for x in spec:
+            name, checksum, *state = (x["fileName"], x["sourceFileChecksum"], x["state"]) if isinstance(x, dict) else x
+            self.shot_ids += 1
+            out.append({"id": f"SS{self.shot_ids}", "fileName": name, "sourceFileChecksum": checksum,
+                        "state": state[0] if state else "COMPLETE"})
+        return out
+
+    def shot(self, shot_id):
+        for loc, x in self.locs.items():
+            for d, shots in x["shots"].items():
+                for s in shots:
+                    if s["id"] == shot_id:
+                        return loc, d, s
+        raise RuntimeError(f"fake App Store Connect has no screenshot {shot_id}")
+
+    def touch(self, loc):
+        """Note a screenshot write that lands on a version not editable at that moment."""
+        if self.v[self.locs[loc]["version"]]["appVersionState"] not in EDITABLE:
+            self.shot_writes.append(loc)
+
+    def live_shot_writes(self):
+        """Screenshot writes that landed on a version that was not editable (AC14, QA R1)."""
+        return list(self.shot_writes)
+
+    def upload(self, op, part):
+        if self.read_only:
+            raise ReadOnlyViolation("dry run: refused to upload a screenshot")
+        self.sent.append(("PUT", "/upload"))
+        self.uploaded[op["url"]] = self.uploaded.get(op["url"], b"") + part
 
     def send(self, method, url, body):
         path, _, query = url[len(API):].partition("?")
@@ -999,10 +1157,12 @@ class FakeAsc(Asc):
                                       for k, x in self.locs.items() if x["version"] == p[1]]}
             if p[0] == "appStoreVersionLocalizations" and p[2] == "appScreenshotSets":
                 return 200, {"data": [{"id": f"{p[1]}~{d}", "attributes": {"screenshotDisplayType": d}}
-                                      for d, c in self.locs[p[1]]["shots"].items()]}
+                                      for d in self.locs[p[1]]["shots"]]}
             if p[0] == "appScreenshotSets":
                 loc, d = p[1].split("~")
-                return 200, {"data": [{"id": str(i)} for i in range(self.locs[loc]["shots"][d])]}
+                return 200, {"data": [{"id": x["id"], "attributes": {
+                    "fileName": x["fileName"], "sourceFileChecksum": x["sourceFileChecksum"],
+                    "assetDeliveryState": {"state": x["state"]}}} for x in self.locs[loc]["shots"][d]]}
             if path == "/reviewSubmissions":
                 wanted = q.get("filter[state]", "").split(",")
                 return 200, {"data": [{"id": k, "attributes": {"state": x["state"]}}
@@ -1017,11 +1177,40 @@ class FakeAsc(Asc):
                                     "releaseType": attrs.get("releaseType"),
                                     "page": {k: v for k, v in (live or {"attrs": {}})["attrs"].items()
                                              if k in FULL_PAGE},
-                                    "shots": (live or {}).get("shots", {})})
+                                    "shots": {d: [dict(x) for x in shots]
+                                              for d, shots in (live or {}).get("shots", {}).items()}})
             if self.info_on_create:
                 self.infos[f"I{len(self.infos)}"] = {"attrs": {"state": "PREPARE_FOR_SUBMISSION"},
                                                 "loc": dict(self.infos["I0"]["loc"])}
             return 201, {"data": {"id": vid}}
+        if method == "POST" and path == "/appScreenshotSets":
+            loc = data["relationships"]["appStoreVersionLocalization"]["data"]["id"]
+            self.touch(loc)
+            self.locs[loc]["shots"].setdefault(attrs["screenshotDisplayType"], [])
+            return 201, {"data": {"id": f"{loc}~{attrs['screenshotDisplayType']}"}}
+        if method == "DELETE" and p[0] == "appScreenshots":
+            loc, d, x = self.shot(p[1])
+            self.touch(loc)
+            self.locs[loc]["shots"][d].remove(x)
+            return 204, {}
+        if method == "POST" and path == "/appScreenshots":
+            loc, d = data["relationships"]["appScreenshotSet"]["data"]["id"].split("~")
+            self.touch(loc)
+            self.shot_ids += 1
+            sid, size = f"SS{self.shot_ids}", attrs["fileSize"]
+            self.locs[loc]["shots"][d].append({"id": sid, "fileName": attrs["fileName"],
+                                               "sourceFileChecksum": None, "state": "AWAITING_UPLOAD"})
+            half = size // 2
+            ops = [{"url": f"https://upload.example/{sid}", "method": "PUT", "offset": 0, "length": half},
+                   {"url": f"https://upload.example/{sid}", "method": "PUT", "offset": half, "length": size - half}]
+            return 201, {"data": {"id": sid, "attributes": {"uploadOperations": ops}}}
+        if method == "PATCH" and p[0] == "appScreenshots":
+            loc, d, x = self.shot(p[1])
+            self.touch(loc)
+            got = self.uploaded.get(f"https://upload.example/{p[1]}", b"")
+            x["sourceFileChecksum"] = attrs["sourceFileChecksum"]
+            x["state"] = "COMPLETE" if hashlib.md5(got).hexdigest() == attrs["sourceFileChecksum"] else "FAILED"
+            return 200, {"data": {"id": p[1]}}
         if method == "PATCH" and p[0] == "appStoreVersions" and len(p) == 2:
             self.v[p[1]].update(attrs)
             return 200, {"data": {"id": p[1]}}
@@ -1353,6 +1542,130 @@ def self_test():
         expect("the read-only client refuses a write before sending it", False)
     expect("no credential in an error: a JWT-shaped string is removed",
            "eyJ" not in trim("HTTP 401 Bearer eyJhbGciOi.eyJpc3Mi.c2ln-x_y failed"))
+
+    # ----- #226: the approved screenshots go on the version before it is submitted. -----
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from check_store_media import make_png  # noqa: PLC0415 — beside this script
+
+    def shot_folder(d, names=("01-alert", "02-fairness"), displays=("iphone", "ipad"), size=None):
+        root = os.path.join(d, "shots")
+        for display in displays:
+            os.makedirs(os.path.join(root, display), exist_ok=True)
+            w, h = size or ((1320, 2868) if display == "iphone" else (2064, 2752))
+            for n in names:
+                make_png(os.path.join(root, display, n + ".png"), w, h, 2)
+        caps = os.path.join(d, "captions.txt")
+        with open(caps, "w", encoding="utf-8") as fh:
+            fh.write("".join(f"{n}: KICKER | Headline\n" for n in ("01-alert", "02-fairness")))
+        return root, caps
+
+    def run_shots(fake, root, caps, dry=False):
+        out = quiet()
+        with contextlib.redirect_stdout(out):
+            code, line = release(fake, "com.example", "1.3.0", 412, text, dry_run=dry, wait_minutes=0,
+                                 sleep=lambda s: None, shots_folder=root, captions=caps)
+        return code, line, out.getvalue()
+
+    def shot_writes(fake):
+        return [w for w in fake.writes() if "Screenshot" in w]
+
+    def held(fake, version, display):
+        vid = next(k for k, x in fake.v.items() if x["versionString"] == version)
+        loc = next(k for k, x in fake.locs.items() if x["version"] == vid)
+        return [(x["fileName"], x["sourceFileChecksum"], x["state"]) for x in fake.locs[loc]["shots"].get(display, [])]
+
+    with tempfile.TemporaryDirectory() as d:
+        root, caps = shot_folder(d)
+        wanted = shots_wanted(screenshot_plan(root))
+        f = FakeAsc([v101], [b412])
+        code, line, log = run_shots(f, root, caps)
+        w = f.writes()
+        first_submit = w.index("POST /reviewSubmissions")
+        expect("healthy: a new 1.3.0 gets the approved shots, old ones replaced, all before it is submitted",
+               code == 0 and all(i < first_submit for i, x in enumerate(w) if "Screenshot" in x)
+               and w.count("POST /appScreenshots") == 4 and f.sent.count(("PUT", "/upload")) == 8
+               and [(n, c) for n, c, _ in held(f, "1.3.0", "APP_IPHONE_67")] == wanted["APP_IPHONE_67"]
+               and [(n, c) for n, c, _ in held(f, "1.3.0", "APP_IPAD_PRO_3GEN_129")] == wanted["APP_IPAD_PRO_3GEN_129"]
+               and all(st == "COMPLETE" for *_, st in held(f, "1.3.0", "APP_IPHONE_67"))
+               and "read back: APP_IPHONE_67 holds all 2, in order" in log)
+        expect("healthy: the live 1.0.1's screenshots are untouched (AC14, QA R1)",
+               f.live_shot_writes() == [] and len(held(f, "1.0.1", "APP_IPHONE_67")) == 7
+               and held(f, "1.0.1", "APP_IPHONE_67")[0][0] == "old-0.png")
+        expect("healthy: the summary names the screenshots in how far it got",
+               code == 0 and "submitted for review" in line)
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "releaseType": AFTER_APPROVAL,
+                            "build": 412, "whatsNew": text,
+                            "shots": {d_: list(v) for d_, v in wanted.items()}}], [b412])
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: a re-run on a version already holding the approved shots uploads nothing, then submits",
+               code == 0 and shot_writes(f) == [] and ("PUT", "/upload") not in f.sent
+               and "already holds these 2 screenshot(s); nothing uploaded" in log
+               and "PATCH /reviewSubmissions/S5" in f.writes())
+        f = FakeAsc([v101], [b412])
+        run_shots(f, root, caps)
+        f.v[next(k for k, x in f.v.items() if x["versionString"] == "1.3.0")]["appVersionState"] = \
+            "PREPARE_FOR_SUBMISSION"   # as if the run had stopped before submitting
+        for sub in f.subs.values():
+            sub["state"] = "COMPLETE"
+        before = len(shot_writes(f))
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: the same run twice uploads the shots once",
+               code == 0 and len(shot_writes(f)) == before and f.sent.count(("PUT", "/upload")) == 8)
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "releaseType": AFTER_APPROVAL,
+                            "build": 412, "whatsNew": text,
+                            "shots": {"APP_IPHONE_67": list(reversed(wanted["APP_IPHONE_67"])),
+                                      "APP_IPAD_PRO_3GEN_129": list(wanted["APP_IPAD_PRO_3GEN_129"])}}], [b412])
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: a set in the wrong order is replaced; the matching set is left alone",
+               code == 0 and f.writes().count("POST /appScreenshots") == 2
+               and [(n, c) for n, c, _ in held(f, "1.3.0", "APP_IPHONE_67")] == wanted["APP_IPHONE_67"])
+        failed_one = [wanted["APP_IPHONE_67"][0] + ("FAILED",), wanted["APP_IPHONE_67"][1]]
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "releaseType": AFTER_APPROVAL,
+                            "build": 412, "whatsNew": text,
+                            "shots": {"APP_IPHONE_67": failed_one,
+                                      "APP_IPAD_PRO_3GEN_129": list(wanted["APP_IPAD_PRO_3GEN_129"])}}], [b412])
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: a set with the right files but one Apple marked FAILED is uploaded again",
+               code == 0 and f.writes().count("POST /appScreenshots") == 2
+               and all(st == "COMPLETE" for *_, st in held(f, "1.3.0", "APP_IPHONE_67")))
+        f = FakeAsc([v101], [b412], read_only=True)
+        code, line, log = run_shots(f, root, caps, dry=True)
+        expect("healthy: the dry run plans the upload and sends nothing",
+               code == 0 and f.writes() == [] and "would upload 2 to 1.3.0 once it is created" in log)
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "build": 412}], [b412],
+                    read_only=True)
+        code, line, log = run_shots(f, root, caps, dry=True)
+        expect("healthy: the dry run on an existing 1.3.0 says which sets it would replace, and sends nothing",
+               code == 0 and f.writes() == [] and "APP_IPHONE_67: would replace 7 with 2" in log)
+
+    for name, kw, words in (
+            ("no iPad shots", {"displays": ("iphone",)}, ("no ipad screenshots",)),
+            ("a stale set (names the captions do not have)", {"names": ("01-home", "02-squad")},
+             ("01-alert.png", "no caption for 01-home.png")),
+            ("shots at the wrong size", {"size": (1080, 1920)}, ("1080x1920",))):
+        with tempfile.TemporaryDirectory() as d:
+            root, caps = shot_folder(d, **kw)
+            f = FakeAsc([v101], [b412])
+            code, line, log = run_shots(f, root, caps)
+            expect(f"refuses before any read or write, for a new version: {name}",
+                   code == 1 and f.writes() == [] and f.sent == [] and "WHY THIS JOB FAILED" in log
+                   and "step:          check the screenshots" in log and all(x in log for x in words)
+                   and "got as far as: nothing changed in App Store Connect" in log)
+    with tempfile.TemporaryDirectory() as d:
+        root, caps = shot_folder(d, displays=())
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "build": 412}], [b412])
+        code, line, log = run_shots(f, root, None)
+        expect("refuses: no screenshots folder content, even without a captions file, and even for a re-run",
+               code == 1 and f.writes() == [] and "no iphone screenshots" in log)
+        wn = os.path.join(d, "whats_new.txt")
+        with open(wn, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        out = quiet()
+        with contextlib.redirect_stdout(out):
+            rc = release_command(["asc_api.py", "release", "com.example", "1.3.0", "412", wn],
+                                 asc_factory=lambda read_only: FakeAsc([v101], [b412], read_only=read_only))
+        expect("refuses: the release command without --screenshots, before any call",
+               rc == 2 and "--screenshots FOLDER is required" in out.getvalue())
 
     # AC25: the count is of expectations actually run, never a typed-in number.
     print(f"{total - failed} expectation(s) passed, {failed} failed.")
