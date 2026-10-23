@@ -1752,12 +1752,109 @@ export type ImportResult =
       addedEntries: number;
       addedMatches: number;
       addedPlayers: number;
+      /** Children on this phone matched to the file's by name (#195 N1); absent when none were. */
+      matchedPlayers?: number;
+      /** Children who left the squad under "Use the file's squad" (#195 criterion 36). */
+      leftPlayers?: number;
     }
   | { ok: false; reason: string };
+
+/**
+ * How the coach chose to line this phone's children up with the file's
+ * (#195, QA finding N1; `squadMatch.ts` builds it). No choice is "Keep both":
+ * every child from both sides, exactly as before matching existed.
+ */
+export interface ImportChoice {
+  /** Each phone child that is the file's child: a statement by the coach, not a figure. */
+  matched: readonly { phoneId: UUID; fileId: UUID }[];
+  /** Phone children leaving the squad ("Use the file's squad"); empty otherwise. */
+  leaving: readonly UUID[];
+}
 
 /** True when the ledger holds any match: player time a phone must not lose. */
 function holdsPlayerTime(ledger: Ledger): boolean {
   return ledger.matches.length > 0;
+}
+
+/**
+ * True when an import onto this ledger adopts the file's chain (no player
+ * time here yet), the only path on which children are matched (#195).
+ */
+export function adoptsFile(ours: Ledger): boolean {
+  return !holdsPlayerTime(ours);
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * The single entry an import appends for the coach's choice (#195 criteria
+ * 6, 7, 16 to 19, 35): a noted removal on each matched phone child's own id,
+ * naming the file child it is (`matchedTo`); the phone's noted fairness mark
+ * laid over the file child's latest profile (the whole phone profile when the
+ * file holds none, criterion 35; nothing when the file child is retired);
+ * and, under "Use the file's squad", a noted removal for each child leaving.
+ * Nothing is rewritten: the phone child's own records stay under its id.
+ */
+function choiceRecords(
+  choice: ImportChoice,
+  mine: ReadonlyMap<string, LedgerRecord>,
+  theirs: ReadonlyMap<string, LedgerRecord>,
+  file: Ledger
+): LedgerRecord[] {
+  const out: LedgerRecord[] = [];
+  const baseOf = (playerId: UUID): LedgerRecord => {
+    const have = mine.get(`profile:${playerId}`);
+    if (have) {
+      const { matchedTo: _gone, ...rest } = have;
+      return rest as LedgerRecord;
+    }
+    return {
+      type: 'profile',
+      playerId,
+      keeperPreference: null,
+      prefers: null,
+      outfieldTarget: null,
+      active: true,
+      fairness: 'counted',
+    };
+  };
+  for (const { phoneId, fileId } of choice.matched) {
+    const filePlayer = file.players.find((p) => p.id === fileId);
+    const name = filePlayer
+      ? filePlayer.displaySuffix
+        ? `${filePlayer.firstName} ${filePlayer.displaySuffix}`
+        : filePlayer.firstName
+      : 'child';
+    out.push({
+      ...baseOf(phoneId),
+      type: 'profile',
+      playerId: phoneId,
+      removed: true,
+      matchedTo: fileId,
+      note: `Matched to the file's ${name} on import`,
+    });
+    const phone = mine.get(`profile:${phoneId}`);
+    const theirsNow = theirs.get(`profile:${fileId}`);
+    const retired = filePlayer?.active === false || theirsNow?.active === false;
+    if (!phone || retired) continue;
+    if (!theirsNow) {
+      // Criterion 35: nothing in the file to override, so the phone's whole profile crosses.
+      const { matchedTo: _gone, ...rest } = phone;
+      out.push({ ...rest, type: 'profile', playerId: fileId, removed: false });
+      continue;
+    }
+    // Only a noted mark crosses (Ada §2, criterion 17); the file's preferences stand.
+    if (!nonEmpty(phone.note)) continue;
+    const fairness = typeof phone.fairness === 'string' ? phone.fairness : 'counted';
+    const fileFairness = typeof theirsNow.fairness === 'string' ? theirsNow.fairness : 'counted';
+    if (fairness === fileFairness && phone.note === theirsNow.note) continue;
+    const { matchedTo: _was, ...fileLatest } = theirsNow;
+    out.push({ ...fileLatest, type: 'profile', playerId: fileId, fairness, note: phone.note });
+  }
+  for (const playerId of choice.leaving) {
+    out.push({ ...baseOf(playerId), type: 'profile', playerId, removed: true, note: 'Not in the imported squad' });
+  }
+  return out;
 }
 
 /**
@@ -1773,7 +1870,7 @@ function holdsPlayerTime(ledger: Ledger): boolean {
  * - otherwise the chains have diverged and the import is refused (PO ruling
  *   A: one recording phone per match).
  */
-export function importLedger(ours: Ledger, file: Ledger): ImportResult {
+export function importLedger(ours: Ledger, file: Ledger, choice?: ImportChoice, now?: Date): ImportResult {
   if (!isWritable(file)) {
     return { ok: false, reason: tooNewLedgerMessage(file.ledgerVersion, file.minReaderVersion) };
   }
@@ -1797,7 +1894,22 @@ export function importLedger(ours: Ledger, file: Ledger): ImportResult {
       if (!have || !own) return true;
       return typeof own.note === 'string' && own.note !== '' && !sameRecord(have, own);
     });
-    return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next) };
+    if (!choice || (choice.matched.length === 0 && choice.leaving.length === 0)) {
+      return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next) };
+    }
+    // #195 (QA N1): the coach's matching, in one entry dated at import time.
+    const at = now ?? new Date(next.writtenAt);
+    const matched = appendRecords(next, choiceRecords(choice, mine, theirs, file), at);
+    const c = counts(matched);
+    return {
+      ok: true,
+      ledger: matched,
+      addedEntries: file.entries.length,
+      addedMatches: c.addedMatches,
+      addedPlayers: Math.max(0, c.addedPlayers - choice.matched.length),
+      matchedPlayers: choice.matched.length,
+      leftPlayers: choice.leaving.length,
+    };
   }
 
   const shared = Math.min(ours.entries.length, file.entries.length);
@@ -1830,6 +1942,14 @@ export function importLedger(ours: Ledger, file: Ledger): ImportResult {
 /** What an import did, in a sentence a coach can read. */
 export function describeImport(result: Extract<ImportResult, { ok: true }>): string {
   if (result.addedEntries === 0) return 'Nothing new in that file — everything in it is already here.';
+  if (result.matchedPlayers !== undefined) {
+    // #195 criteria 4 and 36: a matched child is never counted as added, and no removal is silent.
+    const left = result.leftPlayers ? `, ${result.leftPlayers} left the squad` : '';
+    return (
+      `${result.matchedPlayers} matched, ${result.addedPlayers} added${left}. ` +
+      `${result.addedMatches} ${result.addedMatches === 1 ? 'match' : 'matches'} added.`
+    );
+  }
   return (
     `Added ${result.addedMatches} ${result.addedMatches === 1 ? 'match' : 'matches'} and ` +
     `${result.addedPlayers} ${result.addedPlayers === 1 ? 'player' : 'players'}.`

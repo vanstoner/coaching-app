@@ -56,7 +56,7 @@ export function playerFromRecord(ledger: Ledger, p: LedgerPlayer, squadId: UUID,
 }
 
 /** Players the record holds who belong in a squad: not taken out before ever playing. */
-function restorablePlayers(ledger: Ledger): LedgerPlayer[] {
+export function restorablePlayers(ledger: Ledger): LedgerPlayer[] {
   // Time in a test or voided match (e.g. the made-up team's) does not keep a child.
   const played = new Set(
     ledger.matches.filter((m) => !isHidden(m)).flatMap((m) => m.intervals.map((i) => i.playerId))

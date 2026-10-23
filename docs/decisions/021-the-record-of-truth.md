@@ -79,7 +79,7 @@ for example) is not allowed.
 | `award-type` | `id` | `name`, `active` | Customisable awards. Retiring one keeps its history |
 | `award` | `matchId`+`awardTypeId` | `playerId`, `note` | Player of the Week, Mr Assister… |
 | `event-type` | `id` | `label`, `tier` (`core`/`tally`), `credited` | The second layer; new kinds without a release |
-| `profile` | `playerId` | `keeperPreference`, `outfieldTarget`, `fairness` (`counted`/`not-counted`, #190) | What restore needs about a child |
+| `profile` | `playerId` | `keeperPreference`, `outfieldTarget`, `fairness` (`counted`/`not-counted`, #190); optional `matchedTo` (a child id) on the noted removal an import writes when it matches this phone's child to the file's by name (#195) | What restore needs about a child. `matchedTo` tells "matched on import" from "taken out of the squad" without reading the note |
 | `settings` | `squad` | default shape, minutes, periods | What restore needs about the squad |
 | `match-kind` | `matchId` | `kind` (`real`/`test`/`void`), `note` | Hides test or voided matches everywhere |
 | `origin` | `matchId` | `how` (`live`/`reconstructed`), `source`, `note` | A coach's statement of where a match came from (#189) |

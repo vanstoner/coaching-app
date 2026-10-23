@@ -305,6 +305,14 @@ analysis, iOS". Entries are added as each release ships.
     can be marked a fill-in, with a note: their minutes are kept and they get
     a fair share on the day, but they are left out of the squad average,
     fairness figures and "who's owed time".
+  - **Importing onto a squad typed in by hand matches the children by name
+    (#195).** A phone that has played nothing but has a squad no longer ends
+    up with every child twice. Before importing, Settings › Minutes shows
+    which children match by name, which are only in the file and which only
+    on this phone, and the coach chooses: Match by name (recommended), Use
+    the file's squad, or Keep both. A name that appears twice is never
+    guessed. Nothing is erased: each matched child gets a noted record
+    saying which of the file's children it became.
   - **Every match has its result, and goals can be added without a time
     (#196).** Played matches show "W 4 – 1", worked out from their goals. A
     goal or goal against with no known time, scorer optional, can be added

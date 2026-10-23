@@ -117,12 +117,21 @@ import {
   setPlayerFairness,
   setMatchKind,
   visibleLedger,
+  type ImportChoice,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
 import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
 import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord } from './src/app/recordRestore';
+import {
+  HELD_MATCH_REFUSAL,
+  importChoice,
+  planImport,
+  rekeySession,
+  type SquadMatching,
+  type SquadOption,
+} from './src/app/squadMatch';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
 import { installDeviceSigner } from './src/app/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
@@ -393,6 +402,8 @@ export default function App() {
   const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
   const [testMatchMessage, setTestMatchMessage] = useState('');
   const [ledgerMessage, setLedgerMessage] = useState('');
+  // #195 (QA N1): a verified file waiting on the coach's choice of how its children line up.
+  const [pendingImport, setPendingImport] = useState<{ file: Ledger; matching: SquadMatching } | null>(null);
   const [ledgerBusy, setLedgerBusy] = useState(false);
   // #192: back up this app, and restore it.
   const [backupMessage, setBackupMessage] = useState('');
@@ -633,10 +644,86 @@ export default function App() {
   }, []);
 
   /**
-   * Import a minutes file (#100 AC2, AC5; ADR-014 §9). Verified, then the
-   * chain is extended — never merged: a file whose chain has diverged from
-   * this phone's is refused. Players the squad does not have come back with
-   * the same ids, so later matches line up with the imported ones.
+   * Apply a verified file (#100 AC2, AC5; ADR-014 §9). The chain is extended,
+   * never merged: a file whose chain has diverged from this phone's is
+   * refused. Players the squad does not have come back with the same ids, so
+   * later matches line up with the imported ones. With a `choice` (#195, QA
+   * N1), matched children become the file's: the session is re-keyed and the
+   * ledger committed in one step, with no save between, or the next save
+   * would undo the match.
+   */
+  const applyImport = useCallback(
+    (file: Ledger, choice: ImportChoice | undefined) => {
+      const current = ledgerRef.current ?? emptyLedger(squadId, squadName, appNow());
+      const report = importLedger(current, file, choice, appNow());
+      if (!report.ok) {
+        setLedgerMessage(importedMessage(report.reason, file, current));
+        return;
+      }
+
+      // #195 AC4: a phone with nothing on it is rebuilt from the record: squad,
+      // players and their profiles, settings and planned fixtures. AC5: one
+      // with data only gains what it is missing; nothing on it is overwritten.
+      const fresh = players.length === 0 && matches.length === 0;
+      let restoredFixtures = 0;
+      if (fresh) {
+        const r = restoreFromRecord(report.ledger, squadId, format, appNow());
+        const nextName = r.squadName || squadName;
+        restoredFixtures = r.fixtures.length;
+        commitLedger(report.ledger);
+        setPlayers(r.players);
+        setSquadId(r.squadId);
+        setSquadName(nextName);
+        setMatches(r.fixtures);
+        if (r.settings) {
+          setFormat(r.settings.format);
+          setTotalMinutes(r.settings.totalMinutes);
+          setPeriodCount(r.settings.periodCount);
+          setBuzzWhenSubDue(r.settings.buzzWhenSubDue);
+        }
+        persist({
+          players: r.players,
+          squadId: r.squadId,
+          squadName: nextName,
+          matches: r.fixtures,
+          ...(r.settings
+            ? {
+                format: r.settings.format,
+                totalMinutes: r.settings.totalMinutes,
+                periodCount: r.settings.periodCount,
+                buzzWhenSubDue: r.settings.buzzWhenSubDue,
+              }
+            : {}),
+        });
+      } else {
+        // #195 criteria 21, 22, 24: matched children re-keyed from the record,
+        // then only what is still missing added.
+        const keyed = rekeySession(players, matches, choice, report.ledger, squadId, appNow());
+        const x = extendFromRecord(report.ledger, keyed.players, keyed.matches, squadId, format, appNow());
+        restoredFixtures = x.addedFixtures;
+        commitLedger(report.ledger);
+        setPlayers(x.players);
+        setMatches(x.matches);
+        persist({ players: x.players, matches: x.matches });
+      }
+      const said = describeImport(report);
+      setLedgerMessage(
+        importedMessage(
+          restoredFixtures > 0
+            ? `${said} ${restoredFixtures} upcoming ${restoredFixtures === 1 ? 'fixture' : 'fixtures'} added. ${PLANS_NOT_RESTORED}`
+            : said,
+          file,
+          report.ledger
+        )
+      );
+    },
+    [squadId, squadName, players, matches, format, persist, commitLedger]
+  );
+
+  /**
+   * Import a minutes file: pick, verify, then either apply it or, on a phone
+   * whose typed squad shares names with the file's (#195, QA N1), show the
+   * matching step and wait for the coach's choice.
    */
   const importMinutes = useCallback(async () => {
     // The ledger on this phone came from a newer build: merging into an empty
@@ -656,64 +743,35 @@ export default function App() {
       return;
     }
     const current = ledgerRef.current ?? emptyLedger(squadId, squadName, appNow());
-    const report = importLedger(current, parsed.ledger);
-    if (!report.ok) {
-      setLedgerMessage(importedMessage(report.reason, parsed.ledger, current));
+    const plan = planImport({ ours: current, file: parsed.ledger, players, matchHeld: match !== null });
+    if (plan.kind === 'refuse') {
+      setLedgerMessage(plan.reason);
       return;
     }
-    commitLedger(report.ledger);
-
-    // #195 AC4: a phone with nothing on it is rebuilt from the record: squad,
-    // players and their profiles, settings and planned fixtures. AC5: one
-    // with data only gains what it is missing; nothing on it is overwritten.
-    const fresh = players.length === 0 && matches.length === 0;
-    let restoredFixtures = 0;
-    if (fresh) {
-      const r = restoreFromRecord(report.ledger, squadId, format, appNow());
-      const nextName = r.squadName || squadName;
-      restoredFixtures = r.fixtures.length;
-      setPlayers(r.players);
-      setSquadId(r.squadId);
-      setSquadName(nextName);
-      setMatches(r.fixtures);
-      if (r.settings) {
-        setFormat(r.settings.format);
-        setTotalMinutes(r.settings.totalMinutes);
-        setPeriodCount(r.settings.periodCount);
-        setBuzzWhenSubDue(r.settings.buzzWhenSubDue);
-      }
-      persist({
-        players: r.players,
-        squadId: r.squadId,
-        squadName: nextName,
-        matches: r.fixtures,
-        ...(r.settings
-          ? {
-              format: r.settings.format,
-              totalMinutes: r.settings.totalMinutes,
-              periodCount: r.settings.periodCount,
-              buzzWhenSubDue: r.settings.buzzWhenSubDue,
-            }
-          : {}),
-      });
-    } else {
-      const x = extendFromRecord(report.ledger, players, matches, squadId, format, appNow());
-      restoredFixtures = x.addedFixtures;
-      setPlayers(x.players);
-      setMatches(x.matches);
-      persist({ players: x.players, matches: x.matches });
+    if (plan.kind === 'step') {
+      setLedgerMessage('');
+      setPendingImport({ file: parsed.ledger, matching: plan.matching });
+      return;
     }
-    const said = describeImport(report);
-    setLedgerMessage(
-      importedMessage(
-        restoredFixtures > 0
-          ? `${said} ${restoredFixtures} upcoming ${restoredFixtures === 1 ? 'fixture' : 'fixtures'} added. ${PLANS_NOT_RESTORED}`
-          : said,
-        parsed.ledger,
-        report.ledger
-      )
-    );
-  }, [squadId, squadName, players, matches, format, persist, commitLedger]);
+    applyImport(parsed.ledger, undefined);
+  }, [squadId, squadName, players, match, applyImport]);
+
+  /** The coach's choice on the matching step (#195). */
+  const chooseImport = useCallback(
+    (option: SquadOption) => {
+      const pending = pendingImport;
+      setPendingImport(null);
+      if (!pending) return;
+      const choice = importChoice(pending.matching, option);
+      // A match held since the step opened holds this phone's ids (criterion 20).
+      if (choice && choice.matched.length > 0 && match !== null) {
+        setLedgerMessage(HELD_MATCH_REFUSAL);
+        return;
+      }
+      applyImport(pending.file, choice);
+    },
+    [pendingImport, match, applyImport]
+  );
 
   useEffect(() => {
     if (step === 'loading' || step === 'resume') return;
@@ -2016,6 +2074,9 @@ export default function App() {
                 busy={ledgerBusy}
                 onExport={() => void exportMinutes()}
                 onImport={() => void importMinutes()}
+                matching={pendingImport?.matching ?? null}
+                onChoose={chooseImport}
+                onCancelImport={() => setPendingImport(null)}
               />
               {/* #197: drawn in this slot so Settings itself is unchanged. */}
               {ledger && !ledgerBlockedRef.current && (

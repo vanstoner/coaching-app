@@ -67,6 +67,12 @@ export interface LedgerProfile {
   removed: boolean;
   /** Mandatory on a fairness change (invariant 5); null otherwise. */
   note: string | null;
+  /**
+   * On a removal written by an import that matched this phone's child to the
+   * file's (#195, ADR-021 D2): the file child's id. Absent otherwise. Not in
+   * `SETUP_FIELDS`, so a save carries it like a later build's field.
+   */
+  matchedTo?: UUID;
 }
 
 export interface LedgerSettings {
@@ -218,6 +224,7 @@ export function toProfile(r: LedgerRecord): LedgerProfile | null {
     fairness: str(r.fairness) ?? 'counted',
     removed: r.removed === true,
     note: str(r.note),
+    ...(typeof r.matchedTo === 'string' ? { matchedTo: r.matchedTo as UUID } : {}),
   };
 }
 
