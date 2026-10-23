@@ -123,7 +123,7 @@ import {
 } from './src/app/ledger';
 import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
-import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord } from './src/app/recordRestore';
+import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
 import {
   HELD_MATCH_REFUSAL,
   importChoice,
@@ -700,11 +700,14 @@ export default function App() {
         // then only what is still missing added.
         const keyed = rekeySession(players, matches, choice, report.ledger, squadId, appNow());
         const x = extendFromRecord(report.ledger, keyed.players, keyed.matches, squadId, format, appNow());
+        // QA F2 (ruling `file name wins`): an adopted file's team name stands.
+        const nextName = squadNameAfterImport(report, squadName);
         restoredFixtures = x.addedFixtures;
         commitLedger(report.ledger);
         setPlayers(x.players);
         setMatches(x.matches);
-        persist({ players: x.players, matches: x.matches });
+        setSquadName(nextName);
+        persist({ players: x.players, matches: x.matches, squadName: nextName });
       }
       const said = describeImport(report);
       setLedgerMessage(

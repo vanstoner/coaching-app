@@ -1756,6 +1756,8 @@ export type ImportResult =
       matchedPlayers?: number;
       /** Children who left the squad under "Use the file's squad" (#195 criterion 36). */
       leftPlayers?: number;
+      /** The file's chain was adopted (this phone held no player time): its team name stands (#195, QA F2). */
+      adopted?: true;
     }
   | { ok: false; reason: string };
 
@@ -1906,7 +1908,7 @@ export function importLedger(ours: Ledger, file: Ledger, choice?: ImportChoice, 
       return typeof own.note === 'string' && own.note !== '' && !sameRecord(have, own);
     });
     if (!choice || (choice.matched.length === 0 && choice.leaving.length === 0)) {
-      return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next) };
+      return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next), adopted: true };
     }
     // #195 (QA N1): the coach's matching, in one entry dated at import time.
     const at = now ?? new Date(next.writtenAt);
@@ -1920,6 +1922,7 @@ export function importLedger(ours: Ledger, file: Ledger, choice?: ImportChoice, 
       addedPlayers: Math.max(0, c.addedPlayers - choice.matched.length),
       matchedPlayers: choice.matched.length,
       leftPlayers: choice.leaving.length,
+      adopted: true,
     };
   }
 

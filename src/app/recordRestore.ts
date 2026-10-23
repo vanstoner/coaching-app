@@ -173,3 +173,14 @@ export function extendFromRecord(
     addedFixtures: newFixtures.length,
   };
 }
+
+/**
+ * The team name the session takes after an import (#195, QA F2; ruling
+ * `file name wins`). When the file's chain was adopted, its name stands, or
+ * the next save would write this phone's typed name over it. A later rename
+ * in Settings is recorded as usual. On the extend path, and when the file
+ * held nothing new, the session keeps its own name, as before.
+ */
+export function squadNameAfterImport(result: { ledger: Ledger; adopted?: true }, current: string): string {
+  return result.adopted ? result.ledger.squad.name || current : current;
+}

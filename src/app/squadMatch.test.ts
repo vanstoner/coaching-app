@@ -28,7 +28,7 @@ import { loadMadeUpTeam } from './gettingStarted';
 import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
 import { makeSevenASideFormat } from './placeholderSquad';
-import { extendFromRecord, restoreFromRecord } from './recordRestore';
+import { extendFromRecord, restoreFromRecord, squadNameAfterImport } from './recordRestore';
 import { makePlayer } from './squad';
 import {
   HELD_MATCH_REFUSAL,
@@ -635,5 +635,70 @@ describe('33–36: Q1–Q4 as settled', () => {
     const eight = TEN.slice(0, 8);
     const run = runImport(squad([...eight, 'Kit']), squad([...eight, 'Lola', 'Max'], 'File').ledger, 'file');
     expect(describeImport(run.result)).toMatch(/^8 matched, 2 added, 1 left the squad\./);
+  });
+});
+
+// --- QA F2 on 1.3.0: ruling `file name wins` ---------------------------------------------
+
+describe("QA F2: the file's team name stands after an import that adopts it", () => {
+  const setup = (ps: Player[], ms: SavedMatch[]) =>
+    setupFrom({ players: ps, matches: ms, live: null, format, totalMinutes: 50, periodCount: 4, buzzWhenSubDue: true });
+  const squadRecords = (from: Ledger, to: Ledger) =>
+    to.entries.slice(from.entries.length).flatMap((e) => e.records).filter((r) => r.type === 'squad');
+
+  for (const option of SQUAD_OPTIONS.map((o) => o.option)) {
+    it(`"${option}": the session takes the file's name, and the save after it keeps it`, () => {
+      const phone = squad([...TEN.slice(0, 8), 'Kit'], 'Northside Owls');
+      const file = squad([...TEN.slice(0, 8), 'Lola'], 'Riverside Reds');
+      const run = runImport(phone, file.ledger, option);
+      const name = squadNameAfterImport(run.result, 'Northside Owls');
+      expect(name).toBe('Riverside Reds');
+      const saved = recordMatches(run.ledger, [], run.session.players, name, LATER, setup(run.session.players, run.session.matches));
+      expect(squadRecords(run.ledger, saved)).toEqual([]);
+      expect(saved.squad.name).toBe('Riverside Reds');
+    });
+  }
+
+  it('a rename in Settings after the import is recorded as usual', () => {
+    const phone = squad(TEN, 'Northside Owls');
+    const file = squad(TEN, 'Riverside Reds');
+    const run = runImport(phone, file.ledger, 'match');
+    const name = squadNameAfterImport(run.result, 'Northside Owls');
+    const ps = run.session.players;
+    const saved = recordMatches(run.ledger, [], ps, name, LATER, setup(ps, run.session.matches));
+    const renamed = recordMatches(saved, [], ps, 'Hilltop Hares', new Date(LATER.getTime() + 60_000), setup(ps, run.session.matches));
+    expect(squadRecords(saved, renamed).map((r) => r.name)).toEqual(['Hilltop Hares']);
+    expect(renamed.squad.name).toBe('Hilltop Hares');
+    expect(renamed.squad.id).toBe(saved.squad.id);
+  });
+
+  it('the extend path (a phone with player time) is unchanged: the phone keeps its own name', () => {
+    const sqA = uuid();
+    const played = loadMadeUpTeam({
+      players: [],
+      matches: [],
+      squadId: sqA,
+      squadName: 'Northside Owls',
+      format,
+      totalMinutes: 50,
+      periodCount: 4,
+      ledger: emptyLedger(sqA, 'Northside Owls', NOW),
+      now: NOW,
+    });
+    const ours = played.ledger as Ledger;
+    // The file is this phone's chain, carried on by a later entry under another name.
+    const file = recordMatches(ours, [], played.players, 'Riverside Reds', LATER);
+    const r = importLedger(ours, file, undefined, LATER);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.addedEntries).toBeGreaterThan(0);
+    expect(r.adopted).toBeUndefined();
+    expect(squadNameAfterImport(r, 'Northside Owls')).toBe('Northside Owls');
+  });
+
+  it('nothing new in the file: the name is not touched', () => {
+    const phone = squad(TEN, 'Northside Owls');
+    const r = importLedger(phone.ledger, phone.ledger, undefined, LATER);
+    if (!r.ok) throw new Error(r.reason);
+    expect(squadNameAfterImport(r, 'Hilltop Hares')).toBe('Hilltop Hares');
   });
 });
