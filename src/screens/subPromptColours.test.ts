@@ -8,7 +8,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SUB_PROMPT, UNDO_TOAST } from './subPromptColours';
+import { colours } from './colours';
+import { SUB_PROMPT, UNDO_TOAST, URGENT_BUTTON } from './subPromptColours';
 
 /** WCAG 2.2 relative luminance of a `#rrggbb` colour. */
 function luminance(hex: string): number {
@@ -48,6 +49,10 @@ describe('the sub prompt reads at 4.5:1 in every state (#227 AC1)', () => {
     });
   }
 
+  it('End quarter, once the period runs over: its label on the sand (#228 item 4)', () => {
+    expect(contrast(URGENT_BUTTON.text, URGENT_BUTTON.bg)).toBeGreaterThanOrEqual(AA);
+  });
+
   it('the Undo toast: its message and the Undo button', () => {
     expect(contrast(UNDO_TOAST.text, UNDO_TOAST.bg)).toBeGreaterThanOrEqual(AA);
     expect(contrast(UNDO_TOAST.buttonText, UNDO_TOAST.buttonBg)).toBeGreaterThanOrEqual(AA);
@@ -72,6 +77,22 @@ describe('the three states stay apart, green → amber → red (#227 AC2)', () =
   });
 });
 
+describe('one calmer sand, not two oranges (#228 item 4)', () => {
+  it('amber and urgent are both #e2c27d with dark ink #2b1d00', () => {
+    expect(colours.amber).toBe('#e2c27d');
+    expect(colours.urgent).toBe('#e2c27d');
+    expect(colours.amberInk).toBe('#2b1d00');
+    expect(colours.urgentInk).toBe('#2b1d00');
+    expect(SUB_PROMPT.amber.onInk).toBe('#e2c27d');
+    expect(contrast(colours.amber, colours.amberInk)).toBeCloseTo(9.58, 1);
+  });
+  it('the sub list’s sand status text reads on the pitch', () => {
+    expect(contrast(colours.amber, colours.pitch)).toBeGreaterThanOrEqual(AA);
+    const src = readFileSync(join(__dirname, 'ClockSubs.tsx'), 'utf-8');
+    expect(src).toMatch(/const STATUS: Record<SubBand, string> = \{[^}]*amber: colours\.amber/);
+  });
+});
+
 describe('these are the colours actually drawn (#227 AC3)', () => {
   const root = join(__dirname, '..', '..');
   it('the prompt takes every band colour from SUB_PROMPT', () => {
@@ -79,6 +100,14 @@ describe('these are the colours actually drawn (#227 AC3)', () => {
     expect(src).toMatch(/const BAND = SUB_PROMPT;/);
     const prompts = src.slice(src.indexOf('export function SubPrompts'), src.indexOf('export function SubPlanList'));
     expect(prompts).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+  });
+  it('End quarter takes the sand and its dark ink when the period runs over (#228)', () => {
+    const src = readFileSync(join(root, 'src', 'screens', 'ClockScreen.tsx'), 'utf-8');
+    expect(src).toMatch(/view\.isOvertime && screen\.buttonUrgent,/);
+    expect(src).toMatch(/view\.isOvertime && screen\.buttonUrgentLabel/);
+    const theme = readFileSync(join(root, 'src', 'screens', 'theme.ts'), 'utf-8');
+    expect(theme).toMatch(/buttonUrgent: \{ backgroundColor: colours\.urgent \}/);
+    expect(theme).toMatch(/buttonUrgentLabel: \{ color: colours\.urgentInk \}/);
   });
   it('the Undo toast takes its colours from UNDO_TOAST', () => {
     const src = readFileSync(join(root, 'src', 'screens', 'ClockScreen.tsx'), 'utf-8');

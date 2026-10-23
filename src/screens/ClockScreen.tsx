@@ -490,7 +490,7 @@ export function ClockScreen({
               else onEndQuarter();
             }}
           >
-            <Text style={screen.buttonLabel}>End {noun}</Text>
+            <Text style={[screen.buttonLabel, view.isOvertime && screen.buttonUrgentLabel]}>End {noun}</Text>
           </Pressable>
         )}
         {view.isMatchOver && (

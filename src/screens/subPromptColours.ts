@@ -13,11 +13,14 @@ import { colours } from './colours';
 
 export const SUB_PROMPT: Record<SubBand, { bg: string; ink: string; onInk: string }> = {
   green: { bg: colours.accent, ink: colours.ink, onInk: '#075236' },
-  // #227: amber's fills are its dark ink, so their text is the amber itself
-  // (7.9:1). The old #8a5600 read at 2.67:1.
+  // #227: amber's fills are its dark ink, so their text is the amber itself.
+  // #228: the amber is now sand, 9.58:1. The old #8a5600 read at 2.67:1.
   amber: { bg: colours.amber, ink: colours.amberInk, onInk: colours.amber },
   red: { bg: colours.late, ink: colours.ink, onInk: '#7a1c13' },
 };
+
+/** End quarter once the period runs over (#228 item 4): sand with dark ink. */
+export const URGENT_BUTTON = { bg: colours.urgent, text: colours.urgentInk } as const;
 
 /** The Undo toast on the clock: its message, and the Undo button. */
 export const UNDO_TOAST = {

@@ -14,14 +14,21 @@ export const colours = {
   accent: '#12855a',
   warn: '#ffd166',
   danger: '#ffb4a2',
-  urgent: '#c47f1a',
+  /**
+   * End quarter once the period runs over. #228 item 4 (Dee, approved 23 Oct):
+   * the same sand as `amber` with dark ink, so the app has one warning colour.
+   * The old #c47f1a under white read at 3.28:1.
+   */
+  urgent: '#e2c27d',
+  /** Dark ink on `urgent` (9.58:1). */
+  urgentInk: '#2b1d00',
   /**
    * A planned sub's warning, 15 s to go (#203 C3): brighter, under dark ink, for
-   * sunshine. Also the text on the prompt's dark amber fills (#227). Calming it
-   * (#228 item 4, Dee's call) is this one line; subPromptColours.test.ts
-   * fails any choice under 4.5:1.
+   * sunshine. Also the text on the prompt's dark fills (#227). #228 item 4
+   * (Dee, approved 23 Oct): the calmer sand #e2c27d replaces the garish
+   * #f0a43a; subPromptColours.test.ts fails any choice under 4.5:1.
    */
-  amber: '#f0a43a',
+  amber: '#e2c27d',
   /** Dark ink on `amber`. */
   amberInk: '#2b1d00',
   /** A planned sub now late (#203 C4): the theme's one red background. */

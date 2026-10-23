@@ -32,7 +32,8 @@ const BAND = SUB_PROMPT;
 
 /** The list's dot and status colours, on the dark pitch. */
 const DOT: Record<SubBand, string> = { green: '#4fd18b', amber: colours.amber, red: '#ff6b57' };
-const STATUS: Record<SubBand, string> = { green: '#7fe0a9', amber: '#f7c06a', red: colours.danger };
+// #228 item 4: amber's status text is the same sand as its dot (7.12:1 on the pitch).
+const STATUS: Record<SubBand, string> = { green: '#7fe0a9', amber: colours.amber, red: colours.danger };
 
 // ---------------------------------------------------------------------------
 // The prompts

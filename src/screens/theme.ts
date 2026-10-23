@@ -130,6 +130,8 @@ export const screen = StyleSheet.create({
   },
   buttonDisabled: { backgroundColor: '#2f6b55', opacity: 0.6 },
   buttonUrgent: { backgroundColor: colours.urgent },
+  /** Dark ink on the sand End button (#228 item 4); never a weight change. */
+  buttonUrgentLabel: { color: colours.urgentInk },
   buttonPressed: { opacity: 0.7 },
   buttonLabel: {
     color: colours.ink,

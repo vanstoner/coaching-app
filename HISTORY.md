@@ -355,3 +355,6 @@ analysis, iOS". Entries are added as each release ships.
       the time stream, Undo, More stats and Settings › Tallies. Only the
       words changed: the record's kinds are the same, and a shot still means
       on target.
+    - **A calmer amber.** The sub prompt's 15-second orange, and End quarter
+      once a period runs over, are one sand colour with dark ink (9.6:1). End
+      quarter's white label on orange read at 3.3:1.
