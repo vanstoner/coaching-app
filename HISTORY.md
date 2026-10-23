@@ -362,3 +362,7 @@ analysis, iOS". Entries are added as each release ships.
       speed is gone: Start a test match has its own ×1, ×5 and ×10. A beta
       phone left fast runs at ×1 from its next launch, and its clock never
       goes backwards.
+    - **Tally buttons all one size.** The tap sheet is one grid, three
+      across, and a tally you add is the same size as Goal or Save. Each of
+      your tallies gets its own colour and picture, in the order you added
+      them, and keeps it for good.

@@ -39,9 +39,19 @@ export function tierOf(kind: string): Tier | null {
 
 export const tallyKindOf = (id: UUID): TallyKind => `tally:${id}`;
 
-/** The buttons a coach's own kinds add during play (#198 ruling 12): active ones, in the order added. */
-export function tallyButtons(types: readonly LedgerEventType[]): { kind: TallyKind; label: string; team: boolean }[] {
-  return types.filter((t) => t.active).map((t) => ({ kind: tallyKindOf(t.id), label: t.label, team: t.credited === 'team' }));
+/**
+ * The buttons a coach's own kinds add during play (#198 ruling 12): active
+ * ones, in the order added. `slot` is the kind's place in the order kinds were
+ * created, retired ones included (#228 item 2, Q3 (a)): its look is worked out
+ * from it on every draw, so nothing is stored and a look is never handed on.
+ */
+export function tallyButtons(
+  types: readonly LedgerEventType[]
+): { kind: TallyKind; label: string; team: boolean; slot: number }[] {
+  return types
+    .map((t, slot) => ({ t, slot }))
+    .filter(({ t }) => t.active)
+    .map(({ t, slot }) => ({ kind: tallyKindOf(t.id), label: t.label, team: t.credited === 'team', slot }));
 }
 
 interface EventLike {

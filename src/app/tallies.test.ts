@@ -98,7 +98,7 @@ describe('Settings › Tallies adds a kind without a release (#198 AC2)', () => 
     l = ok(addEventType(l, 'Throw-in won', 'child', NOW));
     expect(addEventType(l, 'throw-in won', 'team', NOW).ok).toBe(false);
     const [t] = l.eventTypes;
-    expect(tallyButtons(l.eventTypes)).toEqual([{ kind: `tally:${t.id}`, label: 'Throw-in won', team: false }]);
+    expect(tallyButtons(l.eventTypes)).toEqual([{ kind: `tally:${t.id}`, label: 'Throw-in won', team: false, slot: 0 }]);
     l = ok(setEventTypeActive(l, t.id, false, NOW));
     expect(tallyButtons(l.eventTypes)).toEqual([]);
   });

@@ -11,9 +11,10 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { TAP_LABEL, eventGridColumns, eventGridRows } from '../app/matchEvents';
+import { TAP_LABEL, eventGridRows } from '../app/matchEvents';
 import type { TallyKind, TapEventKind } from '../types/index';
 import { Text } from './Text';
+import { BUILT_IN_TILE, TILE_INK, tallyLook } from './tallyLook';
 import { TOUCH_TARGET, colours, screen } from './theme';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -29,7 +30,7 @@ interface Glyph {
   flip?: boolean;
 }
 
-const INK = '#1b2a24';
+const INK = TILE_INK;
 const BALL = INK;
 const NET = '#9aa7a1';
 
@@ -60,16 +61,7 @@ export const PICTURE: Record<TapEventKind | 'assist', Glyph[]> = {
   ],
 };
 
-/** A bright tile per kind; Conceded is the one that reads as against us. */
-const TILE: Record<TapEventKind, string> = {
-  goal: '#ffd166',
-  shot_on_target: '#c9b8f0',
-  tackle: '#f4a259',
-  corner: '#ef8a80',
-  free_kick: '#7cc6fe',
-  save: '#8be0c3',
-  conceded: '#d9d9d9',
-};
+const TILE = BUILT_IN_TILE;
 
 const STICKER = 60;
 /** On the tiles the sticker is drawn smaller than its design size (PO: "feel free to size them smaller"). */
@@ -100,82 +92,63 @@ export function Sticker({ glyphs, size = STICKER }: { glyphs: Glyph[]; size?: nu
   );
 }
 
-/** The grid of picture buttons for one player. */
-export function EventButtons({
-  kinds,
-  onPress,
-}: {
-  kinds: TapEventKind[];
-  onPress: (kind: TapEventKind) => void;
-}) {
-  // Rows of equal tiles, the last one centred: four make a 2 x 2 square and
-  // five a 3 + 2, never a lone tile stranded at the left.
-  const wide = eventGridColumns(kinds.length) <= 2;
-  return (
-    <View style={local.grid}>
-      {eventGridRows(kinds).map((row, r) => (
-        <View key={r} style={local.row}>
-          {row.map((kind) => (
-            <Pressable
-              key={kind}
-              accessibilityRole="button"
-              accessibilityLabel={TAP_LABEL[kind]}
-              onPress={() => onPress(kind)}
-              style={({ pressed }) => [
-                local.tile,
-                wide ? local.tileWide : local.tileThird,
-                { backgroundColor: TILE[kind] },
-                pressed && local.pressed,
-              ]}
-            >
-              <Sticker glyphs={PICTURE[kind]} size={TILE_STICKER} />
-              <Text style={local.label} numberOfLines={1}>
-                {TAP_LABEL[kind]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
+/** One tile on the tap sheet: a built-in kind, or a coach's tally with its slot (#228 item 2). */
+type Tile =
+  | { type: 'event'; kind: TapEventKind }
+  | { type: 'tally'; kind: TallyKind; label: string; team: boolean; slot: number };
 
 /**
- * The coach's own tally kinds (#198, PO ruling 12): appended after the
- * picture buttons, each with a plain counter picture and its name.
+ * The tap sheet's buttons for one player (#185, #198, #228 item 2): ONE grid,
+ * built-ins then the coach's tallies in the same rows, every tile 30% wide and
+ * the same height, so a tile never changes size when a tally is added. A
+ * tally's colour and icon come from its slot (tallyLook.ts); nothing is stored.
  */
-export function TallyButtons({
+export function TapButtons({
+  kinds,
   tallies,
-  onPress,
+  onEvent,
+  onTally,
 }: {
-  tallies: { kind: TallyKind; label: string; team: boolean }[];
-  onPress: (kind: TallyKind, team: boolean) => void;
+  kinds: TapEventKind[];
+  tallies: { kind: TallyKind; label: string; team: boolean; slot: number }[];
+  onEvent: (kind: TapEventKind) => void;
+  onTally: (kind: TallyKind, team: boolean) => void;
 }) {
-  if (tallies.length === 0) return null;
-  const wide = eventGridColumns(tallies.length) <= 2;
+  const tiles: Tile[] = [
+    ...kinds.map((kind): Tile => ({ type: 'event', kind })),
+    ...tallies.map((t): Tile => ({ type: 'tally', ...t })),
+  ];
+  // Rows of equal tiles, the last one centred: never a lone tile stranded at the left.
   return (
     <View style={local.grid}>
-      {eventGridRows(tallies).map((row, r) => (
+      {eventGridRows(tiles).map((row, r) => (
         <View key={r} style={local.row}>
-          {row.map((t) => (
-            <Pressable
-              key={t.kind}
-              accessibilityRole="button"
-              accessibilityLabel={t.team ? `${t.label}, for the team` : t.label}
-              onPress={() => onPress(t.kind, t.team)}
-              style={({ pressed }) => [
-                local.tile,
-                wide ? local.tileWide : local.tileThird,
-                { backgroundColor: '#e8e8e8' },
-                pressed && local.pressed,
-              ]}
-            >
-              <Sticker glyphs={[{ name: 'counter', size: 36, colour: INK }]} size={TILE_STICKER} />
-              <Text style={local.label} numberOfLines={1}>
-                {t.label}
-              </Text>
-            </Pressable>
-          ))}
+          {row.map((tile) => {
+            const event = tile.type === 'event';
+            const look = event ? null : tallyLook(tile.slot);
+            const label = event ? TAP_LABEL[tile.kind] : tile.label;
+            return (
+              <Pressable
+                key={tile.kind}
+                accessibilityRole="button"
+                accessibilityLabel={!event && tile.team ? `${label}, for the team` : label}
+                onPress={() => (tile.type === 'event' ? onEvent(tile.kind) : onTally(tile.kind, tile.team))}
+                style={({ pressed }) => [
+                  local.tile,
+                  { backgroundColor: event ? TILE[tile.kind] : look!.colour },
+                  pressed && local.pressed,
+                ]}
+              >
+                <Sticker
+                  glyphs={event ? PICTURE[tile.kind] : [{ name: look!.icon, size: 36, colour: INK }]}
+                  size={TILE_STICKER}
+                />
+                <Text style={local.label} numberOfLines={1} ellipsizeMode="tail">
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -202,9 +175,9 @@ export function AssistButton({ name, onPress }: { name: string; onPress: () => v
 const local = StyleSheet.create({
   grid: { marginBottom: 4 },
   row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'stretch' },
-  tileThird: { width: '30%' },
-  tileWide: { width: '44%' },
   tile: {
+    // #228 item 2: every tile, built-in or the coach's, is the same 30%; none is wider.
+    width: '30%',
     minHeight: TOUCH_TARGET * 2.1,
     marginHorizontal: 5,
     borderRadius: 20,
@@ -232,7 +205,17 @@ const local = StyleSheet.create({
     overflow: 'hidden',
   },
   glyph: { position: 'absolute' },
-  label: { color: INK, fontSize: 15, fontWeight: '700', marginTop: 6, includeFontPadding: false },
+  label: {
+    color: INK,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 6,
+    includeFontPadding: false,
+    // A long tally name ends in an ellipsis inside the tile (Dee); the tile never grows.
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    flexShrink: 0,
+  },
   assist: {
     flexDirection: 'row',
     alignItems: 'center',

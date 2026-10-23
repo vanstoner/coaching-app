@@ -86,7 +86,7 @@ import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
-import { AssistButton, EventButtons, TallyButtons } from './EventButtons';
+import { AssistButton, TapButtons } from './EventButtons';
 import { SubPlanList, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 import { UNDO_TOAST } from './subPromptColours';
@@ -157,7 +157,7 @@ export function ClockScreen({
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
   /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
-  tallies?: { kind: TallyKind; label: string; team: boolean }[];
+  tallies?: { kind: TallyKind; label: string; team: boolean; slot: number }[];
   onRecordTally?: (kind: TallyKind, playerId: UUID | null) => MatchEvent | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
@@ -582,8 +582,12 @@ export function ClockScreen({
           <>
             {onIds.has(sheetFor) && (
               <>
-                <EventButtons kinds={tapEventsFor(sheetFor === keeper)} onPress={(kind) => record(kind, sheetFor)} />
-                <TallyButtons tallies={tallies} onPress={(kind, team) => tally(kind, team, sheetFor)} />
+                <TapButtons
+                  kinds={tapEventsFor(sheetFor === keeper)}
+                  tallies={tallies}
+                  onEvent={(kind) => record(kind, sheetFor)}
+                  onTally={(kind, team) => tally(kind, team, sheetFor)}
+                />
               </>
             )}
             <SheetButton
