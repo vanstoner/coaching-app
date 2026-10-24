@@ -10,11 +10,19 @@ name: App Store media
 # dropped by that second ruling; check_store_media.py still checks one.
 #
 # Maestro (pinned, checksummed) taps through store/app-store/maestro/
-# screenshots.yaml on an iPhone 6.9" and an iPad 13" simulator. The shots are
-# checked against Apple's rules (check_store_media.py) and kept as this run's
-# `store-media` artifact.
+# screenshots.yaml on an iPhone 6.9" and an iPad 13" simulator. #226: shot 3,
+# the plan picture, is copied from the app's container (Maestro cannot reach
+# the iOS share sheet) and put on a black screen. composite_shots.py (Pillow,
+# pinned with hashes) then frames and captions every raw shot to Dee's design,
+# with the captions in store/app-store/en-GB/screenshot_captions.txt, at
+# Apple's exact sizes, RGB with no alpha. The framed shots are checked
+# against Apple's rules and the approved set (check_store_media.py), kept as
+# this run's `store-media` artifact and pushed to store-media-preview. Once
+# Rob approves them they are committed under store/app-store/screenshots/,
+# which is what the release run uploads (asc_api.py release --screenshots).
 #
 #   gh workflow run store-media.yml --ref main
+#   gh workflow run store-media.yml --ref <pr-branch>   # the shots for a PR, before merge
 
 # By hand only (PO, 2026-10-06: "you're burning credits"). A run is about an
 # hour of macOS minutes, so it never starts on a push or a pull request.
@@ -50,8 +58,19 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Self-test the media checks before trusting them
-        run: python3 .github/scripts/check_store_media.py --self-test
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      # Before the hour of Mac time: a broken compositor or a caption that
+      # runs to three lines fails here, in a minute.
+      - name: Install Pillow (pinned, hashed) and self-test the compositor and the media checks
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --require-hashes --only-binary=:all: -r .github/scripts/requirements-media.txt
+          python3 .github/scripts/check_store_media.py --self-test
+          python3 .github/scripts/composite_shots.py --self-test
+          python3 .github/scripts/composite_shots.py check-captions store/app-store/en-GB/screenshot_captions.txt
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -152,7 +171,6 @@ jobs:
           echo "$MAESTRO_SHA256  /tmp/maestro.zip" | shasum -a 256 -c -
           unzip -q /tmp/maestro.zip -d "$HOME"
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
-          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
 
       - name: Screenshots on the iPhone, then the iPad
         run: |
@@ -166,17 +184,39 @@ jobs:
               --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
             xcrun simctl install "$1" "$APP"
           }
+          CAPTIONS="$GITHUB_WORKSPACE/store/app-store/en-GB/screenshot_captions.txt"
+          COMPOSITE="$GITHUB_WORKSPACE/.github/scripts/composite_shots.py"
           shots() {  # UDID display
-            mkdir -p "media/raw-$2" "media/debug-$2"
-            ( cd "media/raw-$2" && maestro --device "$1" test --test-output-dir "$GITHUB_WORKSPACE/media/debug-$2" \
+            mkdir -p "media/maestro-$2" "media/debug-$2" "media/raw-$2"
+            touch "$RUNNER_TEMP/flow-start-$2"
+            # DEVICE picks the flow's taps by position (a card's top line, the
+            # share sheet's "2 x 2", a swipe outside the pitch), which differ
+            # between the 440x956 iPhone and the 1032x1376 iPad.
+            ( cd "media/maestro-$2" && maestro --device "$1" test -e "DEVICE=$2" \
+                --test-output-dir "$GITHUB_WORKSPACE/media/debug-$2" \
                 "$FLOWS/screenshots.yaml" ) || { echo "MEDIA PROBLEM: the $2 screenshot flow failed"; fail=1; }
-            mkdir -p "media/$2"
-            # Apple refuses alpha: re-encode each as plain RGB.
             # Maestro writes takeScreenshot to the working directory or the
             # output directory, by version: the NN-name.png files, from either.
-            find "media/raw-$2" "media/debug-$2" -name '[0-9][0-9]-*.png' | while read -r f; do
-              ffmpeg -loglevel error -y -i "$f" -pix_fmt rgb24 "media/$2/$(basename "$f")"
-            done
+            find "media/maestro-$2" "media/debug-$2" -name '[0-9][0-9]-*.png' -exec cp {} "media/raw-$2/" \;
+            # Shot 3: the flow ends with the share sheet up, so the 2 x 2 plan
+            # picture the app captured is still in its tmp folder. Newest PNG
+            # written during this flow; on black, at this device's raw size.
+            container="$(xcrun simctl get_app_container "$1" "$BUNDLE_ID" data 2>/dev/null || true)"
+            picture=""
+            if [ -n "$container" ] && [ -d "$container/tmp" ]; then
+              picture="$(find "$container/tmp" -name '*.png' -newer "$RUNNER_TEMP/flow-start-$2" -print0 \
+                | xargs -0 ls -t 2>/dev/null | head -n 1 || true)"
+            fi
+            size="$(python3 -c 'import sys; from PIL import Image; print(*Image.open(sys.argv[1]).size)' \
+              "media/raw-$2/01-alert.png" 2>/dev/null || true)"
+            if [ -n "$picture" ] && [ -n "$size" ]; then
+              # shellcheck disable=SC2086 # "W H", two arguments
+              python3 "$COMPOSITE" on-black "$picture" "media/raw-$2/03-plan.png" $size || fail=1
+            else
+              echo "MEDIA PROBLEM: no plan picture in the $2 app container's tmp/ (or no 01-alert to size it by)"
+              fail=1
+            fi
+            python3 "$COMPOSITE" compose "media/raw-$2" "media/$2" "$2" "$CAPTIONS" || fail=1
             python3 .github/scripts/check_store_media.py shots "media/$2" "$2" || fail=1
           }
           # One simulator at a time, each retried once from a fresh boot.
@@ -191,17 +231,22 @@ jobs:
             if [ "$fail" != 0 ]; then
               echo "the $2 flow failed once; retrying from a fresh boot"
               fail=0
-              rm -rf "media/$2" "media/raw-$2" "media/debug-$2"
+              rm -rf "media/$2" "media/raw-$2" "media/maestro-$2" "media/debug-$2"
               xcrun simctl shutdown "$1" || true
               prepare "$1"
               shots "$1" "$2"
             fi
             xcrun simctl shutdown "$1" || true
-            [ "$fail" = 0 ] && fail=$saved
+            # An if, not `[ ] && ...`: under GitHub's bash -e a false test as
+            # the function's last line ended the whole step before the iPad
+            # and the WHY block (dry run, #226).
+            if [ "$fail" = 0 ]; then fail=$saved; fi
           }
           xcrun simctl shutdown "$IPAD_UDID" || true
           device "$IPHONE_UDID" iphone
           device "$IPAD_UDID" ipad
+          # Both displays hold exactly the captioned set, ready to commit.
+          python3 .github/scripts/check_store_media.py set media "$CAPTIONS" || fail=1
           if [ "$fail" != 0 ]; then
             echo "=============================================================="
             echo "WHY THIS JOB FAILED: a flow failed or the media is outside Apple's rules;"

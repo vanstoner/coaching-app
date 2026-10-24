@@ -155,14 +155,6 @@ export function inBucket(rows: FixtureRow[], bucket: FixtureBucket): FixtureRow[
   return rows.filter((r) => r.bucket === bucket);
 }
 
-/**
- * What to show when there is nothing at all.
- *
- * An empty state is the first thing a new coach sees and the last thing
- * anybody designs, so it is decided here rather than left to a screen.
- */
-export const NO_FIXTURES_YET = 'No fixtures yet. Add your first match.';
-
 /** A period as far as when it started: its recorded wall-clock anchor. */
 export interface StartedPeriod {
   index: number;
@@ -319,4 +311,16 @@ export function matchIsUnderway(quarters: QuarterLike[]): boolean {
  */
 export function lengthLabel(match: Match): string {
   return `${match.totalMinutes} min · ${periodNounPlural(match.quarterCount)}`;
+}
+
+/**
+ * What a screen reader (and Maestro) calls the part of a fixture card that
+ * opens the match (#226): "Open Practice Park, Sat 24 Oct · 10:00, 50 min ·
+ * Quarters". The card's links (Plan this match, Edit the plan, Archive,
+ * Remove) are elements of their own, so each can be reached and pressed
+ * alone. Empty lines are dropped.
+ */
+export function fixtureOpenLabel(lines: readonly (string | null | undefined | false)[]): string {
+  const [first, ...rest] = lines.filter((l): l is string => typeof l === 'string' && l.trim() !== '');
+  return [`Open ${first ?? 'match'}`, ...rest].join(', ');
 }

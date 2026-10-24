@@ -84,7 +84,8 @@ describe('the score (#195 AC1, PO ruling: never a 0–0 that did not happen)', (
     });
     const [row] = recordOnlyMatches(record([m]), new Set());
     expect(row.score).toEqual({ us: 2, them: 1 });
-    expect(scoreLabel(row.score)).toBe('2 – 1');
+    // #196 AC1 (approved 18 Oct): the card shows the result as W/D/L with the score.
+    expect(scoreLabel(row.score)).toBe('W 2 – 1');
   });
 
   it('a match with no events at all reads "Score not recorded"', () => {
@@ -124,7 +125,10 @@ describe('the read-only page', () => {
       e.recordEvent(s, s.quarters[0], 'conceded', ids[0]);
     });
     const page = recordMatchPage(record([m]), m.match.id)!;
-    expect(page.goals).toEqual([{ name: 'P4', period: 1, atMs: 10 * MIN }]);
+    expect(page.goals).toEqual([
+      { id: expect.any(String), name: 'P4', period: 1, atMs: 10 * MIN, timeKnown: true, note: null },
+    ]);
+    expect(page.result).toBe('D');
     expect(page.conceded).toBe(1);
   });
 

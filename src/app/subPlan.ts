@@ -230,7 +230,29 @@ export function whoComesOff(
 }
 
 // ---------------------------------------------------------------------------
-// The buzz — #137, ruling 19 (R1): the phone buzzes once when a sub falls due
+// The warning — #203: a sub's prompt rises 30 s before it is due
+// ---------------------------------------------------------------------------
+
+/**
+ * How long before its time a planned sub's prompt rises, and the phone
+ * buzzes (#203 AC3, AC4). Fixed at 30 s: Rob's ruling on the open question,
+ * "a fixed 30 s lead (no setting for now)".
+ */
+export const SUB_WARNING_LEAD_MS = 30_000;
+
+/**
+ * The subs whose warning has started: planned, not made, and no more than
+ * 30 s from their time, or past it. Earliest first, ties in plan order.
+ * Like `dueSubs`, it never expires: a sub forgotten is still wanted.
+ */
+export function warnedSubs(plan: PlannedSub[], periodElapsedMs: number): PlannedSub[] {
+  return plan
+    .filter((s) => isPlanned(s) && !s.done && periodElapsedMs >= s.atMs - SUB_WARNING_LEAD_MS)
+    .sort((a, b) => a.atMs - b.atMs);
+}
+
+// ---------------------------------------------------------------------------
+// The buzz — #137, moved by #203 AC4: the phone buzzes once, 30 s before a sub
 // ---------------------------------------------------------------------------
 
 /**
@@ -245,18 +267,20 @@ export function subMoment(sub: PlannedSub): string {
 }
 
 /**
- * Which planned subs should buzz the phone now (#137 AC5).
+ * Which planned subs should buzz the phone now (#137 AC5, #203 AC4).
  *
- * Exactly the subs the clock shows as due — `dueSubs`: planned, not made,
- * their moment passed — less every moment that has already buzzed. A sub
- * already made, or taken out of the plan, is not due, so it cannot buzz.
+ * Exactly the subs whose prompt has risen — `warnedSubs`: planned, not made,
+ * 30 s or less from their time — less every moment that has already buzzed.
+ * Rob's ruling on #203: one buzz, at the warning only, "early enough to act
+ * on"; before #203 it came at the due time. A sub already made, or taken out
+ * of the plan, has no warning, so it cannot buzz.
  */
 export function subsToBuzz(
   plan: PlannedSub[],
   periodElapsedMs: number,
   alreadyBuzzed: ReadonlySet<string>
 ): PlannedSub[] {
-  return dueSubs(plan, periodElapsedMs).filter((s) => !alreadyBuzzed.has(subMoment(s)));
+  return warnedSubs(plan, periodElapsedMs).filter((s) => !alreadyBuzzed.has(subMoment(s)));
 }
 
 /**
@@ -277,7 +301,7 @@ export const NO_BUZZES: BuzzLog = { periodKey: '', buzzed: new Set() };
 
 /** What one repaint of the clock knows. */
 export interface BuzzCheck {
-  /** Settings: "Buzz when a sub is due". */
+  /** Settings: "Buzz when a sub is due" (it buzzes at the 30 s warning, #203). */
   enabled: boolean;
   /**
    * The app is in the foreground. Android drops a vibration from an app in

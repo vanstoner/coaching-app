@@ -16,6 +16,7 @@
  * is never a fairness input.
  */
 
+import { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -29,6 +30,7 @@ import { NAME, sortSettingsMinutes } from '../app/tableSort';
 import { UNIT_LABEL, isExcluded, seasonRows, type Ledger } from '../app/ledger';
 import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
+import { SQUAD_OPTIONS, type SquadMatching, type SquadOption } from '../app/squadMatch';
 import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
 import { colours, screen } from './theme';
 import { SortHeading, useTableSort } from './TableSort';
@@ -41,6 +43,9 @@ export function MinutesSection({
   busy,
   onExport,
   onImport,
+  matching = null,
+  onChoose,
+  onCancelImport,
 }: {
   ledger: Ledger | null;
   /** The working squad, for each player's outfield-share target (#101). */
@@ -52,6 +57,10 @@ export function MinutesSection({
   busy: boolean;
   onExport: () => void;
   onImport: () => void;
+  /** #195 (QA N1): the phone's squad against the file's, waiting on the coach's choice. */
+  matching?: SquadMatching | null;
+  onChoose?: (option: SquadOption) => void;
+  onCancelImport?: () => void;
 }) {
   // #208: sorted by the heading the coach chose, Total most first by default.
   // Squad order underneath, so ties keep it; anyone the ledger knows who is
@@ -149,11 +158,11 @@ export function MinutesSection({
       </Text>
 
       <Pressable
-        disabled={busy}
+        disabled={busy || matching !== null}
         onPress={onImport}
         style={({ pressed }) => [
           screen.buttonQuiet,
-          busy && screen.buttonDisabled,
+          (busy || matching !== null) && screen.buttonDisabled,
           pressed && screen.buttonPressed,
         ]}
       >
@@ -165,7 +174,108 @@ export function MinutesSection({
         or deleted.
       </Text>
 
+      {matching !== null && onChoose && onCancelImport && (
+        <MatchStep
+          // A fresh step, defaulting to Match by name, for each file chosen.
+          key={matching.pairs.map((p) => p.file.id).join(',')}
+          matching={matching}
+          onChoose={onChoose}
+          onCancel={onCancelImport}
+        />
+      )}
+
       {message !== '' && <Text style={local.message}>{message}</Text>}
+    </View>
+  );
+}
+
+const nameOf = (p: { firstName: string; displaySuffix?: string | null }) =>
+  p.displaySuffix ? `${p.firstName} ${p.displaySuffix}` : p.firstName;
+
+const childWord = (n: number) => (n === 1 ? 'child' : 'children');
+
+/**
+ * #195 (QA N1): before anything is applied, this phone's squad against the
+ * file's, and the coach's choice. Match by name is selected by default.
+ * Cancel imports nothing. Every line wraps: names and notes must not lose
+ * their tail on a narrow phone.
+ */
+function MatchStep({
+  matching,
+  onChoose,
+  onCancel,
+}: {
+  matching: SquadMatching;
+  onChoose: (option: SquadOption) => void;
+  onCancel: () => void;
+}) {
+  const [option, setOption] = useState<SquadOption>('match');
+  const { pairs, fileOnly, phoneOnly, notMatched } = matching;
+  return (
+    <View style={local.step}>
+      <Text style={screen.fieldLabel}>Children in this file</Text>
+      <Text style={local.stepHead}>
+        {pairs.length} {childWord(pairs.length)} match by name
+      </Text>
+      {pairs.map((p) => {
+        const phone = nameOf(p.phone).trim();
+        const file = nameOf(p.file);
+        return (
+          <Text key={p.file.id} style={local.stepLine}>
+            {phone === file ? file : `${phone} → ${file}`}
+            {p.notes.length > 0 ? ` (${p.notes.join('; ')})` : ''}
+          </Text>
+        );
+      })}
+      {fileOnly.length > 0 && (
+        <>
+          <Text style={local.stepHead}>
+            {fileOnly.length} only in the file, added
+          </Text>
+          <Text style={local.stepLine}>{fileOnly.map(nameOf).join(', ')}</Text>
+        </>
+      )}
+      {phoneOnly.length > 0 && (
+        <>
+          <Text style={local.stepHead}>{phoneOnly.length} only on this phone</Text>
+          <Text style={local.stepLine}>{phoneOnly.map(nameOf).join(', ')}</Text>
+        </>
+      )}
+      {notMatched.length > 0 && (
+        <>
+          <Text style={local.stepHead}>Not matched, the name appears more than once</Text>
+          <Text style={local.stepLine}>
+            {notMatched.map((x) => `${x.name} (${x.side === 'phone' ? 'this phone' : 'the file'})`).join(', ')}
+          </Text>
+        </>
+      )}
+
+      {SQUAD_OPTIONS.map((o) => {
+        const selected = option === o.option;
+        return (
+          <Pressable
+            key={o.option}
+            onPress={() => setOption(o.option)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            style={({ pressed }) => [local.option, selected && local.optionOn, pressed && screen.buttonPressed]}
+          >
+            {/* Colour only between states: a weight change re-measures and clips (theme.ts). */}
+            <Text style={[local.optionLabel, selected && local.optionLabelOn]}>{o.label}</Text>
+            <Text style={[local.optionHint, selected && local.optionLabelOn]}>{o.hint}</Text>
+          </Pressable>
+        );
+      })}
+
+      <Pressable
+        onPress={() => onChoose(option)}
+        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+      >
+        <Text style={screen.buttonLabel}>Import</Text>
+      </Pressable>
+      <Pressable onPress={onCancel} style={screen.linkHit} accessibilityRole="button">
+        <Text style={screen.link}>Cancel</Text>
+      </Pressable>
     </View>
   );
 }
@@ -209,6 +319,29 @@ const local = StyleSheet.create({
   // Colour only: a weight change re-measures and clips (theme.ts).
   faint: { color: colours.inkFaint },
   below: { color: colours.warn },
+  step: {
+    alignSelf: 'stretch',
+    marginTop: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colours.line,
+    borderRadius: 10,
+    backgroundColor: colours.pitchRaised,
+  },
+  stepHead: { color: colours.ink, fontSize: 15, includeFontPadding: false, marginTop: 8 },
+  stepLine: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginTop: 2 },
+  option: {
+    alignSelf: 'stretch',
+    marginTop: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colours.line,
+    borderRadius: 10,
+  },
+  optionOn: { backgroundColor: colours.accent, borderColor: colours.accent },
+  optionLabel: { color: colours.inkMuted, fontSize: 15, fontWeight: '600', includeFontPadding: false },
+  optionLabelOn: { color: colours.ink },
+  optionHint: { color: colours.inkFaint, fontSize: 12, includeFontPadding: false, marginTop: 2 },
   message: {
     alignSelf: 'stretch',
     color: colours.warn,

@@ -42,9 +42,34 @@ the N of the GitHub release built from the same commit (`v<version>-build.N`,
 the APK's versionCode), and the run first asks App Store Connect for the
 highest build it has for that version, failing before signing if ours is not
 higher (raise the version: a fix is a patch). It sets TestFlight's What to
-Test from the release note (`testflight_notes.py`, `asc_api.py`). `-f dry_run=true` signs, exports and checks,
-then uploads nothing. The unsigned device build is ios.yml's `device-build`,
-on every PR. Never add a `pull_request` trigger to it.
+Test from the release note (`testflight_notes.py`, `asc_api.py`).
+
+**Release on approval (#226).** The same run then submits it: it waits
+(bounded, `PROCESSING_WAIT_MINUTES`) for Apple to process the build, creates
+or reuses the App Store version for `app.json`'s version, attaches this
+build, sets "Automatically release this version" (`AFTER_APPROVAL`), sends
+the listing text, puts the approved screenshots on the version (the
+committed `store/app-store/screenshots/`, exactly the shots
+`screenshot_captions.txt` names; a set already holding them is not
+re-uploaded, and missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
+(a bump that leaves it unchanged fails `version-impact.yml`), checks the page
+is complete and submits it for review (`asc_api.py release`). Apple's
+approval releases it; Rob never opens App Store Connect. Every step checks
+before it acts, so a re-run finishes what an earlier one began and never
+duplicates. Anything unexpected (another editable version, a rejected one, a
+build unprocessed or missing compliance, an empty field, any 4xx/5xx) turns
+the job red with a `WHY THIS JOB FAILED` block naming the step, Apple's
+reply, how far it got and the fix; the TestFlight upload stands. It never
+cancels a submission, deletes a version or releases one by hand. To finish
+after a refusal with no new build: `-f app_store_for=SHA`. `-f dry_run=true`
+signs, exports and checks, uploads nothing, and prints the App Store plan;
+`-f app_store_for=SHA -f dry_run=true` prints the plan alone, reading every
+version and its state: the client refuses any write. A dry run has its own
+concurrency group, so it never cancels a real run. Nothing is ever written to
+a live App Information or version: when no editable App Information exists, the
+run sends nothing there, and refuses if the files would change it. The unsigned device
+build is ios.yml's `device-build`, on every PR. Never add a `pull_request`
+trigger to it.
 
 **Updating safely (#167).** Once a version is in the App Store, a coach's
 season lives on their phone and an installed app cannot be rolled back. Every
@@ -55,8 +80,10 @@ build reads every frozen release with identical figures, and CI
 (`check_release_fixture.py`) refuses a version bump without the previous
 release frozen, or a fixture edited or removed. A schema change needs a
 migration and passes against every fixture. Updates go to TestFlight testers
-installed over the previous version with data in it, then out with Apple's
-phased release.
+installed over the previous version with data in it, then out on Apple's
+approval: to everyone at once while `PHASED_RELEASE` in `testflight.yml` is
+`off`, or over Apple's 7-day phased release when it is `on` (#226 Q5, Rob's
+call; `off` until he rules).
 
 ## Produce
 

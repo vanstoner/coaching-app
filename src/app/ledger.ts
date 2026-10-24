@@ -41,9 +41,11 @@
  * - **First names only (invariant 4).**
  */
 
+import { uuid } from '../types/index';
 import type {
   Appearance,
   AvailabilityStatus,
+  Format,
   MatchEvent,
   MatchEventKind,
   Competition,
@@ -54,6 +56,7 @@ import type {
   UUID,
 } from '../types/index';
 import {
+  keyOf,
   latestRecords,
   makeEntry,
   sameRecord,
@@ -63,6 +66,21 @@ import {
   type LedgerRecord,
 } from './ledgerChain';
 import { currentSigner, deviceRecord, publishes, signBody } from './entrySigning';
+import {
+  KEPT_BY_SAVE,
+  SETUP_FIELDS,
+  setupRecords,
+  toFixture,
+  toProfile,
+  toSettings,
+  type LedgerFixture,
+  type LedgerProfile,
+  type LedgerSettings,
+  type SetupInput,
+} from './ledgerSetup';
+import { shapeOfFormat } from './shapes';
+
+export type { LedgerFixture, LedgerProfile, LedgerSettings, SetupInput } from './ledgerSetup';
 
 export type { LedgerEntry, LedgerRecord } from './ledgerChain';
 
@@ -89,6 +107,11 @@ export interface LedgerInterval {
   endMs: number;
   corrected: boolean;
   note: string | null;
+  /**
+   * The position's role code, e.g. 'RB' (#196 AC4, ADR-021 D2). Absent on an
+   * interval recorded before roles were, which reads per unit as before.
+   */
+  role?: string | null;
 }
 
 /** Who was available for a match, snapshotted at kick-off (ADR-014 §4). */
@@ -129,6 +152,33 @@ export interface LedgerMatch {
   excluded?: LedgerExclusion;
   /** Test or void: hidden from every screen, kept in the record (#194, ADR-021 D3). */
   matchKind?: LedgerMatchKind;
+  /** How it was actually played (#196 AC3). Absent: read as planned (`structureOf`). */
+  structure?: LedgerStructure;
+  /** Awards standing for this match (#197); absent when none. Every change stays in the chain. */
+  awards?: LedgerAward[];
+}
+
+/** The periods a match actually ran, as the clock measured them, or as noted afterwards (#196 AC3). */
+export interface LedgerStructure {
+  periodCount: number;
+  /** Each period's length, in order. */
+  periodMs: number[];
+  shape: string | null;
+  onField: number | null;
+  /** Mandatory on a correction (invariant 5); null when the clock wrote it. */
+  note: string | null;
+}
+
+function toStructure(r: LedgerRecord): LedgerStructure | null {
+  if (!Array.isArray(r.periodMs)) return null;
+  const periodMs = r.periodMs.filter((x): x is number => typeof x === 'number' && x >= 0);
+  return {
+    periodCount: typeof r.periodCount === 'number' ? r.periodCount : periodMs.length,
+    periodMs,
+    shape: typeof r.shape === 'string' ? r.shape : null,
+    onField: typeof r.onField === 'number' ? r.onField : null,
+    note: typeof r.note === 'string' ? r.note : null,
+  };
 }
 
 /** True when the coach has left this match out of the figures (ADR-020). */
@@ -171,6 +221,12 @@ export interface LedgerEvent {
   atMs: number;
   refersTo: UUID | null;
   note: string | null;
+  /**
+   * False when the time is not known (#196 AC2, ADR-021 D1): `period` is 0
+   * and `atMs` is 0, so the released build, which needs a number, still
+   * reads it. Such an event counts in the score and in no per-time figure.
+   */
+  timeKnown?: false;
 }
 
 export interface LedgerPlayer {
@@ -199,7 +255,52 @@ export interface Ledger {
   squad: { id: UUID; name: string };
   players: LedgerPlayer[];
   matches: LedgerMatch[];
+  /** Fixtures as the coach made them, cancelled ones included (#195 AC2). */
+  fixtures: LedgerFixture[];
+  /** Each child's profile, where one is recorded (#195 AC3, #190). */
+  profiles: LedgerProfile[];
+  /** The squad's defaults, once recorded (#195 AC3). */
+  settings: LedgerSettings | null;
+  /** Award types, the defaults first, retired ones included (#197). */
+  awardTypes: LedgerAwardType[];
+  /** Tally kinds the coach added in Settings (#198); the built-in ones are not records. */
+  eventTypes: LedgerEventType[];
 }
+
+/** A kind of coach's tally added without a release (#198 AC2). Its events' kind is `tally:<id>`. */
+export interface LedgerEventType {
+  id: UUID;
+  label: string;
+  /** Always 'tally' from this build; a later build's 'core' kind is carried, never counted as core here. */
+  tier: string;
+  /** Credited to the child tapped, or to the team. */
+  credited: 'child' | 'team';
+  active: boolean;
+}
+
+/** A kind of award (#197): Player of the Week, Mr Assister, or one the coach added. */
+export interface LedgerAwardType {
+  id: UUID;
+  name: string;
+  /** False once retired: not offered for new awards; past ones still show. */
+  active: boolean;
+}
+
+/** One child's award in one match (#197). Joint winners are one each. */
+export interface LedgerAward {
+  awardTypeId: UUID;
+  playerId: UUID;
+  note: string | null;
+}
+
+/**
+ * The two every match report names (#197 AC1). Fixed ids, so renaming or
+ * retiring one is a record against the same id on every phone.
+ */
+export const DEFAULT_AWARD_TYPES: readonly LedgerAwardType[] = [
+  { id: 'player-of-the-week' as UUID, name: 'Player of the Week', active: true },
+  { id: 'mr-assister' as UUID, name: 'Mr Assister', active: true },
+];
 
 // --- fields this build knows, per record type ---------------------------------
 //
@@ -221,11 +322,17 @@ const FIELDS: Record<string, readonly string[]> = {
     'endMs',
     'corrected',
     'note',
+    'role',
   ],
-  event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note'],
+  event: ['type', 'matchId', 'id', 'kind', 'playerId', 'period', 'atMs', 'refersTo', 'note', 'timeKnown'],
+  structure: ['type', 'matchId', 'periodCount', 'periodMs', 'shape', 'onField', 'note'],
+  'award-type': ['type', 'id', 'name', 'active', 'note'],
+  award: ['type', 'matchId', 'awardTypeId', 'playerId', 'given', 'note'],
+  'event-type': ['type', 'id', 'label', 'tier', 'credited', 'active', 'note'],
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
+  ...SETUP_FIELDS,
 };
 
 /** Top-level fields of a file this build knows. The rest are carried. */
@@ -239,6 +346,11 @@ const FILE_FIELDS = [
   'squad',
   'players',
   'matches',
+  'fixtures',
+  'profiles',
+  'settings',
+  'awardTypes',
+  'eventTypes',
   'summary',
 ] as const;
 
@@ -317,7 +429,9 @@ function checkRecord(r: LedgerRecord): void {
 }
 
 /** The ledger's squad, players and matches, folded from its chain. */
-function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'matches'> {
+function foldView(
+  entries: LedgerEntry[]
+): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes'> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -326,6 +440,13 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
   const attendance = new Map<UUID, LedgerAttendance[]>();
   const exclusions = new Map<UUID, LedgerExclusion>();
   const kinds = new Map<UUID, LedgerMatchKind>();
+  const fixtures: LedgerFixture[] = [];
+  const profiles: LedgerProfile[] = [];
+  let settings: LedgerSettings | null = null;
+  const structures = new Map<UUID, LedgerStructure>();
+  const awardTypes = new Map<UUID, LedgerAwardType>(DEFAULT_AWARD_TYPES.map((t) => [t.id, t]));
+  const awards = new Map<UUID, LedgerAward[]>();
+  const eventTypes = new Map<UUID, LedgerEventType>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -381,6 +502,7 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
           unit: typeof r.unit === 'string' ? (r.unit as PositionUnit) : null,
           corrected: r.corrected === true,
           note: typeof r.note === 'string' ? r.note : null,
+          role: typeof r.role === 'string' ? r.role : null,
         });
         break;
       case 'event':
@@ -391,6 +513,7 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
           period: typeof r.period === 'number' ? r.period : 0,
           refersTo: typeof r.refersTo === 'string' ? (r.refersTo as UUID) : null,
           note: typeof r.note === 'string' ? r.note : null,
+          ...(r.timeKnown === false ? { timeKnown: false as const } : {}),
         });
         break;
       case 'attendance':
@@ -411,6 +534,51 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
         matchFor(r.matchId as UUID);
         kinds.set(r.matchId as UUID, { kind: String(r.kind), note: typeof r.note === 'string' ? r.note : null });
         break;
+      // ADR-021 D2. A damaged one is left out rather than refusing the file:
+      // the released build, which does not fold them, would read it.
+      case 'fixture': {
+        const f = toFixture(r);
+        if (f) fixtures.push(f);
+        break;
+      }
+      case 'profile': {
+        const p = toProfile(r);
+        if (p) profiles.push(p);
+        break;
+      }
+      case 'settings':
+        settings = toSettings(r);
+        break;
+      case 'structure': {
+        const st = toStructure(r);
+        if (st) structures.set(r.matchId as UUID, st);
+        break;
+      }
+      case 'award-type':
+        if (typeof r.id === 'string' && typeof r.name === 'string') {
+          awardTypes.set(r.id as UUID, { id: r.id as UUID, name: r.name, active: r.active !== false });
+        }
+        break;
+      case 'event-type':
+        if (typeof r.id === 'string' && typeof r.label === 'string') {
+          eventTypes.set(r.id as UUID, {
+            id: r.id as UUID,
+            label: r.label,
+            tier: typeof r.tier === 'string' ? r.tier : 'tally',
+            credited: r.credited === 'team' ? 'team' : 'child',
+            active: r.active !== false,
+          });
+        }
+        break;
+      case 'award':
+        if (typeof r.matchId === 'string' && typeof r.awardTypeId === 'string' && typeof r.playerId === 'string' && r.given !== false) {
+          push(awards, r.matchId as UUID, {
+            awardTypeId: r.awardTypeId as UUID,
+            playerId: r.playerId as UUID,
+            note: typeof r.note === 'string' ? r.note : null,
+          });
+        }
+        break;
     }
   }
 
@@ -422,6 +590,8 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
       const att = attendance.get(m.id);
       const exc = exclusions.get(m.id);
       const kind = kinds.get(m.id);
+      const st = structures.get(m.id);
+      const aw = awards.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
@@ -429,8 +599,15 @@ function foldView(entries: LedgerEntry[]): Pick<Ledger, 'squad' | 'players' | 'm
         ...(att ? { attendance: att } : {}),
         ...(exc ? { excluded: exc } : {}),
         ...(kind ? { matchKind: kind } : {}),
+        ...(st ? { structure: st } : {}),
+        ...(aw ? { awards: aw } : {}),
       };
     }),
+    fixtures,
+    profiles,
+    settings,
+    awardTypes: [...awardTypes.values()],
+    eventTypes: [...eventTypes.values()],
   };
 }
 
@@ -509,6 +686,25 @@ function appendRecords(ledger: Ledger, changed: LedgerRecord[], now: Date): Ledg
   );
 }
 
+/**
+ * Append `from`'s records whose key `pick` keeps onto `into`, one entry per
+ * entry of `from` that holds any, at that entry's time, so each record's
+ * history (and its notes) comes too. Nothing kept, nothing appended.
+ */
+export function carryRecords(into: Ledger, from: Ledger, pick: (key: string) => boolean): Ledger {
+  let next = into;
+  for (const entry of from.entries) {
+    const records = entry.records.filter((r) => {
+      const key = keyOf(r);
+      return key !== null && pick(key);
+    });
+    const at = new Date(entry.at);
+    next = appendRecords(next, records, Number.isNaN(at.getTime()) ? new Date(0) : at);
+  }
+  // Older entries' times are kept on the entries; the file is written now-ish.
+  return next === into || next.writtenAt >= into.writtenAt ? next : { ...next, writtenAt: into.writtenAt };
+}
+
 /** True when this build may append to the ledger (#99 AC2, ADR-014 §10). */
 export function isWritable(ledger: Ledger): boolean {
   return ledger.minReaderVersion <= LEDGER_READER_VERSION;
@@ -528,10 +724,14 @@ export interface MatchRecord {
     status: MatchStatus;
     /** The fixture's initial choice (ADR-020); taken over by the ledger on first sight. */
     excludeFromStats?: boolean;
+    /** A test match (#194, ADR-021 D3): never recorded. */
+    test?: unknown;
   };
-  quarters: { id: UUID; index: number; status?: string }[];
+  quarters: { id: UUID; index: number; status?: string; accumulatedMs?: number }[];
   appearances: Appearance[];
   events?: MatchEvent[];
+  /** The shape it is played in: each interval's role (#196 AC4) and the structure (AC3). */
+  format?: Format;
   /** A stored match's availability (`SavedMatch`). */
   availability?: [UUID, AvailabilityStatus][];
   /** A live match's availability (`MatchState`). */
@@ -564,6 +764,7 @@ function eventRecords(record: MatchRecord): LedgerRecord[] {
 /** Closed appearances only: a running one has no end yet (#75 design). */
 function intervalRecords(record: MatchRecord): LedgerRecord[] {
   const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
+  const roleOf = new Map((record.format?.positions ?? []).map((p) => [p.id, p.roleCode ?? null]));
   return record.appearances
     .filter((a) => a.endElapsedMs !== null)
     .map((a) => ({
@@ -578,7 +779,29 @@ function intervalRecords(record: MatchRecord): LedgerRecord[] {
       endMs: ms(a.endElapsedMs as number),
       corrected: a.corrected === true,
       note: a.correctionNote ?? null,
+      role: roleOf.get(a.positionId) ?? null,
     }));
+}
+
+/**
+ * The structure the clock ran (#196 AC3, PO ruling 18 Oct): the periods
+ * that ended, each as long as it was played, so a match ended early says
+ * so. Null before the first period ends.
+ */
+function structureRecord(record: MatchRecord): LedgerRecord | null {
+  const ended = record.quarters
+    .filter((q) => q.status === 'ended')
+    .sort((a, b) => a.index - b.index);
+  if (ended.length === 0) return null;
+  return {
+    type: 'structure',
+    matchId: record.match.id,
+    periodCount: ended.length,
+    periodMs: ended.map((q) => ms(q.accumulatedMs ?? 0)),
+    shape: record.format ? shapeOfFormat(record.format) : null,
+    onField: record.format ? record.format.onFieldCount : null,
+    note: null,
+  };
 }
 
 function availabilityOf(record: MatchRecord): [UUID, AvailabilityStatus][] {
@@ -609,7 +832,13 @@ export function recordMatches(
   records: MatchRecord[],
   players: Player[],
   squadName: string,
-  now: Date
+  now: Date,
+  /**
+   * Fixtures, profiles and settings (#195 AC2, AC3). Only from a session this
+   * launch read and may write: defaults from an unreadable one must never be
+   * recorded over the coach's real settings.
+   */
+  setup?: SetupInput
 ): Ledger {
   if (!isWritable(ledger)) return ledger;
   const latest = new Map(latestRecords(ledger.entries));
@@ -647,6 +876,9 @@ export function recordMatches(
   }
 
   for (const record of records) {
+    // A test match never enters the record (#194, ADR-021 D3). The app never
+    // passes one (`recordable`); this is the second lock on the same door.
+    if (record.match.test !== undefined && record.match.test !== null) continue;
     const intervals = intervalRecords(record);
     const events = eventRecords(record);
     const started = kickedOff(record);
@@ -675,11 +907,170 @@ export function recordMatches(
       }
       attended.add(id);
     }
-    for (const i of intervals) put(`interval:${id}:${String(i.id)}`, i);
+    const freshIntervals = intervals.some((i) => !latest.has(`interval:${id}:${String(i.id)}`));
+    for (const i of intervals) {
+      // An interval already in the chain keeps the role it was recorded with,
+      // or none (#196 AC4): it is never rewritten for a role; older ones read per unit.
+      const key = `interval:${id}:${String(i.id)}`;
+      const have = latest.get(key);
+      put(key, have ? { ...i, role: have.role } : i);
+    }
+    // How it was played, written by the save that closes a period (#196
+    // AC3): the one bringing new intervals. Never over a noted correction;
+    // never for a match first seen already played (one from before this
+    // build reads as planned).
+    const st = structureRecord(record);
+    const stHave = latest.get(`structure:${id}`);
+    if (st && freshIntervals && (stHave === undefined || stHave.note === null)) {
+      put(`structure:${id}`, st);
+    }
     for (const e of events) put(`event:${id}:${String(e.id)}`, e);
   }
 
+  if (setup) {
+    // A save never decides a fairness mark, a cancellation or a note: those
+    // are explicit acts (`setPlayerFairness`, `cancelFixture`). It carries
+    // them, and a record it does write for another reason starts without the
+    // earlier note, which belonged to the earlier change.
+    const squadId = ((latest.get('squad')?.id as string | undefined) ?? ledger.squad.id) as UUID;
+    for (const [key, record] of setupRecords(squadId, setup)) {
+      const have = latest.get(key);
+      const next: LedgerRecord = { ...unknownOf(have, FIELDS[record.type]), ...record };
+      if (have) {
+        for (const f of KEPT_BY_SAVE[record.type] ?? []) if (have[f] !== undefined) next[f] = have[f];
+        if (record.type === 'fixture' && have.state === 'cancelled') next.state = 'cancelled';
+        if (sameRecord(have, next)) continue;
+        if ('note' in next) next.note = null;
+      }
+      latest.set(key, next);
+      changed.push(next);
+    }
+  }
+
   return appendRecords(ledger, changed, now);
+}
+
+/** The latest record under `key`, or undefined. */
+function latestOf(ledger: Ledger, key: string): LedgerRecord | undefined {
+  return latestRecords(ledger.entries).get(key);
+}
+
+const READ_ONLY: CorrectionResult = { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+
+/**
+ * Mark a child as not counted in the squad's fairness figures, or counted
+ * again (#190 AC1, AC4). A new `profile` record with a mandatory note
+ * (invariant 5); the earlier one stays in the chain. The mark applies to the
+ * whole season (PO ruling, 18 Oct). No interval is touched (AC5).
+ */
+export function setPlayerFairness(
+  ledger: Ledger,
+  playerId: UUID,
+  counted: boolean,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  if (!ledger.players.some((p) => p.id === playerId)) {
+    return { ok: false, reason: 'That player is not in the record yet.' };
+  }
+  if (isCountedInFairness(ledger, playerId) === counted) {
+    return { ok: false, reason: counted ? 'They are already counted.' : 'They are already not counted.' };
+  }
+  const have = latestOf(ledger, `profile:${playerId}`);
+  const player = ledger.players.find((p) => p.id === playerId);
+  const base: LedgerRecord = have ?? {
+    type: 'profile',
+    playerId,
+    keeperPreference: null,
+    prefers: null,
+    outfieldTarget: null,
+    active: player?.active !== false,
+    removed: false,
+  };
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ ...base, type: 'profile', playerId, fairness: counted ? 'counted' : 'not-counted', note: trimmed }],
+      now
+    ),
+  };
+}
+
+/** True unless the record marks this child not counted in fairness (#190). */
+export function isCountedInFairness(ledger: Pick<Ledger, 'profiles'> | null, playerId: UUID): boolean {
+  return ledger?.profiles.find((p) => p.playerId === playerId)?.fairness !== 'not-counted';
+}
+
+/** Children the record marks not counted in fairness (#190): fill-ins. */
+export function notCountedIds(ledger: Pick<Ledger, 'profiles'> | null): Set<UUID> {
+  return new Set((ledger?.profiles ?? []).filter((p) => p.fairness === 'not-counted').map((p) => p.playerId));
+}
+
+export interface FairnessChange {
+  at: string;
+  counted: boolean;
+  note: string | null;
+}
+
+/** Every time the mark changed, oldest first, with its note (#190 AC4: kept with their history). */
+export function fairnessHistory(ledger: Ledger, playerId: UUID): FairnessChange[] {
+  const out: FairnessChange[] = [];
+  let was = 'counted';
+  for (const entry of ledger.entries) {
+    for (const r of entry.records) {
+      if (r.type !== 'profile' || r.playerId !== playerId) continue;
+      const now = typeof r.fairness === 'string' ? r.fairness : 'counted';
+      if (now === was) continue;
+      out.push({ at: entry.at, counted: now !== 'not-counted', note: typeof r.note === 'string' ? r.note : null });
+      was = now;
+    }
+  }
+  return out;
+}
+
+/**
+ * A fixture deleted before it was played (#195 AC2): a new `fixture` record
+ * saying it was cancelled, never a deletion from the record. Nothing to do
+ * for one the record never held, or one already cancelled.
+ */
+export function cancelFixture(ledger: Ledger, matchId: UUID, now: Date): Ledger {
+  if (!isWritable(ledger)) return ledger;
+  const have = latestOf(ledger, `fixture:${matchId}`);
+  if (!have || have.state === 'cancelled') return ledger;
+  return appendRecords(ledger, [{ ...have, state: 'cancelled', note: 'Deleted before it was played' }], now);
+}
+
+/**
+ * Players taken out of the squad before they ever played (`removePlayer`
+ * deletes them from the squad): a `profile` saying so, so a restore from the
+ * record leaves them out. Their `player` record stays, as everything does.
+ */
+export function recordRemovedPlayers(ledger: Ledger, playerIds: readonly UUID[], now: Date): Ledger {
+  if (!isWritable(ledger)) return ledger;
+  const records: LedgerRecord[] = [];
+  for (const playerId of playerIds) {
+    const have = latestOf(ledger, `profile:${playerId}`);
+    const player = ledger.players.find((p) => p.id === playerId);
+    if (have?.removed === true || (!have && !player)) continue;
+    records.push({
+      ...(have ?? {
+        type: 'profile',
+        playerId,
+        keeperPreference: null,
+        prefers: null,
+        outfieldTarget: null,
+        active: player?.active !== false,
+        fairness: 'counted',
+      }),
+      removed: true,
+      note: null,
+    });
+  }
+  return appendRecords(ledger, records, now);
 }
 
 export type CorrectionResult = { ok: true; ledger: Ledger } | { ok: false; reason: string };
@@ -771,6 +1162,337 @@ export function setMatchKind(
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'match-kind', matchId, kind, note: trimmed }], now),
   };
+}
+
+/**
+ * A goal or a goal against whose time is not known, entered from a played
+ * match's page (#196 AC2, PO ruling 18 Oct): e.g. the 3 Oct cup match,
+ * imported from paper with no goal events. A new `event` record with
+ * `timeKnown: false`, period 0 and `atMs` 0, so the released build still
+ * reads it (ADR-021 D1). A goal's scorer may be unknown (null). The note is
+ * mandatory: it says where the goal is known from (invariant 5).
+ */
+export function addUnknownTimeEvent(
+  ledger: Ledger,
+  matchId: UUID,
+  kind: 'goal' | 'conceded',
+  playerId: UUID | null,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'Say where this is known from, e.g. "Match report".' };
+  if (!ledger.matches.some((m) => m.id === matchId)) return { ok: false, reason: 'That match is not in the ledger.' };
+  if (kind === 'conceded' && playerId !== null) return { ok: false, reason: 'A goal against is credited to no one here.' };
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'event',
+          matchId,
+          id: uuid(),
+          kind,
+          playerId,
+          period: 0,
+          atMs: 0,
+          refersTo: null,
+          note: trimmed,
+          timeKnown: false,
+        },
+      ],
+      now
+    ),
+  };
+}
+
+/**
+ * Take back an event from the record (#196, invariant 5): a `withdrawn`
+ * event naming it, with a mandatory note. The event stays in the chain.
+ */
+export function withdrawRecordEvent(
+  ledger: Ledger,
+  matchId: UUID,
+  eventId: UUID,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'Taking a goal back needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const events = match?.events ?? [];
+  const target = events.find((e) => e.id === eventId);
+  if (!target || target.kind === 'withdrawn') return { ok: false, reason: 'That is not in the record for this match.' };
+  if (events.some((e) => e.kind === 'withdrawn' && e.refersTo === eventId)) {
+    return { ok: false, reason: 'That has already been taken back.' };
+  }
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'event',
+          matchId,
+          id: uuid(),
+          kind: 'withdrawn',
+          playerId: null,
+          period: target.period,
+          atMs: target.atMs,
+          refersTo: eventId,
+          note: trimmed,
+          ...(target.timeKnown === false ? { timeKnown: false } : {}),
+        },
+      ],
+      now
+    ),
+  };
+}
+
+/**
+ * Correct how a match was played (#196 AC3, PO ruling 18 Oct), e.g. halves
+ * that turned into quarters: a new `structure` record with a mandatory note.
+ * The clock's record stays in the chain. Minutes are never touched: they
+ * fold from the intervals.
+ */
+export function correctStructure(
+  ledger: Ledger,
+  matchId: UUID,
+  periodMs: readonly number[],
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A correction needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if (periodMs.length === 0 || periodMs.some((p) => !Number.isFinite(p) || p <= 0)) {
+    return { ok: false, reason: 'Each period needs a length.' };
+  }
+  const have = latestOf(ledger, `structure:${matchId}`);
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'structure',
+          matchId,
+          periodCount: periodMs.length,
+          periodMs: periodMs.map(ms),
+          shape: (have?.shape as string | null | undefined) ?? match.structure?.shape ?? null,
+          onField: (have?.onField as number | null | undefined) ?? match.structure?.onField ?? null,
+          note: trimmed,
+        },
+      ],
+      now
+    ),
+  };
+}
+
+// --- the coach's tallies (#198) ---------------------------------------------------
+
+const TALLY_LABEL_MAX = 20;
+/** Built-in kinds' words, so a new kind cannot be confused with one (#198 AC1). */
+const BUILT_IN_WORDS = [
+  'goal',
+  'assist',
+  'conceded',
+  'save',
+  'tackle',
+  // #228 AC6: the short labels and the old words are both taken.
+  'shot',
+  'corner',
+  'free kick',
+  'corner won',
+  'free kick won',
+  'shot on target',
+];
+
+/**
+ * Settings › Tallies: a new kind of coach's tally, without a release (#198
+ * AC2). An `event-type` record; the released build carries it untouched.
+ */
+export function addEventType(ledger: Ledger, label: string, credited: 'child' | 'team', now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const clean = label.trim().replace(/\s+/g, ' ');
+  if (clean === '' || clean.length > TALLY_LABEL_MAX) {
+    return { ok: false, reason: `A tally needs a name of up to ${TALLY_LABEL_MAX} letters.` };
+  }
+  const lower = clean.toLowerCase();
+  if (BUILT_IN_WORDS.includes(lower) || ledger.eventTypes.some((t) => t.label.toLowerCase() === lower)) {
+    return { ok: false, reason: 'There is already a tally with that name.' };
+  }
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ type: 'event-type', id: uuid(), label: clean, tier: 'tally', credited, active: true, note: null }],
+      now
+    ),
+  };
+}
+
+/** Stop offering a tally kind, or offer it again (#198). Its events stay in the record. */
+export function setEventTypeActive(ledger: Ledger, id: UUID, active: boolean, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const have = ledger.eventTypes.find((t) => t.id === id);
+  if (!have) return { ok: false, reason: 'That tally is not in the record.' };
+  if (have.active === active) return { ok: false, reason: 'Nothing has changed.' };
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'event-type', ...have, active, note: null }], now) };
+}
+
+// --- awards (#197) ---------------------------------------------------------------
+
+const AWARD_NAME_MAX = 24;
+
+function awardName(raw: string): string | null {
+  const name = raw.trim().replace(/\s+/g, ' ');
+  return name === '' || name.length > AWARD_NAME_MAX ? null : name;
+}
+
+/** Settings › Awards: a new kind of award (#197 AC1). */
+export function addAwardType(ledger: Ledger, name: string, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const clean = awardName(name);
+  if (!clean) return { ok: false, reason: `An award needs a name of up to ${AWARD_NAME_MAX} letters.` };
+  if (ledger.awardTypes.some((t) => t.name.toLowerCase() === clean.toLowerCase())) {
+    return { ok: false, reason: 'There is already an award with that name.' };
+  }
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'award-type', id: uuid(), name: clean, active: true, note: null }], now) };
+}
+
+/** Rename, retire or bring back an award type (#197 AC1). Retiring keeps every past award. */
+export function updateAwardType(
+  ledger: Ledger,
+  id: UUID,
+  change: { name?: string; active?: boolean },
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const have = ledger.awardTypes.find((t) => t.id === id);
+  if (!have) return { ok: false, reason: 'That award is not in the record.' };
+  const name = change.name === undefined ? have.name : awardName(change.name);
+  if (!name) return { ok: false, reason: `An award needs a name of up to ${AWARD_NAME_MAX} letters.` };
+  if (ledger.awardTypes.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) {
+    return { ok: false, reason: 'There is already an award with that name.' };
+  }
+  const active = change.active ?? have.active;
+  if (name === have.name && active === have.active) return { ok: false, reason: 'Nothing has changed.' };
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'award-type', id, name, active, note: null }], now) };
+}
+
+/** The day a match was played, for "a change after the day needs a note": kick-off, else when the record first saw it. */
+function matchDayOf(ledger: Ledger, match: LedgerMatch): string | null {
+  if (match.kickoffAt) return match.kickoffAt;
+  for (const e of ledger.entries) {
+    if (e.records.some((r) => r.type === 'match' && r.id === match.id)) return e.at;
+  }
+  return null;
+}
+
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
+/** True when `now` is on a later day than the match (#197 AC2): a change then needs a note. */
+export function afterMatchDay(ledger: Ledger, matchId: UUID, now: Date): boolean {
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const day = match ? matchDayOf(ledger, match) : null;
+  return day !== null && localDay(now.toISOString()) !== localDay(day) && now.getTime() > Date.parse(day);
+}
+
+/**
+ * Give an award to a child for a match (#197 AC2). Joint winners are allowed
+ * (PO ruling, 18 Oct): giving the same award to another child adds a winner.
+ * The note is optional.
+ */
+export function giveAward(
+  ledger: Ledger,
+  matchId: UUID,
+  awardTypeId: UUID,
+  playerId: UUID,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  const type = ledger.awardTypes.find((t) => t.id === awardTypeId);
+  if (!type || !type.active) return { ok: false, reason: 'That award is not offered any more.' };
+  if (!ledger.players.some((p) => p.id === playerId)) return { ok: false, reason: 'That player is not in the record.' };
+  if ((match.awards ?? []).some((a) => a.awardTypeId === awardTypeId && a.playerId === playerId)) {
+    return { ok: false, reason: 'They already have that award for this match.' };
+  }
+  const trimmed = note.trim();
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [{ type: 'award', matchId, awardTypeId, playerId, given: true, note: trimmed === '' ? null : trimmed }],
+      now
+    ),
+  };
+}
+
+/**
+ * Change who has an award, or take it back (`toPlayerId` null) — #197 AC2.
+ * New records; the earlier one stays in the chain. After the day of the
+ * match the change needs a note (invariant 5).
+ */
+export function changeAward(
+  ledger: Ledger,
+  matchId: UUID,
+  awardTypeId: UUID,
+  fromPlayerId: UUID,
+  toPlayerId: UUID | null,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const match = ledger.matches.find((m) => m.id === matchId);
+  const standing = match?.awards ?? [];
+  if (!standing.some((a) => a.awardTypeId === awardTypeId && a.playerId === fromPlayerId)) {
+    return { ok: false, reason: 'That award is not in the record for this match.' };
+  }
+  const trimmed = note.trim();
+  if (trimmed === '' && afterMatchDay(ledger, matchId, now)) {
+    return { ok: false, reason: 'A change after the day of the match needs a note saying why.' };
+  }
+  if (toPlayerId === fromPlayerId) return { ok: false, reason: 'Nothing has changed.' };
+  if (toPlayerId !== null && standing.some((a) => a.awardTypeId === awardTypeId && a.playerId === toPlayerId)) {
+    return { ok: false, reason: 'They already have that award for this match.' };
+  }
+  const n = trimmed === '' ? null : trimmed;
+  const records: LedgerRecord[] = [{ type: 'award', matchId, awardTypeId, playerId: fromPlayerId, given: false, note: n }];
+  if (toPlayerId !== null) records.push({ type: 'award', matchId, awardTypeId, playerId: toPlayerId, given: true, note: n });
+  return { ok: true, ledger: appendRecords(ledger, records, now) };
+}
+
+/**
+ * A child's awards for the season, oldest match first (#197 AC3). Across
+ * matches, so individual performance under ADR-017 §3: not drawn on any
+ * screen until the gate's ceiling and switch exist (see #197).
+ */
+export function childAwards(ledger: Ledger, playerId: UUID): { matchId: UUID; award: string; note: string | null }[] {
+  const out: { matchId: UUID; award: string; note: string | null; at: string }[] = [];
+  for (const m of ledger.matches) {
+    for (const a of m.awards ?? []) {
+      if (a.playerId !== playerId) continue;
+      out.push({
+        matchId: m.id,
+        award: ledger.awardTypes.find((t) => t.id === a.awardTypeId)?.name ?? 'Award',
+        note: a.note,
+        at: m.kickoffAt ?? '',
+      });
+    }
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).map(({ matchId, award, note }) => ({ matchId, award, note }));
 }
 
 /**
@@ -1043,8 +1765,26 @@ export type ImportResult =
       addedEntries: number;
       addedMatches: number;
       addedPlayers: number;
+      /** Children on this phone matched to the file's by name (#195 N1); absent when none were. */
+      matchedPlayers?: number;
+      /** Children who left the squad under "Use the file's squad" (#195 criterion 36). */
+      leftPlayers?: number;
+      /** The file's chain was adopted (this phone held no player time): its team name stands (#195, QA F2). */
+      adopted?: true;
     }
   | { ok: false; reason: string };
+
+/**
+ * How the coach chose to line this phone's children up with the file's
+ * (#195, QA finding N1; `squadMatch.ts` builds it). No choice is "Keep both":
+ * every child from both sides, exactly as before matching existed.
+ */
+export interface ImportChoice {
+  /** Each phone child that is the file's child: a statement by the coach, not a figure. */
+  matched: readonly { phoneId: UUID; fileId: UUID }[];
+  /** Phone children leaving the squad ("Use the file's squad"); empty otherwise. */
+  leaving: readonly UUID[];
+}
 
 /** True when the ledger holds any match: player time a phone must not lose. */
 function holdsPlayerTime(ledger: Ledger): boolean {
@@ -1052,18 +1792,100 @@ function holdsPlayerTime(ledger: Ledger): boolean {
 }
 
 /**
- * Import a verified file (ADR-014 §9, #100 AC2). Extends, never merges:
+ * True when an import onto this ledger adopts the file's chain (no player
+ * time here yet), the only path on which children are matched (#195).
+ */
+export function adoptsFile(ours: Ledger): boolean {
+  return !holdsPlayerTime(ours);
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/**
+ * The single entry an import appends for the coach's choice (#195 criteria
+ * 6, 7, 16 to 19, 35): a noted removal on each matched phone child's own id,
+ * naming the file child it is (`matchedTo`); the phone's noted fairness mark
+ * laid over the file child's latest profile (the whole phone profile when the
+ * file holds none, criterion 35; nothing when the file child is retired);
+ * and, under "Use the file's squad", a noted removal for each child leaving.
+ * Nothing is rewritten: the phone child's own records stay under its id.
+ */
+function choiceRecords(
+  choice: ImportChoice,
+  mine: ReadonlyMap<string, LedgerRecord>,
+  theirs: ReadonlyMap<string, LedgerRecord>,
+  file: Ledger
+): LedgerRecord[] {
+  const out: LedgerRecord[] = [];
+  const baseOf = (playerId: UUID): LedgerRecord => {
+    const have = mine.get(`profile:${playerId}`);
+    if (have) {
+      const { matchedTo: _gone, ...rest } = have;
+      return rest as LedgerRecord;
+    }
+    return {
+      type: 'profile',
+      playerId,
+      keeperPreference: null,
+      prefers: null,
+      outfieldTarget: null,
+      active: true,
+      fairness: 'counted',
+    };
+  };
+  for (const { phoneId, fileId } of choice.matched) {
+    const filePlayer = file.players.find((p) => p.id === fileId);
+    const name = filePlayer
+      ? filePlayer.displaySuffix
+        ? `${filePlayer.firstName} ${filePlayer.displaySuffix}`
+        : filePlayer.firstName
+      : 'child';
+    out.push({
+      ...baseOf(phoneId),
+      type: 'profile',
+      playerId: phoneId,
+      removed: true,
+      matchedTo: fileId,
+      note: `Matched to the file's ${name} on import`,
+    });
+    const phone = mine.get(`profile:${phoneId}`);
+    const theirsNow = theirs.get(`profile:${fileId}`);
+    const retired = filePlayer?.active === false || theirsNow?.active === false;
+    if (!phone || retired) continue;
+    if (!theirsNow) {
+      // Criterion 35: nothing in the file to override, so the phone's whole profile crosses.
+      const { matchedTo: _gone, ...rest } = phone;
+      out.push({ ...rest, type: 'profile', playerId: fileId, removed: false });
+      continue;
+    }
+    // Only a noted mark crosses (Ada §2, criterion 17); the file's preferences stand.
+    if (!nonEmpty(phone.note)) continue;
+    const fairness = typeof phone.fairness === 'string' ? phone.fairness : 'counted';
+    const fileFairness = typeof theirsNow.fairness === 'string' ? theirsNow.fairness : 'counted';
+    if (fairness === fileFairness && phone.note === theirsNow.note) continue;
+    const { matchedTo: _was, ...fileLatest } = theirsNow;
+    out.push({ ...fileLatest, type: 'profile', playerId: fileId, fairness, note: phone.note });
+  }
+  for (const playerId of choice.leaving) {
+    out.push({ ...baseOf(playerId), type: 'profile', playerId, removed: true, note: 'Not in the imported squad' });
+  }
+  return out;
+}
+
+/**
+ * Import a verified file (ADR-014 §9, #100 AC2). Extends; a diverged chain is never merged:
  *
  * - this phone holds no player time yet: the file's chain is adopted (a new
- *   phone's own genesis and squad are not player time; the working document
- *   still holds its squad and records it again on the next save);
+ *   phone's own genesis and squad are not player time), and this phone's own
+ *   records are appended on top of it, so nothing it held is lost (#195 AC5,
+ *   #190 AC4): see `carryRecords`;
  * - this phone's chain is a prefix of the file's: the extra entries are
  *   appended verbatim;
  * - the file's chain is a prefix of this phone's: nothing new;
  * - otherwise the chains have diverged and the import is refused (PO ruling
  *   A: one recording phone per match).
  */
-export function importLedger(ours: Ledger, file: Ledger): ImportResult {
+export function importLedger(ours: Ledger, file: Ledger, choice?: ImportChoice, now?: Date): ImportResult {
   if (!isWritable(file)) {
     return { ok: false, reason: tooNewLedgerMessage(file.ledgerVersion, file.minReaderVersion) };
   }
@@ -1072,8 +1894,49 @@ export function importLedger(ours: Ledger, file: Ledger): ImportResult {
     addedPlayers: next.players.filter((p) => !ours.players.some((o) => o.id === p.id)).length,
   });
 
+  // The file's chain is already contained in this phone's: nothing new, on
+  // every path. Checked before adopting, or a phone with no player time yet
+  // would re-adopt a file it already holds and drop its own later entries
+  // (#195 criterion 34, QA F1 on 1.3.0).
+  if (
+    file.entries.length <= ours.entries.length &&
+    file.entries.every((e, i) => ours.entries[i].hash === e.hash)
+  ) {
+    return { ok: true, ledger: ours, addedEntries: 0, addedMatches: 0, addedPlayers: 0 };
+  }
+
   if (!holdsPlayerTime(ours)) {
-    return { ok: true, ledger: file, addedEntries: file.entries.length, ...counts(file) };
+    // The file's chain is adopted, and this phone's own records ride on top
+    // of it (#195 AC5, #190 AC4): its children, fixtures, profiles, tally
+    // kinds and award types. Where the file holds the same key, the file's
+    // stands, unless this phone's latest is a noted act (a fill-in mark):
+    // that is never overwritten (invariant 5).
+    const theirs = latestRecords(file.entries);
+    const mine = latestRecords(ours.entries);
+    const next = carryRecords(file, ours, (key) => {
+      if (key === 'squad') return false;
+      const have = theirs.get(key);
+      const own = mine.get(key);
+      if (!have || !own) return true;
+      return typeof own.note === 'string' && own.note !== '' && !sameRecord(have, own);
+    });
+    if (!choice || (choice.matched.length === 0 && choice.leaving.length === 0)) {
+      return { ok: true, ledger: next, addedEntries: file.entries.length, ...counts(next), adopted: true };
+    }
+    // #195 (QA N1): the coach's matching, in one entry dated at import time.
+    const at = now ?? new Date(next.writtenAt);
+    const matched = appendRecords(next, choiceRecords(choice, mine, theirs, file), at);
+    const c = counts(matched);
+    return {
+      ok: true,
+      ledger: matched,
+      addedEntries: file.entries.length,
+      addedMatches: c.addedMatches,
+      addedPlayers: Math.max(0, c.addedPlayers - choice.matched.length),
+      matchedPlayers: choice.matched.length,
+      leftPlayers: choice.leaving.length,
+      adopted: true,
+    };
   }
 
   const shared = Math.min(ours.entries.length, file.entries.length);
@@ -1106,6 +1969,14 @@ export function importLedger(ours: Ledger, file: Ledger): ImportResult {
 /** What an import did, in a sentence a coach can read. */
 export function describeImport(result: Extract<ImportResult, { ok: true }>): string {
   if (result.addedEntries === 0) return 'Nothing new in that file — everything in it is already here.';
+  if (result.matchedPlayers !== undefined) {
+    // #195 criteria 4 and 36: a matched child is never counted as added, and no removal is silent.
+    const left = result.leftPlayers ? `, ${result.leftPlayers} left the squad` : '';
+    return (
+      `${result.matchedPlayers} matched, ${result.addedPlayers} added${left}. ` +
+      `${result.addedMatches} ${result.addedMatches === 1 ? 'match' : 'matches'} added.`
+    );
+  }
   return (
     `Added ${result.addedMatches} ${result.addedMatches === 1 ? 'match' : 'matches'} and ` +
     `${result.addedPlayers} ${result.addedPlayers === 1 ? 'player' : 'players'}.`

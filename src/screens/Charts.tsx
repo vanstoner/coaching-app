@@ -110,6 +110,8 @@ export function MatchBars({ chart, table }: { chart: MatchChart; table: Extract<
       {chart.absent.length > 0 && (
         <Text style={local.absent}>Not here: {chart.absent.join(', ')}</Text>
       )}
+      {/* ADR-015 §6a (#223): why the outlines leave matches out, or why there are none. */}
+      {chart.formatNote !== null && <Text style={local.absent}>{chart.formatNote}.</Text>}
     </View>
   );
 }

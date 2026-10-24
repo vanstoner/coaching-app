@@ -29,11 +29,29 @@
  * match-by-match as `counted: false`, so the record is complete, and is left
  * out of every figure: averages, the squad average, the trend, owed time and
  * positions.
+ *
+ * **A match in another format than the season's dominating one (ADR-015
+ * §6a, #223)** is listed too, as `counted: false` with `offFormat`: out of the
+ * averages, the squad average, the trend and owed time, by the same rule as
+ * `seasonStats`. Its minutes stay in the grid and in positions tried, which
+ * are totals.
  */
 
+import { provenances, type Provenance } from './provenance';
 import type { Competition, KeeperPreference, Player, PositionUnit, UUID } from '../types/index';
 import { UNIT_LABEL, type Ledger } from './ledger';
-import { goalOutfieldSplit, isCounted, wholeMinuteParts, wholeMinutes, type SeasonOptions } from './analysis';
+import {
+  goalOutfieldSplit,
+  isCounted,
+  isOffFormat,
+  matchTimes,
+  seasonSide,
+  sideName,
+  sideOf,
+  wholeMinuteParts,
+  wholeMinutes,
+  type SeasonOptions,
+} from './analysis';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import { squadAverage, squadSeason, type ChildSeason, type SquadSeason } from './childSeason';
 import { competitionLabel } from './fixtures';
@@ -92,8 +110,19 @@ export interface SeasonMatch {
   label: string;
   /** Everyone who attended (played is attended), and their minutes. */
   minutes: ReadonlyMap<UUID, MatchMinutes>;
-  /** False when the coach left this match out of the figures (ADR-020); still listed. */
+  /**
+   * False when the coach left this match out of the figures (ADR-020), or it
+   * is in another format than the dominating one (§6a); still listed.
+   */
   counted: boolean;
+  /**
+   * §6a: in another format than the dominating one: its side, e.g. 5. Its
+   * minutes are still the child's; only the fairness figures leave it out.
+   * Null otherwise.
+   */
+  offFormat: number | null;
+  /** How far it can be trusted (#199), derived from the record. */
+  provenance: Provenance;
 }
 
 const blankUnits = (): Record<PositionUnit, number> => ({ GK: 0, DEF: 0, MID: 0, ATT: 0 });
@@ -111,7 +140,9 @@ export function seasonMatches(
   if (!ledger) return [];
   const timeline: SquadTimeline = { players, kickoffs: options.kickoffs };
   const seen = firstSeen(ledger);
-  const entryAt = new Map(ledger.entries.map((e) => [e.seq, e.at]));
+  // One order for "latest", here and in the dominating format's tie-break (R3).
+  const times = matchTimes(ledger, options.kickoffs);
+  const side = seasonSide(ledger, options.kickoffs);
 
   // Every closed match is listed; `counted` says whether it is in the figures.
   const rows = ledger.matches.filter((m) => m.status === 'completed').map((m, index) => {
@@ -135,13 +166,7 @@ export function seasonMatches(
       // A unit a later version added is carried in the ledger but is none of these four.
       if (unit !== null && UNITS.includes(unit)) row.unitMs[unit] += ms;
     }
-    const firstEntry = seen.get(`match:${m.id}`);
-    const iso =
-      m.kickoffAt ??
-      options.kickoffs?.get(m.id) ??
-      (firstEntry === undefined ? undefined : entryAt.get(firstEntry)) ??
-      null;
-    const t = iso === null ? NaN : Date.parse(iso);
+    const t = times.get(m.id) ?? NaN;
     return { index, t, m, minutes };
   });
 
@@ -152,12 +177,15 @@ export function seasonMatches(
     return a.index - b.index;
   });
 
+  const trust = provenances(ledger);
   return rows.map(({ t, m, minutes }) => {
     const at = Number.isFinite(t) ? new Date(t) : null;
     const opponent = (m.opponent ?? '').trim() || 'Opponent TBC';
     const competition = competitionLabel(m.competition);
     const date = at ? dayLabel(at) : 'Date TBC';
-    const counted = isCounted(m);
+    const offFormat = isOffFormat(m, side) ? sideOf(m) : null;
+    const counted = isCounted(m) && offFormat === null;
+    const note = offFormat !== null ? `${sideName(offFormat)}, not in fairness` : counted ? '' : 'not counted';
     return {
       matchId: m.id,
       at,
@@ -166,9 +194,11 @@ export function seasonMatches(
       opponent,
       competition: m.competition,
       competitionShort: competition.slice(0, 1),
-      label: [date, competition, `v ${opponent}`, counted ? '' : 'not counted'].filter((s) => s !== '').join(' · '),
+      label: [date, competition, `v ${opponent}`, note].filter((s) => s !== '').join(' · '),
       minutes,
       counted,
+      offFormat,
+      provenance: trust.get(m.id)?.state ?? 'reconstructed',
     };
   });
 }
@@ -195,8 +225,12 @@ export interface GridCell {
   outfield: number;
   /** "Ava, Sat 8 Aug v Mock Albion: 50 min (38 in goal, 12 outfield)". */
   text: string;
-  /** Present, and false, only when the match is left out of the figures (ADR-020). */
+  /** Present, and false, only when the match is left out of the figures (ADR-020, or §6a). */
   counted?: false;
+  /** §6a: present only for a match in another format than the dominating one: its side. */
+  offFormat?: number;
+  /** Present only for a reconstructed match (#199): its figures are drawn italic and muted. */
+  reconstructed?: true;
 }
 
 export interface GridRow {
@@ -212,18 +246,28 @@ export interface GridRow {
 /** One child's minutes in one match, as a cell and its words. */
 export function gridCell(
   name: string,
-  match: Pick<SeasonMatch, 'date' | 'opponent'> & { counted?: boolean },
+  match: Pick<SeasonMatch, 'date' | 'opponent'> & {
+    counted?: boolean;
+    offFormat?: number | null;
+    provenance?: Provenance;
+  },
   m: MatchMinutes
 ): GridCell {
   const { total, goal, outfield } = goalOutfieldSplit(m.goalMs, m.pitchMs - m.goalMs);
   const split = goal > 0 ? ` (${goal} in goal, ${outfield} outfield)` : '';
-  const left = match.counted === false;
+  const off = match.offFormat ?? null;
+  const left = match.counted === false || off !== null;
+  const why = off !== null ? `, ${sideName(off)}, not in fairness` : left ? ', not counted' : '';
   return {
     total,
     goal,
     outfield,
-    text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}${left ? ', not counted' : ''}`,
+    text: `${name}, ${match.date} v ${match.opponent}: ${total} min${split}${why}${
+      match.provenance === 'reconstructed' ? ', reconstructed' : ''
+    }`,
     ...(left ? { counted: false as const } : {}),
+    ...(off !== null ? { offFormat: off } : {}),
+    ...(match.provenance === 'reconstructed' ? { reconstructed: true as const } : {}),
   };
 }
 
@@ -251,6 +295,8 @@ export interface FairnessRow {
   perGame: number | null;
   /** Outside the squad average: shown with the note, never against the band. */
   mainKeeper: boolean;
+  /** Not counted in fairness (#190): shown with the note, never against the band. */
+  fillIn: boolean;
   /** `perGame` minus the squad average, both as shown; null when not in the average. */
   offset: number | null;
 }
@@ -263,6 +309,8 @@ export interface Fairness {
   rows: FairnessRow[];
   /** Main keepers, by name: not in the average. */
   mainKeepers: string[];
+  /** Fill-ins, by name: not counted in fairness (#190). */
+  fillIns: string[];
 }
 
 /** The widest gap from the average, in the whole minutes shown. */
@@ -281,14 +329,16 @@ export function fairnessOf(season: SquadSeason): Fairness | null {
       name: c.name,
       perGame,
       mainKeeper: c.mainKeeper,
-      offset: perGame === null || c.mainKeeper ? null : perGame - average,
+      fillIn: c.fillIn,
+      offset: perGame === null || c.mainKeeper || c.fillIn ? null : perGame - average,
     };
   });
   return {
     average,
     gap: Math.max(0, ...rows.map((r) => (r.offset === null ? 0 : Math.abs(r.offset)))),
     rows,
-    mainKeepers: season.children.filter((c) => c.mainKeeper).map((c) => c.name),
+    mainKeepers: season.children.filter((c) => c.mainKeeper && !c.fillIn).map((c) => c.name),
+    fillIns: season.children.filter((c) => c.fillIn).map((c) => c.name),
   };
 }
 
@@ -314,9 +364,17 @@ export interface TrendPoint {
 }
 
 /** "After Sat 8 Aug v Mock Albion (1 of 9): everyone within 15 min a game of 41". */
-export function trendLabel(t: TrendPoint, m: Pick<SeasonMatch, 'date' | 'opponent'>, index: number, count: number): string {
+export function trendLabel(
+  t: TrendPoint,
+  m: Pick<SeasonMatch, 'date' | 'opponent'> & { offFormat?: number | null },
+  index: number,
+  count: number
+): string {
   const after = `After ${m.date} v ${m.opponent} (${index + 1} of ${count})`;
-  if (t.counted === false) return `${after}: not counted, so nothing changes`;
+  if (t.counted === false) {
+    const why = m.offFormat != null ? `${sideName(m.offFormat)}, not in fairness` : 'not counted';
+    return `${after}: ${why}, so nothing changes`;
+  }
   return t.gap === null ? `${after}: no squad average yet` : `${after}: everyone within ${t.gap} min a game of ${t.average}`;
 }
 
@@ -330,7 +388,7 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
   );
   let carried: { average: number | null; gap: number | null } = { average: null, gap: null };
   return matches.map((match) => {
-    // Left out (ADR-020): no one's sum moves, so the point repeats the last.
+    // Left out (ADR-020, or another format, §6a): no one's sum moves, so the point repeats the last.
     if (!match.counted) return { matchId: match.matchId, ...carried, counted: false as const };
     for (const [id, m] of match.minutes) {
       const s = sums.get(id);
@@ -340,7 +398,11 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
     }
     const soFar = children.map((c) => {
       const s = sums.get(c.playerId) as { ms: number; played: number };
-      return { mainKeeper: c.mainKeeper, averageMs: s.played === 0 ? null : Math.round(s.ms / s.played) };
+      return {
+        mainKeeper: c.mainKeeper,
+        fillIn: c.fillIn,
+        averageMs: s.played === 0 ? null : Math.round(s.ms / s.played),
+      };
     });
     const avgMs = squadAverage(soFar);
     if (avgMs === null) {
@@ -348,7 +410,9 @@ export function fairnessTrend(matches: readonly SeasonMatch[], children: readonl
       return { matchId: match.matchId, average: null, gap: null };
     }
     const average = wholeMinutes(avgMs);
-    const counted = soFar.map((c) => (c.mainKeeper || c.averageMs === null ? null : wholeMinutes(c.averageMs)));
+    const counted = soFar.map((c) =>
+      c.mainKeeper || c.fillIn || c.averageMs === null ? null : wholeMinutes(c.averageMs)
+    );
     carried = { average, gap: widestGap(counted, average) };
     return { matchId: match.matchId, average, gap: carried.gap };
   });
@@ -365,6 +429,8 @@ export interface OwedRow {
   perGame: number | null;
   played: number;
   mainKeeper: boolean;
+  /** Not counted in fairness (#190): never owed time. */
+  fillIn: boolean;
   /**
    * Whole minutes owed over the season: above zero owed, below zero had
    * more. Null when not in the squad average (a Main keeper) or not played.
@@ -387,7 +453,7 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
     let ms = 0;
     let played = 0;
     for (const match of matches) {
-      if (!match.counted) continue; // left out (ADR-020)
+      if (!match.counted) continue; // left out (ADR-020), or another format (§6a)
       const m = match.minutes.get(c.playerId);
       if (!m) continue;
       ms += m.pitchMs;
@@ -395,16 +461,16 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
     }
     if (played > 0) exact.set(c.playerId, ms / played);
   }
-  const anyMain = season.children.some((c) => c.mainKeeper);
+  const anyMain = season.children.some((c) => c.mainKeeper && !c.fillIn);
   const counted = season.children
-    .filter((c) => !(anyMain && c.mainKeeper))
+    .filter((c) => !c.fillIn && !(anyMain && c.mainKeeper))
     .map((c) => exact.get(c.playerId))
     .filter((ms): ms is number => ms !== undefined);
   const avg = counted.length === 0 ? null : counted.reduce((sum, ms) => sum + ms, 0) / counted.length;
   return season.children.map((c) => {
     const own = exact.get(c.playerId);
     const owed =
-      avg === null || own === undefined || c.mainKeeper
+      avg === null || own === undefined || c.mainKeeper || c.fillIn
         ? null
         : Math.round(((avg - own) * c.played) / MIN) || 0; // never "-0"
     return {
@@ -413,6 +479,7 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
       perGame: c.averageMs === null ? null : wholeMinutes(c.averageMs),
       played: c.played,
       mainKeeper: c.mainKeeper,
+      fillIn: c.fillIn,
       owed,
       named: owed !== null && owed >= OWED_MIN,
     };
@@ -453,7 +520,9 @@ export function positionsTried(
     const ms = blankUnits();
     let pitchMs = 0;
     for (const match of matches) {
-      if (!match.counted) continue; // left out (ADR-020)
+      // Left out (ADR-020). A match in another format is still time tried in
+      // each position: this view is a total, not a fairness figure (§6a).
+      if (!match.counted && match.offFormat === null) continue;
       const m = match.minutes.get(c.playerId);
       if (!m) continue;
       pitchMs += m.pitchMs;
@@ -625,7 +694,11 @@ export function childMatches(v: SquadViews, playerId: UUID): ChildMatch[] {
         cell === null
           ? `${what}: not there`
           : `${what}: ${cell.total} min${cell.goal > 0 ? ` (${cell.goal} in goal)` : ''}${
-              cell.counted === false ? ', not counted' : ''
+              cell.offFormat !== undefined
+                ? `, ${sideName(cell.offFormat)}, not in fairness`
+                : cell.counted === false
+                  ? ', not counted'
+                  : ''
             }`,
     };
   });

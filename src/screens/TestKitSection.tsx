@@ -5,20 +5,14 @@
 
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
-import { Chip, ChipRow } from './Chip';
-import { CLOCK_SPEEDS, type ClockSpeed } from '../app/appClock';
 import { colours, screen } from './theme';
 
 export function TestKitSection({
-  speed,
-  onSpeed,
   onAddTestData,
   onAddTestSeason,
   onTimeSigning,
   message,
 }: {
-  speed: ClockSpeed;
-  onSpeed: (speed: ClockSpeed) => void;
   onAddTestData: () => void;
   /** A played season on past Saturdays, for the averages (#106). */
   onAddTestSeason: () => void;
@@ -34,16 +28,7 @@ export function TestKitSection({
         nothing here reaches the real squad.
       </Text>
 
-      <Text style={screen.fieldLabel}>Clock speed</Text>
-      <ChipRow>
-        {CLOCK_SPEEDS.map((s) => (
-          <Chip key={s} label={`×${s}`} selected={s === speed} onPress={() => onSpeed(s)} />
-        ))}
-      </ChipRow>
-      <Text style={screen.hint}>
-        At ×10 a 50-minute match takes 5 minutes. Minutes stay exact at any speed.
-      </Text>
-
+      {/* #228 item 5: no Clock speed here; Start a test match has its own ×1/×5/×10. */}
       <Pressable
         style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
         onPress={onAddTestData}

@@ -254,3 +254,136 @@ analysis, iOS". Entries are added as each release ships.
   (#217).
   Adding squad members keeps the name box focused, so a whole squad goes in
   one name after another (#219).
+- **Heart FC Coach 1.3.0 (in progress).** Rob, 18 Oct: *"I want all the
+  stuff above built … as 1.3.0 … that's probably a version I'll draw a line
+  under and release."* Each feature adds its line here as it lands on the
+  1.3.0 branch.
+  - **A screen reader reaches each part of a fixture card (#226).** A card on
+    Home was one spoken element, its links buried inside it. Now its lines
+    read as one button, "Open Practice Park, Sat 24 Oct …", and Plan this
+    match, Edit the plan, Archive and Remove are each a button of their own.
+    A finger works the card exactly as before.
+  - **Planned subs start together, and the shared plan shows exact times
+    (#205).** Every new sub in Plan the match starts at the half-period (6:15
+    in a quarter, 12:30 in a half); nothing is moved to a free slot any more,
+    and ± moves only that sub. The picture shared with parents shows each
+    sub's exact time ("Ava on for Ben – 6:15"). Saved plans keep their times.
+  - **The clock shows this quarter's subs and warns 30 seconds early (#203).**
+    A list above the pitch shows every planned sub and its time; made subs
+    are ticked, unplanned bench players listed. Tap a line to move it 30 s,
+    change who comes off or remove it (the plan, never the record). Thirty
+    seconds before each sub its prompt rises green, turns amber at 15 s and
+    red counting "late"; the phone buzzes once. "Not now" puts it away for
+    the quarter; Done makes the sub, with Undo.
+  - **First open shows a new coach how to start (#218).** Home opens with a
+    *Getting started* card: what the app is for ("Who comes off next, and is
+    everyone getting a fair share?") and three steps (add your squad, add
+    your next match, press Play now), each a button that ticks itself off
+    from what is on the phone. It goes away once all three are done, or can
+    be closed with Undo; Settings offers it back while a step is undone.
+    Screens empty because nothing has happened yet say what to do next. An
+    empty squad can *Try it with a made-up team*; a yellow line on Home says
+    so, and Forget everything clears it. The unnamed team is "Your team"
+    instead of "Example FC". A phone with a squad and matches looks as before.
+  - **Test matches from Settings, never recorded (#194).** Settings › Test
+    matches › Start a test match plays the squad on the real screens, each
+    marked "Test match · not recorded", at ×1, ×5 or ×10 (only that match
+    runs fast). It never enters the record, Home, Played or any figure, and
+    can be opened, deleted or deleted all from Settings. A played real match
+    can't be deleted; its report offers "Void, with a note", which takes it
+    off every screen, keeps it in the record, and lists it with the hidden
+    test matches to show again.
+  - **Squad list in order (#222).** The Squad tab lists children by minutes a
+    game, most first; tap Name or "a game" to re-sort (remembered). Children
+    with no matches keep their order below, the Main keeper last; lineup,
+    bench and plan are unchanged.
+  - **Clearing the made-up team (#218).** The first player added to the
+    made-up team asks "This is the made-up team. Clear it and start your real
+    squad?". Clear it and start removes the made-up children, fixtures and
+    matches, from the record too; Keep exploring adds them to it.
+  - **A phone can be rebuilt from the record; fill-ins (#195, #190).** The
+    minutes file now carries fixtures, each child's preferences and Settings:
+    imported on an empty phone it brings back the squad, preferences,
+    Settings, upcoming fixtures and every played match (not plans; the app
+    says so); on a phone with data it only adds what is missing. A deleted
+    fixture is recorded as cancelled, never erased. A child from another team
+    can be marked a fill-in, with a note: their minutes are kept and they get
+    a fair share on the day, but they are left out of the squad average,
+    fairness figures and "who's owed time".
+  - **Importing onto a squad typed in by hand matches the children by name
+    (#195).** A phone that has played nothing but has a squad no longer ends
+    up with every child twice. Before importing, Settings › Minutes shows
+    which children match by name, which are only in the file and which only
+    on this phone, and the coach chooses: Match by name (recommended), Use
+    the file's squad, or Keep both. The file's team name is kept (rename it
+    in Settings). A name that appears twice is never guessed. Nothing is
+    erased: each matched child gets a noted record
+    saying which of the file's children it became.
+  - **Every match has its result, and goals can be added without a time
+    (#196).** Played matches show "W 4 – 1", worked out from their goals. A
+    goal or goal against with no known time, scorer optional, can be added
+    with a note from a played match's page (how the 3 Oct cup match gets its
+    score). The page shows how the match was actually played, correctable
+    with a note, and minutes by position.
+  - **Awards (#197).** Player of the Week and Mr Assister are ready in
+    Settings › Awards; add, rename or retire your own. Give one from a played
+    match's page; joint winners allowed; a change after the day needs a note.
+  - **The coach's tallies (#198).** Add your own in Settings › Tallies, for a
+    child or the team; it gets its own button during play. Saves, shots,
+    tackles, corners, free kicks and your tallies sit under "More stats" on a
+    report, apart from goals and the result.
+  - **How far each match can be trusted (#199).** Signed live matches look as
+    before; live matches recorded before signing carry "◐ live, unsigned";
+    matches entered afterwards a dashed outline and "◐ reconstructed", with
+    the reason on the match page. Squad's "Include reconstructed matches"
+    shows every figure without them.
+  - **5-a-side, and 40-minute matches (#223).** Two 5-a-side shapes sit
+    beside 2-3-1 and 2-2-2 in Settings and on each fixture: 1-2-1 + GK (GK,
+    D, LM, RM, F) and 2-2 + GK (GK, LB, RB, LF, RF), renameable like any
+    other. Lineup, "enough players", Getting started, the plan, the clock's
+    sub list, the pitch and the shared plan follow the match's shape, and
+    the record keeps it through a restore. 40 minutes joins the lengths (40,
+    50, 60, 75, 90), in halves of 20 or quarters of 10. A fixture opened
+    without enough players now counts the squad against its own shape, and
+    the squad editor's Start plays that fixture, with its opponent, rather
+    than a Play-now match from the defaults.
+  - **Fairness uses the season's main format (#223).** If a season mixes 5-
+    and 7-a-side, fairness counts the format played most; the other matches'
+    minutes stay in each child's totals, and Squad says how many are left out.
+  - **The amber sub prompt is readable (#227).** In amber, the countdown,
+    the chosen name and Done were brown on dark brown (2.67:1); they are now
+    amber on dark brown (7.9:1). Every word of the prompt, in green, amber
+    and red, reads at 4.5:1 or better, and a test checks it.
+  - **Beta tidy-up (#228).** Rob, 23 Oct: *"Nearly there."*
+    - **Shorter labels.** The tap sheet's "Shot on target", "Corner won" and
+      "Free kick won" read **Shot**, **Corner** and **Free kick**, and so do
+      the time stream, Undo, More stats and Settings › Tallies. Only the
+      words changed: the record's kinds are the same, and a shot still means
+      on target.
+    - **A calmer amber.** The sub prompt's 15-second orange, and End quarter
+      once a period runs over, are one sand colour with dark ink (9.6:1). End
+      quarter's white label on orange read at 3.3:1.
+    - **No speed buttons in the Test kit.** Settings › Test kit › Clock
+      speed is gone: Start a test match has its own ×1, ×5 and ×10. A beta
+      phone left fast runs at ×1 from its next launch, and its clock never
+      goes backwards.
+    - **Tally buttons all one size.** The tap sheet is one grid, three
+      across, and a tally you add is the same size as Goal or Save. Each of
+      your tallies gets its own colour and picture, in the order you added
+      them, and keeps it for good.
+    - **Awards before the match is closed.** From the first period, tap a
+      player and "Give Maya an award ›"; at a break, "Awards: 1 of 2 given ›"
+      opens the awards. End match asks for any award still to give, and
+      "Give them later" closes the match as before. The report lists the
+      awards given. Test matches have none. At full time the clock shows the
+      award card straight away, with "Give them later"; End match still asks
+      while an award has no winner (Rob's ruling `both`).
+    - **Less at the top of the screen.** The clock's period, time left,
+      clock and score share one strip, the sub plan folds to its next line
+      ("+1 ▾" opens the rest), and the standing hint is gone, so the pitch
+      starts much higher. On Home, Getting started is one line with a
+      progress bar ("1 of 3 ›", its steps a tap away), and Play now and
+      "+ Fixture" sit side by side.
+      The match report has the opponent and score on one line, one "Not
+      closed" or "Closed" pill, goals added later marked on their own lines,
+      and "In the record ›" at the foot.

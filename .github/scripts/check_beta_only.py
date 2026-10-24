@@ -264,7 +264,8 @@ def fake_dump(texts, tab="settings", scrollable=True, desc_texts=(), label=None)
 
 TOP = ["Settings", "Defaults for a new match.", "Team name", "Default match length", "Default periods"]
 MID_RELEASE = ["Default shape", "Buzz when a sub is due", "Minutes", "Export the minutes file"]
-MID_BETA = ["Default shape", "Buzz when a sub is due", "Minutes", "Test kit (beta only)", "Clock speed"]
+# #228 removed Clock speed; the Test kit's first button is what follows its heading (TestKitSection.tsx).
+MID_BETA = ["Default shape", "Buzz when a sub is due", "Minutes", "Test kit (beta only)", "Add test squad and fixtures"]
 END_RELEASE = ["Export the minutes file", "Forget everything"]
 END_BETA = ["Add a past season", "Forget everything"]
 RELEASE_LABEL = "v2026.10.06-build.124"          # build-label.sh on main
@@ -280,7 +281,8 @@ def self_test():
     release = pages((TOP, MID_RELEASE, END_RELEASE, END_RELEASE), RELEASE_LABEL)
     beta = pages((TOP, MID_BETA, END_BETA, END_BETA), BETA_LABEL)
     demo = pages((TOP, MID_BETA, END_BETA, END_BETA), DEMO_LABEL)
-    home = [fake_dump(["Example FC", "No fixtures yet. Add your first match."], tab="home")]
+    # A fresh Home after #228: Getting started is one line, then the start row (FixturesScreen.tsx).
+    home = [fake_dump(["Your team", "Getting started", "Play now", "+ Fixture"], tab="home")]
     # Another tab that scrolls and has no Test kit: read to its end, it would
     # pass as a release unless the check knows it is not Settings.
     squad = [fake_dump(["Squad", "Ava", "Ben", "Cal"], tab="squad"),

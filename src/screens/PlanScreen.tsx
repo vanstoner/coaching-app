@@ -35,7 +35,7 @@ import {
   benchSubOffChoices,
   clampSwapTime,
   formatDelta,
-  nextFreeSwapTimeMs,
+  newSubTimeMs,
   nudgeSwap,
   planBenchSub,
   SUB_STEP_MS,
@@ -58,7 +58,8 @@ import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { PLAN_IMAGE_WIDTH, planImage, type PlanImageLayout } from '../app/planImage';
+import { PLAN_IMAGE_WIDTH, planImage, shareFirstStep, type PlanImageLayout } from '../app/planImage';
+import { currentDistribution } from '../app/distribution';
 import { releasePlanImage, sharePlanImage } from '../app/planImageFile';
 import { PlanImageView } from './PlanImageView';
 
@@ -148,7 +149,9 @@ export function PlanScreen({
     setShareLayout(layout);
   };
   // Quarters offer 2×2 or four in a row; halves sit side by side either way.
-  const askShare = () => (periodCount === 4 ? setShareAsk(true) : startShare('grid'));
+  // The store build alone skips the question (shareFirstStep, #226).
+  const askShare = () =>
+    shareFirstStep(periodCount, currentDistribution()) === 'ask' ? setShareAsk(true) : startShare('grid');
   const onImageLayout = (e: LayoutChangeEvent) => {
     if (captured.current || !shareLayout) return;
     captured.current = true;
@@ -211,7 +214,7 @@ export function PlanScreen({
     const existing = benchSubIndex(period, id);
     setBenchMenu(
       existing === -1
-        ? { playerId: id, atMs: nextFreeSwapTimeMs(period, periodMs), editing: true }
+        ? { playerId: id, atMs: newSubTimeMs(periodMs), editing: true }
         : { playerId: id, atMs: period.subs[existing].atMs, editing: false }
     );
   };

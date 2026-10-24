@@ -28,6 +28,7 @@ import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
+import { SHOW_AGAIN } from '../app/gettingStarted';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { MAX_TEAM_NAME_LENGTH, describeDefaults, normaliseTeamName } from '../app/settings';
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
@@ -51,6 +52,7 @@ export function SettingsScreen({
   testMatches,
   testKit,
   onForget,
+  onShowGettingStarted = null,
 }: {
   squadName: string;
   onSquadName: (s: string) => void;
@@ -73,6 +75,8 @@ export function SettingsScreen({
   /** The Test kit (#95). Passed only in a Heart FC Beta Coach build. */
   testKit?: ReactNode;
   onForget: () => void;
+  /** #218 Q4: the Getting started card back, while it is closed and a step is undone. */
+  onShowGettingStarted?: (() => void) | null;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
@@ -117,7 +121,7 @@ export function SettingsScreen({
                 label={`${m}`}
                 selected={m === totalMinutes}
                 onPress={() => onTotalMinutes(m)}
-                narrow
+                compact
               />
             ))}
           </ChipRow>
@@ -161,8 +165,14 @@ export function SettingsScreen({
             <Chip label="Off" selected={!buzzWhenSubDue} onPress={() => onBuzzWhenSubDue(false)} />
           </ChipRow>
           <Text style={screen.hint}>
-            The phone buzzes once for each planned sub, while the clock is on screen.
+            The phone buzzes once for each planned sub, 30 seconds before it is due, while the clock is on screen.
           </Text>
+
+          {onShowGettingStarted && (
+            <Pressable onPress={onShowGettingStarted} style={screen.linkHit}>
+              <Text style={screen.link}>{SHOW_AGAIN}</Text>
+            </Pressable>
+          )}
 
           {minutes}
           {testMatches}

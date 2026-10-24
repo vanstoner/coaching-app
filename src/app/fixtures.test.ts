@@ -8,7 +8,6 @@ import {
   listedFixtures,
   openDestination,
   COMPETITIONS,
-  NO_FIXTURES_YET,
   bucketOf,
   competitionLabel,
   fixtureList,
@@ -18,6 +17,7 @@ import {
   matchIsUnderway,
   matchProgress,
   opponentLabel,
+  fixtureOpenLabel,
 } from './fixtures';
 
 const NOW = new Date('2026-09-19T09:00:00Z');
@@ -83,8 +83,8 @@ describe('bucketOf', () => {
 
 describe('fixtureList', () => {
   it('is empty for a squad with no fixtures', () => {
+    // What Home says then is NO_MATCHES_YET in gettingStarted.ts (#218).
     expect(fixtureList([], NOW)).toEqual([]);
-    expect(NO_FIXTURES_YET).toContain('No fixtures yet');
   });
 
   it('orders the way a Saturday morning works: now, next, then history', () => {
@@ -375,5 +375,19 @@ describe('a fixture never kicked off is never "Played" (match day 4)', () => {
     );
     expect(inBucket(rows, 'future').map((r) => r.match.opponent)).toEqual(['missed']);
     expect(inBucket(rows, 'past').map((r) => r.match.opponent)).toEqual(['played']);
+  });
+});
+
+describe('fixtureOpenLabel: the card\'s open action, apart from its links (#226)', () => {
+  it('names the opponent first, then the card\'s lines', () => {
+    expect(fixtureOpenLabel(['Practice Park', 'Sat 24 Oct · 10:00', '40 min · Quarters'])).toBe(
+      'Open Practice Park, Sat 24 Oct · 10:00, 40 min · Quarters'
+    );
+  });
+
+  it('drops lines a card does not show', () => {
+    expect(fixtureOpenLabel(['Trial Town', 'Sat 17 Oct', null, false, undefined, '', 'W 3 – 1'])).toBe(
+      'Open Trial Town, Sat 17 Oct, W 3 – 1'
+    );
   });
 });

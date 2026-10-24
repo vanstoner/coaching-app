@@ -20,8 +20,8 @@ From the [releases page](https://github.com/vanstoner/coaching-app/releases):
   builds green publishes one.
 - **Heart FC Beta Coach** — the `beta` prerelease, rebuilt from each open pull
   request. It installs as a separate app (its own id, storage and orange icon),
-  so testing never touches the real squad. Its Test kit adds made-up players, a
-  past season and a faster clock. After a merge, `beta` holds no APK, just a
+  so testing never touches the real squad. Its Test kit adds made-up players and a
+  past season; a test match (Settings › Test matches) runs at ×1, ×5 or ×10. After a merge, `beta` holds no APK, just a
   note pointing at the new Heart FC Coach build, until the next pull request.
 - **Heart FC Beta Coach — demo** — the [`demo` prerelease](https://github.com/vanstoner/coaching-app/releases/tag/demo),
   for sharing. It is Heart FC Beta Coach, built from `main` when asked, and it opens
@@ -39,9 +39,20 @@ request; `store-listing.yml`, run by hand from `main` and approved in the
 `app-store` environment, sends it to App Store Connect and reads it back. The
 privacy policy is [PRIVACY.md](PRIVACY.md).
 
+`whats_new.txt` is the App Store's "What's New in This Version", plain text
+for a coach. Every version bump rewrites it (`version-impact.yml` refuses one
+that leaves it unchanged). A merge that bumps the version, once Rob approves
+its `testflight.yml` run, uploads the build to TestFlight, sends the listing
+text and What's New, and submits that version for review set to release
+automatically when Apple approves it ([#226](https://github.com/vanstoner/coaching-app/issues/226)).
+
 The screenshots in `store/app-store/screenshots/` (iPhone 6.9" and iPad 13")
-are made by `store-media.yml`, run by hand, from a build that opens with the
-made-up season; the same listing run uploads them.
+are made by `store-media.yml`, run by hand (on a PR branch too), from a build
+that opens with made-up data, then framed and captioned in CI
+(`composite_shots.py`, captions in `store/app-store/en-GB/screenshot_captions.txt`).
+Once Rob approves them they are committed there, and CI checks they are
+exactly the captioned set. The release run puts them on the new version
+before it submits it; the listing run can also upload them.
 
 The website, [vanstoner.github.io/coaching-app](https://vanstoner.github.io/coaching-app/),
 is `site/` with the privacy page made from PRIVACY.md; `pages.yml` checks it
@@ -88,8 +99,8 @@ xcrun simctl install booted HeartFCCoach.app   # or drag the .app onto the simul
 xcrun simctl launch booted com.vanstoner.coachingapp   # beta: com.vanstoner.coachingapp.beta
 ```
 
-The beta zip is the one with the **Test kit** (made-up players, a past season,
-a faster clock): install `HeartFCBetaCoach.app` and open Settings › Test kit.
+The beta zip is the one with the **Test kit** (made-up players and a past
+season): install `HeartFCBetaCoach.app` and open Settings › Test kit.
 
 To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
 `npm run android:beta`) once route 2 below works. It builds **Coaching

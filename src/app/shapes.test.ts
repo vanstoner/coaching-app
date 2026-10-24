@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SHAPE,
   SHAPES,
+  SHAPE_CODES,
+  readShapeCode,
   formatForShape,
   makeFormat,
   shapeLabel,
@@ -14,10 +16,50 @@ import type { PositionUnit } from '../types/index';
 
 const unitsOf = (shape: (typeof SHAPES)[number]) => shape.slots.map((s) => s.unit);
 
-describe('the two shapes the PO named', () => {
-  it('offers 2-3-1 and 2-2-2, both seven a side', () => {
-    expect(SHAPES.map((s) => s.code)).toEqual(['2-3-1', '2-2-2']);
-    for (const shape of SHAPES) expect(shape.slots).toHaveLength(7);
+const count = (units: PositionUnit[], unit: PositionUnit) => units.filter((u) => u === unit).length;
+
+describe('the shapes the PO named', () => {
+  // Replaces "offers 2-3-1 and 2-2-2, both seven a side": #223 (approved
+  // 18 Oct) adds two 5-a-side shapes beside them.
+  it('offers 2-3-1 and 2-2-2 seven a side, and 1-2-1 and 2-2 five a side (#223 AC1)', () => {
+    expect(SHAPES.map((s) => s.code)).toEqual(['2-3-1', '2-2-2', '1-2-1', '2-2']);
+    const size = Object.fromEntries(SHAPES.map((s) => [s.code, s.slots.length]));
+    expect(size).toEqual({ '2-3-1': 7, '2-2-2': 7, '1-2-1': 5, '2-2': 5 });
+  });
+
+  it('fields five children in every 5-a-side shape, one of them in goal (#223 AC6)', () => {
+    for (const code of ['1-2-1', '2-2'] as const) {
+      const format = makeFormat(code);
+      expect(format.onFieldCount).toBe(5);
+      expect(format.positions).toHaveLength(5);
+      expect(format.name).toBe('5-a-side');
+      expect(format.positions.filter((p) => p.kind === 'goalkeeper')).toHaveLength(1);
+    }
+    expect(makeFormat('2-3-1').name).toBe('7-a-side');
+    expect(makeFormat('2-2-2').name).toBe('7-a-side');
+  });
+
+  it('builds 1-2-1 + GK as GK, D, LM, RM, F: 1 defence, 2 midfield, 1 attack', () => {
+    const spec = shapeSpec('1-2-1');
+    expect(spec.slots.map((s) => s.label)).toEqual(['GK', 'D', 'LM', 'RM', 'F']);
+    const units = unitsOf(spec);
+    expect([count(units, 'GK'), count(units, 'DEF'), count(units, 'MID'), count(units, 'ATT')]).toEqual([1, 1, 2, 1]);
+    expect(shapeLabel('1-2-1')).toBe('1-2-1 + GK');
+    expect(spec.description).toBe('5-a-side · 1 defence · 2 midfield · 1 attack');
+  });
+
+  it('builds 2-2 + GK as GK, LB, RB, LF, RF: 2 defence, 2 attack', () => {
+    const spec = shapeSpec('2-2');
+    expect(spec.slots.map((s) => s.label)).toEqual(['GK', 'LB', 'RB', 'LF', 'RF']);
+    const units = unitsOf(spec);
+    expect([count(units, 'GK'), count(units, 'DEF'), count(units, 'MID'), count(units, 'ATT')]).toEqual([1, 2, 0, 2]);
+    expect(shapeLabel('2-2')).toBe('2-2 + GK');
+    expect(spec.description).toBe('5-a-side · 2 defence · 2 attack');
+  });
+
+  it('says which format each 7-a-side shape is, on the chip a coach taps', () => {
+    expect(shapeSpec('2-3-1').description).toBe('7-a-side · 2 defence · 3 midfield · 1 attack');
+    expect(shapeSpec('2-2-2').description).toBe('7-a-side · 2 defence · 2 midfield · 2 attack');
   });
 
   it('counts 2 defence, 3 midfield, 1 attack plus a keeper for 2-3-1', () => {
@@ -119,7 +161,23 @@ describe('shapeOfFormat', () => {
     expect(shapeOfFormat(unknown)).toBeNull();
   });
 
-  it('answers null when the slot count does not match either shape', () => {
+  it('recognises both 5-a-side shapes, renamed or not (#223 AC6)', () => {
+    for (const code of ['1-2-1', '2-2'] as const) {
+      const format = makeFormat(code);
+      expect(shapeOfFormat(format)).toBe(code);
+      const renamed = { ...format, positions: format.positions.map((p) => ({ ...p, label: 'goes wherever' })) };
+      expect(shapeOfFormat(renamed)).toBe(code);
+    }
+  });
+
+  it('never reads a 5-a-side shape as a 7-a-side one, or the reverse', () => {
+    const five = makeFormat('1-2-1');
+    expect(shapeOfFormat({ ...five, onFieldCount: 7 })).toBeNull();
+    const seven = makeFormat('2-3-1');
+    expect(shapeOfFormat({ ...seven, onFieldCount: 5 })).toBeNull();
+  });
+
+  it('answers null when the slot count does not match any shape', () => {
     const format = makeFormat('2-3-1');
     expect(shapeOfFormat({ ...format, onFieldCount: 9 })).toBeNull();
     expect(
@@ -160,6 +218,22 @@ describe('formatForShape', () => {
       positions: base.positions.map((p) => ({ ...p, unit: null })),
     };
     expect(shapeOfFormat(formatForShape('2-3-1', unknown))).toBe('2-3-1');
+  });
+});
+
+describe('reading a shape back from a record', () => {
+  it('knows every shape this build offers, and nothing else', () => {
+    expect(SHAPE_CODES).toEqual(['2-3-1', '2-2-2', '1-2-1', '2-2']);
+    for (const code of SHAPE_CODES) expect(readShapeCode(code)).toBe(code);
+    for (const raw of ['3-3', '', null, undefined, 7, '1-2-1 + GK']) expect(readShapeCode(raw)).toBeNull();
+  });
+
+  it('moves between 5- and 7-a-side as a genuine change of shape', () => {
+    const seven = makeFormat('2-3-1');
+    const five = formatForShape('2-2', seven);
+    expect(five.onFieldCount).toBe(5);
+    expect(formatForShape('2-2', five)).toBe(five);
+    expect(formatForShape('2-3-1', five).onFieldCount).toBe(7);
   });
 });
 

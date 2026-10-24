@@ -2,9 +2,10 @@
  * The one clock the app reads time from — #95.
  *
  * Real time plus an offset. In Heart FC Coach the offset is always zero and
- * this is the device clock. In Heart FC Beta Coach the Test kit can run it ×5 or
- * ×10, so a 50-minute match can be played through the real screens in five
- * minutes.
+ * this is the device clock. Heart FC Beta Coach's Test kit used to run it ×5 or
+ * ×10; #228 item 5 removed that control (a test match has its own speed,
+ * #194), and a beta phone left fast is folded back to ×1 at launch keeping its
+ * offset (`settleAtNormalSpeed`, Q4), so its clock never goes backwards.
  *
  * Invariant 2 holds at any speed. Nothing is counted: the time is computed
  * from the device clock every time it is read, and the engine's anchors
@@ -40,6 +41,16 @@ export function virtualNowMs(setting: ClockSetting, realMs: number): number {
 /** The same clock from `realMs` on, at a new speed. Continuous: no jump at the change. */
 export function withSpeed(setting: ClockSetting, speed: ClockSpeed, realMs: number): ClockSetting {
   return { offsetMs: virtualNowMs(setting, realMs) - realMs, speed, sinceRealMs: realMs };
+}
+
+/**
+ * #228 item 5, Q4 (Rob approved as recommended, 23 Oct): a beta phone whose
+ * Test kit clock was left at ×5 or ×10 runs at ×1 from the next launch. The
+ * time gained so far stays in the offset, so the clock never goes backwards
+ * and earlier test data is never "in the future".
+ */
+export function settleAtNormalSpeed(setting: ClockSetting, realMs: number): ClockSetting {
+  return setting.speed === 1 ? setting : withSpeed(setting, 1, realMs);
 }
 
 /** A stored setting, or the normal clock for anything that is not one. */
@@ -78,8 +89,11 @@ export function setAppClock(setting: ClockSetting): void {
   current = setting;
 }
 
-/** Change the speed from now. Returns the new setting, for the caller to store. */
-export function setAppClockSpeed(speed: ClockSpeed): ClockSetting {
-  current = withSpeed(current, speed, Date.now());
-  return current;
+/**
+ * Launch (#228 Q4): adopt a stored beta setting, settled at ×1 from now.
+ * Returns the setting in force, and whether it changed (so the caller stores it).
+ */
+export function adoptStoredClock(stored: ClockSetting): { setting: ClockSetting; changed: boolean } {
+  current = settleAtNormalSpeed(stored, Date.now());
+  return { setting: current, changed: current !== stored };
 }

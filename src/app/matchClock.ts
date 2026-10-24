@@ -33,8 +33,20 @@ export function formatClock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-/** The match lengths the coach can pick. PO ruling, 2026-09-18. */
-export const TOTAL_MINUTES_CHOICES = [50, 60, 75, 90] as const;
+/**
+ * A planned sub's time as the coach and parents read it: "6:15", "12:30",
+ * "0:45". Minutes unpadded, seconds always two digits (#203 C9). The same
+ * form on the clock's sub list and on the shared plan (#205 AC3), so the two
+ * can never disagree about when a sub is. Exact, never rounded.
+ */
+export function formatSubTime(ms: number): string {
+  const safe = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  const totalSeconds = Math.floor(safe / 1000);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+/** The match lengths the coach can pick. PO ruling, 2026-09-18; 40 added by #223 AC8. */
+export const TOTAL_MINUTES_CHOICES = [40, 50, 60, 75, 90] as const;
 
 /** Halves or quarters. Every combination above divides exactly into both. */
 export const PERIOD_COUNT_CHOICES = [2, 4] as const;
@@ -175,4 +187,15 @@ export function msUntilNextSecond(elapsedMs: number, speed = 1): number {
   const safe = Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0;
   const toBoundary = 1000 - (safe % 1000);
   return Math.ceil(toBoundary / Math.max(1, speed)) + REPAINT_SLACK_MS;
+}
+
+/**
+ * The strip's period, short (#228, Dee's clutter fix 1): "Q2" in quarters,
+ * "Half 1" in halves (any other count: its noun and number), "Full time" once
+ * every period has ended.
+ */
+export function shortPeriodLabel(view: Pick<ClockView, 'isMatchOver'>, index: number | null, periodCount: number): string {
+  if (view.isMatchOver || index === null) return 'Full time';
+  if (periodCount === 4) return `Q${index}`;
+  return periodCount === 1 ? periodNoun(1) : `${periodNoun(periodCount)} ${index}`;
 }

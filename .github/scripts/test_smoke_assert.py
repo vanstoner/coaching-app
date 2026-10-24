@@ -144,13 +144,13 @@ def main() -> int:
 
         print("\nAssertion A — 'the screen is not blank' gates")
         W, H = 120, 200
-        rc, log = assert_on(solid(W, H, (255, 255, 255)), W, H, 3, "Example FC", tmp)
+        rc, log = assert_on(solid(W, H, (255, 255, 255)), W, H, 3, "Your team", tmp)
         check(
             "a uniformly white screen FAILS",
             rc == 1 and "uniformly one colour" in log,
             f"exit {rc}",
         )
-        rc, log = assert_on(solid(W, H, (11, 61, 46)), W, H, 3, "Example FC", tmp)
+        rc, log = assert_on(solid(W, H, (11, 61, 46)), W, H, 3, "Your team", tmp)
         check(
             "a uniformly dark-green screen FAILS (colour is not the point)",
             rc == 1 and "uniformly one colour" in log,
@@ -164,7 +164,7 @@ def main() -> int:
         # printed for every frame, so it could not tell the floor firing from
         # the floor not firing. QA Note 1 on PR #45.
         rc, log = assert_on(
-            with_speckles(W, H, (255, 255, 255), 12), W, H, 3, "Example FC", tmp
+            with_speckles(W, H, (255, 255, 255), 12), W, H, 3, "Your team", tmp
         )
         check(
             "a near-blank screen with a handful of stray pixels FAILS",
@@ -182,7 +182,7 @@ def main() -> int:
             W,
             H,
             3,
-            "Example FC",
+            "Your team",
             tmp,
         )
         check(
@@ -196,7 +196,7 @@ def main() -> int:
 
         print("\nAssertion B — 'the expected text is on screen' gates")
         rc, log = assert_on(
-            with_speckles(W, H, (11, 61, 46), 4000), W, H, 3, "Example FC", tmp
+            with_speckles(W, H, (11, 61, 46), 4000), W, H, 3, "Your team", tmp
         )
         check(
             "a busy but textless screen passes 'not blank' and FAILS on OCR",
@@ -206,6 +206,9 @@ def main() -> int:
             f"exit {rc}",
         )
 
+        # The tolerance corpus keeps the needle it was built against. It
+        # tests the matcher, not the app's screen, which "Your team" and the
+        # fixture cases below cover (#218).
         print("\nOCR tolerance — degraded readings that must still match")
         needle = sa.normalise("Example FC")
         check("the needle normalises to 'examplefc'", needle == "examplefc", needle)
@@ -287,7 +290,9 @@ def main() -> int:
             ).stdout.splitlines()[0]
             print(f"\nEnd-to-end against rendered fixtures ({version})")
             cases = (
-                ("good.png", 0, "a rendered 'Example FC' screen PASSES"),
+                ("good.png", 0, "a rendered fresh-install Home ('Your team', #218) PASSES"),
+                ("good-one-line.png", 0,
+                 "the fresh-install Home after #228, Getting started on one line ('Your team') PASSES"),
                 ("blank-white.png", 1, "a blank white screen FAILS"),
                 ("wrong-text.png", 1, "a screen rendering the wrong squad FAILS"),
             )
@@ -302,7 +307,7 @@ def main() -> int:
                         os.path.join(HERE, "smoke_assert.py"),
                         path,
                         "--expect",
-                        "Example FC",
+                        "Your team",
                         "--workdir",
                         tmp,
                         "--quiet",
@@ -317,15 +322,29 @@ def main() -> int:
             # which is how a gate quietly becomes a no-op.
             print("\nRepeated --expect requires every expectation")
             good = os.path.join(FIXTURES, "good.png")
+            one_line = os.path.join(FIXTURES, "good-one-line.png")
             multi = (
-                (["Example FC"], 0, "one expectation that is present PASSES"),
+                (["Your team"], 0, "one expectation that is present PASSES"),
                 (
-                    ["Example FC", "Example FC"],
+                    ["Your team", "Getting started"],
                     0,
-                    "two expectations both present PASSES",
+                    "two expectations both present PASSES — the pair the "
+                    "workflow asserts on a fresh install (#228), on today's full card",
                 ),
                 (
-                    ["Example FC", "Substitution due"],
+                    ["Your team", "Getting started"],
+                    0,
+                    "the same pair PASSES on the one-line Getting started (#228, PO `both`)",
+                    one_line,
+                ),
+                (
+                    ["Your team", "Who comes off next"],
+                    1,
+                    "the old pair FAILS on the one-line Home: why the workflow moved off it",
+                    one_line,
+                ),
+                (
+                    ["Your team", "Substitution due"],
                     1,
                     "one present, one absent FAILS — an absent expectation is not "
                     "excused by a present one",
@@ -336,11 +355,12 @@ def main() -> int:
                     "neither present FAILS",
                 ),
             )
-            for expects, want, label in multi:
-                if not os.path.exists(good):
-                    check(label, False, f"missing fixture {good}")
+            for expects, want, label, *frame in multi:
+                frame = frame[0] if frame else good
+                if not os.path.exists(frame):
+                    check(label, False, f"missing fixture {frame}")
                     continue
-                argv = [sys.executable, os.path.join(HERE, "smoke_assert.py"), good]
+                argv = [sys.executable, os.path.join(HERE, "smoke_assert.py"), frame]
                 for e in expects:
                     argv += ["--expect", e]
                 argv += ["--workdir", tmp, "--quiet"]

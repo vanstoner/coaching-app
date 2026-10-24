@@ -109,7 +109,10 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
       total: 50,
       goal: 38,
       outfield: 12,
-      text: 'Ava, Sat 8 Aug v Mock Albion: 50 min (38 in goal, 12 outfield)',
+      // #199 (approved 18 Oct): the Test kit season is written after the fact,
+      // so its matches are reconstructed and their cells say so.
+      text: 'Ava, Sat 8 Aug v Mock Albion: 50 min (38 in goal, 12 outfield), reconstructed',
+      reconstructed: true,
     });
     // Ava missed the friendly; Jo and Ben missed three each.
     expect(ava.cells.map((c) => c === null)).toEqual([false, false, false, false, false, true, false, false, false]);
@@ -122,7 +125,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     // A child never in goal has no split in their words.
     const ivyFirst = row(v.grid, 'Ivy').cells[0];
     expect(ivyFirst?.goal).toBe(0);
-    expect(ivyFirst?.text).toMatch(/^Ivy, Sat 8 Aug v Mock Albion: \d+ min$/);
+    expect(ivyFirst?.text).toMatch(/^Ivy, Sat 8 Aug v Mock Albion: \d+ min, reconstructed$/);
   });
 
   it('Fairness: "Everyone within 5 min a game of the squad average, 39", the Main keeper outside it (AC3, AC7)', () => {

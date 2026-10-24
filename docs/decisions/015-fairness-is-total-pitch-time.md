@@ -1,6 +1,6 @@
 # ADR-015: Fairness is total time on the pitch; averages are per match attended
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-10-19 (§6a, #223)
 **Date:** 2026-10-04
 **Decision maker:** Architect, on the Product Owner's rulings of 2026-10-04 (#98 rulings 3, 4 and 5, `approve 1 2 3 4 5 6 7 8 9`; criteria in #101, #102, #103)
 
@@ -51,6 +51,8 @@ stays fair to a child who was not there.
 6. **Counted matches** are those with status `completed`. A planned,
    in-progress or abandoned match does not count towards the averages. An
    abandoned match's minutes still count in the season totals.
+
+   **6a. Dominating format** (PO ruling 2026-10-19, #223). A season's fairness figures use the matches of its dominating format only. A format is the number on the pitch, keeper included, as the match's structure record holds it (`structure.onField`), never its shape: 2-3-1 and 2-2-2 are both 7-a-side. The dominating format is the one with the most counted matches. On a tie it is the format of the latest counted match whose format is known. A counted match in another format keeps its minutes in the season totals, as an abandoned match does (§6). It is left out of matches attended, games missed, every average (§7, §8, §9), the squad average, owed time and the trend, and the screen says how many matches were left out and why. A match whose format is not recorded neither decides the dominating format nor is left out. The dominating format is worked out on every read and never stored (invariant 1). The measure is unchanged: total time on the pitch (invariant 3).
 7. **Season average** = pitch time over counted matches attended ÷ the number
    of counted matches attended. It is null when the player has attended none;
    that is not zero (#102 AC3). Games missed is counted the same way, from

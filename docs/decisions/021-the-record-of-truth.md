@@ -4,6 +4,22 @@
 **Date:** 2026-10-17
 **Decision maker:** Architect, for the Product Owner's ruling (epic #191)
 
+**Rulings so far.** D3, D4 and the build order: PO 17 Oct (`approve 1 2 3 4`,
+#191). **D1, D2 and D5: approved to build on (PO 18 Oct, #191); ADR stays
+Proposed.** The format is not locked at 1.3.0 (D6 unchanged).
+
+**As built (1.3.0, #195).** `fixture` carries the app's `totalMinutes`, not
+`periodMinutes` (50 minutes in quarters is 12.5 a period, and the chain holds
+whole numbers only, ADR-014 §6); it also carries `labels` (position names,
+#166) and `archived` (#76), and has no `homeAway` or `venue` (the app has
+neither). `profile` also carries `prefers` (outfield unit, #87), `active` and
+`removed`, per the 18 Oct ruling. `settings` also carries `labels` and
+`buzzWhenSubDue`. `award` (#197) is keyed by match, award type **and child**, so
+joint winners are allowed (PO ruling 10, 18 Oct); a winner is taken back
+with `given: false`. `award-type` ids for the two defaults are fixed
+strings (`player-of-the-week`, `mr-assister`). `structure` (#196) also carries
+a `note`, set on a correction.
+
 **Relationship:** extends [ADR-014](./014-ledger-hash-chain.md) §3 (new record
 types) and reverses part of its "HMAC or signatures" alternative (§D4 below).
 ADR-007, 008, 010, 011, 015, 017 and 020 stand. Nothing here moves data off the
@@ -63,7 +79,7 @@ for example) is not allowed.
 | `award-type` | `id` | `name`, `active` | Customisable awards. Retiring one keeps its history |
 | `award` | `matchId`+`awardTypeId` | `playerId`, `note` | Player of the Week, Mr Assister… |
 | `event-type` | `id` | `label`, `tier` (`core`/`tally`), `credited` | The second layer; new kinds without a release |
-| `profile` | `playerId` | `keeperPreference`, `outfieldTarget`, `fairness` (`counted`/`not-counted`, #190) | What restore needs about a child |
+| `profile` | `playerId` | `keeperPreference`, `outfieldTarget`, `fairness` (`counted`/`not-counted`, #190); optional `matchedTo` (a child id) on the noted removal an import writes when it matches this phone's child to the file's by name (#195) | What restore needs about a child. `matchedTo` tells "matched on import" from "taken out of the squad" without reading the note |
 | `settings` | `squad` | default shape, minutes, periods | What restore needs about the squad |
 | `match-kind` | `matchId` | `kind` (`real`/`test`/`void`), `note` | Hides test or voided matches everywhere |
 | `origin` | `matchId` | `how` (`live`/`reconstructed`), `source`, `note` | A coach's statement of where a match came from (#189) |

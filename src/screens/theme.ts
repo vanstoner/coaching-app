@@ -21,21 +21,9 @@
  */
 
 import { StyleSheet } from 'react-native';
+import { colours } from './colours';
 
-export const colours = {
-  pitch: '#0b3d2e',
-  pitchRaised: '#0f4a38',
-  line: '#1c6349',
-  ink: '#ffffff',
-  inkMuted: '#8fb3a5',
-  inkFaint: '#6e9787',
-  accent: '#12855a',
-  warn: '#ffd166',
-  danger: '#ffb4a2',
-  urgent: '#c47f1a',
-  /** Reconstructed: entered after the event (#195, #199). One tone, used everywhere. */
-  taint: '#c9ad6a',
-} as const;
+export { colours };
 
 /**
  * The smallest a tappable thing may be, in dp — #70.
@@ -142,6 +130,8 @@ export const screen = StyleSheet.create({
   },
   buttonDisabled: { backgroundColor: '#2f6b55', opacity: 0.6 },
   buttonUrgent: { backgroundColor: colours.urgent },
+  /** Dark ink on the sand End button (#228 item 4); never a weight change. */
+  buttonUrgentLabel: { color: colours.urgentInk },
   buttonPressed: { opacity: 0.7 },
   buttonLabel: {
     color: colours.ink,

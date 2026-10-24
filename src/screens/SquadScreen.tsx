@@ -21,10 +21,16 @@
  * ---------------------------------------------------------------------------
  *
  * Each row answers "is anyone behind?": minutes a game, played X of Y, and a
- * small bar against the squad average. The list keeps its order (PO ruling).
- * A Main keeper is not in the squad average, and their row says so. Tapping a
+ * small bar against the squad average. A Main keeper is not in the squad
+ * average, and their row says so. Tapping a
  * name opens the child's page, where their figures and their position
  * preferences live.
+ *
+ * The list sorts by minutes a game, most first (#222, overriding #208 AC7 for
+ * this list only). Name and "a game" headings re-sort it as the analytics
+ * tables do, remembered on this phone; children with no matches keep squad
+ * order below the rest, and the Main keeper is last (`sortSquadList`). The
+ * lineup, bench and plan keep squad order.
  *
  * ---------------------------------------------------------------------------
  * The squad views (#143)
@@ -50,7 +56,7 @@ import {
 import { Text } from './Text';
 
 import type { Player, UUID } from '../types/index';
-import type { Ledger } from '../app/ledger';
+import { fairnessHistory, isCountedInFairness, type Ledger } from '../app/ledger';
 import {
   MAX_NAME_LENGTH,
   activePlayers,
@@ -64,11 +70,17 @@ import {
   validateName,
 } from '../app/squad';
 import { wholeMinutes } from '../app/analysis';
-import { MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { childPositionLine } from '../app/matchRecord';
+import { provenances, withoutReconstructed } from '../app/provenance';
 import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
+import { MADE_UP_GUARD, emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
+import { NAME, sortSquadList } from '../app/tableSort';
+import { SortHeading, useTableSort } from './TableSort';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** Where the coach is inside Squad: a view, or a child's page. The list is the empty stack. */
@@ -88,11 +100,16 @@ export function SquadScreen({
   ledger,
   kickoffs,
   onPlayers,
+  fairness,
   onFieldCount,
   /** Offered only on the way to a match; the tab has tabs instead. */
   onStartMatch,
   /** Offered only on the way to a match. Leaves without kicking off. */
   onLeave,
+  onTryMadeUp = null,
+  focusName = false,
+  firstTime = null,
+  onClearMadeUp = null,
 }: {
   squadId: UUID;
   /** Everyone ever in the squad, retired players included (#77). */
@@ -104,9 +121,23 @@ export function SquadScreen({
   /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
   kickoffs: ReadonlyMap<UUID, string>;
   onPlayers: (p: Player[]) => void;
+  /** #190: mark a child not counted in fairness, or counted again; a reason when refused. */
+  fairness: { set: (playerId: UUID, counted: boolean, note: string) => string | null };
   onFieldCount: number;
   onStartMatch: (() => void) | null;
   onLeave: (() => void) | null;
+  /** #218 Q5: load the made-up team. Passed only while the squad is empty. */
+  onTryMadeUp?: (() => void) | null;
+  /** #218: arrived to add the squad, so the name box is ready. */
+  focusName?: boolean;
+  /** #218 Q3: the squad views' next thing to do, before the first match. */
+  firstTime?: { label: string; onPress: () => void } | null;
+  /**
+   * The made-up guard (approve made-up guard): passed while the made-up team
+   * is loaded. The first name added is then asked about first; "Clear it and
+   * start" hands it here, "Keep exploring" adds it to the made-up team.
+   */
+  onClearMadeUp?: ((firstName: string) => void) | null;
 }) {
   const players = activePlayers(everyone);
   const retired = everyone.filter((p) => !players.includes(p));
@@ -117,15 +148,32 @@ export function SquadScreen({
   /** The views and child pages open (#121, #143); empty shows the list. */
   const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
+  /** The name waiting on the made-up guard's answer; screen state only. */
+  const [asking, setAsking] = useState<string | null>(null);
+  /** "Keep exploring" was chosen: not asked again while this screen is open. */
+  const [keptExploring, setKeptExploring] = useState(false);
   const onTab = onStartMatch === null && onLeave === null;
 
   const readiness = squadReadiness(players, onFieldCount);
   const dupes = duplicatedNames(players);
+  // #199 AC4: a view choice, never saved and never written to the record.
+  const [includeReconstructed, setIncludeReconstructed] = useState(true);
+  const anyReconstructed = ledger ? [...provenances(ledger).values()].some((p) => p.state === 'reconstructed') : false;
+  const shown = ledger && !includeReconstructed ? withoutReconstructed(ledger) : ledger;
   // Every figure on this screen and the views, folded from the ledger on each draw (invariant 1).
-  const views = squadViews(ledger, everyone, { kickoffs });
+  const views = squadViews(shown, everyone, { kickoffs });
   const season = views.season;
   const seasonOf = (id: UUID) => season.children.find((c) => c.playerId === id);
   const open = (page: Page) => setPages((stack) => [...stack, page]);
+  // #222: minutes a game most first by default; Name or "a game" re-sorts it.
+  const listSort = useTableSort('squadList');
+  const listed = sortSquadList(
+    players.map((p) => {
+      const s = seasonOf(p.id);
+      return { player: p, name: displayName(p), averageMs: s?.averageMs ?? null, mainKeeper: s?.mainKeeper === true };
+    }),
+    listSort.sort
+  ).map((r) => r.player);
   const back = () => setPages((stack) => stack.slice(0, -1));
 
   const add = useCallback(() => {
@@ -134,16 +182,38 @@ export function SquadScreen({
       setError(check.message);
       return;
     }
+    if (onClearMadeUp && !keptExploring) {
+      setAsking(check.cleaned);
+      setError('');
+      return;
+    }
     onPlayers([...everyone, makePlayer(squadId, check.cleaned)]);
     setDraft('');
     setError('');
     nameInput.current?.focus();
-  }, [draft, everyone, onPlayers, squadId]);
+  }, [draft, everyone, onPlayers, squadId, onClearMadeUp, keptExploring]);
+
+  const keepExploring = () => {
+    if (asking === null) return;
+    onPlayers([...everyone, makePlayer(squadId, asking)]);
+    setKeptExploring(true);
+    setAsking(null);
+    setDraft('');
+    nameInput.current?.focus();
+  };
+  const clearAndStart = () => {
+    if (asking === null || !onClearMadeUp) return;
+    onClearMadeUp(asking);
+    setAsking(null);
+    setDraft('');
+  };
 
   const top = pages[pages.length - 1];
   if (top?.kind === 'view') {
     const ViewScreen = VIEWS[top.view];
-    return <ViewScreen views={views} onChild={(id) => open({ kind: 'child', id })} onBack={back} />;
+    return (
+      <ViewScreen views={views} onChild={(id) => open({ kind: 'child', id })} onBack={back} firstTime={firstTime} />
+    );
   }
   const child = top?.kind === 'child' ? players.find((p) => p.id === top.id) : undefined;
   if (child) {
@@ -154,6 +224,12 @@ export function SquadScreen({
         views={views}
         everyone={everyone}
         onPlayers={onPlayers}
+        roleLine={childPositionLine(shown, child.id)}
+        fairness={{
+          counted: isCountedInFairness(ledger, child.id),
+          history: ledger ? fairnessHistory(ledger, child.id) : [],
+          set: (counted, note) => fairness.set(child.id, counted, note),
+        }}
         backLabel={under?.kind === 'view' ? `Back to ${VIEW_TITLE[under.view]}` : 'Back to Squad'}
         onBack={back}
       />
@@ -174,11 +250,24 @@ export function SquadScreen({
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
+            {onTab && anyReconstructed && (
+              <Pressable
+                onPress={() => setIncludeReconstructed((v) => !v)}
+                style={screen.linkHit}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: includeReconstructed }}
+              >
+                <Text style={screen.link}>
+                  Include reconstructed matches: {includeReconstructed ? 'on' : 'off'}
+                </Text>
+              </Pressable>
+            )}
             {onTab && <SquadTiles views={views} onOpen={(view) => open({ kind: 'view', view })} />}
 
             <View style={[local.addRow, onTab && local.addRowUnderTiles]}>
               <TextInput
                 ref={nameInput}
+                autoFocus={focusName}
                 style={[screen.input, local.nameInput]}
                 value={draft}
                 onChangeText={(t) => {
@@ -206,6 +295,26 @@ export function SquadScreen({
 
             {error !== '' && <Text style={screen.error}>{error}</Text>}
 
+            {asking !== null && (
+              <View style={local.guard}>
+                <Text style={local.guardText}>{MADE_UP_GUARD.question}</Text>
+                <Pressable
+                  onPress={clearAndStart}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.clear}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={keepExploring}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.keep}</Text>
+                </Pressable>
+              </View>
+            )}
+
             {players.length > 0 &&
               (season.countedMatches === 0 ? (
                 <Text style={screen.hint}>
@@ -225,7 +334,18 @@ export function SquadScreen({
                   )}
                 </View>
               ))}
-            {players.map((p) => {
+            {/* ADR-015 §6a (#223): how many matches the figures leave out for their format, and why. */}
+            {players.length > 0 && season.formatNote !== null && (
+              <Text style={screen.hint}>{season.formatNote}.</Text>
+            )}
+            {players.length > 1 && (
+              <View style={local.headings}>
+                <SortHeading label="Name" column={NAME} align="left" style={local.headingName} {...listSort} />
+                <SortHeading label="a game" column="perGame" {...listSort} />
+                <View style={local.headingSpacer} />
+              </View>
+            )}
+            {listed.map((p) => {
               const s = seasonOf(p.id);
               const summary = preferenceSummary(p);
               const figures = s?.summary ?? 'No matches yet';
@@ -236,25 +356,34 @@ export function SquadScreen({
                     onPress={() => open({ kind: 'child', id: p.id })}
                     style={local.nameHit}
                     accessibilityRole="button"
-                    accessibilityLabel={`${displayName(p)}, ${figures}${s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
+                    accessibilityLabel={`${displayName(p)}, ${figures}${s?.fillIn ? `, ${FILL_IN_NOTE}` : s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
                   >
                     <Text style={screen.playerName} numberOfLines={1}>
                       {displayName(p)}
                     </Text>
-                    <Text style={local.figures} numberOfLines={1}>
+                    {/* Two lines (#223 QA N2): the R5 line "Played 1 five-a-side
+                        match, not in fairness" lost its tail on a narrow phone. */}
+                    <Text style={local.figures} numberOfLines={2}>
                       {figures}
                     </Text>
                     {s && s.averageMs !== null && (
                       <AverageBar
                         value={s.averageMs}
-                        line={s.mainKeeper ? null : season.squadAverageMs}
+                        line={s.mainKeeper || s.fillIn ? null : season.squadAverageMs}
                         scale={season.scaleMs}
                       />
                     )}
-                    {s?.mainKeeper && s.averageMs !== null && (
+                    {s?.fillIn ? (
                       <Text style={local.prefSummary} numberOfLines={1}>
-                        {MAIN_KEEPER_NOTE}
+                        {FILL_IN_NOTE}
                       </Text>
+                    ) : (
+                      s?.mainKeeper &&
+                      s.averageMs !== null && (
+                        <Text style={local.prefSummary} numberOfLines={1}>
+                          {MAIN_KEEPER_NOTE}
+                        </Text>
+                      )
                     )}
                     {summary !== '' && (
                       <Text style={local.prefSummary} numberOfLines={1}>
@@ -271,7 +400,16 @@ export function SquadScreen({
                 </View>
               );
             })}
-            {players.length === 0 && <Text style={screen.caption}>No players yet.</Text>}
+            {players.length === 0 &&
+              (everyone.length === 0 ? (
+                // #218 Q3: nothing has happened yet: say how, and offer the made-up team (Q5).
+                <EmptyState
+                  text={emptySquadSentence(onFieldCount)}
+                  action={onTryMadeUp ? { label: TRY_MADE_UP_TEAM, onPress: onTryMadeUp } : null}
+                />
+              ) : (
+                <Text style={screen.caption}>No players yet.</Text>
+              ))}
 
             {retired.length > 0 && (
               <>
@@ -353,6 +491,20 @@ const local = StyleSheet.create({
   },
   // Colour only: a weight change re-measures and clips (theme.ts).
   retired: { color: colours.inkFaint },
+  guard: {
+    alignSelf: 'stretch',
+    backgroundColor: colours.pitchRaised,
+    borderColor: colours.warn,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  guardText: { alignSelf: 'stretch', color: colours.ink, fontSize: 16, includeFontPadding: false },
+  // #222: the headings sit over the list, "a game" left of the Remove column.
+  headings: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6 },
+  headingName: { flex: 1 },
+  headingSpacer: { width: TOUCH_TARGET + 24, flexShrink: 0 },
   remove: {
     color: colours.inkMuted,
     fontSize: 13,

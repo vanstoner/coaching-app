@@ -12,7 +12,15 @@ fixtures stop resembling it:
 
 The three fixtures stand for the three outcomes that matter:
 
-  good.png        the screen App.tsx is expected to produce — must PASS
+  good.png        the first screen of a fresh install as #218 draws it: the
+                  placeholder "Your team" above the Getting started card and
+                  its purpose line — must PASS
+  good-one-line.png  the same Home after #228 (PO ruling `both`): Getting
+                  started is one line with a progress bar, then Play now and
+                  "+ Fixture" side by side, then the no-matches line — must
+                  PASS. Drawn from Ellis's source reading (db6092f): "Getting
+                  started", a bar, "0 of 3 ›" and a close icon; the first
+                  emulator frame of that build is the evidence to confirm it
   blank-white.png the exact failure this whole job exists to catch: an APK
                   that is valid, signed and identified, and renders nothing
   wrong-text.png  the right colours and layout, the wrong squad name — the
@@ -36,6 +44,14 @@ DENSITY = 2.625          # 420dpi / 160
 BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 HERE = os.path.dirname(os.path.abspath(__file__))
+# #218: the fresh-install Home is drawn in the face the app ships (assets/fonts).
+FONTS = os.path.join(HERE, "..", "..", "..", "assets", "fonts")
+BARLOW_BOLD = os.path.join(FONTS, "Barlow-Bold.ttf")
+BARLOW_SEMI = os.path.join(FONTS, "Barlow-SemiBold.ttf")
+BARLOW = os.path.join(FONTS, "Barlow-Regular.ttf")
+MUTED = (143, 179, 165)  # theme.ts colours.inkMuted
+RAISED = (15, 74, 56)    # theme.ts colours.pitchRaised
+ACCENT = (18, 133, 90)   # theme.ts colours.accent
 
 
 def sp(points: int) -> int:
@@ -68,6 +84,76 @@ def app_screen(path: str, squad: str) -> None:
     print(f"wrote {path}")
 
 
+def first_open_screen(path: str, squad: str) -> None:
+    """Home on a fresh install (#218): the title, then the Getting started
+    card (its label, the purpose line, the three steps), then Play now."""
+    im = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(im)
+    status_bar(d, FG)
+    x = sp(18)
+    d.text((W // 2, sp(60)), squad, font=ImageFont.truetype(BARLOW_BOLD, sp(24)), fill=FG, anchor="mm")
+    top = sp(84)
+    d.rounded_rectangle((x, top, W - x, top + sp(330)), radius=sp(14), fill=RAISED, outline=ACCENT, width=3)
+    inner = x + sp(14)
+    d.text((inner, top + sp(18)), "GETTING STARTED", font=ImageFont.truetype(BARLOW, sp(13)), fill=MUTED)
+    purpose = ImageFont.truetype(BARLOW_SEMI, sp(20))
+    d.text((inner, top + sp(44)), "Who comes off next, and is", font=purpose, fill=FG)
+    d.text((inner, top + sp(69)), "everyone getting a fair share?", font=purpose, fill=FG)
+    d.text((inner, top + sp(100)), "Three steps and you are ready for Saturday.",
+           font=ImageFont.truetype(BARLOW, sp(14)), fill=MUTED)
+    step = ImageFont.truetype(BARLOW_SEMI, sp(17))
+    more = ImageFont.truetype(BARLOW, sp(13))
+    for i, (name, detail) in enumerate((
+        ("Add your squad", "First names only - 0 of 7 added"),
+        ("Add your next match", "Who you are playing, and when"),
+        ("Press Play now at kick-off", "The app keeps time and says who comes off next"),
+    )):
+        y = top + sp(128 + 64 * i)
+        d.line((inner, y, W - inner, y), fill=(22, 79, 60), width=2)
+        d.ellipse((inner, y + sp(14), inner + sp(28), y + sp(42)), outline=(110, 151, 135), width=4)
+        d.text((inner + sp(40), y + sp(12)), name, font=step, fill=FG)
+        d.text((inner + sp(40), y + sp(34)), detail, font=more, fill=MUTED)
+    play = top + sp(348)
+    d.rounded_rectangle((x, play, W - x, play + sp(50)), radius=sp(12), fill=ACCENT)
+    d.text((W // 2, play + sp(25)), "Play now", font=ImageFont.truetype(BARLOW_SEMI, sp(18)), fill=FG, anchor="mm")
+    im.save(path)
+    print(f"wrote {path}")
+
+
+def one_line_screen(path: str, squad: str) -> None:
+    """Home on a fresh install after #228: Getting started is one line with a
+    progress bar (tapping it opens the steps), then the start row, then the
+    no-matches line."""
+    im = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(im)
+    status_bar(d, FG)
+    x = sp(18)
+    d.text((W // 2, sp(60)), squad, font=ImageFont.truetype(BARLOW_BOLD, sp(24)), fill=FG, anchor="mm")
+    top = sp(84)
+    d.rounded_rectangle((x, top, W - x, top + sp(56)), radius=sp(14), fill=RAISED, outline=ACCENT, width=3)
+    inner = x + sp(14)
+    d.text((inner, top + sp(10)), "Getting started", font=ImageFont.truetype(BARLOW_SEMI, sp(17)), fill=FG)
+    d.text((W - inner - sp(30), top + sp(10)), "0 of 3 ›", font=ImageFont.truetype(BARLOW, sp(15)), fill=MUTED,
+           anchor="ra")
+    d.text((W - inner, top + sp(8)), "×", font=ImageFont.truetype(BARLOW, sp(20)), fill=MUTED, anchor="ra")
+    bar = top + sp(40)
+    d.rounded_rectangle((inner, bar, W - inner, bar + sp(6)), radius=sp(3), fill=(22, 79, 60))
+    d.rounded_rectangle((inner, bar, inner + (W - 2 * inner) // 3, bar + sp(6)), radius=sp(3), fill=ACCENT)
+    row = top + sp(72)
+    half = (W - 2 * x - sp(10)) // 2
+    d.rounded_rectangle((x, row, x + half, row + sp(50)), radius=sp(12), fill=ACCENT)
+    d.text((x + half // 2, row + sp(25)), "Play now", font=ImageFont.truetype(BARLOW_SEMI, sp(18)), fill=FG, anchor="mm")
+    d.rounded_rectangle((W - x - half, row, W - x, row + sp(50)), radius=sp(12), fill=RAISED, outline=(28, 99, 73), width=2)
+    d.text((W - x - half // 2, row + sp(25)), "+ Fixture", font=ImageFont.truetype(BARLOW_SEMI, sp(18)), fill=FG,
+           anchor="mm")
+    note = ImageFont.truetype(BARLOW, sp(15))
+    for i, line in enumerate(("No matches yet. Add Saturday's match with the",
+                              "button above, or press Play now when a game starts.")):
+        d.text((W // 2, row + sp(80 + 22 * i)), line, font=note, fill=MUTED, anchor="mm")
+    im.save(path)
+    print(f"wrote {path}")
+
+
 def blank_screen(path: str) -> None:
     im = Image.new("RGB", (W, H), (255, 255, 255))
     status_bar(ImageDraw.Draw(im), (0, 0, 0))
@@ -76,6 +162,7 @@ def blank_screen(path: str) -> None:
 
 
 if __name__ == "__main__":
-    app_screen(os.path.join(HERE, "good.png"), "Example FC")
+    first_open_screen(os.path.join(HERE, "good.png"), "Your team")
+    one_line_screen(os.path.join(HERE, "good-one-line.png"), "Your team")
     app_screen(os.path.join(HERE, "wrong-text.png"), "Zephyr Utd")
     blank_screen(os.path.join(HERE, "blank-white.png"))

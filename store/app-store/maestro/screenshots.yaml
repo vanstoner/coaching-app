@@ -1,59 +1,317 @@
-# App Store screenshots — #108 E. Run by store-media.yml against the `store`
-# build (ADR-017 amendment, 2026-10-06), which opens an empty simulator with
-# the Test kit's made-up squad and season: first names only (invariant 4).
-# Each takeScreenshot is NN-name.png; the workflow checks its size and
-# removes alpha. Maestro matches a pressable by its whole accessible text,
-# so a player's row is "Dee,.*" and a tile is "Fairness.*".
+# App Store screenshots for 1.3.0: Dee's eight shots (#226, PO "approve
+# 1234"). Run by store-media.yml on an iPhone 6.9" and an iPad 13"
+# simulator against the `store` build. On an empty store it seeds made-up
+# names only (invariant 4) and every state the shots need (demoSeed.ts,
+# Ellis, 99594b8). Each clearState re-seeds with a fresh start time. Each
+# takeScreenshot is NN-name.png, named as in
+# store/app-store/en-GB/screenshot_captions.txt. composite_shots.py frames
+# and captions each one, and the file-name order is the store order.
+#
+# Captured in the order the seed allows, not in the store order:
+#   launch 1   01-alert (retried from a fresh seed if it reads late), then
+#              05-squad, 02-fairness, 06-child, 04-report, 07-five, then
+#              Forget everything and seven names for 08-start
+#   launch 2   03-plan, LAST. The flow ends with the share sheet up, so the
+#              PNG the app captured is still in its container's tmp/;
+#              store-media.yml copies it out (Maestro cannot reach the iOS
+#              share sheet, run 9). The app deletes that PNG when the plan
+#              screen closes, so nothing may follow it.
+#
+# Every on-screen text the flow matches is in `env` below, in one place,
+# because #228 may change labels. Maestro matches a pressable by its whole
+# accessible text (a regex), so a player's row is "Dee,.*". Every value was
+# checked against the source after #228's tidy-up (ccbbb48): none changed.
+# The clock's new strip and "Next: …" line are not matched; the prompt panel
+# and its "in 0:14" countdown are as before, and the full-time award card
+# cannot show mid-Q1.
+#
+# Run 40001608860 (dc88887) taught two things, from its screen hierarchies:
+# - Never scroll the clock or a plan by Maestro's default swipe. It starts
+#   at the screen's centre, which on the iPhone is the striker's pill
+#   (Gus, [165,457][278,503] of 440x956). The pill's PanResponder takes the
+#   gesture and the screen never scrolls ("Vertical scroll bar, 2 pages",
+#   0%, after 20 swipes). So the clock is left by relaunching, and the plan
+#   is scrolled by a swipe down its edge, outside the pitch.
+# - A relaunch without clearState may open on Resume or straight on Home
+#   (the iPad opened on Home). The flow handles both (`to Home` below).
+#
+# A fixture card's lines are one accessible element, "Open Mock Albion,
+# Sat 24 Oct · 10:00, 50 min · Quarters", and each of its links is its own
+# ("Edit the plan", "Plan this match", "Remove"), since ws-130-hooks (#226).
+# So 07-five and 03-plan tap by label, never by point. The store build asks
+# nothing on Share plan: it makes the 2 × 2 at once (shareFirstStep), so
+# 03-plan needs no tap in the ActionSheet Maestro cannot see on iOS.
+# store-media.yml still passes DEVICE (iphone or ipad), for the plan's
+# edge swipe only.
+#
+# Run 40033174404 (1a7f432) taught a third thing. On iOS, Maestro's
+# hierarchy holds elements below the fold: the iPhone Home lists
+# "Sample United" at [861,1041] on a 956-high screen. So "visible" in
+# extendedWaitUntil, assertVisible and `while: notVisible` means "on the
+# screen or below it", and tapOn taps such an element's centre wherever it
+# is. A tap on anything that may be below the fold therefore comes after a
+# scrollUntilVisible, which measures against the screen
+# (visibilityPercentage 100) and does not swipe if it is already in view.
 appId: com.vanstoner.coachingapp
+env:
+  # Resume screen (ResumeScreen.tsx)
+  BACK_TO_MATCH: "Back to the match"
+  RESUME_TO_HOME: "Not now.*go to Home"
+  # Either screen a launch can open on: Home (its Squad tab) or Resume
+  HOME_OR_RESUME: "Squad|Not now.*go to Home"
+  # Shot 1: the amber prompt, still counting down ("in 0:14", not "late 0:02")
+  SUB_PROMPT: "Bring on Hal for:"
+  COUNTING_DOWN: "in 0:[0-9]{2}"
+  # Tabs
+  TAB_HOME: "Home"
+  TAB_SQUAD: "Squad"
+  TAB_SETTINGS: "Settings"
+  # Squad views
+  FAIRNESS_TILE: "Fairness.*"
+  BACK_TO_SQUAD: "Back to Squad"
+  CHILD_ROW: "Dee,.*"
+  BACK_FROM_CHILD: "Back to.*"
+  # Home's fixtures: a played match, the 5-a-side card, the planned match
+  PLAYED_MATCH: ".*Trial Town.*"
+  FIVE_A_SIDE_CARD: "Open Practice Park, .*"
+  PLANNED_CARD: "Open Mock Albion, .*"
+  EDIT_PLAN: "Edit the plan"
+  # The line-up (LineupScreen.tsx) and the plan (PlanScreen.tsx)
+  LINEUP: "On the pitch"
+  PLAN_STARTING: "Starting"
+  SHARE_PLAN: "Share plan"
+  # Settings › Forget everything, confirmed inline
+  FORGET: "^Forget everything$"
+  FORGET_YES: "^Yes, forget everything$"
+  # A child of the made-up season: gone once Forget everything has worked
+  SEASON_CHILD: "Dee,.*"
+  # Squad: the name field and its button; Home's card after one step
+  NAME_FIELD: "First name"
+  ADD_NAME: "Add"
+  GETTING_STARTED: "Getting started.*"
 ---
+# --- launch 1 ---------------------------------------------------------------
+# 01-alert. The seed makes Hal's sub fall due 14 s after it runs
+# (STORE_SUB_DUE_AFTER_LAUNCH_MS), so the prompt is amber from launch. A cold
+# first launch can take longer than that (run 40001608860: late on the first
+# attempt on both devices, amber "in 0:10" and "in 0:11" on the second), so
+# it starts again from a fresh seed.
+- retry:
+    maxRetries: 3
+    commands:
+      - launchApp:
+          clearState: true
+      - extendedWaitUntil:
+          visible: ${BACK_TO_MATCH}
+          timeout: 60000
+      - tapOn: ${BACK_TO_MATCH}
+      - extendedWaitUntil:
+          visible: ${SUB_PROMPT}
+          timeout: 10000
+      - assertVisible: ${COUNTING_DOWN}
+      - takeScreenshot: 01-alert
+
+# To Home: relaunch, keeping state. On Resume, take "Not now — go to Home".
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: ${HOME_OR_RESUME}
+    timeout: 30000
+- runFlow:
+    when:
+      visible: ${RESUME_TO_HOME}
+    commands:
+      - tapOn: ${RESUME_TO_HOME}
+- extendedWaitUntil:
+    visible: ${TAB_SQUAD}
+    timeout: 20000
+
+# 05-squad, 02-fairness, 06-child: the made-up season (all three taken on
+# the iPad in run 40001608860).
+- tapOn: ${TAB_SQUAD}
+- waitForAnimationToEnd
+- takeScreenshot: 05-squad
+- tapOn: ${FAIRNESS_TILE}
+- waitForAnimationToEnd
+- takeScreenshot: 02-fairness
+- scrollUntilVisible:
+    element: ${BACK_TO_SQUAD}
+- tapOn: ${BACK_TO_SQUAD}
+- scrollUntilVisible:
+    element: ${CHILD_ROW}
+- tapOn: ${CHILD_ROW}
+- waitForAnimationToEnd
+- takeScreenshot: 06-child
+- scrollUntilVisible:
+    element: ${BACK_FROM_CHILD}
+- tapOn: ${BACK_FROM_CHILD}
+
+# 04-report: Trial Town, under Played (taken on the iPad in that run).
+- tapOn: ${TAB_HOME}
+- scrollUntilVisible:
+    element: ${PLAYED_MATCH}
+- tapOn: ${PLAYED_MATCH}
+- waitForAnimationToEnd
+- takeScreenshot: 04-report
+
+# 07-five: the Practice Park card under Coming up opens the 1-2-1 + GK
+# line-up. Its lines are tapped by their label, "Open Practice Park, …";
+# "Plan this match" is a separate element below them.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: ${HOME_OR_RESUME}
+    timeout: 30000
+- runFlow:
+    when:
+      visible: ${RESUME_TO_HOME}
+    commands:
+      - tapOn: ${RESUME_TO_HOME}
+- extendedWaitUntil:
+    visible: ${FIVE_A_SIDE_CARD}
+    timeout: 20000
+- tapOn: ${FIVE_A_SIDE_CARD}
+- extendedWaitUntil:
+    visible: ${LINEUP}
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 07-five
+
+# 08-start: forget everything, add seven made-up first names, then Home
+# shows the one-line Getting started with step 1 done.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: ${HOME_OR_RESUME}
+    timeout: 30000
+- runFlow:
+    when:
+      visible: ${RESUME_TO_HOME}
+    commands:
+      - tapOn: ${RESUME_TO_HOME}
+- extendedWaitUntil:
+    visible: ${TAB_SETTINGS}
+    timeout: 20000
+- tapOn: ${TAB_SETTINGS}
+- scrollUntilVisible:
+    element: ${FORGET}
+- tapOn: ${FORGET}
+# Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
+# everything", under the tab bar. A tap at its centre landed on the Squad tab
+# ([146,866][293,922], centre x 220). Nothing was forgotten, and the seven
+# names joined the made-up season. Bring it into view first.
+# Run 40039113281, iPhone: scrolled "into view" was not enough. Maestro's
+# visibility is measured against the screen, not the scroll view, so the Yes
+# link counted as on screen while it sat past the scroll view's bottom edge,
+# where the tab bar is; the tap still landed on Squad. Scroll Settings to its
+# end (no pills here, so a centre swipe scrolls), which leaves Yes above the
+# tab bar: only "Keep it" and 28 pt of padding follow it.
+- scroll
+- scroll
+- scrollUntilVisible:
+    element: ${FORGET_YES}
+- tapOn: ${FORGET_YES}
+- extendedWaitUntil:
+    visible: ${TAB_SQUAD}
+    timeout: 20000
+- tapOn: ${TAB_SQUAD}
+# Proof Forget worked: the season's children are gone from Squad, in view or
+# not (the hierarchy holds rows below the fold).
+- extendedWaitUntil:
+    notVisible: ${SEASON_CHILD}
+    timeout: 10000
+- tapOn: ${NAME_FIELD}
+- inputText: "Abi"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Bram"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Cleo"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Dax"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Elsie"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Fen"
+- tapOn: ${ADD_NAME}
+- tapOn: ${NAME_FIELD}
+- inputText: "Gwen"
+- tapOn: ${ADD_NAME}
+# The keyboard covers the tab bar on a phone: a tap on "Home" would land on
+# a key. Put it away first.
+- hideKeyboard
+- tapOn: ${TAB_HOME}
+- extendedWaitUntil:
+    visible: ${GETTING_STARTED}
+    timeout: 10000
+# Option A (Claude, under Rob's approved shot set): open the strip so the
+# shot shows the three steps its caption names. The steps are in an
+# ActionSheet (a Modal), which Maestro can screenshot but not wait on, so
+# the wait is on the animation, not on its text.
+- tapOn: ${GETTING_STARTED}
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-start
+
+# --- launch 2: 03-plan, last --------------------------------------------------
+# A fresh seed (the forgotten season is back). Home, then the Mock Albion
+# card's "Edit the plan" link (only Mock Albion has a plan, so the label is
+# unique). Share plan is below the plan's pitches, reached by swiping down
+# the screen's edge, never from the centre, where a pill would take the
+# gesture. In the store build Share plan makes the 2 × 2 at once: no
+# ActionSheet, whose buttons Maestro cannot find on iOS (run 9).
 - launchApp:
     clearState: true
 - extendedWaitUntil:
-    visible: "Squad"
+    visible: ${HOME_OR_RESUME}
     timeout: 60000
-- waitForAnimationToEnd
-- takeScreenshot: 01-home
-
-- tapOn: "Squad"
-- waitForAnimationToEnd
-- takeScreenshot: 02-squad
-
-- tapOn: "Fairness.*"
-- waitForAnimationToEnd
-- takeScreenshot: 03-fairness
+- runFlow:
+    when:
+      visible: ${RESUME_TO_HOME}
+    commands:
+      - tapOn: ${RESUME_TO_HOME}
+- extendedWaitUntil:
+    visible: ${PLANNED_CARD}
+    timeout: 20000
+- tapOn: ${EDIT_PLAN}
+- extendedWaitUntil:
+    visible: ${PLAN_STARTING}
+    timeout: 10000
+# Run 40033174404, iPad: `while: notVisible` saw Share plan in the
+# hierarchy below the fold ("Add a sub" ends at 1381 of 1376), so the repeat
+# never swiped and the tap landed off the screen. So: five slow edge swipes,
+# always (past the end is harmless), then scrollUntilVisible as the check.
+# It only swipes, from the centre, if Share plan is still not fully in view.
+- repeat:
+    times: 5
+    commands:
+      # x outside the pitch, inside the scroll view: iPad 22% (227 of
+      # [216,234]), iPhone 2% (9 of [0,18]). Whole percents only.
+      - runFlow:
+          when:
+            true: ${DEVICE == "ipad"}
+          commands:
+            - swipe:
+                start: 22%,80%
+                end: 22%,35%
+                duration: 700
+      - runFlow:
+          when:
+            true: ${DEVICE != "ipad"}
+          commands:
+            - swipe:
+                start: 2%,80%
+                end: 2%,35%
+                duration: 700
 - scrollUntilVisible:
-    element: "Back to Squad"
-- tapOn: "Back to Squad"
-
-- scrollUntilVisible:
-    element: "Dee,.*"
-- tapOn: "Dee,.*"
-- waitForAnimationToEnd
-- takeScreenshot: 04-child
-- scrollUntilVisible:
-    element: "Back to.*"
-- tapOn: "Back to.*"
-
-- tapOn: "Home"
-- tapOn: "Play now"
-- waitForAnimationToEnd
-- tapOn:
-    text: "Use suggestion"
-    optional: true
-- waitForAnimationToEnd
-- takeScreenshot: 05-lineup
-
-- tapOn: "Start .*"
-# Let the clock run so the figures move off zero.
+    element: ${SHARE_PLAN}
+- tapOn: ${SHARE_PLAN}
+# The share sheet is up once the PNG is written; give it a moment.
 - extendedWaitUntil:
     visible: "__never__"
-    timeout: 8000
+    timeout: 5000
     optional: true
-- takeScreenshot: 06-clock
-
-# Tap a player for what can be recorded (#84): the striker's sheet, with
-# Goal and Move or swap. The sheet is a Modal, whose buttons Maestro cannot
-# find on iOS (run 9), so the flow ends on this shot rather than tapping Goal.
-- tapOn: "Gus"
-- waitForAnimationToEnd
-- takeScreenshot: 07-player

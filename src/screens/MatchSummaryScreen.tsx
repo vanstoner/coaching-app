@@ -21,6 +21,8 @@
  * correction (invariant 5). Leaving without either keeps everything.
  */
 
+import { AwardCard } from './AwardCard';
+import type { AwardRow } from '../app/matchAwards';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
@@ -30,6 +32,10 @@ import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import { isExcluded, type Ledger } from '../app/ledger';
 import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
+import { recordOnlyGoals, resultOf, scoreWithRecord } from '../app/matchRecord';
+import { TALLY_CAPTION, matchTalliesWithGoals, tallyLineText } from '../app/tallies';
+import type { ProvenanceInfo } from '../app/provenance';
+import { TrustRow } from './RecordMatchScreen';
 import { formatClock, periodNounPlural } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
@@ -63,6 +69,11 @@ export function MatchSummaryScreen({
   onEndMatch,
   onCorrectAttendance,
   onSetExcluded,
+  onVoid,
+  backLabel = 'Back to Home',
+  onOpenRecord,
+  trust = null,
+  awards = null,
   onBack,
 }: {
   engine: MatchEngine;
@@ -86,11 +97,38 @@ export function MatchSummaryScreen({
    * already played.
    */
   onSetExcluded?: (excluded: boolean, note: string) => string | null;
+  /**
+   * Void this played match, with a note (#194, PO ruling 18 Oct): hidden from
+   * every screen, kept in the record, listed in Settings › Test matches with
+   * Show it again. The reason if refused, else null.
+   */
+  onVoid?: (note: string) => string | null;
+  /** The way back: Home, or Settings for a test match (#194). */
+  backLabel?: string;
+  /** #196: the match as the record holds it: how it was played, positions, goals with time unknown. */
+  onOpenRecord?: () => void;
+  /** How far it can be trusted, and why (#199 AC3); null while it is not in the record. */
+  trust?: ProvenanceInfo | null;
+  /**
+   * #228 item 6: awards for this match before it is closed, or null when they
+   * are not offered (a test match, no award types, no record to write). `due`
+   * is whether End match asks first (Q5).
+   */
+  awards?: {
+    rows: AwardRow[];
+    childrenInMatch: { playerId: UUID; name: string }[];
+    due: boolean;
+    onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  } | null;
   onBack: () => void;
 }) {
+  /** #228 Q5: End match was tapped with an award still to give; the card asks first. */
+  const [askingAwards, setAskingAwards] = useState(false);
   // #208: the minutes table sorts by its numbers, Total most first by default.
   const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
+  const [voiding, setVoiding] = useState<{ note: string; error: string } | null>(null);
   const scroller = useRef<ScrollView>(null);
   // Where the note box sits in the scrolled content, to bring it into view.
   const panelY = useRef(0);
@@ -104,7 +142,7 @@ export function MatchSummaryScreen({
   // edge and the window does not resize for it, #174), so while a note is
   // being typed, bring its box to the top of what is left. Without this the
   // coach types blind.
-  const typing = correcting !== null || marking !== null;
+  const typing = correcting !== null || marking !== null || voiding !== null;
   useEffect(() => {
     if (!typing) return;
     const toBox = () => scroller.current?.scrollTo({ y: Math.max(0, panelY.current - 12), animated: true });
@@ -120,11 +158,17 @@ export function MatchSummaryScreen({
   const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
   const excluded = inLedger ? isExcluded(inLedger) : false;
   const report = matchReport(engine, state, players, format);
+  const [moreStats, setMoreStats] = useState(false);
+  // #196 AC1: the phone's events plus any the record holds that it does not.
+  const phoneIds = new Set((state.events ?? []).map((e) => e.id));
+  const score = scoreWithRecord(report.score, phoneIds, inLedger);
+  const extraGoals = recordOnlyGoals(phoneIds, inLedger);
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
     (id && players.find((p) => p.id === id)?.firstName) ||
     'someone';
+  const tallies = matchTalliesWithGoals(state.events, ledger?.eventTypes ?? [], (id) => nameOf(id));
 
   const competition = competitionLabel(report.competition);
   const details = [
@@ -142,20 +186,28 @@ export function MatchSummaryScreen({
         behavior="padding"
       >
       <ScrollView ref={scroller} contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={screen.title} numberOfLines={1}>
-          {opponentLabel(state.match)}
-        </Text>
-        <Text style={screen.caption}>{details.join(' · ')}</Text>
-        {closed && <Text style={screen.caption}>Closed. It counts towards season averages.</Text>}
-        {!closed && onEndMatch && (
-          <Text style={[screen.caption, local.notClosed]}>
-            Not closed yet. Read it through, then End match at the bottom.
+        {/* #228 (Dee's clutter fix 3): opponent and score on one line, details, one status pill. */}
+        <View style={local.reportHead}>
+          <Text style={local.headName} numberOfLines={1}>
+            v {opponentLabel(state.match)}
           </Text>
+          <Text style={local.headScore} numberOfLines={1}>
+            {closed ? `${resultOf(score)} ` : ''}
+            {score.us} – {score.them}
+          </Text>
+        </View>
+        <Text style={[screen.caption, local.left]}>{details.join(' · ')}</Text>
+        {closed && (
+          <View style={[local.pill, local.pillClosed]}>
+            <Text style={local.pillClosedText}>Closed · counts towards season averages</Text>
+          </View>
         )}
-
-        <Text style={local.score}>
-          {report.score.us} – {report.score.them}
-        </Text>
+        {!closed && onEndMatch && (
+          <View style={[local.pill, local.pillOpen]}>
+            <Text style={local.pillOpenText}>Not closed · End match is at the bottom ↓</Text>
+          </View>
+        )}
+        {closed && trust && <TrustRow trust={trust} />}
 
         <Text style={screen.fieldLabel}>Goals</Text>
         {report.scorers.length === 0 ? (
@@ -167,30 +219,66 @@ export function MatchSummaryScreen({
             </Text>
           ))
         )}
+        {/* #228: a goal added in the record with time unknown is marked on its own line. */}
+        {extraGoals
+          .filter((g) => g.kind === 'goal')
+          .map((g) => (
+            <Text key={g.id} style={local.line} numberOfLines={1}>
+              {g.playerId ? nameOf(g.playerId) : 'Scorer not recorded'} · 1 goal · time unknown, from the record
+            </Text>
+          ))}
 
-        {report.play.length > 0 && (
-          <>
-            <Text style={screen.fieldLabel}>Play</Text>
-            {report.play.map((p) => (
-              <Text key={p.playerId} style={local.line} numberOfLines={2}>
-                {p.name} · {playLine(p)}
-              </Text>
-            ))}
-          </>
+        {/* #198: an assist is core, so it sits with the goals. */}
+        {report.play.some((p) => p.assists > 0) && (
+          <Text style={local.lineFaint} numberOfLines={2}>
+            Assists:{' '}
+            {report.play
+              .filter((p) => p.assists > 0)
+              .map((p) => `${p.name} ${p.assists}`)
+              .join(', ')}
+          </Text>
         )}
 
         <Text style={screen.fieldLabel}>In goal</Text>
-        <Text style={local.line}>
-          {report.saves} {report.saves === 1 ? 'save' : 'saves'} · {report.conceded} conceded
-        </Text>
-        {report.keepers.map((k) => (
-          <Text key={k.playerId} style={local.lineFaint} numberOfLines={1}>
-            {k.name} · {k.saves} {k.saves === 1 ? 'save' : 'saves'} · {k.conceded} conceded
-          </Text>
-        ))}
-        <Text style={local.lineFaint} numberOfLines={1}>
-          Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
-        </Text>
+        <Text style={local.line}>{report.conceded} conceded</Text>
+        {extraGoals
+          .filter((g) => g.kind === 'conceded')
+          .map((g) => (
+            <Text key={g.id} style={local.lineFaint} numberOfLines={1}>
+              1 conceded · time unknown, from the record
+            </Text>
+          ))}
+        {report.keepers
+          .filter((k) => k.conceded > 0)
+          .map((k) => (
+            <Text key={k.playerId} style={local.lineFaint} numberOfLines={1}>
+              {k.name} · {k.conceded} conceded
+            </Text>
+          ))}
+
+        {/* #198 AC3: the coach's tallies, collapsed, never mixed into the core. */}
+        {tallies.length > 0 && (
+          <>
+            <Pressable onPress={() => setMoreStats((v) => !v)} style={screen.linkHit} accessibilityRole="button">
+              <Text style={screen.link}>
+                {moreStats ? 'Hide more stats' : `More stats (${tallies.length})`}
+              </Text>
+            </Pressable>
+            {moreStats && (
+              <>
+                <Text style={local.lineFaint}>{TALLY_CAPTION}.</Text>
+                {tallies.map((t) => (
+                  <Text key={t.kind} style={local.line} numberOfLines={3}>
+                    {tallyLineText(t)}
+                  </Text>
+                ))}
+                <Text style={local.lineFaint} numberOfLines={1}>
+                  Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
+                </Text>
+              </>
+            )}
+          </>
+        )}
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
         <Text style={local.lineFaint}>
@@ -328,6 +416,7 @@ export function MatchSummaryScreen({
               </Text>
             )}
             {onSetExcluded &&
+              voiding === null &&
               (marking === null ? (
                 <Pressable onPress={() => setMarking({ note: '', error: '' })} style={screen.linkHit}>
                   <Text style={screen.link}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
@@ -360,9 +449,51 @@ export function MatchSummaryScreen({
                   />
                 </View>
               ))}
+            {/* #194: a played match is never deleted. Voiding hides it and keeps it. */}
+            {onVoid &&
+              marking === null &&
+              (voiding === null ? (
+                <Pressable onPress={() => setVoiding({ note: '', error: '' })} style={screen.linkHit}>
+                  <Text style={screen.link}>Void, with a note</Text>
+                </Pressable>
+              ) : (
+                <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
+                  <Text style={screen.fieldLabel}>Void this match</Text>
+                  <Text style={screen.hint}>
+                    It goes from every screen and every figure. The record keeps it and why, and Settings › Test
+                    matches can show it again.
+                  </Text>
+                  <TextInput
+                    style={screen.input}
+                    value={voiding.note}
+                    onChangeText={(note) => setVoiding({ note, error: '' })}
+                    placeholder="Why? (needed)"
+                    placeholderTextColor={colours.inkFaint}
+                    maxLength={120}
+                    autoFocus
+                  />
+                  {voiding.error !== '' && <Text style={screen.error}>{voiding.error}</Text>}
+                  <NoteActions
+                    saveLabel="Void"
+                    disabled={voiding.note.trim() === ''}
+                    onSave={() => {
+                      const refused = onVoid(voiding.note);
+                      if (refused === null) setVoiding(null);
+                      else setVoiding({ ...voiding, error: refused });
+                    }}
+                    onCancel={() => setVoiding(null)}
+                  />
+                </View>
+              ))}
           </>
         )}
 
+        {/* #228: the record's link moved to the foot, shortened. */}
+        {inLedger && onOpenRecord && (
+          <Pressable onPress={onOpenRecord} style={screen.linkHit} accessibilityRole="link">
+            <Text style={screen.link}>In the record ›</Text>
+          </Pressable>
+        )}
         {onAnalysis && (
           <Pressable
             style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
@@ -371,10 +502,45 @@ export function MatchSummaryScreen({
             <Text style={screen.buttonLabel}>Match analysis</Text>
           </Pressable>
         )}
-        {onEndMatch && (
+        {/* #228 AC24: awards already given, from the record. */}
+        {(inLedger?.awards ?? []).length > 0 && !(askingAwards && awards) && (
+          <>
+            <Text style={screen.fieldLabel}>Awards</Text>
+            {(inLedger?.awards ?? []).map((a) => (
+              <Text key={`${a.awardTypeId}:${a.playerId}`} style={local.line} numberOfLines={2}>
+                {ledger?.awardTypes.find((t) => t.id === a.awardTypeId)?.name ?? 'Award'}: {nameOf(a.playerId)}
+                {a.note ? ` (${a.note})` : ''}
+              </Text>
+            ))}
+          </>
+        )}
+        {/* #228 AC19–AC22 (Q5): End match asks for awards first while one is still to give. */}
+        {onEndMatch && askingAwards && awards && (
+          <AwardCard
+            rows={awards.rows}
+            childrenInMatch={awards.childrenInMatch}
+            onGive={awards.onGive}
+            onTakeBack={awards.onTakeBack}
+            footer={
+              <>
+                <Pressable
+                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+                  onPress={onEndMatch}
+                  accessibilityRole="button"
+                >
+                  <Text style={screen.buttonLabel}>End match</Text>
+                </Pressable>
+                <Pressable onPress={onEndMatch} style={screen.linkHit} accessibilityRole="button">
+                  <Text style={screen.link}>Give them later</Text>
+                </Pressable>
+              </>
+            }
+          />
+        )}
+        {onEndMatch && !(askingAwards && awards) && (
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-            onPress={onEndMatch}
+            onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())}
             accessibilityRole="button"
           >
             <Text style={screen.buttonLabel}>End match</Text>
@@ -387,7 +553,7 @@ export function MatchSummaryScreen({
           ]}
           onPress={onBack}
         >
-          <Text style={screen.buttonLabel}>Back to Home</Text>
+          <Text style={screen.buttonLabel}>{backLabel}</Text>
         </Pressable>
       </ScrollView>
       </KeyboardAvoidingView>
@@ -440,15 +606,6 @@ function NoteActions({
 }
 
 const local = StyleSheet.create({
-  score: {
-    alignSelf: 'stretch',
-    textAlign: 'center',
-    color: colours.ink,
-    fontSize: 40,
-    fontWeight: '700',
-    includeFontPadding: false,
-    marginTop: 4,
-  },
   line: { alignSelf: 'stretch', color: colours.ink, fontSize: 16, paddingVertical: 3, includeFontPadding: false },
   lineFaint: {
     alignSelf: 'stretch',
@@ -481,7 +638,15 @@ const local = StyleSheet.create({
     paddingRight: 4,
   },
   faint: { color: colours.inkFaint },
-  notClosed: { color: colours.warn },
+  reportHead: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  headName: { flex: 1, color: colours.ink, fontSize: 24, fontWeight: '700', includeFontPadding: false },
+  headScore: { flexShrink: 0, marginLeft: 10, color: colours.ink, fontSize: 30, fontWeight: '700', includeFontPadding: false },
+  left: { alignSelf: 'stretch', textAlign: 'left' },
+  pill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  pillOpen: { backgroundColor: '#3b2f12' },
+  pillOpenText: { color: colours.warn, fontSize: 13, includeFontPadding: false },
+  pillClosed: { borderWidth: 1, borderColor: colours.line },
+  pillClosedText: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
   panel: { alignSelf: 'stretch', marginTop: 8 },
   noteActions: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 12 },
   // Same margin and height on both, so they line up; the gap is on Cancel.
@@ -489,18 +654,4 @@ const local = StyleSheet.create({
   noteGap: { marginRight: 10 },
   pointer: { marginTop: 14 },
 });
-
-/** "3 shots on target · 2 assists · 1 tackle", leaving out what is zero (#185 AC7, #202 AC3). */
-function playLine(p: { shotsOnTarget: number; assists: number; tackles: number; corners: number; freeKicks: number }): string {
-  const part = (n: number, one: string, many: string) => (n === 0 ? null : `${n} ${n === 1 ? one : many}`);
-  return [
-    part(p.shotsOnTarget, 'shot on target', 'shots on target'),
-    part(p.assists, 'assist', 'assists'),
-    part(p.tackles, 'tackle', 'tackles'),
-    part(p.corners, 'corner won', 'corners won'),
-    part(p.freeKicks, 'free kick won', 'free kicks won'),
-  ]
-    .filter((x) => x !== null)
-    .join(' · ');
-}
 

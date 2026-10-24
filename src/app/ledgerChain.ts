@@ -119,6 +119,22 @@ export function keyOf(record: LedgerRecord): string | null {
       return `exclusion:${String(record.matchId)}`;
     case 'match-kind':
       return `match-kind:${String(record.matchId)}`;
+    // ADR-021 D2 (#195–#199). An older build has no key for these, so it
+    // carries them in the chain and never folds them.
+    case 'fixture':
+    case 'award-type':
+    case 'event-type':
+      return `${record.type}:${String(record.id)}`;
+    case 'settings':
+      return 'settings';
+    case 'profile':
+      return `profile:${String(record.playerId)}`;
+    case 'structure':
+    case 'origin':
+      return `${record.type}:${String(record.matchId)}`;
+    case 'award':
+      // Joint winners (#197 ruling): one record per child per award per match.
+      return `award:${String(record.matchId)}:${String(record.awardTypeId)}:${String(record.playerId)}`;
     default:
       return null;
   }

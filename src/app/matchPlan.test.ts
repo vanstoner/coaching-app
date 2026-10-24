@@ -20,7 +20,7 @@ import {
   defaultSwapTimeMs,
   emptyPlan,
   formatDelta,
-  nextFreeSwapTimeMs,
+  newSubTimeMs,
   nudgeSwap,
   periodLengthMs,
   planBenchSub,
@@ -420,28 +420,46 @@ describe('tap a bench player to plan their sub (#120)', () => {
     return plan;
   };
 
-  it('AC2: defaults to the midpoint when no sub has it', () => {
-    const t = nextFreeSwapTimeMs(startingPeriod().periods[0], QUARTER);
-    expect(t).toBe(defaultSwapTimeMs(QUARTER));
-    expect(formatClock(t)).toBe('06:15');
+  // #205 replaces the #120 staggering (each further sub moved to the next
+  // free 15-second step): "I don't want to stagger subs automatically ... we
+  // can lose that code." — Rob, 2026-10-17. Those tests went with the code.
+  it('#205 AC1: a new sub starts at the midpoint: 6:15 in a quarter, 12:30 in a half', () => {
+    expect(formatClock(newSubTimeMs(QUARTER))).toBe('06:15');
+    expect(formatClock(newSubTimeMs(25 * MIN))).toBe('12:30');
   });
 
-  it('AC2: skips a time already taken this period, to the next 15-second step', () => {
-    let plan = planBenchSub(startingPeriod(), 0, P8, P7, 6.25 * MIN, QUARTER);
-    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER)).toBe(6.5 * MIN);
+  it('#205 AC1: three new subs in one period all start at the midpoint', () => {
+    // As the bench menu does it: each new sub starts at newSubTimeMs.
+    let plan = startingPeriod();
+    plan = planBenchSub(plan, 0, P8, P7, newSubTimeMs(QUARTER), QUARTER);
+    plan = planBenchSub(plan, 0, P9, P6, newSubTimeMs(QUARTER), QUARTER);
+    // And as "Add a sub" does it.
+    plan = addSwap(plan, 0, QUARTER);
+    expect(plan.periods[0].subs.map((s) => s.atMs)).toEqual([6.25 * MIN, 6.25 * MIN, 6.25 * MIN]);
+  });
+
+  it('#205 AC2: moving one sub leaves the others where they are', () => {
+    let plan = startingPeriod();
+    plan = planBenchSub(plan, 0, P8, P7, newSubTimeMs(QUARTER), QUARTER);
+    plan = planBenchSub(plan, 0, P9, P6, newSubTimeMs(QUARTER), QUARTER);
+    plan = addSwap(plan, 0, QUARTER);
+    plan = nudgeSwap(plan, 0, 1, 2, QUARTER); // the second, +30 s
+    expect(plan.periods[0].subs.map((s) => s.atMs)).toEqual([6.25 * MIN, 6.75 * MIN, 6.25 * MIN]);
+    // The bench menu's own change, to the first, moves only the first.
+    plan = planBenchSub(plan, 0, P8, P7, 5 * MIN, QUARTER);
+    expect(plan.periods[0].subs.map((s) => s.atMs)).toEqual([5 * MIN, 6.75 * MIN, 6.25 * MIN]);
+  });
+
+  it('#205 AC5: a plan saved staggered keeps its times exactly', () => {
+    let plan = startingPeriod();
+    plan = planBenchSub(plan, 0, P8, P7, 6.25 * MIN, QUARTER);
     plan = planBenchSub(plan, 0, P9, P6, 6.5 * MIN, QUARTER);
-    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER)).toBe(6.75 * MIN);
-    // A sub being changed does not block its own time.
-    expect(nextFreeSwapTimeMs(plan.periods[0], QUARTER, 0)).toBe(6.25 * MIN);
-  });
-
-  it('AC2: steps back before the midpoint once every later step is taken', () => {
-    const periodMs = MIN; // midpoint 00:30; the only later step is 00:45
-    const period = {
-      slots: {},
-      subs: [30_000, 45_000].map((atMs) => ({ onId: null, offId: null, atMs })),
-    };
-    expect(nextFreeSwapTimeMs(period, periodMs)).toBe(15_000);
+    const saved = JSON.parse(JSON.stringify(plan)) as MatchPlan;
+    const loaded = planFor(saved, 4);
+    expect(loaded.periods[0].subs.map((s) => s.atMs)).toEqual([6.25 * MIN, 6.5 * MIN]);
+    // Adding a third does not re-spread the first two.
+    const more = addSwap(loaded, 0, QUARTER);
+    expect(more.periods[0].subs.map((s) => s.atMs)).toEqual([6.25 * MIN, 6.5 * MIN, 6.25 * MIN]);
   });
 
   it('AC3: offers only players on the pitch at that moment to come off', () => {

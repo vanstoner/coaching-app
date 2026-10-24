@@ -10,7 +10,7 @@
  * the match they are about to play without scrolling or thinking.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -22,8 +22,9 @@ import { Text } from './Text';
 import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
+import { resultOf } from '../app/matchRecord';
+import { provenanceTag, type Provenance } from '../app/provenance';
 import {
-  NO_FIXTURES_YET,
   competitionLabel,
   fixtureList,
   inBucket,
@@ -34,7 +35,10 @@ import {
   type MatchProgress,
   type StartedPeriod,
   type FixtureRow,
+  fixtureOpenLabel,
 } from '../app/fixtures';
+import { NO_MATCHES_YET, NOTHING_PLAYED_YET } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function FixturesScreen({
@@ -57,6 +61,10 @@ export function FixturesScreen({
   notice,
   recordOnly = [],
   onOpenRecord,
+  guide,
+  nothingPlayed = null,
+  highlightPlayNow = false,
+  provenance = new Map(),
 }: {
   squadName: string;
   matches: Match[];
@@ -95,9 +103,24 @@ export function FixturesScreen({
   /** Played matches the minutes record holds with no fixture here, e.g. imported ones (#195). */
   recordOnly?: RecordOnlyMatch[];
   onOpenRecord?: (matchId: UUID) => void;
+  /**
+   * #218: the made-up team's line and the Getting started card, drawn by the
+   * shell under the title. Absent on an established phone (AC6).
+   */
+  guide?: ReactNode;
+  /**
+   * #218 Q3: before the first match is played, Played says so, with the next
+   * thing to do. Null once anything has been played, so an established
+   * phone's Home is as it was (AC6).
+   */
+  nothingPlayed?: { label: string; onPress: () => void } | null;
+  /** #218: the card's third step points at Play now for a moment. */
+  highlightPlayNow?: boolean;
+  /** How far each played match can be trusted (#199), derived from the record. */
+  provenance?: ReadonlyMap<UUID, Provenance>;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -109,36 +132,50 @@ export function FixturesScreen({
           {squadName}
         </Text>
         {notice ? <Text style={[screen.hint, screen.overtime]}>{notice}</Text> : null}
+        {guide}
 
         {/* #131 (PO ruling 12): a live match stays on top; the two ways to
             start one come next, so they never scroll away as Played grows. */}
         <Section title="Now" rows={current} {...cardProps} />
 
-        {onPlayNow && (
+        {/* #228 (Dee's clutter fix 2): Play now and + Fixture side by side; the hint went. */}
+        <View style={local.startRow}>
+          {onPlayNow && (
+            <Pressable
+              style={({ pressed }) => [
+                screen.button,
+                local.startButton,
+                local.startGap,
+                highlightPlayNow && local.playNowHighlight,
+                pressed && screen.buttonPressed,
+              ]}
+              onPress={onPlayNow}
+              accessibilityRole="button"
+            >
+              <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
+                Play now
+              </Text>
+            </Pressable>
+          )}
           <Pressable
-            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-            onPress={onPlayNow}
+            style={({ pressed }) => [screen.buttonQuiet, local.startButton, pressed && screen.buttonPressed]}
+            onPress={onAdd}
+            accessibilityRole="button"
+            accessibilityLabel="Add a fixture"
           >
-            <Text style={screen.buttonLabel}>Play now</Text>
+            <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
+              + Fixture
+            </Text>
           </Pressable>
-        )}
-        {onPlayNow && (
-          <Text style={screen.hint}>
-            An unplanned kickabout, using your defaults. No form to fill in.
-          </Text>
-        )}
-
-        <Pressable
-          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-          onPress={onAdd}
-        >
-          <Text style={screen.buttonLabel}>Add a fixture</Text>
-        </Pressable>
+        </View>
 
         {rows.length === 0 && recordOnly.length === 0 ? (
-          <Text style={screen.caption}>
-            {housekeeping.archivedCount > 0 ? 'Every fixture is archived.' : NO_FIXTURES_YET}
-          </Text>
+          housekeeping.archivedCount > 0 ? (
+            <Text style={screen.caption}>Every fixture is archived.</Text>
+          ) : (
+            // #218 Q3: nothing has happened yet; the buttons it means are above.
+            <EmptyState text={NO_MATCHES_YET} />
+          )
         ) : (
           <>
             <Section title="Coming up" rows={future} {...cardProps} />
@@ -151,6 +188,12 @@ export function FixturesScreen({
               onOpenRecord={onOpenRecord ?? (() => {})}
               {...cardProps}
             />
+            {past.length === 0 && recordOnly.length === 0 && nothingPlayed && (
+              <View style={local.section}>
+                <Text style={screen.fieldLabel}>Played</Text>
+                <EmptyState text={NOTHING_PLAYED_YET} action={nothingPlayed} style={local.emptyUnderLabel} />
+              </View>
+            )}
           </>
         )}
 
@@ -194,6 +237,7 @@ interface CardActions {
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
   notClosed: ReadonlySet<UUID>;
+  provenance: ReadonlyMap<UUID, Provenance>;
 }
 
 /** A bucket, omitted entirely when empty rather than shown as a bare heading. */
@@ -235,7 +279,13 @@ function PlayedSection({
         item.row ? (
           <FixtureCard key={item.key} row={item.row} {...actions} />
         ) : (
-          <RecordCard key={item.key} match={item.record!} now={actions.now} onOpen={onOpenRecord} />
+          <RecordCard
+            key={item.key}
+            match={item.record!}
+            now={actions.now}
+            onOpen={onOpenRecord}
+            state={actions.provenance.get(item.key) ?? 'reconstructed'}
+          />
         )
       )}
     </View>
@@ -243,16 +293,28 @@ function PlayedSection({
 }
 
 /**
- * A match from the record with no fixture on this phone. It was entered after
- * the fact by definition, so it carries the one reconstructed treatment from
- * the prototype: a dashed outline and "◐ reconstructed" (PO, `approve tag`).
+ * A match from the record with no fixture on this phone. Its treatment is the
+ * one every card uses (#199, replacing #195's "always reconstructed"): a
+ * dashed outline and "◐ reconstructed" when reconstructed, a fainter tag when
+ * live but unsigned, none when pristine.
  */
-function RecordCard({ match, now, onOpen }: { match: RecordOnlyMatch; now: Date; onOpen: (matchId: UUID) => void }) {
+function RecordCard({
+  match,
+  now,
+  onOpen,
+  state,
+}: {
+  match: RecordOnlyMatch;
+  now: Date;
+  onOpen: (matchId: UUID) => void;
+  state: Provenance;
+}) {
   const competition = competitionLabel(match.competition);
+  const tag = provenanceTag(state);
   return (
     <Pressable
       onPress={() => onOpen(match.id)}
-      style={({ pressed }) => [local.card, local.cardRecord, pressed && screen.buttonPressed]}
+      style={({ pressed }) => [local.card, state === 'reconstructed' && local.cardRecord, pressed && screen.buttonPressed]}
     >
       <Text style={local.opponent} numberOfLines={1}>
         {(match.opponent ?? '').trim() || 'Opponent not recorded'}
@@ -264,8 +326,8 @@ function RecordCard({ match, now, onOpen }: { match: RecordOnlyMatch; now: Date;
       <Text style={match.score ? local.score : local.meta} numberOfLines={1}>
         {scoreLabel(match.score)}
       </Text>
-      <Text style={local.reconstructed} numberOfLines={1}>
-        ◐ reconstructed · from the minutes record
+      <Text style={tag ? (state === 'reconstructed' ? local.reconstructed : local.unsigned) : local.meta} numberOfLines={1}>
+        {tag ? `${tag} · ` : ''}from the minutes record
       </Text>
       {match.leftOut !== null && (
         <Text style={local.meta} numberOfLines={1}>
@@ -287,7 +349,11 @@ function FixtureCard({
   scores,
   periods,
   notClosed,
+  provenance,
 }: { row: FixtureRow } & CardActions) {
+  // #199: only a played match has a provenance; a fixture to come has none.
+  const state = row.match.status === 'completed' ? provenance.get(row.match.id) : undefined;
+  const tag = provenanceTag(state);
   const { match } = row;
   const score = scores.get(match.id);
   const planned = plannedIds.has(match.id);
@@ -298,43 +364,74 @@ function FixtureCard({
   // Two taps, in place, no dialog module. A fixture is cheap to re-add, but
   // deleting one the coach meant to keep is not cheap to undo.
   const [confirming, setConfirming] = useState(false);
+  const opponent = opponentLabel(match);
+  const when = `${kickoffLabel(match, now, periods.get(match.id))}${competition === '' ? '' : ` · ${competition}`}`;
+  const length = lengthLabel(match);
+  // #196 AC1: a closed match shows its result too.
+  const scoreLine = score
+    ? `${match.status === 'completed' ? `${resultOf(score)} ` : ''}${score.us} – ${score.them}`
+    : null;
+  const inProgress = row.bucket === 'current' ? 'In progress' : null;
+  // Ruling D: played, but the coach has not pressed End match yet.
+  const notClosedLine = notClosed.has(match.id) ? 'Not closed: open it to End match' : null;
+  const archivedLine = isArchived ? 'Archived' : null;
   return (
+    // #226: the card is not one accessible element. Its lines are one
+    // ("Open Practice Park, …") and each link is its own, so a screen reader,
+    // or Maestro, can reach and press each alone. A finger is unchanged: the
+    // whole card still opens the match and the links still take their taps.
     <Pressable
       onPress={() => onOpen(match.id)}
+      accessible={false}
+      focusable={false}
       style={({ pressed }) => [
         local.card,
         row.bucket === 'current' && local.cardCurrent,
+        state === 'reconstructed' && local.cardRecord,
         pressed && screen.buttonPressed,
       ]}
     >
-      <Text style={local.opponent} numberOfLines={1}>
-        {opponentLabel(match)}
-      </Text>
-      <Text style={local.meta} numberOfLines={1}>
-        {kickoffLabel(match, now, periods.get(match.id))}
-        {competition === '' ? '' : ` · ${competition}`}
-      </Text>
-      {/* This match's OWN length and periods, not the squad default (#70). */}
-      <Text style={local.meta} numberOfLines={1}>
-        {lengthLabel(match)}
-      </Text>
-      {score && (
-        <Text style={local.score} numberOfLines={1}>
-          {score.us} – {score.them}
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={fixtureOpenLabel([opponent, when, length, scoreLine, tag, inProgress, notClosedLine, archivedLine])}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === 'activate') onOpen(match.id);
+        }}
+      >
+        <Text style={local.opponent} numberOfLines={1}>
+          {opponent}
         </Text>
-      )}
-      {row.bucket === 'current' && <Text style={local.nowTag}>In progress</Text>}
-      {/* Ruling D: played, but the coach has not pressed End match yet. */}
-      {notClosed.has(match.id) && (
-        <Text style={local.nowTag} numberOfLines={1}>
-          Not closed: open it to End match
+        <Text style={local.meta} numberOfLines={1}>
+          {when}
         </Text>
-      )}
-      {isArchived && <Text style={local.meta}>Archived</Text>}
+        {/* This match's OWN length and periods, not the squad default (#70). */}
+        <Text style={local.meta} numberOfLines={1}>
+          {length}
+        </Text>
+        {scoreLine && (
+          <Text style={local.score} numberOfLines={1}>
+            {scoreLine}
+          </Text>
+        )}
+        {tag && (
+          <Text style={state === 'reconstructed' ? local.reconstructed : local.unsigned} numberOfLines={1}>
+            {tag}
+          </Text>
+        )}
+        {inProgress && <Text style={local.nowTag}>{inProgress}</Text>}
+        {notClosedLine && (
+          <Text style={local.nowTag} numberOfLines={1}>
+            {notClosedLine}
+          </Text>
+        )}
+        {archivedLine && <Text style={local.meta}>{archivedLine}</Text>}
+      </View>
 
       {/* Only before kick-off: once a match is played its plan is history. */}
       {match.status === 'planned' && (
-        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit}>
+        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit} accessibilityRole="button">
           <Text style={local.plan}>{planned ? 'Edit the plan' : 'Plan this match'}</Text>
         </Pressable>
       )}
@@ -343,6 +440,7 @@ function FixtureCard({
         <Pressable
           onPress={() => housekeeping.onArchive(match.id, !isArchived)}
           style={local.confirmHit}
+          accessibilityRole="button"
         >
           <Text style={local.remove}>{isArchived ? 'Unarchive' : 'Archive'}</Text>
         </Pressable>
@@ -351,15 +449,15 @@ function FixtureCard({
       {canDelete &&
         (confirming ? (
           <View style={local.confirmRow}>
-            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit}>
+            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit} accessibilityRole="button">
               <Text style={local.deleteConfirm}>Delete this fixture</Text>
             </Pressable>
-            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit}>
+            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit} accessibilityRole="button">
               <Text style={local.keep}>Keep</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit}>
+          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit} accessibilityRole="button">
             <Text style={local.remove}>Remove</Text>
           </Pressable>
         ))}
@@ -368,7 +466,15 @@ function FixtureCard({
 }
 
 const local = StyleSheet.create({
+  startRow: { flexDirection: 'row', alignSelf: 'stretch', alignItems: 'stretch', marginTop: 14 },
+  startButton: { flex: 1, alignSelf: 'auto', marginTop: 0 },
+  startGap: { marginRight: 10 },
+  startLabel: { alignSelf: 'stretch', textAlign: 'center', flexShrink: 0 },
   section: { alignSelf: 'stretch' },
+  emptyUnderLabel: { marginTop: 4 },
+  // The same outer size as the plain button: the border takes 3 of the 15
+  // padding, so nothing below it moves while it shows.
+  playNowHighlight: { borderWidth: 3, borderColor: colours.warn, paddingVertical: 12 },
   card: {
     alignSelf: 'stretch',
     backgroundColor: colours.pitchRaised,
@@ -385,6 +491,7 @@ const local = StyleSheet.create({
   // #195 / #199: the one reconstructed treatment, border style and colour only.
   cardRecord: { borderStyle: 'dashed', borderColor: colours.taint },
   reconstructed: { color: colours.taint, fontSize: 13, includeFontPadding: false, marginTop: 4 },
+  unsigned: { color: colours.taint, opacity: 0.6, fontSize: 13, includeFontPadding: false, marginTop: 4 },
   opponent: {
     color: colours.ink,
     fontSize: 18,

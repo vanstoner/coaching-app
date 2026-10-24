@@ -19,7 +19,11 @@ and, unless it is none, `app.json` moves by exactly that step from the base
 branch's version, and HISTORY.md changes. The release fixture for the version
 being superseded is check_release_fixture.py's job, not this one's.
 
-A pull request that changes no app file needs nothing here.
+A pull request that changes no app file needs nothing here, with one
+exception (#226): ANY pull request that moves app.json's version also changes
+store/app-store/en-GB/whats_new.txt, because a version bump is a store release
+and the release run submits that text as the App Store's What's New. An
+unchanged file would describe the previous version.
 
     check_version_impact.py BASE_REF      # PR_BODY in the environment
     check_version_impact.py --self-test
@@ -35,6 +39,7 @@ import subprocess
 import sys
 
 KINDS = ("major", "minor", "patch", "none")
+WHATS_NEW = "store/app-store/en-GB/whats_new.txt"
 
 
 def is_app_file(path):
@@ -66,6 +71,14 @@ def bump(version, kind):
 
 
 def problems(changed, body, base_version, head_version):
+    store = []
+    if head_version != base_version and WHATS_NEW not in changed:
+        store.append(f"app.json moves {base_version} -> {head_version} but {WHATS_NEW} is unchanged: "
+                     "write What's New for this version, which the release run submits to the App Store (#226)")
+    return store + app_problems(changed, body, base_version, head_version)
+
+
+def app_problems(changed, body, base_version, head_version):
     app = [p for p in changed if is_app_file(p)]
     if not app:
         return []
@@ -103,7 +116,7 @@ def self_test():
         failed += not cond
         print(f"  {'ok' if cond else 'x '} {name}")
 
-    app = ["src/screens/SquadScreen.tsx", "HISTORY.md", "app.json"]
+    app = ["src/screens/SquadScreen.tsx", "HISTORY.md", "app.json", WHATS_NEW]
     minor = "Intro.\n\n## Version\n**minor: 1.1.1 → 1.2.0.** Coaches can sort tables.\n\n## Other\nx"
     check("healthy: a minor change, bumped, with its history", problems(app, minor, "1.1.1", "1.2.0") == [])
     check("healthy: a patch", problems(app, "## Version\npatch: a fix", "1.2.0", "1.2.1") == [])
@@ -112,6 +125,9 @@ def self_test():
     check("healthy: tests and fixtures alone are not app changes",
           problems(["src/app/a.test.ts", "src/app/fixtures/release-1.2.0/store.json"], "", "1.2.0", "1.2.0") == [])
     check("healthy: CRLF bodies, as GitHub sends them", problems(app, minor.replace("\n", "\r\n"), "1.1.1", "1.2.0") == [])
+    check("healthy: a release PR with no app file, bumped, What's New written",
+          problems(["app.json", "HISTORY.md", WHATS_NEW], "", "1.2.0", "1.3.0") == [])
+    check("healthy: What's New edited without a bump needs nothing", problems([WHATS_NEW], "", "1.3.0", "1.3.0") == [])
 
     check("fails: an app change with no section", bool(problems(app, "Just words", "1.1.1", "1.2.0")))
     check("fails: a section with no kind", bool(problems(app, "## Version\nbig one", "1.1.1", "1.2.0")))
@@ -120,6 +136,10 @@ def self_test():
     check("fails: minor declared, patch bumped", bool(problems(app, minor, "1.1.1", "1.1.2")))
     check("fails: bumped but no history", bool(problems(["src/x.ts", "app.json"], minor, "1.1.1", "1.2.0")))
     check("fails: App.tsx counts as the app", bool(problems(["App.tsx"], "", "1.0.0", "1.0.0")))
+    check("fails: a bump that leaves What's New unchanged, naming the file",
+          any(WHATS_NEW in p for p in problems([x for x in app if x != WHATS_NEW], minor, "1.1.1", "1.2.0")))
+    check("fails: a bump with no app file and no What's New",
+          any(WHATS_NEW in p for p in problems(["app.json"], "", "1.2.0", "1.3.0")))
     print(f"{total - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 

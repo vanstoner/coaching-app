@@ -19,6 +19,7 @@ import { CLOCK_SPEEDS, NORMAL_CLOCK, virtualNowMs, withSpeed } from './appClock'
 import {
   NO_BUZZES,
   NO_SUB_PLANNED,
+  SUB_WARNING_LEAD_MS,
   isPlanned,
   checkBuzz,
   clearSubTime,
@@ -525,18 +526,21 @@ describe('a substitute with no planned time', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The buzz — #137, ruling 19 (R1): once, when a sub falls due, app open
+// The buzz — #137, ruling 19 (R1): once per sub, app open. #203 AC4 (Rob's
+// ruling on its open question 2) moved it from the due time to the 30 s
+// warning; the tests that buzzed at the due time are replaced, not kept.
 // ---------------------------------------------------------------------------
 
 describe('subsToBuzz (#137 AC5)', () => {
   const periodMs = 750_000; // a 12:30 quarter
   const due = defaultSubTimeMs(periodMs); // 6:15
 
-  it('buzzes a planned sub the moment it falls due, and not before', () => {
+  it('buzzes a planned sub 30 s before it is due, and not before that (#203 AC4)', () => {
     const a = uuid() as UUID;
     const plan = allScheduled([a], periodMs);
-    expect(subsToBuzz(plan, due - 1, new Set())).toEqual([]);
-    expect(subsToBuzz(plan, due, new Set()).map((s) => s.playerId)).toEqual([a]);
+    expect(SUB_WARNING_LEAD_MS).toBe(30_000);
+    expect(subsToBuzz(plan, due - 30_001, new Set())).toEqual([]);
+    expect(subsToBuzz(plan, due - 30_000, new Set()).map((s) => s.playerId)).toEqual([a]);
   });
 
   it('never buzzes the same moment twice, however late the swap is', () => {
@@ -565,8 +569,8 @@ describe('subsToBuzz (#137 AC5)', () => {
     const buzzed = new Set(subsToBuzz(plan, due, new Set()).map(subMoment));
     expect(buzzed.size).toBe(1);
     plan = setSubTime(plan, a, 8 * 60_000, periodMs);
-    expect(subsToBuzz(plan, 7 * 60_000, buzzed)).toEqual([]);
-    expect(subsToBuzz(plan, 8 * 60_000, buzzed).map((s) => s.playerId)).toEqual([a]);
+    expect(subsToBuzz(plan, 7 * 60_000 + 29_999, buzzed)).toEqual([]);
+    expect(subsToBuzz(plan, 7 * 60_000 + 30_000, buzzed).map((s) => s.playerId)).toEqual([a]);
   });
 
   it('hands back subs that fell due together in one go, oldest first, for one buzz', () => {
@@ -596,7 +600,7 @@ describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
     });
   }
 
-  it('buzzes each planned sub once, at its moment, across a whole period of repaints', () => {
+  it('buzzes each planned sub once, 30 s before its moment, across a whole period of repaints', () => {
     const [ava, ben, cal, dee] = [uuid(), uuid(), uuid(), uuid()] as UUID[];
     const names = new Map([
       [ava, 'Ava'],
@@ -618,7 +622,7 @@ describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
         heard.push(`${formatClock(t)} ${r.buzz.map((s) => names.get(s.playerId)).join(' + ')}`);
       }
     }
-    expect(heard).toEqual(['03:00 Ava', '06:15 Ben + Cal']);
+    expect(heard).toEqual(['02:30 Ava', '05:45 Ben + Cal']);
   });
 
   it('buzzes nothing for a period that is not running', () => {
@@ -678,7 +682,7 @@ describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
     expect(repaint(q2.log, plan, due, { periodKey: 'match-2/q1' }).buzz).toHaveLength(1);
   });
 
-  it('follows the Test kit clock: due when the anchors say so, at ×1, ×5 and ×10 (AC2)', () => {
+  it('follows the Test kit clock: warned when the anchors say so, at ×1, ×5 and ×10 (AC2)', () => {
     // Nothing is counted. Each repaint reads the elapsed time off the
     // engine's anchors, which read the app clock.
     for (const speed of CLOCK_SPEEDS) {
@@ -698,14 +702,14 @@ describe('checkBuzz: the clock, repaint by repaint (#137 AC1–AC3)', () => {
           periodKey: `${state.match.id}/${quarter.id}`,
         });
 
-      const realToDue = due / speed; // 375 s at ×1, 75 s at ×5, 37.5 s at ×10
-      real = T + realToDue - 1;
+      const realToWarn = (due - SUB_WARNING_LEAD_MS) / speed; // 345 s at ×1, 69 s at ×5, 34.5 s at ×10
+      real = T + realToWarn - 1;
       const early = paint(NO_BUZZES);
       expect(early.buzz).toEqual([]);
-      real = T + realToDue;
+      real = T + realToWarn;
       const onTime = paint(early.log);
       expect(onTime.buzz.map((s) => s.playerId)).toEqual([ids[7]]);
-      real = T + realToDue + 1_000;
+      real = T + realToWarn + 1_000;
       expect(paint(onTime.log).buzz).toEqual([]);
     }
   });

@@ -148,7 +148,9 @@ made-up season in it. This adds a value to the distribution of decision 5.
 
 - **`store`** is Heart FC Coach (`APP_VARIANT` empty, the release id), built
   only by `store-media.yml` for an iOS simulator. On an empty store it seeds
-  the Test kit's made-up squad and season, as the demo does (#146), and it
+  the Test kit's made-up squad and season, as the demo does (#146), plus the
+  states its screenshots need (#226: a match in progress with a sub due, a
+  saved plan, a 5-a-side fixture; `addStoreShots` in `demoSeed.ts`), and it
   never shows the Test kit. Its ceiling line (5) is the same as `app`'s.
 - **It cannot ship.** `write-distribution.py` refuses `store` with any other
   identity, and TestFlight and every release assert `distribution:app` in the

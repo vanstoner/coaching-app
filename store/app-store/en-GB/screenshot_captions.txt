@@ -1,0 +1,13 @@
+# The App Store screenshot captions (#226, Dee's design, PO "approve 1234").
+# One line per shot: NN-name: KICKER | Headline. NN-name is the Maestro shot's
+# file name without .png, and the file-name order is the store order.
+# composite_shots.py draws each one over its framed shot, and refuses a
+# headline that runs to three lines on either display.
+01-alert: SUB ALERTS | Never miss a sub
+02-fairness: FAIR SHARES | Everyone within five minutes a game
+03-plan: SHARE THE PLAN | Parents see every sub time
+04-report: MATCH REPORT | Every result, every minute
+05-squad: FIRST NAMES ONLY | See who’s owed time
+06-child: EVERY CHILD | A whole season, match by match
+07-five: NEW: 5-A-SIDE | Your format, your match length
+08-start: GETTING STARTED | Ready for Saturday in three steps

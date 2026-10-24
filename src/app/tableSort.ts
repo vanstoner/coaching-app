@@ -30,6 +30,9 @@
  * Every row sorts on the figure the screen shows (whole minutes, or the
  * seconds a clock shows), so two children who read the same are a tie.
  *
+ * The Squad tab's list joined them in #222 (`sortSquadList`), overriding #208
+ * AC7 for that list only; the lineup, bench and plan keep squad order.
+ *
  * Pure TypeScript: no React, no platform imports.
  */
 
@@ -58,7 +61,8 @@ export type TableId =
   | 'reportMinutes'
   | 'reportAverage'
   | 'analysisMinutes'
-  | 'recordMinutes';
+  | 'recordMinutes'
+  | 'squadList';
 
 export const TABLE_IDS: readonly TableId[] = [
   'settingsMinutes',
@@ -70,6 +74,7 @@ export const TABLE_IDS: readonly TableId[] = [
   'reportAverage',
   'analysisMinutes',
   'recordMinutes',
+  'squadList',
 ];
 
 /** The column every table names its children by: sorts A–Z first. */
@@ -86,6 +91,7 @@ export const TABLE_DEFAULTS: Record<TableId, TableSort> = {
   reportAverage: { key: 'offset', dir: 'desc' },
   analysisMinutes: { key: 'total', dir: 'desc' },
   recordMinutes: { key: 'total', dir: 'desc' },
+  squadList: { key: 'perGame', dir: 'desc' },
 };
 
 /** The columns each table sorts by. The season grid also sorts by each match (`matchKey`). */
@@ -99,6 +105,7 @@ export const TABLE_COLUMNS: Record<TableId, readonly string[]> = {
   reportAverage: [NAME, 'total', 'offset'],
   analysisMinutes: [NAME, 'total', 'offset'],
   recordMinutes: [NAME, 'total', 'gk'],
+  squadList: [NAME, 'perGame'],
 };
 
 /**
@@ -287,6 +294,35 @@ export function sortRecordMinutes(
     if (key === 'gk') return Math.floor(r.goalMs / 1000);
     return null;
   });
+}
+
+/** A row of the Squad tab's list (#222): the child, as named there, and their minutes a game. */
+export interface SquadListRow {
+  name: string;
+  /** Minutes a game, null with no matches yet. */
+  averageMs: number | null;
+  mainKeeper: boolean;
+}
+
+/**
+ * The Squad tab's list — #222 (PO, `approve 222`, overriding #208 AC7 for
+ * this list only). Minutes a game most first by default, in the whole minutes
+ * the row shows; Name sorts A–Z. Ties, children with no matches yet and a
+ * brand-new squad keep squad order, the no-match children below the rest. The
+ * Main keeper is listed last, as in the squad views: they are outside the
+ * average. Lineup, bench and plan keep squad order and never come here.
+ */
+export function sortSquadList<T extends SquadListRow>(rows: readonly T[], sort: TableSort): T[] {
+  return sortRows(
+    rows,
+    sort,
+    (r, key) => {
+      if (key === NAME) return r.name;
+      if (key === 'perGame') return r.averageMs === null ? null : wholeMinutes(r.averageMs);
+      return null;
+    },
+    { pinLast: (r) => r.mainKeeper }
+  );
 }
 
 // ============================================================================

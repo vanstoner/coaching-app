@@ -18,7 +18,7 @@ describe('the pitch layout (#83 AC1)', () => {
   });
 
   it('keeps every slot where it was when the positions are renamed (#166)', () => {
-    for (const shape of ['2-3-1', '2-2-2'] as const) {
+    for (const shape of ['2-3-1', '2-2-2', '1-2-1', '2-2'] as const) {
       const format = makeFormat(shape);
       // "LW" renamed "CDM", "CM" renamed "Roamer": a label is no guide to the side.
       const renamed = {
@@ -36,6 +36,46 @@ describe('the pitch layout (#83 AC1)', () => {
     const fwd = spots.filter((s) => s.unit === 'ATT');
     expect(fwd).toHaveLength(2);
     expect(fwd[0].y).toBe(fwd[1].y);
+  });
+
+  it('places all five slots of 1-2-1 + GK: one back, two across the middle, one up front (#223 AC6)', () => {
+    const spots = slotSpots(makeFormat('1-2-1'));
+    expect(spots).toHaveLength(5);
+    const at = (label: string) => spots.find((s) => s.label === label)!;
+    expect(at('GK').y).toBeGreaterThan(at('D').y);
+    expect(at('D').y).toBeGreaterThan(at('LM').y);
+    expect(at('LM').y).toBe(at('RM').y);
+    expect(at('LM').y).toBeGreaterThan(at('F').y);
+    expect(at('LM').x).toBeLessThan(at('RM').x);
+    for (const label of ['GK', 'D', 'F']) expect(at(label).x).toBeCloseTo(0.5);
+  });
+
+  it('places all five slots of 2-2 + GK: two back, two up front, left on the left (#223 AC6)', () => {
+    const spots = slotSpots(makeFormat('2-2'));
+    expect(spots).toHaveLength(5);
+    const at = (label: string) => spots.find((s) => s.label === label)!;
+    expect(at('GK').y).toBeGreaterThan(at('LB').y);
+    expect(at('LB').y).toBe(at('RB').y);
+    expect(at('LB').y).toBeGreaterThan(at('LF').y);
+    expect(at('LF').y).toBe(at('RF').y);
+    expect(at('LB').x).toBeLessThan(at('RB').x);
+    expect(at('LF').x).toBeLessThan(at('RF').x);
+    expect(at('GK').x).toBeCloseTo(0.5);
+  });
+
+  it('puts every position of every shape somewhere distinct, and on the pitch', () => {
+    for (const shape of ['2-3-1', '2-2-2', '1-2-1', '2-2'] as const) {
+      const format = makeFormat(shape);
+      const spots = slotSpots(format);
+      const keys = new Set(spots.map((s) => `${s.x.toFixed(3)},${s.y}`));
+      expect(keys.size).toBe(format.onFieldCount);
+      for (const s of spots) {
+        expect(s.x - PILL_WIDTH_FRACTION / 2).toBeGreaterThanOrEqual(0);
+        expect(s.x + PILL_WIDTH_FRACTION / 2).toBeLessThanOrEqual(1);
+        expect(s.y).toBeGreaterThan(0);
+        expect(s.y).toBeLessThan(1);
+      }
+    }
   });
 
   it('puts every position somewhere distinct', () => {
@@ -70,8 +110,8 @@ describe('what a drop lands on', () => {
 });
 
 describe('pills do not touch (#89 AC3)', () => {
-  it('leaves a gap between neighbours in every row, for both shapes', () => {
-    for (const shape of ['2-3-1', '2-2-2'] as const) {
+  it('leaves a gap between neighbours in every row, for every shape', () => {
+    for (const shape of ['2-3-1', '2-2-2', '1-2-1', '2-2'] as const) {
       const spots = slotSpots(makeFormat(shape));
       const rows = new Map<number, number[]>();
       for (const s of spots) rows.set(s.y, [...(rows.get(s.y) ?? []), s.x]);

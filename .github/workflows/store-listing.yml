@@ -47,8 +47,7 @@ jobs:
           python3 .github/scripts/check_listing.py --self-test
           python3 .github/scripts/check_listing.py store/app-store/en-GB
           python3 .github/scripts/check_store_media.py --self-test
-          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/iphone iphone
-          python3 .github/scripts/check_store_media.py shots store/app-store/screenshots/ipad ipad
+          python3 .github/scripts/check_store_media.py set store/app-store/screenshots store/app-store/en-GB/screenshot_captions.txt
 
       # Apple shows these links on the listing: never send one that is down.
       - name: Check the support and privacy pages are live
@@ -87,7 +86,8 @@ jobs:
           fi
 
       # #108 E: the screenshots store-media.yml made (made-up squad only),
-      # replacing each display's set, then read back.
+      # replacing each display's set unless it already holds exactly these
+      # files (#226), then read back.
       - name: Upload the screenshots and read them back
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

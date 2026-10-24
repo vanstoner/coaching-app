@@ -15,9 +15,13 @@
  * the pitch, plus Save and Conceded for the keeper; and "Move or swap…" so
  * every move is possible without dragging. A goal then asks who set it up.
  *
- * **A sub falling due buzzes the phone once** (#137, ruling 19 R1). Each paint
- * only detects it: what is due is read from the anchors that paint used, and
- * what has already buzzed is held by the shell.
+ * **This period's planned subs are always in view** (#203), above the pitch,
+ * and can be changed from here: the plan only, never the record. Each sub's
+ * prompt rises 30 s before it is due, green, then amber at 15 s, then red
+ * and counting up once late, and the phone buzzes once as it rises (#137,
+ * moved by #203 AC4). Each paint only works it out: the band and the buzz
+ * are read from the anchors that paint used, and what has already buzzed or
+ * been put off with "Not now" is held by the shell.
  *
  * Invariant 1: the score is folded from the events on every paint.
  * Invariant 2: the interval below is a REPAINT trigger and nothing else.
@@ -41,26 +45,34 @@ import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
-import type { Format, MatchEvent, Player, TapEventKind, UUID } from '../types/index';
+import type { Format, MatchEvent, Player, TallyKind, TapEventKind, UUID } from '../types/index';
 import {
   currentQuarter,
   deriveClockView,
   formatClock,
   msUntilNextSecond,
   periodNoun,
+  shortPeriodLabel,
 } from '../app/matchClock';
 import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
+import { checkBuzz, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
 import {
-  checkBuzz,
-  dueSubs,
-  msUntilNextSub,
-  whoComesOff,
-  type BuzzLog,
-  type PlannedSub,
-} from '../app/subPlan';
+  cameOnFor,
+  isNotNow,
+  moveSubTime,
+  notNow,
+  offPicks,
+  promptAgain,
+  promptGroups,
+  removeSub,
+  subBand,
+  subList,
+  type NotNowLog,
+  type OnPitch,
+} from '../app/clockSubs';
 import {
   TAP_LABEL,
   UNDO_NOTE,
@@ -75,8 +87,12 @@ import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
-import { AssistButton, EventButtons } from './EventButtons';
+import { AssistButton, TapButtons } from './EventButtons';
+import { AwardCard } from './AwardCard';
+import { awardsLine, type AwardRow } from '../app/matchAwards';
+import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { UNDO_TOAST } from './subPromptColours';
 
 /**
  * Two short pulses (#137). Android reads it as wait, buzz, pause, buzz. iOS
@@ -102,10 +118,14 @@ export function ClockScreen({
   subPlan,
   buzzOnDue,
   buzzLog,
-  onMakeSub,
+  notNowLog,
+  onChangePlan,
   onLiveMove,
   onRecord,
   onRecordAssist,
+  tallies = [],
+  onRecordTally,
+  awards = null,
   onWithdraw,
   onEndQuarter,
   onFinish,
@@ -127,13 +147,35 @@ export function ClockScreen({
    * and coming back does not buzz the same sub again.
    */
   buzzLog: { current: BuzzLog };
-  onMakeSub: (outPlayerId: UUID, inPlayerId: UUID) => void;
+  /**
+   * The subs the coach said "Not now" to this period (#203 C5). Owned by the
+   * shell for the same reason, so the prompt does not nag again on return.
+   */
+  notNowLog: { current: NotNowLog };
+  /** A change to this period's planned subs (#203 AC2). The plan only, never the record. */
+  onChangePlan: (plan: PlannedSub[]) => void;
   /** A swap or a substitution during play. False if the engine refused it. */
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
   /** A goal, save, goal conceded, tackle, corner or free kick won. Null if the engine refused it. */
   onRecord: (kind: TapEventKind, playerId: UUID) => MatchEvent | null;
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
+  /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
+  tallies?: { kind: TallyKind; label: string; team: boolean; slot: number }[];
+  onRecordTally?: (kind: TallyKind, playerId: UUID | null) => MatchEvent | null;
+  /**
+   * #228 item 6: awards for this match, from Q1 until it is closed; null when
+   * not offered (a test match, no award types, no record to write). The
+   * existing award records (#197). Each act: the reason when refused, else null.
+   */
+  awards?: {
+    rows: AwardRow[];
+    /** Every period ended and not closed (`awardCardAtFullTime`): the card shows under the strip. */
+    atFullTime: boolean;
+    childrenInMatch: { playerId: UUID; name: string }[];
+    onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  } | null;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -160,7 +202,8 @@ export function ClockScreen({
       const { engine: e, state: s } = latest.current;
       const running = s.quarters.find((q) => q.status === 'running');
       const wait = running
-        ? msUntilNextSecond(e.getQuarterElapsedMs(running), appClockSetting().speed)
+        ? // A test match's own ×5 or ×10 (#194) on top of the Test kit's.
+          msUntilNextSecond(e.getQuarterElapsedMs(running), appClockSetting().speed * (s.match.test?.clock.speed ?? 1))
         : 1000;
       id = setTimeout(() => {
         forceRepaint();
@@ -182,11 +225,21 @@ export function ClockScreen({
   /** The goal just recorded, while asking who set it up (#185 AC3). */
   const [assistFor, setAssistFor] = useState<MatchEvent | null>(null);
   const [dragging, setDragging] = useState(false);
-  /** Who comes off each due sub, when the coach has changed the suggestion. */
+  /** Who comes off each prompted sub, when the coach has changed the suggestion. */
   const [offChoice, setOffChoice] = useState<Record<string, UUID>>({});
+  /** The row of a shared prompt panel whose choices are open (#203 C2). */
+  const [expanded, setExpanded] = useState<UUID | null>(null);
+  /** The planned sub whose sheet is open (#203 AC2, C7). */
+  const [planSheetFor, setPlanSheetFor] = useState<UUID | null>(null);
   const [undo, setUndo] = useState<{ label: string; until: number; run: () => void } | null>(null);
   const [withdrawing, setWithdrawing] = useState<{ id: UUID; note: string } | null>(null);
   const [notice, setNotice] = useState('');
+  /** #228: the child whose award sheet is open, from the tap sheet's "Give … an award". */
+  const [awardFor, setAwardFor] = useState<UUID | null>(null);
+  /** #228: the award card under the clock at a break between periods. */
+  const [awardsOpen, setAwardsOpen] = useState(false);
+  /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
+  const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
   /** #180: when the period ended, asked only when End comes past the margin. */
   const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
@@ -207,9 +260,62 @@ export function ClockScreen({
   const bench = players.filter((p) => !onIds.has(p.id)).map((p) => p.id);
   const outfieldOn = onPitch.map((m) => m.playerId).filter((id) => id !== keeper);
 
+  // Read from the anchors on this paint, and everything below follows from
+  // it: a phone that slept shows the right band on waking (#203 AC5).
   const periodElapsedMs = running ? engine.getQuarterElapsedMs(quarter!) : 0;
-  const due = running ? dueSubs(subPlan, periodElapsedMs) : [];
-  const untilNext = running ? msUntilNextSub(subPlan, periodElapsedMs) : null;
+  const periodKey = quarter ? `${state.match.id}/${quarter.id}` : '';
+  const periodMs = engine.getPlannedQuarterMs(state.match);
+  const putOff = (sub: PlannedSub) => isNotNow(notNowLog.current, periodKey, sub);
+  const outfieldStints: OnPitch[] = onPitch
+    .filter((m) => m.playerId !== keeper)
+    .map((m) => ({ playerId: m.playerId, currentStintMs: m.currentStintMs }));
+  const picks = offPicks(subPlan, outfieldStints);
+  const prompts = running ? promptGroups(subPlan, periodElapsedMs, putOff) : [];
+  const list = running
+    ? subList({
+        plan: subPlan,
+        periodElapsedMs,
+        prompting: prompts.length > 0,
+        nameOf,
+        outfieldOn: outfieldStints,
+        onPitchIds: onIds,
+        madeFor: (id) => (quarter ? cameOnFor(state.appearances, quarter.id, id) : null),
+      })
+    : null;
+  /** Who comes off if Done is pressed now: the coach's choice while still on, else the pick. */
+  const chosenOff = (sub: PlannedSub): UUID | null => {
+    const choice = offChoice[sub.playerId];
+    if (choice && outfieldOn.includes(choice)) return choice;
+    return picks.get(sub.playerId)?.offId ?? null;
+  };
+  const sheetSub = planSheetFor ? (subPlan.find((s) => s.playerId === planSheetFor) ?? null) : null;
+  // A sheet left open at the whistle must not reopen on the next period.
+  useEffect(() => {
+    if (!running) setPlanSheetFor(null);
+  }, [running]);
+  const changeSheetSub = (change: (plan: PlannedSub[]) => PlannedSub[]) => onChangePlan(change(subPlan));
+
+  /**
+   * Done on a prompt (#203 AC6): the substitution as any other, with Undo.
+   * An Undo puts the reminder back already put off, so it does not leap
+   * straight back up: the line reads "late" and a tap brings it back (C5).
+   */
+  const makePlannedSub = (sub: PlannedSub, offId: UUID) => {
+    const m: LiveMove = { kind: 'sub', out: offId, in: sub.playerId };
+    if (!onLiveMove(m)) {
+      setNotice('That sub could not be made.');
+      return;
+    }
+    setNotice('');
+    const { [sub.playerId]: _gone, ...rest } = offChoice;
+    setOffChoice(rest);
+    setExpanded(null);
+    offerUndo(describe(m), () => {
+      if (onLiveMove(reverseOf(m), true)) {
+        notNowLog.current = notNow(notNowLog.current, periodKey, [sub]);
+      }
+    });
+  };
 
   // #137: after every paint, buzz for any sub this paint shows as newly due.
   // Detection only: the elapsed time is the one just read from the anchors,
@@ -258,6 +364,17 @@ export function ClockScreen({
     if (kind === 'goal') setAssistFor(event);
   };
 
+  const tally = (kind: TallyKind, team: boolean, id: UUID) => {
+    setSheetFor(null);
+    const event = onRecordTally?.(kind, team ? null : id) ?? null;
+    if (!event) {
+      setNotice('That could not be recorded.');
+      return;
+    }
+    const label = tallies.find((t) => t.kind === kind)?.label ?? 'Tally';
+    offerUndo(team ? `${label} (team)` : `${label}: ${nameOf(id)}`, () => onWithdraw(event.id, UNDO_NOTE));
+  };
+
   /** Withdrawing the goal takes its assist with it (#185 AC5), so Undo stays one tap. */
   const assist = (goal: MatchEvent, id: UUID) => {
     setAssistFor(null);
@@ -269,87 +386,121 @@ export function ClockScreen({
     offerUndo(`Goal: ${scorer}, assist ${nameOf(id)}`, () => onWithdraw(goal.id, UNDO_NOTE));
   };
 
-  const stream = timeStream(state.appearances, state.events, players);
+  const stream = timeStream(state.appearances, state.events, players, new Map(tallies.map((t) => [t.kind, t.label])));
 
   return (
     <View style={screen.safe}>
       {/* #174: keeps the withdraw note above the keyboard on Android too. */}
       <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
-        <View style={local.scoreRow}>
-          <Text style={[local.team]} numberOfLines={1}>
-            {squadName || PLACEHOLDER_SQUAD_NAME}
+        {/* #228 (Dee's clutter fix 1): period, time left, clock and score in one strip. */}
+        <View style={local.strip} accessibilityLabel={`${squadName || PLACEHOLDER_SQUAD_NAME} ${score.us}, ${opponentLabel(state.match)} ${score.them}`}>
+          <View style={local.stripSide}>
+            <Text style={local.stripPeriod} numberOfLines={1}>
+              {shortPeriodLabel(view, quarter?.index ?? null, state.match.quarterCount)}
+            </Text>
+            <Text style={[local.stripSub, view.isOvertime && screen.overtime]} numberOfLines={1}>
+              {view.isMatchOver
+                ? `${formatClock(view.matchElapsedMs)} played`
+                : view.isOvertime
+                  ? `${periodNoun(state.match.quarterCount)} over`
+                  : `${formatClock(view.quarterRemainingMs)} left`}
+            </Text>
+          </View>
+          <Text style={local.clock} numberOfLines={1}>
+            {formatClock(view.quarterElapsedMs)}
           </Text>
-          <Text style={local.score}>
-            {score.us} – {score.them}
-          </Text>
-          <Text style={[local.team, local.them]} numberOfLines={1}>
-            {opponentLabel(state.match)}
-          </Text>
+          <View style={local.stripSide}>
+            <Text style={[local.stripScore, local.right]} numberOfLines={1}>
+              {score.us}–{score.them}
+            </Text>
+            <Text style={[local.stripSub, local.right]} numberOfLines={1}>
+              v {opponentLabel(state.match)}
+            </Text>
+          </View>
         </View>
-        <Text style={screen.period}>{view.quarterLabel}</Text>
-        <Text style={local.clock} numberOfLines={1} adjustsFontSizeToFit>
-          {formatClock(view.quarterElapsedMs)}
-        </Text>
 
-        {view.isMatchOver ? (
-          <Text style={screen.caption}>
-            Full time — {formatClock(view.matchElapsedMs)} played
-          </Text>
-        ) : (
-          <Text style={[screen.caption, view.isOvertime && screen.overtime]}>
-            {view.isOvertime
-              ? `${periodNoun(state.match.quarterCount)} over — end it when play stops`
-              : `${formatClock(view.quarterRemainingMs)} left in this ${noun}`}
-          </Text>
+        {/* #228 (PO ruling `both`): at full time the award card sits under the strip. */}
+        {awards?.atFullTime && !fullTimeAwardsHidden && (
+          <AwardCard
+            rows={awards.rows}
+            childrenInMatch={awards.childrenInMatch}
+            onGive={awards.onGive}
+            onTakeBack={awards.onTakeBack}
+            footer={
+              <Pressable onPress={() => setFullTimeAwardsHidden(true)} style={screen.linkHit} accessibilityRole="button">
+                <Text style={screen.link}>Give them later</Text>
+              </Pressable>
+            }
+          />
         )}
 
-        {/* #82 AC1: the suggestion is the default; any outfield player can be chosen. */}
-        {due.map((sub) => {
-          const suggested = whoComesOff(sub, onPitch);
-          const chosen = offChoice[sub.playerId] ?? suggested;
-          return (
-            <View key={sub.playerId} style={local.subDue}>
-              <Text style={local.subDueText}>Bring on {nameOf(sub.playerId)} for:</Text>
-              <View style={local.choiceRow}>
-                {outfieldOn.map((id) => (
-                  <Pressable
-                    key={id}
-                    onPress={() => setOffChoice({ ...offChoice, [sub.playerId]: id })}
-                    style={[local.choice, chosen === id && local.choiceOn]}
-                  >
-                    <Text style={[local.choiceText, chosen === id && local.choiceTextOn]} numberOfLines={1}>
-                      {nameOf(id)}
-                    </Text>
+        {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
+        {awards && !running && !view.isMatchOver && (
+          <>
+            <Pressable
+              onPress={() => setAwardsOpen((v) => !v)}
+              style={screen.linkHit}
+              accessibilityRole="button"
+            >
+              <Text style={screen.link}>{awardsLine(awards.rows)} ›</Text>
+            </Pressable>
+            {awardsOpen && (
+              <AwardCard
+                rows={awards.rows}
+                childrenInMatch={awards.childrenInMatch}
+                onGive={awards.onGive}
+                onTakeBack={awards.onTakeBack}
+                footer={
+                  <Pressable onPress={() => setAwardsOpen(false)} style={screen.linkHit}>
+                    <Text style={screen.link}>Hide</Text>
                   </Pressable>
-                ))}
-              </View>
-              {chosen && (
-                <Pressable
-                  onPress={() => {
-                    onMakeSub(chosen, sub.playerId);
-                    const { [sub.playerId]: _gone, ...rest } = offChoice;
-                    setOffChoice(rest);
-                  }}
-                  style={({ pressed }) => [local.subDueButton, pressed && screen.buttonPressed]}
-                >
-                  <Text style={local.subDueButtonLabel}>Done</Text>
-                </Pressable>
-              )}
-            </View>
-          );
-        })}
-        {due.length === 0 && untilNext !== null && (
-          <Text style={screen.hint}>Next substitution in {formatClock(untilNext)}</Text>
+                }
+              />
+            )}
+          </>
+        )}
+
+        {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
+        {running && (
+          <SubPrompts
+            groups={prompts}
+            band={(sub) => subBand(sub, periodElapsedMs)}
+            elapsedMs={periodElapsedMs}
+            outfieldOn={outfieldOn}
+            chosenOff={chosenOff}
+            expanded={expanded}
+            nameOf={nameOf}
+            onChoose={(sub, id) => {
+              setOffChoice({ ...offChoice, [sub.playerId]: id });
+              setExpanded(null);
+            }}
+            onExpand={setExpanded}
+            onDone={makePlannedSub}
+            onNotNow={(subs) => {
+              notNowLog.current = notNow(notNowLog.current, periodKey, subs);
+              forceRepaint();
+            }}
+          />
+        )}
+        {list && (
+          <SubPlanNext
+            title={`Subs this ${noun}`}
+            list={list}
+            prompted={new Set(prompts.flat().map((s) => s.playerId))}
+            nameOf={nameOf}
+            onOpen={setPlanSheetFor}
+          />
         )}
 
         {running && (
           <>
-            <Text style={screen.hint}>
-              {selected
-                ? `Now tap where ${nameOf(selected)} goes, or tap ${nameOf(selected)} again to cancel.`
-                : 'Tap a player for Goal, Save or Move. Or drag them.'}
-            </Text>
+            {/* #228: the standing hint went (Getting started teaches it); a pick still says what next. */}
+            {selected && (
+              <Text style={screen.hint}>
+                {`Now tap where ${nameOf(selected)} goes, or tap ${nameOf(selected)} again to cancel.`}
+              </Text>
+            )}
             <PitchView
               format={format}
               sheet={sheet}
@@ -404,7 +555,7 @@ export function ClockScreen({
               else onEndQuarter();
             }}
           >
-            <Text style={screen.buttonLabel}>End {noun}</Text>
+            <Text style={[screen.buttonLabel, view.isOvertime && screen.buttonUrgentLabel]}>End {noun}</Text>
           </Pressable>
         )}
         {view.isMatchOver && (
@@ -495,7 +646,14 @@ export function ClockScreen({
         {sheetFor && (
           <>
             {onIds.has(sheetFor) && (
-              <EventButtons kinds={tapEventsFor(sheetFor === keeper)} onPress={(kind) => record(kind, sheetFor)} />
+              <>
+                <TapButtons
+                  kinds={tapEventsFor(sheetFor === keeper)}
+                  tallies={tallies}
+                  onEvent={(kind) => record(kind, sheetFor)}
+                  onTally={(kind, team) => tally(kind, team, sheetFor)}
+                />
+              </>
             )}
             <SheetButton
               label="Move or swap…"
@@ -504,9 +662,76 @@ export function ClockScreen({
                 setSheetFor(null);
               }}
             />
+            {/* #228 (Dee): during the match, one row at the foot of the tap sheet. */}
+            {awards && (
+              <SheetButton
+                label={`Give ${nameOf(sheetFor)} an award ›`}
+                onPress={() => {
+                  setAwardFor(sheetFor);
+                  setSheetFor(null);
+                }}
+              />
+            )}
           </>
         )}
       </ActionSheet>
+
+      {/* #228: the award types for one child; pick one and it is given, with Undo. */}
+      <ActionSheet
+        visible={awardFor !== null && awards !== null}
+        title={awardFor ? `An award for ${nameOf(awardFor)}` : ''}
+        onClose={() => setAwardFor(null)}
+      >
+        {awardFor &&
+          awards?.rows.map((row) =>
+            row.winners.some((w) => w.playerId === awardFor) ? (
+              <Text key={row.typeId} style={screen.hint}>
+                {row.name}: {nameOf(awardFor)} has it
+              </Text>
+            ) : (
+              <SheetButton
+                key={row.typeId}
+                label={row.winners.length > 0 ? `${row.name} (joint winner)` : row.name}
+                onPress={() => {
+                  const id = awardFor;
+                  setAwardFor(null);
+                  const refused = awards.onGive(row.typeId, id, '');
+                  if (refused) setNotice(refused);
+                  else offerUndo(`${row.name}: ${nameOf(id)}`, () => void awards.onTakeBack(row.typeId, id, UNDO_NOTE));
+                }}
+              />
+            )
+          )}
+      </ActionSheet>
+
+      {/* #203 AC2: change one planned sub. The plan only; nothing is recorded. */}
+      <SubPlanSheet
+        sub={running ? sheetSub : null}
+        nameOf={nameOf}
+        outfieldOn={outfieldOn}
+        suggested={
+          sheetSub
+            ? (offPicks(setSubFor(subPlan, sheetSub.playerId, null), outfieldStints).get(sheetSub.playerId)
+                ?.offId ?? null)
+            : null
+        }
+        canPromptAgain={
+          sheetSub !== null && putOff(sheetSub) && subBand(sheetSub, periodElapsedMs) !== null
+        }
+        onMove={(deltaMs) =>
+          sheetSub && changeSheetSub((plan) => moveSubTime(plan, sheetSub.playerId, deltaMs, periodMs))
+        }
+        onSetFor={(offId) => sheetSub && changeSheetSub((plan) => setSubFor(plan, sheetSub.playerId, offId))}
+        onPromptAgain={() => {
+          if (sheetSub) notNowLog.current = promptAgain(notNowLog.current, periodKey, sheetSub);
+          setPlanSheetFor(null);
+        }}
+        onRemove={() => {
+          if (sheetSub) changeSheetSub((plan) => removeSub(plan, sheetSub.playerId));
+          setPlanSheetFor(null);
+        }}
+        onClose={() => setPlanSheetFor(null)}
+      />
 
       {/* #185: a goal asks who set it up, from the players on the pitch. */}
       <ActionSheet
@@ -571,60 +796,33 @@ export function ClockScreen({
 }
 
 const local = StyleSheet.create({
-  scoreRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
-  team: { flex: 1, color: colours.inkMuted, fontSize: 15, fontWeight: '600', includeFontPadding: false },
-  them: { textAlign: 'right' },
-  score: {
-    color: colours.ink,
-    fontSize: 34,
-    fontWeight: '700',
-    includeFontPadding: false,
-    flexShrink: 0,
-    width: 110,
-    textAlign: 'center',
+  strip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: colours.pitchRaised,
+    borderColor: colours.line,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
+  stripSide: { flex: 1 },
+  stripPeriod: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
+  stripSub: { color: colours.inkMuted, fontSize: 14, includeFontPadding: false },
+  stripScore: { color: colours.ink, fontSize: 24, fontWeight: '700', includeFontPadding: false },
+  right: { alignSelf: 'stretch', textAlign: 'right' },
   clock: {
     color: colours.ink,
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '300',
-    letterSpacing: 2,
-    width: '100%',
+    letterSpacing: 1,
+    // A fixed box, never sized to the digits it shows (the clipped-glyph trap).
+    width: 124,
     textAlign: 'center',
-    paddingHorizontal: 8,
+    includeFontPadding: false,
+    flexShrink: 0,
   },
-  subDue: {
-    backgroundColor: colours.urgent,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 10,
-    alignSelf: 'stretch',
-  },
-  subDueText: { color: colours.ink, fontSize: 16, fontWeight: '700', includeFontPadding: false },
-  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
-  choice: {
-    width: 96,
-    minHeight: TOUCH_TARGET,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colours.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  choiceOn: { backgroundColor: colours.ink },
-  choiceText: { color: colours.ink, fontSize: 14, fontWeight: '600', includeFontPadding: false, alignSelf: 'stretch', textAlign: 'center' },
-  choiceTextOn: { color: '#8a5600' },
-  subDueButton: {
-    backgroundColor: colours.ink,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: TOUCH_TARGET,
-    marginTop: 4,
-  },
-  subDueButtonLabel: { color: '#8a5600', fontSize: 15, fontWeight: '700', includeFontPadding: false },
   streamRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -646,15 +844,15 @@ const local = StyleSheet.create({
     bottom: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1d2a25',
+    backgroundColor: UNDO_TOAST.bg,
     borderColor: colours.line,
     borderWidth: 1,
     borderRadius: 12,
     padding: 10,
   },
-  toastText: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
+  toastText: { flex: 1, color: UNDO_TOAST.text, fontSize: 15, includeFontPadding: false },
   toastButton: {
-    backgroundColor: colours.warn,
+    backgroundColor: UNDO_TOAST.buttonBg,
     borderRadius: 10,
     minHeight: TOUCH_TARGET,
     minWidth: 80,
@@ -662,5 +860,5 @@ const local = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  toastButtonText: { color: '#3a2a00', fontSize: 15, fontWeight: '700', includeFontPadding: false },
+  toastButtonText: { color: UNDO_TOAST.buttonText, fontSize: 15, fontWeight: '700', includeFontPadding: false },
 });

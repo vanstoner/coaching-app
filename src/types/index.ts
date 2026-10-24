@@ -108,6 +108,23 @@ export interface Match {
    * and a change after that is a noted correction there, never an edit here.
    */
   excludeFromStats?: boolean;
+  /**
+   * A test match, started from Settings (#194, ADR-021 D3): never written to
+   * the minutes record and on no screen but Settings › Test matches. It runs
+   * on its own clock so ×5 and ×10 touch nothing else. Absent: a real match.
+   */
+  test?: TestMatchMark;
+}
+
+/** What makes a match a test match (#194): its own clock, real time plus an offset. */
+export interface TestMatchMark {
+  clock: {
+    /** Time gained over the app's clock before `sinceMs`. Never negative. */
+    offsetMs: number;
+    speed: 1 | 5 | 10;
+    /** The app's time the current speed took effect. */
+    sinceMs: number;
+  };
 }
 
 export interface Quarter {
@@ -248,10 +265,17 @@ export type MatchEventKind =
   | 'corner'
   | 'free_kick'
   | 'assist'
-  | 'withdrawn';
+  | 'withdrawn'
+  | TallyKind;
 
-/** What a tap on one player records on its own: everything but an assist (#185). */
-export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist'>;
+/**
+ * A tally kind the coach added in Settings › Tallies (#198): `tally:` and the
+ * `event-type` record's id. Its label lives in the record, not in a release.
+ */
+export type TallyKind = `tally:${string}`;
+
+/** What a tap on one player records on its own: everything but an assist (#185) or a coach's own tally. */
+export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist' | TallyKind>;
 
 /**
  * One entry on the match's time stream. Append-only: never edited, never

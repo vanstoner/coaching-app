@@ -18,14 +18,19 @@
  * preference is Main keeper is left out of it; when nobody is Main keeper
  * (shared gloves) everyone counts. Backups count. Each child's own figure is
  * still goal plus outfield: only the reference line moves.
+ *
+ * **Dominating format (ADR-015 §6a, #223).** Every figure here uses the
+ * matches of the season's dominating format, as `seasonStats` works it out;
+ * a match in the other format is in no count, split or average here.
  */
 
 import type { Player, UUID } from '../types/index';
-import type { Ledger } from './ledger';
+import { notCountedIds, type Ledger } from './ledger';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import {
   competitionBucket,
-  isCounted,
+  inFairness,
+  offFormatOnlyText,
   seasonStats,
   goalOutfieldSplit,
   wholeMinutes,
@@ -41,6 +46,13 @@ export const SEASON_POINTER = "Season figures are on each child's page in Squad"
 
 /** The Main keeper's note on their row and page (PO ruling, #121). */
 export const MAIN_KEEPER_NOTE = 'Main keeper, not in the squad average';
+
+/**
+ * A fill-in's note on their row and page (#190). Their minutes are recorded
+ * and shown; they are left out of the squad average, the fairness figures
+ * and "who's owed time" for the whole season (PO ruling, 18 Oct).
+ */
+export const FILL_IN_NOTE = 'Fill-in, not counted in fairness';
 
 /** The order competitions are read out in. */
 export const COMPETITION_LINES: readonly { key: CompetitionBucket; label: string; always: boolean }[] = [
@@ -76,12 +88,19 @@ export interface ChildSeason {
   averageMs: number | null;
   /** In-goal preference is Main keeper: not in the squad average. */
   mainKeeper: boolean;
+  /** Marked not counted in fairness (#190): out of the squad average, fairness and owed time. */
+  fillIn: boolean;
   competitions: CompetitionLine[];
   /** Per closed match attended; null when none attended. */
   goalMsPerGame: number | null;
   outfieldMsPerGame: number | null;
   share: OutfieldShare;
-  /** "31 min a game · played 4 of 6", or "No matches yet". */
+  /** Counted matches attended in another format than the dominating one (§6a): in no figure here. */
+  offFormat: number;
+  /**
+   * "31 min a game · played 4 of 6", "No matches yet", or (R5) "Played 1
+   * five-a-side match, not in fairness".
+   */
   summary: string;
 }
 
@@ -93,6 +112,8 @@ export interface SquadSeason {
   /** The bars' scale: the longest closed match, at least the longest average. */
   scaleMs: number;
   countedMatches: number;
+  /** §6a: "Fairness uses 7-a-side matches: 1 five-a-side match left out"; null when none is. */
+  formatNote: string | null;
 }
 
 /** The line for one competition. */
@@ -118,9 +139,18 @@ export function goalOutfieldLine(
   return `In goal ${goal} min a game, outfield ${outfield}`;
 }
 
-/** The Squad row's line. */
-export function seasonSummary(averageMs: number | null, played: number, of: number): string {
-  if (averageMs === null) return 'No matches yet';
+/**
+ * The Squad row's line. `offFormatSides`: the sides of the matches they
+ * played that are left out for their format (§6a). With no fairness figure,
+ * those are said (R5), never "No matches yet".
+ */
+export function seasonSummary(
+  averageMs: number | null,
+  played: number,
+  of: number,
+  offFormatSides: readonly number[] = []
+): string {
+  if (averageMs === null) return offFormatSides.length > 0 ? offFormatOnlyText(offFormatSides) : 'No matches yet';
   return `${wholeMinutes(averageMs)} min a game · played ${played} of ${of}`;
 }
 
@@ -129,11 +159,11 @@ export function seasonSummary(averageMs: number | null, played: number, of: numb
  * one, everyone in otherwise. Children without a closed match do not count.
  */
 export function squadAverage(
-  children: readonly Pick<ChildSeason, 'averageMs' | 'mainKeeper'>[]
+  children: readonly (Pick<ChildSeason, 'averageMs' | 'mainKeeper'> & { fillIn?: boolean })[]
 ): number | null {
-  const anyMain = children.some((c) => c.mainKeeper);
+  const anyMain = children.some((c) => c.mainKeeper && !c.fillIn);
   const counted = children
-    .filter((c) => !(anyMain && c.mainKeeper))
+    .filter((c) => !c.fillIn && !(anyMain && c.mainKeeper))
     .map((c) => c.averageMs)
     .filter((ms): ms is number => ms !== null);
   if (counted.length === 0) return null;
@@ -151,6 +181,7 @@ export function squadSeason(
 ): SquadSeason {
   const active = players.filter((p) => p.active !== false);
   const stats = ledger ? seasonStats(ledger, players, options) : null;
+  const fillIns = notCountedIds(ledger);
 
   // Per competition, who was in the squad; and goal / outfield over closed matches.
   const ofBucket = new Map<UUID, Record<CompetitionBucket, number>>();
@@ -160,8 +191,10 @@ export function squadSeason(
   if (ledger) {
     const timeline: SquadTimeline = { players, kickoffs: options.kickoffs };
     const seen = firstSeen(ledger);
+    // The same dominating format as the averages, or the counts disagree with them.
+    const side = stats?.side ?? null;
     for (const m of ledger.matches) {
-      if (!isCounted(m)) continue;
+      if (!inFairness(m, side)) continue;
       longestMs = Math.max(longestMs, m.totalMinutes * MIN);
       const bucket = competitionBucket(m.competition);
       const { attended, missed } = countedAttendance(ledger, m, timeline, seen);
@@ -206,11 +239,13 @@ export function squadSeason(
       of,
       averageMs,
       mainKeeper: p.keeper === 'main',
+      fillIn: fillIns.has(p.id),
       competitions,
       goalMsPerGame: played === 0 ? null : Math.round(g / played),
       outfieldMsPerGame: played === 0 ? null : Math.round(o / played),
       share: outfieldShare(o, g, targetOf(p)),
-      summary: seasonSummary(averageMs, played, of),
+      offFormat: s?.offFormatSides.length ?? 0,
+      summary: seasonSummary(averageMs, played, of, s?.offFormatSides ?? []),
     };
   });
 
@@ -220,5 +255,6 @@ export function squadSeason(
     squadAverageMs: squadAverage(children),
     scaleMs,
     countedMatches: stats?.countedMatches ?? 0,
+    formatNote: stats?.formatNote ?? null,
   };
 }

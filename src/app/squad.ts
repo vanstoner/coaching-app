@@ -26,9 +26,6 @@
 import { uuid } from '../types/index';
 import type { KeeperPreference, OutfieldUnit, Player, UUID } from '../types/index';
 
-/** A squad cannot take the field with fewer players than the format needs. */
-export const MIN_SQUAD_SIZE = 7;
-
 /** Long enough for any first name, short enough to stay readable at a touchline. */
 export const MAX_NAME_LENGTH = 16;
 

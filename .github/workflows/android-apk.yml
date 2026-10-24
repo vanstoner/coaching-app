@@ -527,7 +527,7 @@ jobs:
   # increasing order of strength:
   #   1. the app launches and does not crash
   #   2. the screen is not blank
-  #   3. OCR finds "Example FC" on it
+  #   3. OCR finds the placeholder team name ("Your team" since #218) on it
   # and, PO ruling 29 (#145):
   #   4. Settings shows every beta-only feature on a PR's Heart FC Beta Coach, and
   #      none on a build of main (check_beta_only.py, BETA_ONLY)
@@ -576,7 +576,26 @@ jobs:
       # on screen only if the seed ran and saved: proof the seed happened.
       # Chosen from the source, NOT yet from OCR output: the first demo run's
       # frame-assertions.txt is the evidence to confirm or move it by.
-      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Example FC|Test Rovers' || 'Example FC|No fixtures yet' }}
+      #
+      # #218 moved both. The placeholder squad name is "Your team" (PO ruling
+      # Q7), and a fresh install's Home opens with the Getting started card,
+      # whose purpose line replaces "No fixtures yet" (that sentence is gone).
+      # "Who comes off next" is the card's first line, 20sp white on the card,
+      # directly under the title, so it is above the fold at 320x640. Chosen
+      # from the source and from OCR of a synthetic Barlow render shrunk to
+      # 320x640 (good.png), NOT yet from an emulator frame: the first run's
+      # frame-assertions.txt is the evidence to confirm or move it by. The
+      # demo seeds the made-up team, so its card is gone (every step done).
+      #
+      # #228 (PO ruling `both`) makes Getting started one line with a progress
+      # bar, so the purpose line leaves a fresh Home. "Getting started" stays:
+      # it is the card's title today (CARD_TITLE, read as "GETTING STARTED" in
+      # run 39959317273's OCR, beside "Your team") and the one line after.
+      # Play now was not chosen: its label is white on the accent green, which
+      # tesseract missed for "Add a fixture" (above), and today it sits below
+      # the 320x640 fold under the full card (that run's OCR ends at the card).
+      # Dry-run on good.png and good-one-line.png (test_smoke_assert.py).
+      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Your team|Test Rovers' || 'Your team|Getting started' }}
       SMOKE_OUT: smoke-evidence
       # #145: what Settings must show. 'beta' on a PR: every beta-only
       # feature. Empty on main: none. The same condition as APP_VARIANT in

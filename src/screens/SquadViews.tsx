@@ -23,7 +23,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { UUID } from '../types/index';
-import { MAIN_KEEPER_NOTE } from '../app/childSeason';
+import { FILL_IN_NOTE, MAIN_KEEPER_NOTE } from '../app/childSeason';
 import { KEEPER_LABEL } from '../app/squad';
 import { UNIT_LABEL } from '../app/ledger';
 import {
@@ -43,6 +43,8 @@ import {
 import { NAME, TABLE_DEFAULTS, matchKey, sortFairness, sortGrid, sortOwed, sortPositions } from '../app/tableSort';
 import { SortHeading, useTableSort } from './TableSort';
 import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitColours } from './Charts';
+import { VIEW_NOTHING_YET } from '../app/gettingStarted';
+import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 // ============================================================================
@@ -86,9 +88,26 @@ interface ViewProps {
   views: SquadViews;
   onChild: (playerId: UUID) => void;
   onBack: () => void;
+  /**
+   * #218 Q3: before the first match is played, an empty view says what it
+   * will show and offers the next thing to do. Null once anything has been
+   * played, so an established phone's views are as they were (AC6).
+   */
+  firstTime?: { label: string; onPress: () => void } | null;
 }
 
-function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => void; children: ReactNode }) {
+function ViewFrame({
+  view,
+  onBack,
+  note = null,
+  children,
+}: {
+  view: SquadView;
+  onBack: () => void;
+  /** ADR-015 §6a (#223): how many matches the figures leave out for their format, and why. */
+  note?: string | null;
+  children: ReactNode;
+}) {
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
@@ -96,6 +115,7 @@ function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => 
           <Text style={screen.link}>Back to Squad</Text>
         </Pressable>
         <Text style={screen.title}>{VIEW_TITLE[view]}</Text>
+        {note !== null && <Text style={screen.caption}>{note}.</Text>}
         {children}
         <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={onBack}>
           <Text style={screen.buttonLabel}>Back to Squad</Text>
@@ -107,6 +127,20 @@ function ViewFrame({ view, onBack, children }: { view: SquadView; onBack: () => 
 
 function Empty({ children }: { children: string }) {
   return <Text style={[screen.caption, local.empty]}>{children}</Text>;
+}
+
+/** A view with nothing in it: the first-time sentence and button (#218), else as before. */
+function Nothing({
+  view,
+  firstTime,
+  before,
+}: {
+  view: SquadView;
+  firstTime: ViewProps['firstTime'];
+  before: string;
+}) {
+  if (firstTime) return <EmptyState text={VIEW_NOTHING_YET[view]} action={firstTime} />;
+  return <Empty>{before}</Empty>;
 }
 
 /** What a tapped cell or column says; tap it again to put it away. */
@@ -128,7 +162,7 @@ function MainKeeperHint({ names, tail }: { names: string[]; tail: string }) {
 // Season grid (AC2)
 // ============================================================================
 
-export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
+export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
   const { matches, fairness } = views;
@@ -137,12 +171,16 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
   if (matches.length === 0) {
     return (
       <ViewFrame view="grid" onBack={onBack}>
-        <Empty>{'No matches yet.\nEach match appears here as a column once it is closed.'}</Empty>
+        <Nothing
+          view="grid"
+          firstTime={firstTime}
+          before={'No matches yet.\nEach match appears here as a column once it is closed.'}
+        />
       </ViewFrame>
     );
   }
   return (
-    <ViewFrame view="grid" onBack={onBack}>
+    <ViewFrame view="grid" onBack={onBack} note={views.season.formatNote}>
       <Text style={screen.caption}>Minutes on the pitch each match, oldest first</Text>
       <View style={local.grid}>
         {/* The name and "a game" columns stay put while the matches scroll. */}
@@ -221,7 +259,8 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
                       accessibilityLabel={c.text}
                     >
                       {c.goal > 0 && <View style={local.gkMark} />}
-                      <Text style={local.gTotal} numberOfLines={1}>
+                      {/* #199: a reconstructed match's figures, italic and muted, in a fixed-width cell. */}
+                      <Text style={[local.gTotal, c.reconstructed && local.gTainted]} numberOfLines={1}>
                         {c.total}
                       </Text>
                       {c.goal > 0 && (
@@ -241,7 +280,16 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
       <View style={local.key}>
         <KeyItem shape="mark" label="GK 12: of which in goal" />
         <Text style={local.keyWords}>Blank: not there</Text>
-        {matches.some((m) => !m.counted) && <Text style={local.keyWords}>Faded: left out of the figures</Text>}
+        {matches.some((m) => !m.counted && m.offFormat === null) && (
+          <Text style={local.keyWords}>Faded: left out of the figures</Text>
+        )}
+        {/* §6a: still the child's minutes, in their totals; only fairness leaves them out. */}
+        {matches.some((m) => m.offFormat !== null) && (
+          <Text style={local.keyWords}>Faded: another format, not in fairness</Text>
+        )}
+        {matches.some((m) => m.provenance === 'reconstructed') && (
+          <Text style={local.keyWords}>Italic: reconstructed, times may be approximate</Text>
+        )}
         <Text style={local.keyWords}>L, C, F, T: league, cup, friendly, tournament</Text>
       </View>
       <Text style={screen.hint}>
@@ -257,14 +305,14 @@ export function SeasonGridView({ views, onChild, onBack }: ViewProps) {
 // Fairness at a glance (AC3)
 // ============================================================================
 
-export function FairnessView({ views, onChild, onBack }: ViewProps) {
+export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const { sort, onSort } = useTableSort('squadFairness');
   const f = views.fairness;
   if (f === null) {
     return (
       <ViewFrame view="fairness" onBack={onBack}>
-        <Empty>Fairness appears here after the first match is closed.</Empty>
+        <Nothing view="fairness" firstTime={firstTime} before="Fairness appears here after the first match is closed." />
       </ViewFrame>
     );
   }
@@ -282,7 +330,7 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
   }));
 
   return (
-    <ViewFrame view="fairness" onBack={onBack}>
+    <ViewFrame view="fairness" onBack={onBack} note={views.season.formatNote}>
       <View accessible accessibilityLabel={`Everyone within ${f.gap} min a game of the squad average, ${f.average}`}>
         <Text style={local.heroLine}>Everyone within</Text>
         <Text style={local.heroFigure} numberOfLines={1}>
@@ -321,7 +369,8 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
             </View>
           );
         }
-        const words = r.offset === null ? MAIN_KEEPER_NOTE : offsetWords(r.offset);
+        const outside = r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE;
+        const words = r.offset === null ? outside : offsetWords(r.offset);
         return (
           <Pressable
             key={r.playerId}
@@ -334,7 +383,7 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
               {r.name}
             </Text>
             {r.offset === null ? (
-              <Text style={local.dNote}>{MAIN_KEEPER_NOTE}</Text>
+              <Text style={local.dNote}>{outside}</Text>
             ) : (
               <BandDot value={r.perGame} average={f.average} gap={f.gap} lo={lo} hi={hi} />
             )}
@@ -367,13 +416,17 @@ export function FairnessView({ views, onChild, onBack }: ViewProps) {
 // Going into Saturday (AC4)
 // ============================================================================
 
-export function SaturdayView({ views, onChild, onBack }: ViewProps) {
+export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadSaturday');
   const f = views.fairness;
   if (f === null) {
     return (
       <ViewFrame view="saturday" onBack={onBack}>
-        <Empty>{'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}</Empty>
+        <Nothing
+          view="saturday"
+          firstTime={firstTime}
+          before={'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}
+        />
       </ViewFrame>
     );
   }
@@ -381,7 +434,7 @@ export function SaturdayView({ views, onChild, onBack }: ViewProps) {
   const named = sortOwed(views.owed, TABLE_DEFAULTS.squadSaturday).filter((r) => r.named);
   const max = Math.max(1, ...views.owed.map((r) => Math.abs(r.owed ?? 0)));
   return (
-    <ViewFrame view="saturday" onBack={onBack}>
+    <ViewFrame view="saturday" onBack={onBack} note={views.season.formatNote}>
       <View style={local.owedBox}>
         {named.length > 0 ? (
           <>
@@ -429,13 +482,13 @@ export function SaturdayView({ views, onChild, onBack }: ViewProps) {
               onPress={() => onChild(r.playerId)}
               style={local.orow}
               accessibilityRole="button"
-              accessibilityLabel={`${r.name}, ${MAIN_KEEPER_NOTE}`}
+              accessibilityLabel={`${r.name}, ${r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}`}
             >
               <View style={local.oLine}>
                 <Text style={local.oName} numberOfLines={1}>
                   {r.name}
                 </Text>
-                <Text style={local.oNote}>{MAIN_KEEPER_NOTE}</Text>
+                <Text style={local.oNote}>{r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}</Text>
               </View>
             </Pressable>
           );
@@ -484,13 +537,17 @@ export function UnitKey() {
   );
 }
 
-export function PositionsView({ views, onChild, onBack }: ViewProps) {
+export function PositionsView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadPositions');
   if (views.matches.length === 0) {
     return (
       <ViewFrame view="positions" onBack={onBack}>
-        <Text style={screen.caption}>Time in each position this season</Text>
-        <Empty>{'Nobody has played yet.\nTime in each position appears after the first match.'}</Empty>
+        {firstTime ? null : <Text style={screen.caption}>Time in each position this season</Text>}
+        <Nothing
+          view="positions"
+          firstTime={firstTime}
+          before={'Nobody has played yet.\nTime in each position appears after the first match.'}
+        />
       </ViewFrame>
     );
   }
@@ -640,6 +697,7 @@ const local = StyleSheet.create({
   gCell: { width: GRID_CELL, height: '100%', alignItems: 'center', justifyContent: 'center' },
   /** A match the coach left out of the figures (ADR-020): still there, plainly set back. */
   gOff: { opacity: 0.4 },
+  gTainted: { fontStyle: 'italic', color: colours.taint },
   gDay: { width: GRID_CELL, textAlign: 'center', color: colours.inkMuted, fontSize: 12, includeFontPadding: false },
   gComp: { width: GRID_CELL, textAlign: 'center', color: colours.inkFaint, fontSize: 11, includeFontPadding: false },
   gTotal: { width: GRID_CELL, textAlign: 'center', color: colours.ink, fontSize: 16, includeFontPadding: false },

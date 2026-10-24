@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-17
+Last updated: 2026-10-18
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -45,15 +45,16 @@ sequenceDiagram
     participant S as AsyncStorage
     participant E as MatchEngine
     A->>A: installDeviceSigner (key from the secure store, #193)
+    A->>S: getItem getting-started/v1 (card closed on this phone? #218)
     A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
     A->>S: openStoredLedger (ledger/v2 + head)
-    A->>A: recordMatches(back-fill) → commitLedger
+    A->>A: recordMatches(recordable(back-fill): test matches never, #194; + fixtures, profiles, settings #195) → commitLedger
     A->>S: saveLedger (queued)
     A->>A: step = resume | fixtures
     Note over A: every state change
     A->>E: engine.substitute / startQuarter / endQuarter (mutates state)
     A->>S: saveSession (whole document, not queued)
-    A->>S: saveLedger (only if records changed)
+    A->>S: saveLedger (only if records changed; a test match is in the session only, #194)
 ```
 
 - **All durable state lives in `App.tsx`** `useState`s. Screens receive values
@@ -64,7 +65,8 @@ sequenceDiagram
 - **Time** is never counted. `getQuarterElapsedMs` = `accumulatedMs + now −
   runningSinceWallClock`. `ClockScreen` reschedules a `setTimeout` to the next
   displayed second, only to repaint. `appNow()` (`src/app/appClock.ts`) is the
-  single clock, sped up by the Test kit in beta builds.
+  single clock. A beta phone's stored offset is kept, but the Test kit no
+  longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
   memory. The ledger's writes run one at a time per store; the session's do not.
 
@@ -73,15 +75,16 @@ sequenceDiagram
 | Key | Contents | Writer | Versioning |
 |---|---|---|---|
 | `coaching-app/session/v1` | `SavedSession`: squad, defaults, every match (planned, live, played), plans | `saveSession` | `schemaVersion` 6, `MIGRATIONS` in `persistence.ts`, unknown fields kept |
-| `coaching-app/ledger/v2` | Minutes ledger: hash-chained entries (ADR-013, ADR-014) | `saveLedger` (serialised queue) | own format version; too-new → read-only |
+| `coaching-app/ledger/v2` | Minutes ledger: hash-chained entries (ADR-013, ADR-014); since #195 also fixtures, profiles and settings, so a phone can be restored from it | `saveLedger` (serialised queue) | own format version; too-new → read-only |
 | `coaching-app/ledger/head` | Last chain head, guards rollback | `saveLedger` | |
 | `coaching-app/ledger/v1` | Pre-v2 ledger, read for upgrade only | none | |
 | `coaching-app/ledger/v2/unreadable/<iso>` | A ledger that failed to verify, set aside intact | `openStoredLedger` | |
 | `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
 | `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | Removed by Forget everything (#207) |
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
+| `coaching-app/getting-started/v1` | `{"closed":true}` once the coach closes Getting started early, a view choice on this phone (#218) | `App.tsx` (`closeCard`) | Never in the record; removed by Forget everything, Undo or Show Getting started again |
 | Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
-| `TEST_CLOCK_KEY` | Beta clock offset and speed | Test kit only | |
+| `TEST_CLOCK_KEY` | Beta clock offset (speed folded to ×1 at launch since #228) | Beta builds only | |
 
 Nothing leaves the device except a minutes file, an app backup (#192) or a
 plan image the coach shares explicitly (ADR-011). Android `allowBackup` is **true** for Heart FC Coach and
@@ -103,6 +106,10 @@ stateDiagram-v2
         fixtures --> fixtureForm: Add
         fixtureForm --> fixtures: Save / Cancel
         fixtures --> plan: Plan
+        fixtures --> squad: Getting started, Add your squad (#218)
+        squad --> plan: empty squad view, next step (#218)
+        squad --> fixtureForm: empty squad view, next step (#218)
+        settings --> fixtures: Show Getting started again (#218)
         squad
         settings
     }
@@ -121,15 +128,24 @@ stateDiagram-v2
     summary --> fixtures: Back (match released)
     fixtures --> record: Open a match from the record (#195)
     record --> fixtures: Back
+    summary --> record: In the record (#196)
+    record --> summary: Back to the report
     playing --> plan: Plan the rest
     lineup --> plan: Plan the rest
     plan --> playing: Done (planReturn)
     playing --> fixtures: Leave (match keeps running)
     lineup --> fixtures: Leave
+    settings --> lineup: Start a test match / Open (#194)
+    lineup --> settings: Leave (test match)
+    playing --> settings: Leave (test match)
+    summary --> settings: Back (test match released)
+    summary --> fixtures: Void, with a note (match released, #194)
 ```
 
 Every Saturday screen (lineup, playing, summary, analysis, plan from a match)
-is full screen with an explicit exit; the match keeps running when left.
+is full screen with an explicit exit; the match keeps running when left. A
+test match (#194) shows a banner on each with its own clock speed, and its
+exits lead back to Settings, where it was started and is listed.
 
 `effectiveStep` collapses any Saturday step without a held match to
 `fixtures`. The Android hardware back button is not handled: it backgrounds
