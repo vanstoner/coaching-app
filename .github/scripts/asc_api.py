@@ -22,8 +22,11 @@
         #108 E: FOLDER/iphone/*.png and FOLDER/ipad/*.png (store-media.yml's
         shots, checked by check_store_media.py) to that VERSION's en-GB page,
         in file-name order, replacing what each display's set held, unless it
-        already holds exactly those files (names and checksums). Then read
-        back: the names in order, and no screenshot Apple marked FAILED.
+        already holds exactly those files (names and our checksums). Then read
+        back, polling up to SHOT_WAIT_MINUTES until Apple has processed each
+        one (COMPLETE): the names in order, none FAILED, and our checksum
+        wherever Apple returns one. Still processing when the wait ends is
+        reported as that, never as a mismatch.
 
     asc_api.py release BUNDLE_ID VERSION BUILD WHATS_NEW_FILE --screenshots FOLDER
                [--captions FILE] [--listing FOLDER] [--phased on|off]
@@ -394,29 +397,93 @@ def shots_held(asc, set_id):
 
 
 SHOT_NOT_DONE = {"FAILED", "AWAITING_UPLOAD"}
+# #226, run 40049619707: right after an upload is committed Apple reads a
+# screenshot back as UPLOAD_COMPLETE with no sourceFileChecksum until it has
+# processed it. The read-back polls, bounded, for COMPLETE.
+SHOT_WAIT_MINUTES = 10
+SHOT_POLL_SECONDS = 15
+
+
+class StillProcessing(Exception):
+    """Every screenshot is in place and none failed, but Apple had not
+    finished processing them all when the wait ran out. Not a fault."""
+    def __init__(self, waiting):
+        super().__init__(", ".join(f"{d} ({', '.join(names)})" for d, names in waiting.items()))
+        self.waiting = waiting
+
+
+def _sum(checksum):
+    return (checksum or "").strip().lower() or None
 
 
 def same_shots(held, wanted):
-    """True when the set already holds exactly these files, in this order, all delivered (#226)."""
-    return ([(n, c) for n, c, _, _ in held] == list(wanted)
+    """True when the set already holds exactly these files, in this order, not
+    failed, each with OUR checksum (#226). A shot Apple holds with no checksum
+    could be anything with that name, so it is never taken as ours: the set is
+    uploaded again, which is always safe."""
+    return ([(n, _sum(c)) for n, c, _, _ in held] == [(n, _sum(c)) for n, c in wanted]
             and not any(st in SHOT_NOT_DONE for _, _, st, _ in held))
 
 
-def sync_screenshots(asc, loc, plan, dry_run=False):
+def shots_verdict(held, wanted):
+    """('complete' | 'processing' | 'failed', detail) for a set just written or
+    kept: names in order, nothing FAILED, a checksum compared only where Apple
+    returns one, and complete only when every shot reads COMPLETE."""
+    names = [n for n, _ in wanted]
+    if [n for n, *_ in held] != names:
+        return "failed", f"holds {len(held)} of {len(names)} ({', '.join(n or '?' for n, *_ in held)})"
+    failed = [n for n, _, st, _ in held if st == "FAILED"]
+    if failed:
+        return "failed", f"Apple marked FAILED: {', '.join(failed)}"
+    ours = dict(wanted)
+    wrong = [f"{n} (Apple {c}, ours {ours[n]})" for n, c, _, _ in held if _sum(c) and _sum(c) != _sum(ours[n])]
+    if wrong:
+        return "failed", f"checksum is not ours: {', '.join(wrong)}"
+    waiting = [f"{n} {st or 'no state'}" for n, _, st, _ in held if st != "COMPLETE"]
+    if waiting:
+        return "processing", ", ".join(waiting)
+    return "complete", ""
+
+
+def await_shots(asc, set_id, display, wanted, wait_minutes, sleep):
+    """Poll the set until every shot is COMPLETE (True), or the wait runs out
+    with them still processing (False). Anything wrong is a SystemExit."""
+    polls = max(1, int(wait_minutes * 60) // SHOT_POLL_SECONDS + 1)
+    for attempt in range(polls):
+        held = shots_held(asc, set_id)
+        verdict, detail = shots_verdict(held, wanted)
+        sums = "; ".join(f"{n}={c or 'null'}/{st}" for n, c, st, _ in held)
+        if verdict == "failed":
+            raise SystemExit(f"WHY THIS JOB FAILED: {display} {detail}. Read back: {sums}")
+        if verdict == "complete":
+            print(f"read back: {display} holds all {len(wanted)}, in order")
+            return True
+        print(f"{display}: Apple is still processing {detail} (read {attempt + 1} of {polls})")
+        if attempt + 1 < polls:
+            sleep(SHOT_POLL_SECONDS)
+    return False
+
+
+def sync_screenshots(asc, loc, plan, dry_run=False, wait_minutes=SHOT_WAIT_MINUTES, sleep=time.sleep):
     """Make each display's set on version localisation `loc` hold exactly the
     plan's files, in order. A set that already holds them (same names and
-    checksums, delivered) is left alone, so a re-run uploads nothing twice.
+    checksums, not failed) is left alone, so a re-run uploads nothing twice.
+    Then each set is read back until Apple has processed it (await_shots).
     The caller has checked `loc` belongs to an editable version.
-    Returns the displays that changed (or would)."""
+    Returns the displays that changed (or would). Raises StillProcessing,
+    after every display is written, if Apple had not finished by the end of
+    the wait."""
     wanted = shots_wanted(plan)
     sets = {x["attributes"]["screenshotDisplayType"]: x["id"]
             for x in asc.call("GET", f"/appStoreVersionLocalizations/{loc}/appScreenshotSets")["data"]}
-    changed = []
+    changed, waiting = [], {}
     for display, files in plan.items():
         held = shots_held(asc, sets[display]) if display in sets else []
         names = ", ".join(n for n, _ in wanted[display])
         if same_shots(held, wanted[display]):
             print(f"{display}: already holds these {len(files)} screenshot(s); nothing uploaded")
+            if not dry_run and not await_shots(asc, sets[display], display, wanted[display], wait_minutes, sleep):
+                waiting[display] = [n for n, _ in wanted[display]]
             continue
         changed.append(display)
         print(f"{display}: {'would replace' if dry_run else 'replacing'} {len(held)} with {len(files)}: {names}")
@@ -442,12 +509,10 @@ def sync_screenshots(asc, loc, plan, dry_run=False):
             asc.call("PATCH", f"/appScreenshots/{shot['id']}", {"data": {
                 "type": "appScreenshots", "id": shot["id"],
                 "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
-        back = shots_held(asc, set_id)
-        failed = [n for n, _, st, _ in back if st == "FAILED"]
-        if [(n, c) for n, c, _, _ in back] != wanted[display] or failed:
-            raise SystemExit(f"WHY THIS JOB FAILED: {display} reads back {len(back)} of {len(files)} "
-                             f"({', '.join(n or '?' for n, *_ in back)}); failed: {failed}")
-        print(f"read back: {display} holds all {len(files)}, in order")
+        if not await_shots(asc, set_id, display, wanted[display], wait_minutes, sleep):
+            waiting[display] = [n for n, _ in wanted[display]]
+    if waiting:
+        raise StillProcessing(waiting)
     return changed
 
 
@@ -457,7 +522,12 @@ def screenshots(bundle_id, version, folder, dry_run=False, asc=None):
         raise SystemExit(f"WHY THIS JOB FAILED: no iphone/ or ipad/ screenshots in {folder}")
     asc = asc or Asc(read_only=dry_run)
     loc = version_localization(asc, bundle_id, version)
-    sync_screenshots(asc, loc, plan, dry_run)
+    try:
+        sync_screenshots(asc, loc, plan, dry_run)
+    except StillProcessing as e:
+        print(f"read back: every screenshot is in place and none failed; Apple is still processing {e}. "
+              "Nothing is wrong: look again in App Store Connect in a few minutes.")
+        return 0
     if dry_run:
         print("Dry run: nothing was changed.")
     return 0
@@ -752,7 +822,8 @@ def print_preconditions(asc, app, versions):
 
 
 def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased=False, dry_run=False,
-            wait_minutes=30, sleep=time.sleep, clock=time.time, shots_folder=None, captions=None):
+            wait_minutes=30, sleep=time.sleep, clock=time.time, shots_folder=None, captions=None,
+            shot_wait_minutes=SHOT_WAIT_MINUTES):
     """Create or reuse `target`, attach build_number, release after approval,
     send the listing and the screenshots, set What's New and submit.
     Returns (exit code, one-line summary)."""
@@ -862,8 +933,16 @@ def release(asc, bundle_id, target, build_number, whats_new, folder=None, phased
                 if version_state(asc.call("GET", f"/appStoreVersions/{vid}")["data"]["attributes"]) not in EDITABLE:
                     raise Refused(kind, f"{target} is no longer editable, so its screenshots were not touched.",
                                   f"Look at {target} in {ASC_PAGE}.")
-                if sync_screenshots(asc, loc["id"], shot_plan):
+                try:
+                    if sync_screenshots(asc, loc["id"], shot_plan, wait_minutes=shot_wait_minutes, sleep=sleep):
+                        done.append("screenshots uploaded")
+                except StillProcessing as e:
                     done.append("screenshots uploaded")
+                    raise Refused(kind, f"the screenshots are in place and none failed, but Apple was still "
+                                  f"processing {e} after {shot_wait_minutes} min, so {target} was not submitted. "
+                                  "Nothing is wrong with them.",
+                                  "Re-run only the App Store steps in a few minutes (testflight.yml with "
+                                  "app_store_for=<this commit>): it keeps these shots and submits.")
             elif kind == "whats_new":
                 loc = en_gb(asc, vid)
                 if not loc:
@@ -1052,6 +1131,11 @@ class FakeAsc(Asc):
         info, as App Store Connect does when a new version is added (assumed)."""
         self.read_only, self.jwt, self.sent, self.ids = read_only, "unused", [], 0
         self.shot_ids, self.uploaded, self.shot_writes = 0, {}, []
+        # #226 run 40049619707: how Apple reads a screenshot back after the
+        # upload is committed. None: COMPLETE at once with our checksum.
+        # {"reads": n, "checksum": "ours"|"none"|"other", "state": "COMPLETE"|"FAILED"}:
+        # UPLOAD_COMPLETE with a null checksum for n reads, then that.
+        self.shot_processing = None
         self.v, self.locs, self.b, self.subs, self.review = {}, {}, {}, {}, {}
         self.infos = {"I0": {"attrs": {"appStoreState": "READY_FOR_SALE"}, "loc": dict(info or {}, locale=LOCALE)}}
         self.info_on_create = info_on_create
@@ -1160,6 +1244,11 @@ class FakeAsc(Asc):
                                       for d in self.locs[p[1]]["shots"]]}
             if p[0] == "appScreenshotSets":
                 loc, d = p[1].split("~")
+                for x in self.locs[loc]["shots"][d]:
+                    if x.get("pending"):
+                        x["pending"][0] -= 1
+                        if x["pending"][0] <= 0:
+                            _, x["state"], x["sourceFileChecksum"] = x.pop("pending")
                 return 200, {"data": [{"id": x["id"], "attributes": {
                     "fileName": x["fileName"], "sourceFileChecksum": x["sourceFileChecksum"],
                     "assetDeliveryState": {"state": x["state"]}}} for x in self.locs[loc]["shots"][d]]}
@@ -1210,6 +1299,11 @@ class FakeAsc(Asc):
             got = self.uploaded.get(f"https://upload.example/{p[1]}", b"")
             x["sourceFileChecksum"] = attrs["sourceFileChecksum"]
             x["state"] = "COMPLETE" if hashlib.md5(got).hexdigest() == attrs["sourceFileChecksum"] else "FAILED"
+            mode = self.shot_processing
+            if mode:
+                final = {"ours": x["sourceFileChecksum"], "none": None, "other": "0" * 32}[mode["checksum"]]
+                x["pending"] = [mode["reads"], mode.get("state", x["state"]), final]
+                x["state"], x["sourceFileChecksum"] = "UPLOAD_COMPLETE", None
             return 200, {"data": {"id": p[1]}}
         if method == "PATCH" and p[0] == "appStoreVersions" and len(p) == 2:
             self.v[p[1]].update(attrs)
@@ -1628,6 +1722,58 @@ def self_test():
         expect("healthy: a set with the right files but one Apple marked FAILED is uploaded again",
                code == 0 and f.writes().count("POST /appScreenshots") == 2
                and all(st == "COMPLETE" for *_, st in held(f, "1.3.0", "APP_IPHONE_67")))
+        # #226 run 40049619707: right after the upload Apple read the shots
+        # back with no checksum (still processing), and the read-back called
+        # that a mismatch. Both displays, healthy cases first.
+        for label, mode in (
+                ("null checksum while processing, then ours", {"reads": 3, "checksum": "ours"}),
+                ("null checksum while processing, and never one", {"reads": 3, "checksum": "none"}),
+                ("null checksum at once, COMPLETE on the first read", {"reads": 1, "checksum": "none"})):
+            f = FakeAsc([v101], [b412])
+            f.shot_processing = mode
+            code, line, log = run_shots(f, root, caps)
+            expect(f"healthy: {label}: both displays verified, then submitted",
+                   code == 0
+                   and "read back: APP_IPHONE_67 holds all 2, in order" in log
+                   and "read back: APP_IPAD_PRO_3GEN_129 holds all 2, in order" in log
+                   and "PATCH /reviewSubmissions/S5" in f.writes())
+        f = FakeAsc([v101], [b412])
+        f.shot_processing = {"reads": 10 ** 6, "checksum": "ours"}
+        code, line, log = run_shots(f, root, caps)
+        expect("still processing after the wait: both displays uploaded, not submitted, and said so (not a fault)",
+               code == 1 and f.writes().count("POST /appScreenshots") == 4
+               and "POST /reviewSubmissions" not in f.writes()
+               and "still processing" in log and "APP_IPAD_PRO_3GEN_129" in log
+               and "app_store_for" in log)
+        f = FakeAsc([v101], [b412])
+        f.shot_processing = {"reads": 2, "checksum": "ours", "state": "FAILED"}
+        code, line, log = run_shots(f, root, caps)
+        expect("refuses: Apple marks the processed shots FAILED; not submitted",
+               code == 1 and "POST /reviewSubmissions" not in f.writes() and "FAILED" in log
+               and "01-alert.png" in log)
+        f = FakeAsc([v101], [b412])
+        f.shot_processing = {"reads": 2, "checksum": "other"}
+        code, line, log = run_shots(f, root, caps)
+        expect("refuses: Apple returns a checksum that is not ours; not submitted",
+               code == 1 and "POST /reviewSubmissions" not in f.writes() and "checksum" in log)
+        no_sum = {d_: [(n, None) for n, _ in v] for d_, v in wanted.items()}
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "releaseType": AFTER_APPROVAL,
+                            "build": 412, "whatsNew": text, "shots": no_sum}], [b412])
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: a re-run where Apple holds our names with no checksum uploads them again (never "
+               "assumes they are ours), then submits",
+               code == 0 and f.writes().count("POST /appScreenshots") == 4 and "PATCH /reviewSubmissions/S5" in f.writes())
+        processing = {d_: [(n, c, "UPLOAD_COMPLETE") for n, c in v] for d_, v in wanted.items()}
+        f = FakeAsc([v101, {"version": "1.3.0", "state": "PREPARE_FOR_SUBMISSION", "releaseType": AFTER_APPROVAL,
+                            "build": 412, "whatsNew": text, "shots": processing}], [b412])
+        for x in f.locs.values():
+            for shots in x["shots"].values():
+                for sh in shots:
+                    if sh["state"] == "UPLOAD_COMPLETE":
+                        sh["pending"] = [2, "COMPLETE", sh["sourceFileChecksum"]]
+        code, line, log = run_shots(f, root, caps)
+        expect("healthy: a re-run on our shots still processing uploads nothing, waits for them, then submits",
+               code == 0 and shot_writes(f) == [] and "PATCH /reviewSubmissions/S5" in f.writes())
         f = FakeAsc([v101], [b412], read_only=True)
         code, line, log = run_shots(f, root, caps, dry=True)
         expect("healthy: the dry run plans the upload and sends nothing",

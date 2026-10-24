@@ -78,8 +78,10 @@ or reuses the App Store version for `app.json`'s version, attaches this
 build, sets "Automatically release this version" (`AFTER_APPROVAL`), sends
 the listing text, puts the approved screenshots on the version (the
 committed `store/app-store/screenshots/`, exactly the shots
-`screenshot_captions.txt` names; a set already holding them is not
-re-uploaded, and missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
+`screenshot_captions.txt` names; a set already holding them, with our
+checksums, is not re-uploaded; each set is read back until Apple has processed
+it, and still processing after 10 minutes stops short of submitting, as
+that; missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
 (a bump that leaves it unchanged fails `version-impact.yml`), checks the page
 is complete and submits it for review (`asc_api.py release`). Apple's
 approval releases it; Rob never opens App Store Connect. Every step checks
