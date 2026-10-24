@@ -1,0 +1,86 @@
+name: Feature (Definition of Ready)
+description: Something new a coach can see or do. No code until every field is filled and Rob has approved it once (#231).
+title: "Feature: "
+labels: [requirement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bea fills this in and Dee agrees the screens with her **before** it goes to Rob.
+        Rob approves it once; building starts after that. No children's names (invariant 4).
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: Rob's own words, quoted verbatim, then one line on the problem it solves.
+      placeholder: 'Rob, DD Mon: *"..."*'
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: Written by Bea, numbered, healthy case first. Each one testable.
+      value: |
+        1. (healthy case)
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: screens
+    attributes:
+      label: Screens or design link
+      description: Dee's prototype or a link to it, agreed with Bea. "No UI change" if none.
+    validations:
+      required: true
+  - type: textarea
+    id: test-data
+    attributes:
+      label: Test data or seed needed
+      description: Made-up names only. "None" if the existing seed covers it.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this deliberately does not do. Anything here goes to a later issue.
+    validations:
+      required: true
+  - type: dropdown
+    id: store-impact
+    attributes:
+      label: Store or screenshot impact
+      multiple: true
+      options:
+        - None
+        - What's New text
+        - Store screenshots
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Version impact
+      description: Minor is something new a coach can see or do; patch is a fix (#217).
+      options:
+        - minor
+        - patch
+        - none
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants touched
+      description: Which of the five in CLAUDE.md this touches and how it keeps them, or "None".
+    validations:
+      required: true
+  - type: checkboxes
+    id: approval
+    attributes:
+      label: Ready
+      description: Ticked when Rob approves the whole form. Once; later asks go to the next version.
+      options:
+        - label: Rob approved, once
+          required: false
