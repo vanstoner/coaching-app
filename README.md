@@ -17,9 +17,10 @@ story of how it got here is in [HISTORY.md](./HISTORY.md).
 From the [releases page](https://github.com/vanstoner/coaching-app/releases):
 
 - **Heart FC Coach** — the release marked **Latest**. Every merge to `main` that
-  builds green publishes one.
+  changes the app and builds green publishes one.
 - **Heart FC Beta Coach** — the `beta` prerelease, rebuilt from each open pull
-  request. It installs as a separate app (its own id, storage and orange icon),
+  request that changes the app, once it is ready for review or labelled
+  `ci:full` (a draft runs the cheap checks only). It installs as a separate app (its own id, storage and orange icon),
   so testing never touches the real squad. Its Test kit adds made-up players and a
   past season; a test match (Settings › Test matches) runs at ×1, ×5 or ×10. After a merge, `beta` holds no APK, just a
   note pointing at the new Heart FC Coach build, until the next pull request.

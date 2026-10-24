@@ -7,8 +7,8 @@ name: TestFlight
 #
 # A2: no pull_request trigger, ever. Only a push to main that changes
 # app.json (the version bump that marks a store release, PO "approve
-# testflight-on-bump", 2026-10-08) queues a run, which waits for Rob; a newer
-# one cancels a waiting one. Every other merge costs no Mac time and no click.
+# testflight-on-bump", 2026-10-08) queues a run, which waits for Rob. A newer
+# real run waits behind it rather than cancelling it (#230 F4). Every other merge costs no Mac time and no click.
 # Apple refuses a build number at or below one it holds for the same version,
 # so an upload without a bump would fail anyway. By hand:
 #
@@ -70,11 +70,13 @@ on:
 # Every dry run (the full one, or the plan alone with app_store_for) writes
 # nothing, so it has its own group: it never cancels a real run, waiting for
 # Rob's approval or part-way through (#226 QA R4). A newer dry run cancels an
-# older one; a newer real run cancels an older real run, which a re-run (or
-# app_store_for) finishes.
+# older one. #230 F4: a real run is NEVER cancelled, so an upload or an App
+# Store submission is never stopped mid-write; a newer real run waits until
+# the older one finishes (or Rob rejects it), and GitHub keeps only the
+# newest waiting one.
 concurrency:
   group: testflight-${{ inputs.dry_run && 'dry' || 'write' }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ inputs.dry_run == true }}
 
 permissions:
   contents: read

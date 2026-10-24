@@ -19,8 +19,11 @@ on:
         type: boolean
         default: false
 
+# #230 F5: a dry run has its own group, so it can never replace a real run
+# waiting for Rob's approval (GitHub keeps one pending run per group). Real
+# runs are never cancelled.
 concurrency:
-  group: store-listing
+  group: store-listing-${{ inputs.dry_run && 'dry' || 'write' }}
   cancel-in-progress: false
 
 permissions:

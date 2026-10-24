@@ -15,9 +15,11 @@ on:
     paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
   workflow_dispatch:
 
+# #230: a newer push to a PR cancels its older check (nothing is written on
+# a PR). On main, never: `deploy` is not cancelled mid-publish.
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

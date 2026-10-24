@@ -6,6 +6,7 @@ name: Android APK
 # the two never duplicate each other's steps (AC-E1/E2/E3, issue #11).
 #
 # Jobs:
+#   scope   #230: what this run builds (ci_scope.py). Cheap, on every event.
 #   checks  unit tests, typecheck (app and tests), lint, coverage. #99 AC6:
 #           these live HERE, not in ci.yml, because `needs` cannot reach
 #           across workflows. While they lived in ci.yml a red test run could
@@ -21,7 +22,12 @@ name: Android APK
 #           `demo` release, from main only, after the same three jobs.
 
 on:
+  # #230: ready_for_review and labeled as well as the default three, so
+  # marking a draft ready, or labelling it `ci:full`, builds the unchanged
+  # head (criterion 26). The scope job decides from the PR's state, not
+  # from which of these fired.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
     # A tag cuts a release. The release job below is gated on this.
@@ -52,17 +58,117 @@ on:
         type: boolean
         default: false
 
-# A demo build gets its own group. Without it, a demo refresh dispatched on
-# main would share main's group and, with cancel-in-progress, cancel main's
-# release build (or be cancelled by it).
-concurrency:
-  group: android-apk-${{ inputs.distribution == 'demo' && 'demo-' || '' }}${{ github.ref }}
-  cancel-in-progress: true
+# #230: NO workflow-level concurrency. A workflow-level cancel stops the
+# whole run, including a `beta` or `release` already writing (F1-F3), and a
+# job-level group cannot shield a job from it. So superseding is per job,
+# on the build jobs only (checks, apk, smoke): their groups are keyed on the
+# PR ref, so a newer push cancels the older run's build before it writes
+# (criterion 3), and on anything else on the run id, so a merge to main, a
+# dispatch or a dry run never cancels another run (F1, F2; criterion 4).
+# The writers (release, play, beta, demo) are never cancelled: each either
+# has no group or a cancel-in-progress: false one.
 
 permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # What this run builds — #230
+  # ---------------------------------------------------------------------------
+  #
+  # Cheap, on every event, so a check from this workflow is never left
+  # "Expected" (criterion 13): the expensive jobs below are skipped by `if:`,
+  # which reports skipped (passing), never by `on: paths`, which reports
+  # nothing. ci_scope.py decides, self-tested first, from:
+  #   * the changed files: a docs-only, issue-template or store/ text change
+  #     builds nothing; anything unlisted builds (criteria 5-8, Q1);
+  #   * the PR's state: a draft runs the cheap checks only, until it is
+  #     ready for review or labelled `ci:full` (criteria 25-28, Q7);
+  #   * whether an earlier run already built this PR head (criterion 14).
+  scope:
+    name: Decide what the Android run builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read               # criterion 14: earlier runs for this head
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      # A pull request checks out its test merge, whose first parent is the
+      # base: depth 2 is the whole diff. A push compares with `before`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: ${{ github.event_name != 'push' && 2 || 0 }}
+
+      - name: Self-test the decision before trusting it
+        run: |
+          python3 .github/scripts/ci_scope.py --self-test > /tmp/scope-self-test.txt 2>&1 || {
+            cat /tmp/scope-self-test.txt
+            echo "WHY THIS JOB FAILED: ci_scope.py failed its own self-test (lines marked x above)"; exit 1; }
+          tail -n 1 /tmp/scope-self-test.txt
+
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: android-apk
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Criterion 14: an earlier completed run for this head in which these
+          # succeeded (and the publish succeeded or was skipped) needs no rerun.
+          DONE_JOBS: '["Prove the app renders on an emulator"]'
+          PUBLISH_JOB: 'Publish Heart FC Beta Coach'
+        run: |
+          set -uo pipefail
+          FILES=/tmp/changed.txt
+          case "$EVENT" in
+            pull_request)
+              git diff --name-only --no-renames HEAD^1 HEAD > "$FILES" || FILES=- ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+                  && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+                git diff --name-only --no-renames "$BEFORE" HEAD > "$FILES" || FILES=-
+              else
+                git diff --name-only --no-renames HEAD^ HEAD > "$FILES" || FILES=-
+              fi ;;
+            *) FILES=- ;;
+          esac
+          if [ "$FILES" = - ] && [ "$EVENT" != workflow_dispatch ]; then
+            echo "the changed files could not be listed: building everything (fail-safe)"
+          fi
+
+          PRIOR_OK=false
+          if [ "$EVENT" = pull_request ]; then
+            RUNS="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW.yml/runs?head_sha=$HEAD_SHA&event=pull_request&status=completed&per_page=20" \
+                    --jq '.workflow_runs[].id' 2>/dev/null)" || RUNS=""
+            for id in $RUNS; do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" > /tmp/jobs.json 2>/dev/null || continue
+              if jq -e --argjson need "$DONE_JOBS" --arg pub "$PUBLISH_JOB" \
+                  '([.jobs[] | {(.name): .conclusion}] | add // {}) as $c
+                   | ($need | all($c[.] == "success")) and ($c[$pub] == "success" or $c[$pub] == "skipped")' \
+                  /tmp/jobs.json > /dev/null 2>&1; then
+                PRIOR_OK=true
+                echo "run $id already built, proved and published ${HEAD_SHA:0:7}"
+                break
+              fi
+            done
+          fi
+          export PRIOR_OK
+
+          python3 .github/scripts/ci_scope.py decide "$FILES" > /tmp/decision.txt || {
+            echo "WHY THIS JOB FAILED: ci_scope.py could not decide (above)"; exit 1; }
+          cat /tmp/decision.txt | tee -a "$GITHUB_OUTPUT"
+          {
+            echo "### android-apk: $(sed -n 's/^reason=//p' /tmp/decision.txt)"
+            echo
+            echo "build=$(sed -n 's/^build=//p' /tmp/decision.txt) (event $EVENT, draft ${DRAFT:-n/a}, labels $LABELS)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ---------------------------------------------------------------------------
   # Unit tests, typecheck, lint, coverage — #99 AC3–AC6
   # ---------------------------------------------------------------------------
@@ -72,6 +178,11 @@ jobs:
   checks:
     name: Unit tests, typecheck, lint, coverage
     runs-on: ubuntu-latest
+    # #230: a cheap check, so it runs on every event, drafts and docs-only
+    # changes included. Superseded on a PR; never on main or a dispatch.
+    concurrency:
+      group: android-apk-checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -136,7 +247,14 @@ jobs:
 
   apk:
     name: Build release APK
+    # #230: only when the scope job says so (path filter, draft rule, one
+    # build per head). Skipped, smoke, release, play, beta and demo skip too.
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: android-apk-apk-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: true
     env:
       APK: android/app/build/outputs/apk/release/app-release.apk
       # D2 (#47): versionCode is the Actions run number. app.config.js reads it.
@@ -521,7 +639,7 @@ jobs:
   # Issue #43. Every assertion in the `apk` job above passes on an APK that
   # shows a blank white screen — that is the gap this job closes, and the
   # reason the PO waived the manual sideload check (A6) on the understanding
-  # that this replaces it automatically, on every PR.
+  # that this replaces it automatically, on every PR that builds (#230).
   #
   # Three assertions, in the order the PO ruled on 2026-09-18 and in
   # increasing order of strength:
@@ -539,6 +657,9 @@ jobs:
     needs: apk
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: android-apk-smoke-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: true
     env:
       # #79: the beta package on a PR build, the released one on main.
       # #146: the demo is Heart FC Beta Coach too.
@@ -717,7 +838,8 @@ jobs:
   # authenticated session, which makes them useless on a phone.
   #
   # Why a full release (#79, PO ruling "approve 1 2", 2026-10-03). Betas are
-  # the try-it step: every PR publishes Heart FC Beta Coach. Rob's approval merges
+  # the try-it step: every PR that builds (#230) publishes Heart FC Beta
+  # Coach. Rob's approval merges
   # the PR, so a build of main is an approved beta and publishes the FULL
   # release, marked Latest, and deletes the `beta` prerelease. It used to
   # publish a prerelease of the real app that then needed promoting, which
@@ -751,6 +873,11 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
        inputs.distribution == 'app' && !inputs.dry_run)
     runs-on: ubuntu-latest
+    # #230 F1: never cancelled. One release at a time, so two merges in a
+    # row cannot race for Latest or the beta note; the second waits.
+    concurrency:
+      group: coaching-release
+      cancel-in-progress: false
     permissions:
       contents: write             # least privilege: this job only
       pull-requests: read         # #128: which PR this commit came from

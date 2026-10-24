@@ -10,6 +10,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
+# #230 criterion 1: a newer push, or another description edit, supersedes
+# the check of the older one. It writes nothing.
+concurrency:
+  group: version-impact-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
