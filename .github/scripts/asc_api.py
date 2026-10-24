@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""App Store Connect API: TestFlight (#160), the listing (#108) and release on approval (#226).
+"""App Store Connect API: TestFlight (#160), the listing (#108), release on approval (#226)
+and TestFlight external testers (#234).
 
     asc_api.py max-build BUNDLE_ID VERSION
         Prints the highest build number Apple already has for VERSION of the
@@ -43,6 +44,20 @@
         Refuses, red, with a WHY THIS JOB FAILED block, on anything it does not
         expect. --dry-run reads everything, prints the plan and writes nothing:
         the client itself refuses POST, PATCH and DELETE.
+
+    asc_api.py beta BUNDLE_ID VERSION BUILD --groups FILE --description FILE
+               [--wait-minutes N] [--summary FILE] [--rerun CMD] [--dry-run]
+        #234: waits (bounded) for Apple to process BUILD, adds it to each
+        external TestFlight group FILE names (store/testflight/groups.txt),
+        sets the beta description from the repo, checks the rest of the Test
+        Information is present (Rob's, never logged) and submits the build for
+        Beta App Review when Apple asks, once. Never touches testers, the
+        public link or an internal group. Refuses, red, with WHY THIS JOB
+        FAILED. --dry-run prints the plan and writes nothing.
+
+    asc_api.py beta-check FOLDER
+        #234: store/testflight/ holds a group name (no tester data) and a
+        1 to 4,000 character beta description. Run on every PR.
 
     asc_api.py --self-test
 
@@ -1063,6 +1078,520 @@ def release_command(argv, asc_factory=None):
 
 
 # ---------------------------------------------------------------------------
+# TestFlight external testers (#234)
+#
+# After the upload and What to Test, the release build goes to the external
+# group(s) named in store/testflight/groups.txt and, if Apple asks, to Beta
+# App Review, so Rob's friends can install it without anyone opening App
+# Store Connect. Apple's App Store Connect API, as documented
+# (developer.apple.com/documentation/appstoreconnectapi):
+#   GET   /v1/betaGroups?filter[app]&filter[name]           name, isInternalGroup ("List beta groups")
+#   GET   /v1/builds?filter[app]&filter[preReleaseVersion.version]&filter[version]&filter[betaGroups]
+#                                                           is this build in that group ("List builds")
+#   GET   /v1/builds?...&filter[betaAppReviewSubmission.betaReviewState]=APPROVED
+#                                                           has any build of this version passed review
+#   GET   /v1/builds/{id}/buildBetaDetail                   externalBuildState (ExternalBetaState)
+#   GET   /v1/builds/{id}/betaAppReviewSubmission           betaReviewState (BetaReviewState)
+#   GET   /v1/builds/{id}/betaBuildLocalizations            What to Test (whatsNew)
+#   GET   /v1/apps/{id}/betaAppLocalizations                description, feedbackEmail
+#   GET   /v1/apps/{id}/betaAppReviewDetail                 the beta review contact
+#   PATCH /v1/betaAppLocalizations/{id}, POST /v1/betaAppLocalizations   the description only
+#   POST  /v1/betaGroups/{id}/relationships/builds          "Add builds to a beta group"
+#   POST  /v1/betaAppReviewSubmissions                      "Submit an app for beta review"
+# Never: betaTesters, betaTesterInvitations, a group's testers, the public
+# link, an internal group, removing a build from a group, expiring a build,
+# or creating, renaming or deleting a group (AC7). beta_write() refuses any
+# other write before it is sent.
+# ---------------------------------------------------------------------------
+
+BETA_CONTACT = ("contactFirstName", "contactLastName", "contactPhone", "contactEmail")
+BETA_CONTACT_WORDS = {"contactFirstName": "review contact first name", "contactLastName": "review contact last name",
+                      "contactPhone": "review contact phone", "contactEmail": "review contact email"}
+BETA_PENDING = {"WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW"}
+BETA_OPEN = {"BETA_APPROVED", "IN_BETA_TESTING", "READY_FOR_BETA_TESTING"}
+BETA_DONE = BETA_PENDING | BETA_OPEN
+BETA_DESCRIPTION_LIMIT = 4000
+TESTFLIGHT_PAGE = "App Store Connect › Apps › Heart of the Game: Coach › TestFlight"
+RERUN = "gh workflow run testflight.yml --ref main -f testflight_for=<this commit>"
+BETA_WRITES = (("POST", re.compile(r"/betaGroups/[^/]+/relationships/builds")),
+               ("POST", re.compile(r"/betaAppReviewSubmissions")),
+               ("POST", re.compile(r"/betaAppLocalizations")),
+               ("PATCH", re.compile(r"/betaAppLocalizations/[^/]+")))
+TESTER_DATA = re.compile(r"betaTester|publicLink", re.IGNORECASE)
+
+
+class ForbiddenWrite(RuntimeError):
+    pass
+
+
+def beta_allowed(method, path):
+    """Whether a write is one this issue names (AC7)."""
+    path = path.split("?")[0]
+    if path.startswith(API):
+        path = path[len(API):]
+    return not TESTER_DATA.search(path) and any(m == method and rx.fullmatch(path) for m, rx in BETA_WRITES)
+
+
+def beta_write(asc, method, path, body, external_ids):
+    """The only way the beta steps write. Refuses, before sending, anything
+    outside BETA_WRITES and a build added to any group not checked external."""
+    group = re.fullmatch(r"/betaGroups/([^/]+)/relationships/builds", path)
+    if not beta_allowed(method, path) or (group and group.group(1) not in external_ids):
+        raise ForbiddenWrite(f"refused to send {method} {path}: not a write #234 allows")
+    return asc.call(method, path, body)
+
+
+def beta_groups(path):
+    """The group names in groups.txt: one per line; blank lines and # comments ignored."""
+    with open(path, encoding="utf-8") as fh:
+        return [ln.strip() for ln in fh if ln.strip() and not ln.strip().startswith("#")]
+
+
+def beta_problems(folder):
+    """What is wrong with store/testflight/ (checked on every PR): at least
+    one group name, none shaped like an email or an id; a description of 1
+    to 4,000 characters, not the placeholder."""
+    problems = []
+    groups = os.path.join(folder, "groups.txt")
+    if not os.path.exists(groups):
+        problems.append(f"no {groups}")
+    else:
+        names = beta_groups(groups)
+        if not names:
+            problems.append("groups.txt names no group")
+        for n in names:
+            if "@" in n or re.fullmatch(r"[0-9a-f-]{8,}", n):
+                problems.append("groups.txt holds something that is not a group name (an email or an id); "
+                                "names only, no tester data (#234 AC5)")
+    desc = os.path.join(folder, LOCALE, "beta_description.txt")
+    text = open(desc, encoding="utf-8").read().strip() if os.path.exists(desc) else ""
+    if not text or len(text) > BETA_DESCRIPTION_LIMIT or text.lower().startswith(PLACEHOLDER):
+        problems.append(f"{LOCALE}/beta_description.txt is {len(text)} characters (or the placeholder); "
+                        f"Apple needs 1 to {BETA_DESCRIPTION_LIMIT}")
+    return problems
+
+
+def decide_beta(names, groups, build, approved, info, description, build_number, target, dry_run=False,
+                rerun=RERUN):
+    """The TestFlight external plan, from what App Store Connect holds. Pure: no calls.
+
+    names: the group names in groups.txt, in order.
+    groups: {name: {"id", "internal"} or None if App Store Connect has no such group}.
+    build: this build as Apple has it, {"processing", "expired", "external"
+      (externalBuildState), "in_groups" [names], "review" (betaReviewState or
+      None)}, or None if Apple does not have it (yet).
+    approved: whether any build of this version has passed Beta App Review.
+    info: {"locales": {locale: {"id", "description", "feedbackEmail" (bool)}},
+      "contact": {field: bool}, "whats_new": bool, or None when this run sets it}.
+    Returns {"outcome": "act" | "nothing" | "refuse", "lines", "steps":
+    [(kind, value)], "review": "submit" | "if_asked" | "pending" | "none", "why", "fix"}.
+    """
+    n = str(build_number)
+
+    def refuse(why, fix):
+        return {"outcome": "refuse", "why": why, "fix": fix, "lines": lines, "steps": [], "review": None}
+
+    lines, steps = [], []
+    would = "would " if dry_run else ""
+    for name in names:
+        g = groups.get(name)
+        if g is None:
+            return refuse(f"there is no TestFlight group named '{name}' for this app; no group was created.",
+                          f"Correct store/testflight/groups.txt in a pull request to the external group's exact "
+                          f"name in {TESTFLIGHT_PAGE}.")
+        if g["internal"]:
+            return refuse(f"'{name}' is an internal TestFlight group; the run adds builds to external groups only.",
+                          "Name an external group in store/testflight/groups.txt (a pull request).")
+
+    if build is None:
+        if not dry_run:
+            return refuse(f"Apple has no build {n} of {target}, so there is nothing to add to a group.",
+                          f"Check the upload; then run the TestFlight steps alone: {rerun}")
+        lines.append(f"build {n}: uploaded by this run; processing and externalBuildState are checked after it")
+        in_groups, external, review = [], None, None
+    else:
+        external, review = build.get("external"), build.get("review")
+        lines.append(f"build {n}: processing {build.get('processing')}, externalBuildState {external}")
+        if build.get("expired") or external == "EXPIRED":
+            return refuse(f"build {n} of {target} has expired; it is never added to a group.",
+                          "Upload a new build: raise the version (a patch).")
+        if build.get("processing") == "PROCESSING" or external in ("PROCESSING", "IN_EXPORT_COMPLIANCE_REVIEW"):
+            state = external if external in ("PROCESSING", "IN_EXPORT_COMPLIANCE_REVIEW") else "PROCESSING"
+            return refuse(f"build {n} of {target} is still {state} after the wait; it was added to no group.",
+                          f"Nothing is wrong yet: finish later, when Apple is done, with {rerun}")
+        if build.get("processing") != "VALID":
+            return refuse(f"build {n} of {target} is {build.get('processing')}, not VALID; it is never added to a group.",
+                          "Read Apple's email about the build, then upload a new build (a patch).")
+        if external in ("MISSING_EXPORT_COMPLIANCE", "PROCESSING_EXCEPTION"):
+            return refuse(f"build {n} reads externalBuildState {external}; it is never added to a group.",
+                          "Check ITSAppUsesNonExemptEncryption is false in app.json and the signed Info.plist, "
+                          "then upload a new build.")
+        if external == "BETA_REJECTED" or review == "REJECTED":
+            return refuse(f"build {n} is BETA_REJECTED by Beta App Review; nothing was changed or resubmitted.",
+                          f"Read Apple's email and {TESTFLIGHT_PAGE}; what happens next is its own issue (#234 AC11).")
+        if external not in BETA_DONE | {"READY_FOR_BETA_SUBMISSION"}:
+            return refuse(f"build {n} reads externalBuildState {external}, a state this job does not handle; "
+                          "nothing was changed.", f"Look at build {n} in {TESTFLIGHT_PAGE} and raise an issue.")
+        in_groups = list(build.get("in_groups") or [])
+
+    for name in names:
+        if name in in_groups:
+            lines.append(f"group {name}: found, external, already holds build {n}")
+        else:
+            lines.append(f"group {name}: found, external, build {n} not in it: {'would add' if dry_run else 'adding'}")
+            steps.append(("add", name))
+
+    # Review: Apple's own state for this build decides; never a second submission.
+    if build is None:
+        need = "if_asked" if approved else "submit"
+    elif review or external in BETA_DONE:
+        need = "pending" if (external in BETA_PENDING or review in ("WAITING_FOR_REVIEW", "IN_REVIEW")) else "none"
+    else:
+        need = "if_asked" if approved else "submit"
+
+    # Test Information (AC3): the description from the repo; the rest is Rob's, checked as present or empty.
+    locs = info.get("locales") or {}
+    mine = locs.get(LOCALE)
+    if not mine or (mine.get("description") or "").strip() != description:
+        steps.insert(0, ("description", mine["id"] if mine else None))
+        lines.append(f"Test Information: beta description ({LOCALE}): {'would set' if dry_run else 'setting'} "
+                     f"({len(description)} characters)")
+    else:
+        lines.append(f"Test Information: beta description ({LOCALE}): matches")
+    gaps = [f"beta description ({loc})" for loc, x in sorted(locs.items())
+            if loc != LOCALE and not (x.get("description") or "").strip()]
+    feedback = bool(mine and mine.get("feedbackEmail"))
+    lines.append(f"Test Information: feedback email: {'present' if feedback else 'empty'}")
+    if not feedback:
+        gaps.append("feedback email")
+    for f_ in BETA_CONTACT:
+        have = bool((info.get("contact") or {}).get(f_))
+        lines.append(f"Test Information: {BETA_CONTACT_WORDS[f_]}: {'present' if have else 'empty'}")
+        if not have:
+            gaps.append(BETA_CONTACT_WORDS[f_])
+    wtt = info.get("whats_new")
+    lines.append(f"Test Information: What to Test ({LOCALE}): "
+                 + ("set by this run" if wtt is None else "present" if wtt else "empty"))
+    if wtt is False:
+        gaps.append(f"What to Test ({LOCALE})")
+
+    if need in ("submit", "if_asked") and gaps:
+        if dry_run:
+            lines.append("empty: would refuse")
+        return refuse("empty in TestFlight's Test Information: " + ", ".join(gaps)
+                      + "; Beta App Review needs it, so nothing was written.",
+                      f"Rob types the feedback email and the review contact once in {TESTFLIGHT_PAGE} › "
+                      "Test Information (What to Test: re-run with what_to_test_for=<this commit>); then " + rerun)
+    if need == "submit":
+        steps.append(("submit", None))
+        lines.append(f"{would}submit for Beta App Review" if dry_run else "submitting for Beta App Review")
+    elif need == "if_asked":
+        steps.append(("submit_if_asked", None))
+        lines.append(f"{target} already approved for external testing; no review expected "
+                     "(submitted only if Apple still asks for one)")
+    else:
+        lines.append("no review needed" if need == "none" else f"Beta App Review: already {external}")
+
+    if not steps:
+        lines.append(f"build {n} is already in {', '.join(names)}, {external}; nothing to do")
+        return {"outcome": "nothing", "lines": lines, "steps": [], "review": need, "why": None, "fix": None}
+    return {"outcome": "act", "lines": lines, "steps": steps, "review": need, "why": None, "fix": None}
+
+
+def read_groups(asc, app, names):
+    out = {}
+    for name in names:
+        q = urllib.parse.urlencode({"filter[app]": app, "filter[name]": name, "limit": 200,
+                                    "fields[betaGroups]": "name,isInternalGroup"})
+        found = [g for g in asc.call("GET", f"/betaGroups?{q}")["data"] if g["attributes"].get("name") == name]
+        out[name] = {"id": found[0]["id"], "internal": bool(found[0]["attributes"].get("isInternalGroup"))} \
+            if found else None
+    return out
+
+
+def beta_state(asc, build_id):
+    """(externalBuildState, betaReviewState or None) of one build."""
+    d = asc.call("GET", f"/builds/{build_id}/buildBetaDetail", missing_ok=True).get("data")
+    s = asc.call("GET", f"/builds/{build_id}/betaAppReviewSubmission", missing_ok=True).get("data")
+    return (d or {}).get("attributes", {}).get("externalBuildState"), \
+        ((s or {}).get("attributes") or {}).get("betaReviewState")
+
+
+def in_group(asc, app, target, n, group_id):
+    q = urllib.parse.urlencode({"filter[app]": app, "filter[preReleaseVersion.version]": target,
+                                "filter[version]": n, "filter[betaGroups]": group_id, "limit": 1})
+    return bool(asc.call("GET", f"/builds?{q}")["data"])
+
+
+def read_beta_build(asc, app, target, n, groups, wait_minutes, sleep=time.sleep, clock=time.time):
+    """(build id, build dict for decide_beta) once processed or after the wait; (None, None) if Apple has none."""
+    deadline = clock() + wait_minutes * 60
+    while True:
+        found = asc.builds(app, target, n)
+        b = found[0] if found else None
+        ext, review = beta_state(asc, b["id"]) if b else (None, None)
+        state = b["attributes"].get("processingState") if b else None
+        busy = (not b or state == "PROCESSING" or ext in (None, "PROCESSING", "IN_EXPORT_COMPLIANCE_REVIEW"))
+        if not busy or clock() >= deadline:
+            break
+        print(f"build {n}: {'not registered' if not b else f'{state}, {ext}'} yet; waiting 30s")
+        sleep(30)
+    if not b:
+        return None, None
+    a = b["attributes"]
+    in_groups = [name for name, g in groups.items() if g and not g["internal"] and in_group(asc, app, target, n, g["id"])]
+    return b["id"], {"processing": a.get("processingState"), "expired": a.get("expired"), "external": ext,
+                     "in_groups": in_groups, "review": review}
+
+
+def read_test_info(asc, app, build_id):
+    """Test Information as decide_beta wants it: the description's text (it is
+    ours, from the repo); everything of Rob's only as present or not (AC15)."""
+    locales = {}
+    for x in asc.call("GET", f"/apps/{app}/betaAppLocalizations")["data"]:
+        a = x["attributes"]
+        locales[a.get("locale")] = {"id": x["id"], "description": a.get("description") or "",
+                                    "feedbackEmail": bool((a.get("feedbackEmail") or "").strip())}
+    d = asc.call("GET", f"/apps/{app}/betaAppReviewDetail", missing_ok=True).get("data")
+    contact = {f_: bool(str(((d or {}).get("attributes") or {}).get(f_) or "").strip()) for f_ in BETA_CONTACT}
+    wtt = None
+    if build_id:
+        wtt = any(x["attributes"].get("locale") == LOCALE and (x["attributes"].get("whatsNew") or "").strip()
+                  for x in asc.call("GET", f"/builds/{build_id}/betaBuildLocalizations")["data"])
+    return {"locales": locales, "contact": contact, "whats_new": wtt}
+
+
+def version_beta_approved(asc, app, target):
+    q = urllib.parse.urlencode({"filter[app]": app, "filter[preReleaseVersion.version]": target,
+                                "filter[betaAppReviewSubmission.betaReviewState]": "APPROVED", "limit": 1})
+    return bool(asc.call("GET", f"/builds?{q}")["data"])
+
+
+def beta(asc, bundle_id, target, build_number, names, description, dry_run=False, wait_minutes=30,
+         sleep=time.sleep, clock=time.time, rerun=RERUN):
+    """Add build_number of target to the external groups `names`, set the beta
+    description, and submit it for Beta App Review if Apple asks (#234).
+    Returns (exit code, one-line summary)."""
+    n = str(build_number)
+    done = []
+    description = (description or "").strip()
+
+    def progress():
+        return ", ".join(done) + ("" if "submitted for Beta App Review" in done else
+                                  ", not submitted for Beta App Review") if done else "nothing changed in TestFlight"
+
+    step = "read App Store Connect"
+    try:
+        app = asc.app_id(bundle_id)
+        step = "find the TestFlight groups"
+        groups = read_groups(asc, app, names)
+        step = "wait for Apple to process the build"
+        build_id, build = read_beta_build(asc, app, target, n, groups, 0 if dry_run else wait_minutes, sleep, clock)
+        step = "read the beta Test Information"
+        info = read_test_info(asc, app, build_id)
+        if build is None and not dry_run:
+            info["whats_new"] = False
+        approved = version_beta_approved(asc, app, target)
+        plan = decide_beta(names, groups, build, approved, info, description, n, target, dry_run, rerun)
+        print("--- TestFlight plan" + (" (dry run: nothing will be changed)" if dry_run else "") + " ---")
+        for ln in plan["lines"]:
+            print(ln)
+        if plan["outcome"] == "refuse":
+            raise Refused("check what TestFlight holds", plan["why"], plan["fix"])
+        if plan["outcome"] == "nothing":
+            ext = build["external"]
+            return 0, f"TestFlight: build {n} in {', '.join(names)}, {ext}; nothing to do."
+        if dry_run:
+            print("Dry run: nothing was changed in TestFlight.")
+            what = {"submit": "submitted for Beta App Review", "if_asked": "made available (no review expected)"}
+            return 0, (f"Dry run: TestFlight build {n} would be added to {', '.join(names)} and "
+                       f"{what.get(plan['review'], 'needs no review')}.")
+
+        external_ids = {groups[x]["id"] for x in names}
+        submitted = False
+        for kind, value in plan["steps"]:
+            step = kind
+            if kind == "description":
+                if value:
+                    beta_write(asc, "PATCH", f"/betaAppLocalizations/{value}", {"data": {
+                        "type": "betaAppLocalizations", "id": value, "attributes": {"description": description}}},
+                        external_ids)
+                else:
+                    beta_write(asc, "POST", "/betaAppLocalizations", {"data": {
+                        "type": "betaAppLocalizations", "attributes": {"locale": LOCALE, "description": description},
+                        "relationships": {"app": {"data": {"type": "apps", "id": app}}}}}, external_ids)
+                done.append("beta description set")
+            elif kind == "add":
+                beta_write(asc, "POST", f"/betaGroups/{groups[value]['id']}/relationships/builds",
+                           {"data": [{"type": "builds", "id": build_id}]}, external_ids)
+                print(f"build {n} added to {value}")
+                done.append(f"build {n} added to {value}")
+            elif kind in ("submit", "submit_if_asked"):
+                ext, review = beta_state(asc, build_id)   # Apple may have approved it on adding
+                if review or ext != "READY_FOR_BETA_SUBMISSION":
+                    print(f"{target} already approved for external testing; build {n} added, no review needed"
+                          if ext in BETA_OPEN else f"build {n} is {ext}; no submission made")
+                    continue
+                beta_write(asc, "POST", "/betaAppReviewSubmissions", {"data": {
+                    "type": "betaAppReviewSubmissions",
+                    "relationships": {"build": {"data": {"type": "builds", "id": build_id}}}}}, external_ids)
+                submitted = True
+                done.append("submitted for Beta App Review")
+                print(f"Apple still asks for a Beta App Review of build {n}: submitted" if kind == "submit_if_asked"
+                      else f"build {n} submitted for Beta App Review")
+
+        step = "read back"
+        for _ in range(12):
+            ext, review = beta_state(asc, build_id)
+            if ext in BETA_DONE:
+                break
+            sleep(10)
+        missing = [x for x in names if not in_group(asc, app, target, n, groups[x]["id"])]
+        for x in names:
+            if x not in missing:
+                print(f"read back: build {n} is in {x}")
+        print(f"read back: externalBuildState {ext}" + (f", Beta App Review {review}" if review else ""))
+        if missing or ext not in BETA_DONE:
+            raise Refused(step, f"after the beta steps, build {n} reads externalBuildState {ext}"
+                          + (f" and is not in {', '.join(missing)}" if missing else "") + ".",
+                          f"Apple may still be updating it: look at {TESTFLIGHT_PAGE}, then {rerun}")
+        if submitted:
+            return 0, (f"TestFlight: Heart FC Coach {target} (build {n}) added to {', '.join(names)}; submitted for "
+                       "Beta App Review. Testers can install it once Apple approves.")
+        return 0, f"TestFlight: build {n} in {', '.join(names)}, {ext}."
+    except Refused as r:
+        why_block(r.step, r.why, progress(), r.fix)
+    except Exception as e:  # noqa: BLE001 — every beta failure ends in a WHY block (AC14)
+        why_block(step, trim(e), progress(), f"Read Apple's message above; fix it in {TESTFLIGHT_PAGE} or here, "
+                  f"then {rerun}")
+    except SystemExit as e:
+        why_block(step, trim(e.code), progress(), f"Fix what the message names, then {rerun}")
+    return 1, f"Uploaded to TestFlight (build {n}). Not available to external testers: see WHY THIS JOB FAILED."
+
+
+def beta_command(argv, asc_factory=None):
+    """beta BUNDLE_ID VERSION BUILD --groups FILE --description FILE
+       [--wait-minutes N] [--summary FILE] [--rerun CMD] [--dry-run]"""
+    args = argv[2:]
+    if len(args) < 3:
+        print(beta_command.__doc__)
+        return 2
+    bundle_id, version, build = args[:3]
+    rest = [r for r in args[3:] if r != "--dry-run"]
+    dry = "--dry-run" in args[3:]
+    opts = {"--groups": None, "--description": None, "--wait-minutes": "30", "--summary": None, "--rerun": RERUN}
+    for k, v in zip(rest[::2], rest[1::2]):
+        if k not in opts:
+            print(beta_command.__doc__)
+            return 2
+        opts[k] = v
+    if not opts["--groups"] or not opts["--description"]:
+        print("WHY THIS JOB FAILED: --groups and --description are required (store/testflight/).")
+        return 2
+    names = beta_groups(opts["--groups"])
+    with open(opts["--description"], encoding="utf-8") as fh:
+        description = fh.read()
+    asc = (asc_factory or Asc)(read_only=dry)
+    code, line = beta(asc, bundle_id, version, build, names, description, dry_run=dry,
+                      wait_minutes=int(opts["--wait-minutes"]), rerun=opts["--rerun"])
+    print(line)
+    if opts["--summary"]:
+        with open(opts["--summary"], "w", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    return code
+
+
+class FakeBeta(Asc):
+    """A fake App Store Connect's TestFlight side: Apple's documented beta
+    endpoints over an in-memory store, behind the real client's read-only
+    guard. Made-up groups only, and no tester records at all: any tester or
+    public-link endpoint, and adding a build to an internal group, is an error.
+    groups: {name: isInternalGroup}. approve_on_add: Apple approves a later
+    build of an approved version when it is added to a group (P2's open question)."""
+
+    def __init__(self, builds, groups=None, locs=None, contact=None, approve_on_add=False, read_only=False):
+        self.read_only, self.jwt, self.sent = read_only, "unused", []
+        self.groups = {f"G{i + 1}": {"name": k, "internal": v} for i, (k, v) in
+                       enumerate((groups or {"Externals": False, "Team (Expected)": True}).items())}
+        self.b = {f"B{i}": dict(x, groups=list(x.get("groups", []))) for i, x in enumerate(builds)}
+        self.locs = {f"BL{i + 1}": dict(v, locale=k) for i, (k, v) in enumerate(
+            (locs if locs is not None else {LOCALE: {"description": "", "feedbackEmail": "ann@x.example"}}).items())}
+        self.contact = contact if contact is not None else {
+            "contactFirstName": "Ann", "contactLastName": "Example", "contactPhone": "07700 900000",
+            "contactEmail": "ann@x.example"}
+        self.approve_on_add = approve_on_add
+
+    def send(self, method, url, body):
+        path, _, query = url[len(API):].partition("?")
+        q = dict(urllib.parse.parse_qsl(query))
+        self.sent.append((method, path))
+        if TESTER_DATA.search(path):
+            raise RuntimeError(f"fake App Store Connect: {method} {path} touches testers or the public link")
+        p = path.strip("/").split("/")
+        data = (body or {}).get("data", {})
+        if method == "GET":
+            if path == "/apps":
+                return 200, {"data": [{"id": "APP"}]}
+            if path == "/betaGroups":
+                return 200, {"data": [{"id": k, "attributes": {"name": g["name"], "isInternalGroup": g["internal"]}}
+                                      for k, g in self.groups.items() if g["name"] == q.get("filter[name]")]}
+            if path == "/builds":
+                out = []
+                for k, x in self.b.items():
+                    if x["pre"] != q.get("filter[preReleaseVersion.version]") or \
+                            q.get("filter[version]") not in (None, x["n"]):
+                        continue
+                    if "filter[betaGroups]" in q and q["filter[betaGroups]"] not in x["groups"]:
+                        continue
+                    if q.get("filter[betaAppReviewSubmission.betaReviewState]") not in (None, x["review"]):
+                        continue
+                    out.append({"id": k, "attributes": {"version": x["n"], "processingState": x["processing"],
+                                                        "expired": x["expired"], "usesNonExemptEncryption": False}})
+                return 200, {"data": out}
+            if p[0] == "builds" and p[2] == "buildBetaDetail":
+                return 200, {"data": {"id": p[1], "attributes": {"externalBuildState": self.b[p[1]]["external"]}}}
+            if p[0] == "builds" and p[2] == "betaAppReviewSubmission":
+                r = self.b[p[1]]["review"]
+                return 200, {"data": {"id": "R" + p[1], "attributes": {"betaReviewState": r}} if r else None}
+            if p[0] == "builds" and p[2] == "betaBuildLocalizations":
+                w = self.b[p[1]]["whatsNew"]
+                return 200, {"data": [{"id": "W", "attributes": {"locale": LOCALE, "whatsNew": w}}] if w else []}
+            if p[0] == "apps" and p[2] == "betaAppLocalizations":
+                return 200, {"data": [{"id": k, "attributes": dict(v)} for k, v in self.locs.items()]}
+            if p[0] == "apps" and p[2] == "betaAppReviewDetail":
+                return 200, {"data": {"id": "D", "attributes": dict(self.contact)}}
+        if method == "PATCH" and p[0] == "betaAppLocalizations":
+            self.locs[p[1]].update(data["attributes"])
+            return 200, {"data": {"id": p[1]}}
+        if method == "POST" and path == "/betaAppLocalizations":
+            k = f"BL{len(self.locs) + 1}"
+            self.locs[k] = dict(data["attributes"])
+            return 201, {"data": {"id": k}}
+        if method == "POST" and p[0] == "betaGroups" and p[2:] == ["relationships", "builds"]:
+            g = self.groups[p[1]]
+            if g["internal"]:
+                raise RuntimeError(f"fake App Store Connect: build added to internal group {g['name']}")
+            for x in data:
+                b = self.b[x["id"]]
+                if p[1] not in b["groups"]:
+                    b["groups"].append(p[1])
+                if self.approve_on_add and any(o["review"] == "APPROVED" and o["pre"] == b["pre"]
+                                               for o in self.b.values()):
+                    b["external"] = "IN_BETA_TESTING"
+            return 204, {}
+        if method == "POST" and path == "/betaAppReviewSubmissions":
+            b = self.b[data["relationships"]["build"]["data"]["id"]]
+            if b["review"]:
+                raise RuntimeError("fake App Store Connect: HTTP 409 this build already has a submission")
+            b["review"], b["external"] = "WAITING_FOR_REVIEW", "WAITING_FOR_BETA_REVIEW"
+            return 201, {"data": {"id": "R"}}
+        raise RuntimeError(f"fake App Store Connect has no route for {method} {path}")
+
+    def writes(self):
+        return [f"{m} {p}" for m, p in self.sent if m in self.WRITES]
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -1813,6 +2342,188 @@ def self_test():
         expect("refuses: the release command without --screenshots, before any call",
                rc == 2 and "--screenshots FOLDER is required" in out.getvalue())
 
+    # ----- #234: TestFlight external testers. Healthy cases first (AC20). -----
+    wtt = "How to test: import the test season."
+    ext = {"Externals": {"id": "G1", "internal": False}}
+    desc = "Heart of the Game: Coach for grassroots coaches."
+    full_info = {"locales": {"en-GB": {"id": "BL1", "description": desc, "feedbackEmail": True}},
+                 "contact": {f: True for f in BETA_CONTACT}, "whats_new": True}
+    bare_info = dict(full_info, locales={"en-GB": {"id": "BL1", "description": "", "feedbackEmail": True}})
+    fresh = {"processing": "VALID", "expired": False, "external": "READY_FOR_BETA_SUBMISSION",
+             "in_groups": [], "review": None}
+
+    def bkinds(plan):
+        return [k for k, _ in plan["steps"]]
+
+    def bdecide(build=fresh, info=full_info, approved=False, groups=ext, dry=False, names=("Externals",)):
+        return decide_beta(list(names), groups, build, approved, info, desc, "412", "1.3.0", dry_run=dry)
+
+    ba = bdecide(info=bare_info)
+    expect("beta healthy (a): first build of 1.3.0: set the description, add to Externals, submit once",
+           ba["outcome"] == "act" and bkinds(ba) == ["description", "add", "submit"]
+           and "would submit" not in " ".join(ba["lines"]) and ba["review"] == "submit")
+    bb = bdecide(approved=True)
+    expect("beta healthy (b): 1.3.0 already approved: add to Externals; a review only if Apple asks",
+           bb["outcome"] == "act" and bkinds(bb) == ["add", "submit_if_asked"]
+           and any("1.3.0 already approved for external testing" in ln for ln in bb["lines"]))
+    for st, rv in (("WAITING_FOR_BETA_REVIEW", "WAITING_FOR_REVIEW"), ("IN_BETA_REVIEW", "IN_REVIEW"),
+                   ("BETA_APPROVED", "APPROVED"), ("IN_BETA_TESTING", "APPROVED")):
+        bc = bdecide(build=dict(fresh, external=st, review=rv, in_groups=["Externals"]))
+        expect(f"beta healthy (c): already in Externals and {st}: nothing to do, success",
+               bc["outcome"] == "nothing" and bc["steps"] == []
+               and bc["lines"][-1] == f"build 412 is already in Externals, {st}; nothing to do")
+    bd = bdecide(info=bare_info, dry=True)
+    expect("beta healthy (d): the dry run of (a) is the same plan, in 'would' words",
+           bd["outcome"] == "act" and bkinds(bd) == bkinds(ba)
+           and "would submit for Beta App Review" in bd["lines"]
+           and any("would set" in ln and "description" in ln for ln in bd["lines"])
+           and any("Externals: found, external, build 412 not in it: would add" in ln for ln in bd["lines"]))
+    bd2 = bdecide(build=None, info=dict(full_info, whats_new=None), dry=True)
+    expect("beta healthy: the dry run before an upload plans from the version: add and submit",
+           bd2["outcome"] == "act" and bkinds(bd2) == ["add", "submit"]
+           and any("uploaded by this run" in ln for ln in bd2["lines"])
+           and any("What to Test (en-GB): set by this run" in ln for ln in bd2["lines"]))
+    expect("beta healthy: a run stopped after the add is finished by submitting, nothing added twice",
+           bkinds(bdecide(build=dict(fresh, in_groups=["Externals"]))) == ["submit"])
+    expect("beta healthy: a submission already waiting is never made twice (only the add is left)",
+           bkinds(bdecide(build=dict(fresh, external="WAITING_FOR_BETA_REVIEW", review="WAITING_FOR_REVIEW"))) == ["add"])
+
+    def brefused(plan, *words):
+        return plan["outcome"] == "refuse" and plan["steps"] == [] and all(w in plan["why"] for w in words)
+
+    expect("beta refuses: a named group that does not exist, adding to no group",
+           brefused(bdecide(groups={"Externals": None}), "Externals", "no TestFlight group"))
+    expect("beta refuses: a named group that is internal",
+           brefused(bdecide(groups={"Externals": {"id": "G9", "internal": True}}), "Externals", "internal"))
+    expect("beta refuses: the build is not VALID after the wait, with the re-run command",
+           brefused(bdecide(build=dict(fresh, processing="PROCESSING")), "PROCESSING")
+           and "testflight_for" in bdecide(build=dict(fresh, processing="PROCESSING"))["fix"])
+    expect("beta refuses: still in export compliance review after the wait, with the re-run command",
+           brefused(bdecide(build=dict(fresh, external="IN_EXPORT_COMPLIANCE_REVIEW")), "IN_EXPORT_COMPLIANCE_REVIEW")
+           and "testflight_for" in bdecide(build=dict(fresh, external="IN_EXPORT_COMPLIANCE_REVIEW"))["fix"])
+    expect("beta refuses: FAILED, INVALID, expired or missing compliance is never added to a group",
+           all(brefused(bdecide(build=b_), w) for b_, w in (
+               (dict(fresh, processing="FAILED"), "FAILED"), (dict(fresh, processing="INVALID"), "INVALID"),
+               (dict(fresh, expired=True), "expired"), (dict(fresh, external="EXPIRED"), "expired"),
+               (dict(fresh, external="MISSING_EXPORT_COMPLIANCE"), "MISSING_EXPORT_COMPLIANCE"))))
+    expect("beta refuses: BETA_REJECTED, never resubmitted, pointing at Apple's email",
+           brefused(bdecide(build=dict(fresh, external="BETA_REJECTED", review="REJECTED")), "BETA_REJECTED")
+           and "email" in bdecide(build=dict(fresh, external="BETA_REJECTED", review="REJECTED"))["fix"])
+    expect("beta refuses: a required Test Information field empty, naming it, before any write",
+           brefused(bdecide(info=dict(full_info, contact=dict(full_info["contact"], contactPhone=False))),
+                    "review contact phone")
+           and brefused(bdecide(info=dict(full_info, whats_new=False)), "What to Test")
+           and brefused(bdecide(info=dict(full_info, locales={"en-GB": {"id": "BL1", "description": desc,
+                                                                         "feedbackEmail": False}})), "feedback email"))
+    expect("beta refuses: a real run with no build 412 at Apple",
+           brefused(bdecide(build=None), "no build 412"))
+    expect("beta refuses: a state it does not know, changing nothing",
+           brefused(bdecide(build=dict(fresh, external="NOT_APPLICABLE")), "NOT_APPLICABLE"))
+
+    # The executor, against the fake App Store Connect's TestFlight.
+    def brun(fake, dry=False, names=("Externals",)):
+        out = quiet()
+        with contextlib.redirect_stdout(out):
+            code, line = beta(fake, "com.example", "1.3.0", 412, list(names), desc, dry_run=dry,
+                              wait_minutes=0, sleep=lambda s: None)
+        return code, line, out.getvalue()
+
+    def fake_beta(**kw):
+        b_ = dict({"n": "412", "pre": "1.3.0", "processing": "VALID", "external": "READY_FOR_BETA_SUBMISSION",
+                   "review": None, "groups": [], "whatsNew": wtt, "expired": False}, **kw.pop("build", {}))
+        return FakeBeta(builds=[b_] + kw.pop("older", []), **kw)
+
+    f = fake_beta()
+    code, line, log = brun(f)
+    expect("beta healthy (a) end to end: description set, added to Externals, submitted once, read back",
+           code == 0 and f.writes() == ["PATCH /betaAppLocalizations/BL1", "POST /betaGroups/G1/relationships/builds",
+                                        "POST /betaAppReviewSubmissions"]
+           and "read back: build 412 is in Externals" in log
+           and "read back: externalBuildState WAITING_FOR_BETA_REVIEW" in log
+           and line == "TestFlight: Heart FC Coach 1.3.0 (build 412) added to Externals; submitted for Beta App "
+                       "Review. Testers can install it once Apple approves.")
+    expect("beta: no credential, feedback email or contact detail in the log (AC15)",
+           "eyJ" not in log and "@" not in log and "Ann" not in log and "07700" not in log
+           and "feedback email: present" in log and "review contact phone: present" in log)
+    before = len(f.writes())
+    code, line, log = brun(f)
+    expect("beta healthy (c) end to end: a re-run writes nothing and exits 0",
+           code == 0 and len(f.writes()) == before
+           and "build 412 is already in Externals, WAITING_FOR_BETA_REVIEW; nothing to do" in log)
+    f = fake_beta(read_only=True)
+    code, line, log = brun(f, dry=True)
+    expect("beta healthy (d) end to end: the dry run of (a) sends no POST, PATCH or DELETE and exits 0",
+           code == 0 and f.writes() == [] and "would submit for Beta App Review" in log
+           and "Dry run: nothing was changed in TestFlight." in log)
+    older = [{"n": "400", "pre": "1.3.0", "processing": "VALID", "external": "IN_BETA_TESTING", "review": "APPROVED",
+              "groups": ["G1"], "whatsNew": wtt, "expired": False}]
+    f = fake_beta(older=older, approve_on_add=True, locs={"en-GB": {"description": desc, "feedbackEmail": "a@x.example"}})
+    code, line, log = brun(f)
+    expect("beta healthy (b) end to end: approved version, Apple approves on adding: no submission",
+           code == 0 and f.writes() == ["POST /betaGroups/G1/relationships/builds"]
+           and "1.3.0 already approved for external testing; build 412 added, no review needed" in log
+           and line == "TestFlight: build 412 in Externals, IN_BETA_TESTING.")
+    f = fake_beta(older=older, locs={"en-GB": {"description": desc, "feedbackEmail": "a@x.example"}})
+    code, line, log = brun(f)
+    expect("beta healthy (b'): approved version, but Apple still asks: one submission, and it is named",
+           code == 0 and f.writes().count("POST /betaAppReviewSubmissions") == 1
+           and "Apple still asks for a Beta App Review of build 412: submitted" in log)
+    f = fake_beta(build={"groups": ["G1"]})
+    code, line, log = brun(f)
+    expect("beta healthy: a run stopped after the add is finished by the re-run, nothing added twice",
+           code == 0 and "POST /betaGroups/G1/relationships/builds" not in f.writes()
+           and f.writes().count("POST /betaAppReviewSubmissions") == 1)
+    f = fake_beta(locs={})
+    code, line, log = brun(f)
+    expect("refuses end to end: no beta localisation, so no feedback email: nothing written, WHY block names it",
+           code == 1 and f.writes() == [] and "WHY THIS JOB FAILED" in log and "feedback email" in log
+           and "got as far as: nothing changed in TestFlight" in log
+           and line == "Uploaded to TestFlight (build 412). Not available to external testers: see WHY THIS JOB FAILED.")
+    f = fake_beta(groups={"Externals": True})
+    code, line, log = brun(f)
+    expect("refuses end to end: Externals is internal: added to no group, nothing written",
+           code == 1 and f.writes() == [] and "internal" in log)
+    f = fake_beta(build={"external": "BETA_REJECTED", "review": "REJECTED"})
+    code, line, log = brun(f)
+    expect("refuses end to end: BETA_REJECTED changes nothing", code == 1 and f.writes() == [])
+    f = fake_beta(build={"processing": "PROCESSING"})
+    code, line, log = brun(f)
+    expect("refuses end to end: still processing after the wait names the re-run command",
+           code == 1 and f.writes() == [] and "gh workflow run testflight.yml --ref main -f testflight_for=" in log)
+    f = fake_beta()
+    for path in ("/betaTesters", "/betaGroups/G1/relationships/betaTesters", "/betaTesterInvitations",
+                 "/betaGroups/G2/relationships/builds"):
+        try:
+            beta_write(f, "POST", path, {"data": []}, external_ids={"G1"})
+            ok = False
+        except ForbiddenWrite:
+            ok = True
+        expect(f"beta: a write to {path} is refused before it is sent", ok and f.sent == [])
+    try:
+        f.call("POST", "/betaGroups/G2/relationships/builds", {"data": [{"type": "builds", "id": "B0"}]})
+        ok = False
+    except RuntimeError:
+        ok = True
+    expect("beta: the fake App Store Connect itself rejects adding a build to an internal group", ok)
+    f = fake_beta()
+    brun(f)
+    expect("beta: every write the run sent is one this issue names, and none touched a tester",
+           all(beta_allowed(*w.split(" ", 1)) for w in f.writes())
+           and not any("Tester" in p or "publicLink" in p for _, p in f.sent))
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "en-GB"))
+        open(os.path.join(d, "groups.txt"), "w").write("# the external group\nExternals\n")
+        open(os.path.join(d, "en-GB", "beta_description.txt"), "w").write(desc + "\n")
+        expect("beta healthy: the committed-style files check clean and read the group name",
+               beta_problems(d) == [] and beta_groups(os.path.join(d, "groups.txt")) == ["Externals"])
+        open(os.path.join(d, "groups.txt"), "w").write("someone@example.com\n")
+        open(os.path.join(d, "en-GB", "beta_description.txt"), "w").write("")
+        expect("beta refuses: a group line that is an email, and an empty description",
+               len(beta_problems(d)) == 2)
+    repo_tf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "store", "testflight")
+    expect("beta healthy: the repository's store/testflight/ checks clean and names Externals",
+           beta_problems(repo_tf) == [] and beta_groups(os.path.join(repo_tf, "groups.txt")) == ["Externals"])
+
     # AC25: the count is of expectations actually run, never a typed-in number.
     print(f"{total - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
@@ -1829,6 +2540,16 @@ def main(argv):
         return screenshots(argv[2], argv[3], argv[4], dry_run=argv[5:] == ["--dry-run"])
     if len(argv) >= 6 and argv[1] == "release":
         return release_command(argv)
+    if len(argv) >= 5 and argv[1] == "beta":
+        return beta_command(argv)
+    if len(argv) == 3 and argv[1] == "beta-check":
+        problems = beta_problems(argv[2])
+        for x in problems:
+            print(f"WHY THIS JOB FAILED: {x}")
+        if not problems:
+            print(f"{argv[2]}: group(s) {', '.join(beta_groups(os.path.join(argv[2], 'groups.txt')))}; "
+                  "beta description within Apple's limit")
+        return 1 if problems else 0
     if len(argv) in (6, 7) and argv[1] == "what-to-test":
         return what_to_test(argv[2], argv[3], argv[4], argv[5], int(argv[6]) if len(argv) == 7 else 20)
     print(__doc__)

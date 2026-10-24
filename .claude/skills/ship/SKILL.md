@@ -72,6 +72,24 @@ highest build it has for that version, failing before signing if ours is not
 higher (raise the version: a fix is a patch). It sets TestFlight's What to
 Test from the release note (`testflight_notes.py`, `asc_api.py`).
 
+**External testers (#234).** Next, before the App Store steps and
+independent of them (either refusing turns the job red; neither stops the
+other), `asc_api.py beta` gives the build to TestFlight's external group,
+named in `store/testflight/groups.txt` (`Externals`; names only, never an id
+or a tester). It waits `PROCESSING_WAIT_MINUTES`, adds the build to the group,
+sets the beta description from `store/testflight/en-GB/beta_description.txt`,
+checks the feedback email and beta review contact (Rob's, typed once in App
+Store Connect, logged only as `present` or `empty`) and What to Test, and
+submits for Beta App Review only when the build's `externalBuildState` asks
+for it, never twice. It never calls a tester or public-link endpoint, never
+touches an internal group, never removes or expires a build (`beta_write`
+refuses any other write before it is sent). A missing or internal group, an
+unprocessed build, `BETA_REJECTED` or an empty field refuses with WHY THIS
+JOB FAILED. Alone, for a build already uploaded:
+`gh workflow run testflight.yml --ref main -f testflight_for=SHA`
+(`-f dry_run=true` prints the plan). `beta-check` checks `store/testflight/`
+in `ci.yml`.
+
 **Release on approval (#226).** The same run then submits it: it waits
 (bounded, `PROCESSING_WAIT_MINUTES`) for Apple to process the build, creates
 or reuses the App Store version for `app.json`'s version, attaches this

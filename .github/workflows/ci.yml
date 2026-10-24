@@ -104,6 +104,8 @@ jobs:
         run: |
           python3 .github/scripts/testflight_notes.py --self-test
           python3 .github/scripts/asc_api.py --self-test
+          # #234: the TestFlight group name and beta description, on every PR.
+          python3 .github/scripts/asc_api.py beta-check store/testflight
 
       # #108 D2: the App Store listing files stay within Apple's limits and
       # claim nothing v1 lacks. Self-test first, then the real files.
