@@ -1,0 +1,3 @@
+# #234: the external TestFlight group(s) each release build goes to, by the exact
+# name App Store Connect shows. One per line. Names only: never an id or a tester.
+Externals

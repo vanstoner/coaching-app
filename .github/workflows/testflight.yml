@@ -21,6 +21,29 @@ name: TestFlight
 #       the way to finish after a refusal, with no new build and no bump
 #   gh workflow run testflight.yml --ref main -f app_store_for=SHA -f dry_run=true
 #       # reads every version, its state and the build, prints the plan, changes nothing
+#   gh workflow run testflight.yml --ref main -f testflight_for=SHA    # #234: only the
+#       TestFlight external steps below, for the build made from SHA (already
+#       uploaded): the way to finish after a beta refusal, or to put an older
+#       build in front of the testers, with no new build and no bump
+#   gh workflow run testflight.yml --ref main -f testflight_for=SHA -f dry_run=true
+#       # reads the groups, the build and the Test Information, prints the plan, changes nothing
+#
+# #234 (PO "approve 234, group = Externals"): after What to Test and before
+# the App Store steps, the same run gives the build to TestFlight's external
+# testers (asc_api.py beta). It waits (PROCESSING_WAIT_MINUTES) for Apple to
+# process it, adds it to each external group named in
+# store/testflight/groups.txt (by name, one per line: the one place the group
+# lives; changing it is a one-line PR), sets the beta description from
+# store/testflight/en-GB/beta_description.txt, checks the feedback email,
+# the beta review contact (Rob's, typed once in App Store Connect, logged only
+# as present or empty) and What to Test are filled, and submits the build for
+# Beta App Review only when Apple's externalBuildState asks for it, never
+# twice. A later build of an approved version is added with no submission when
+# Apple approves it on adding. It never touches testers, the public link or an
+# internal group, and never removes or expires a build. A refusal (a missing or
+# internal group, a build not processed, BETA_REJECTED, an empty field) turns
+# the job red with WHY THIS JOB FAILED; the App Store steps still run, and the
+# reverse holds too (AC13). No pull request ever reaches TestFlight (Q5).
 #
 # #226 (PO "approve 226"): after the upload and What to Test, the same run
 # creates or reuses the App Store version for app.json's version, attaches
@@ -66,6 +89,10 @@ on:
         description: "Only the App Store steps (version, build, What's New, submit) for the build made from this main commit (no build, no upload)"
         type: string
         default: ""
+      testflight_for:
+        description: "Only the TestFlight external steps (group, Test Information, Beta App Review) for the build made from this main commit (no build, no upload)"
+        type: string
+        default: ""
 
 # Every dry run (the full one, or the plan alone with app_store_for) writes
 # nothing, so it has its own group: it never cancels a real run, waiting for
@@ -102,10 +129,12 @@ jobs:
       build: ${{ steps.find.outputs.BUILD }}
       tag: ${{ steps.find.outputs.TAG }}
       version: ${{ steps.sha.outputs.VERSION }}
+      sha: ${{ steps.sha.outputs.SHA }}
     env:
       GH_TOKEN: ${{ github.token }}
       WHAT_TO_TEST_FOR: ${{ inputs.what_to_test_for }}
       APP_STORE_FOR: ${{ inputs.app_store_for }}
+      TESTFLIGHT_FOR: ${{ inputs.testflight_for }}
     steps:
       # #182: What to Test lists the merges since the previous version, which
       # it finds in app.json's history, so the whole history is needed.
@@ -123,11 +152,13 @@ jobs:
         id: sha
         run: |
           set -euo pipefail
-          if [ -n "$WHAT_TO_TEST_FOR" ] && [ -n "$APP_STORE_FOR" ]; then
-            echo "WHY THIS JOB FAILED: what_to_test_for and app_store_for are separate runs; give one."
+          given=0
+          for v in "$WHAT_TO_TEST_FOR" "$APP_STORE_FOR" "$TESTFLIGHT_FOR"; do [ -z "$v" ] || given=$((given + 1)); done
+          if [ "$given" -gt 1 ]; then
+            echo "WHY THIS JOB FAILED: what_to_test_for, app_store_for and testflight_for are separate runs; give one."
             exit 1
           fi
-          FOR="${WHAT_TO_TEST_FOR:-$APP_STORE_FOR}"
+          FOR="${WHAT_TO_TEST_FOR:-${APP_STORE_FOR:-$TESTFLIGHT_FOR}}"
           if [ -n "$FOR" ]; then
             SHA="$(git rev-parse --verify "${FOR}^{commit}" 2>/dev/null)" \
               || { echo "WHY THIS JOB FAILED: '$FOR' is not a commit here"; exit 1; }
@@ -139,6 +170,7 @@ jobs:
           VERSION="$(git show "$SHA:app.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expo"]["version"])')"
           echo "commit $SHA, version $VERSION"
           echo "SHA=$SHA" >> "$GITHUB_ENV"
+          echo "SHA=$SHA" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Wait for this commit's release
@@ -222,7 +254,7 @@ jobs:
   upload:
     name: Sign and upload to TestFlight, then submit for review
     needs: number
-    if: inputs.what_to_test_for == '' && inputs.app_store_for == ''
+    if: inputs.what_to_test_for == '' && inputs.app_store_for == '' && inputs.testflight_for == ''
     runs-on: macos-26
     timeout-minutes: 90
     environment: app-store
@@ -291,9 +323,12 @@ jobs:
       - name: Self-test the .app assertion
         run: python3 .github/scripts/check_ios_app.py --self-test
 
-      # #226 AC23: the release decision is proved before any App Store Connect write.
+      # #226 AC23, #234 AC20: the release and beta decisions are proved before
+      # any App Store Connect write.
       - name: Self-test the App Store client
-        run: python3 .github/scripts/asc_api.py --self-test
+        run: |
+          python3 .github/scripts/asc_api.py --self-test
+          python3 .github/scripts/asc_api.py beta-check store/testflight
 
       - name: Install dependencies
         run: npm ci
@@ -414,10 +449,30 @@ jobs:
           echo "--- What to Test ---"; cat what-to-test.txt; echo; echo "---"
           python3 .github/scripts/asc_api.py what-to-test com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" what-to-test.txt 25
 
+      # #234 (Q4): after What to Test, before the App Store steps, and
+      # independent of them. In a dry run (nothing uploaded) it reads the
+      # groups and the Test Information, prints the plan and writes nothing.
+      - name: "TestFlight: external group, Test Information, Beta App Review"
+        id: beta
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -uo pipefail
+          DRY=""
+          [ "$DRY_RUN" = true ] && DRY="--dry-run"
+          python3 .github/scripts/asc_api.py beta com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" \
+            --groups store/testflight/groups.txt --description store/testflight/en-GB/beta_description.txt \
+            --wait-minutes "$PROCESSING_WAIT_MINUTES" --summary "$RUNNER_TEMP/testflight.txt" \
+            --rerun "gh workflow run testflight.yml --ref main -f testflight_for=$GITHUB_SHA" $DRY
+
       # #226: after the upload and What to Test. In a dry run (nothing
       # uploaded) it reads everything, prints the plan and writes nothing.
+      # #234 AC13: it runs whether the TestFlight steps passed or refused;
+      # either one failing turns the job red.
       - name: "App Store: version, build, release after approval, What's New, submit"
         id: appstore
+        if: ${{ !cancelled() && (steps.beta.outcome == 'success' || steps.beta.outcome == 'failure') }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -438,12 +493,14 @@ jobs:
             echo "Heart FC Coach ${VERSION:-?} (build $IOS_BUILD_NUMBER), signing path ${SIGNING_PATH:-not reached}."
             if [ "$DRY_RUN" = true ]; then
               echo "**Dry run: nothing was uploaded.**"
+              cat "$RUNNER_TEMP/testflight.txt" 2>/dev/null || echo "TestFlight plan: not reached."
               cat "$RUNNER_TEMP/app-store.txt" 2>/dev/null || echo "App Store plan: not reached."
             elif [ "${{ steps.upload.outcome }}" != success ]; then
               echo "Not uploaded: see WHY THIS JOB FAILED above."
-            elif [ "${{ steps.appstore.outcome }}" = success ]; then
-              cat "$RUNNER_TEMP/app-store.txt"
             else
+              # #234 AC4, AC14: one line for TestFlight beside the App Store's.
+              cat "$RUNNER_TEMP/testflight.txt" 2>/dev/null \
+                || echo "Uploaded to TestFlight (build $IOS_BUILD_NUMBER). Not available to external testers: see WHY THIS JOB FAILED."
               cat "$RUNNER_TEMP/app-store.txt" 2>/dev/null \
                 || echo "Uploaded to TestFlight (build $IOS_BUILD_NUMBER). Not submitted for review: see WHY THIS JOB FAILED."
             fi
@@ -522,6 +579,72 @@ jobs:
           {
             echo "### App Store"
             cat "$RUNNER_TEMP/app-store.txt" 2>/dev/null || echo "Not reached: see WHY THIS JOB FAILED above."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/asc-key.p8"
+
+  # #234 AC10: the TestFlight external steps alone, for a build already
+  # uploaded: the way to finish after a beta refusal, or to put a build
+  # uploaded before #234 (1.3.0's) in front of the testers, with no new build
+  # and no bump. In app-store, like every App Store Connect write, so Rob
+  # approves it. main's scripts and main's store/testflight/.
+  testflight-only:
+    name: TestFlight external steps only (no build)
+    needs: number
+    if: inputs.testflight_for != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: app-store
+    env:
+      VERSION: ${{ needs.number.outputs.version }}
+      IOS_BUILD_NUMBER: ${{ needs.number.outputs.build }}
+      FOR_SHA: ${{ needs.number.outputs.sha }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      PROCESSING_WAIT_MINUTES: 30
+    steps:
+      - name: Refuse anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "WHY THIS JOB FAILED: App Store Connect is read and written from main only; this run is on $GITHUB_REF."
+            exit 1
+          fi
+          echo "build $IOS_BUILD_NUMBER of $VERSION (commit ${FOR_SHA:0:7}); dry run: $DRY_RUN"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the App Store client
+        run: |
+          python3 .github/scripts/asc_api.py --self-test
+          python3 .github/scripts/asc_api.py beta-check store/testflight
+
+      - name: Write and check the API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          .github/scripts/asc-key.sh "$RUNNER_TEMP/asc-key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-key.p8" >> "$GITHUB_ENV"
+
+      - name: "TestFlight: external group, Test Information, Beta App Review"
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -uo pipefail
+          DRY=""
+          [ "$DRY_RUN" = true ] && DRY="--dry-run"
+          python3 .github/scripts/asc_api.py beta com.vanstoner.coachingapp "$VERSION" "$IOS_BUILD_NUMBER" \
+            --groups store/testflight/groups.txt --description store/testflight/en-GB/beta_description.txt \
+            --wait-minutes "$PROCESSING_WAIT_MINUTES" --summary "$RUNNER_TEMP/testflight.txt" \
+            --rerun "gh workflow run testflight.yml --ref main -f testflight_for=$FOR_SHA" $DRY
+
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo "### TestFlight external testers"
+            cat "$RUNNER_TEMP/testflight.txt" 2>/dev/null || echo "Not reached: see WHY THIS JOB FAILED above."
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Remove the API key
