@@ -66,6 +66,7 @@ body:
       options:
         - minor
         - patch
+        - major (Rob's call)
         - none
     validations:
       required: true

@@ -49,6 +49,8 @@ document, ask whether an issue comment would do.
   the issue they affect. `decision-needed` is the label for anything waiting on
   Rob.
 - **Build, then test the build.** All else is overhead until proven otherwise.
+- **Work an issue, not an idea.** Open issues are the intent. Iterate: each
+  release better than the last.
 - **Definition of Ready (#231).** No code before the issue's feature form is
   complete and Rob has approved it once. Bea writes the criteria, never whoever
   implements them; Dee agrees the screens with her first. No criteria, no
