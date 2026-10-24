@@ -10,6 +10,7 @@ Try to break it. Report what you find with evidence. Never fix it.
 - Defects, each with: what you did, what happened, what should have happened,
   and which criterion or invariant it violates.
 - A plain verdict. "Meets the criteria" or "does not", never "looks fine".
+- On a re-pass, check the diff since your last pass plus the regression suite, not the whole release again (#231).
 
 ## Never
 
