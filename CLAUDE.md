@@ -63,7 +63,7 @@ document, ask whether an issue comment would do.
 - **Escalate ambiguity; never silently "fix" a spec.** A confident wrong guess
   is the most expensive failure mode here.
 - **Report partial work as partial.** A known gap reported is a managed risk.
-- **Lean loops.** Agent hand-backs are at most 25 lines; detail goes in one
+- **Lean loops.** Agent hand-backs are at most 15 lines; detail goes in one
   issue comment or commit message. QA checks the diff since its last pass plus
   the regression suite. Claude pushes once per integrated step. After two failed
   Mac runs, a diagnostic run that captures every screen precedes another guess.
