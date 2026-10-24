@@ -3,14 +3,42 @@ name: ship
 description: Own CI, the build, the APK and the release. Use when touching .github/, the workflows, app.config.js, versioning, or when a build is red and needs diagnosing. Never writes product features. The Platform Engineer discipline (Pip).
 ---
 
-Every session ends with a releasable artifact. Every pull request
-publishes **Heart FC Beta Coach** (its own app id; one rolling `beta` release). A
+Every session ends with a releasable artifact. Every pull request that
+changes the app publishes **Heart FC Beta Coach** (its own app id; one rolling
+`beta` release) once it is ready for review or labelled `ci:full` (#230). A
 merge is Rob's approval, so a green build of `main` publishes the full
 **Heart FC Coach** release, marked Latest, and replaces the beta with a no-APK
 note pointing at it (#128), unless the beta belongs to a newer PR that is
 still open (`beta_decision.py`). Each page opens with the PR it contains and the
 issues it closes (`release_notes.py`); iOS CI attaches a simulator zip to it.
 If a session produces no installable APK, it produced nothing.
+
+**What a push builds (#230).** `android-apk.yml` and `ios.yml` start on every
+event and first run a cheap `scope` job (`ci_scope.py`, self-tested there and
+in `ci.yml`); the expensive jobs skip by `if:` when it says so, never by
+`on: paths`, so no check is ever left "Expected". A change made only of the
+docs-only set (`docs/`, `.claude/`, `.github/ISSUE_TEMPLATE/`, `store/`,
+`site/`, root `*.md`, `LICENSE`, the workflows that build nothing) builds
+neither app and publishes no beta and, on `main`, no release; anything
+unlisted builds. On a PR, iOS also skips the Android-only set; on `main` iOS
+builds exactly when Android does. A **draft** runs the cheap checks only
+(`checks`, `ci`, version impact); marking it ready, or adding the `ci:full`
+label, builds the unchanged head (`ready_for_review` and `labeled` are in the
+triggers). A head an earlier run already built, smoke-tested and published is
+not built again. The screenshot-set check is its own `ci` job, skipped on a
+draft and blocking otherwise. **Concurrency:** superseding is per job, on the
+build jobs only (`checks`, `apk`, `smoke`, the two macOS jobs), keyed on the PR
+ref; on `main` and dispatches it is keyed on the run id, so a merge or a dry
+run never cancels another run. A writer (`release`, `play`, `beta`, `demo`,
+`attach`, TestFlight's real runs, a real `store-listing`, Pages `deploy`) is
+never cancelled; dry runs have their own groups. Never put a workflow-level
+`cancel-in-progress` back on `android-apk.yml` or `ios.yml`: it cancels the
+writers with the run.
+
+**Push once per integrated step (#230).** Integrate locally (`npx vitest run`,
+`npx tsc --noEmit`, `python3 docs/process/validate-docs.py`,
+`npm run bundle:check`) and push once per integrated step, not once per
+cherry-pick, fixup or rebase step. Open PRs as drafts while iterating.
 
 **The demo (#146).** A third release, tag `demo`, "Heart FC Beta Coach — demo": a
 Heart FC Beta Coach (beta id and icon) with `distribution:demo` written in, which
@@ -50,8 +78,10 @@ or reuses the App Store version for `app.json`'s version, attaches this
 build, sets "Automatically release this version" (`AFTER_APPROVAL`), sends
 the listing text, puts the approved screenshots on the version (the
 committed `store/app-store/screenshots/`, exactly the shots
-`screenshot_captions.txt` names; a set already holding them is not
-re-uploaded, and missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
+`screenshot_captions.txt` names; a set already holding them, with our
+checksums, is not re-uploaded; each set is read back until Apple has processed
+it, and still processing after 10 minutes stops short of submitting, as
+that; missing shots refuse before any write), sets What's New from `store/app-store/en-GB/whats_new.txt`
 (a bump that leaves it unchanged fails `version-impact.yml`), checks the page
 is complete and submits it for review (`asc_api.py release`). Apple's
 approval releases it; Rob never opens App Store Connect. Every step checks
@@ -68,7 +98,7 @@ version and its state: the client refuses any write. A dry run has its own
 concurrency group, so it never cancels a real run. Nothing is ever written to
 a live App Information or version: when no editable App Information exists, the
 run sends nothing there, and refuses if the files would change it. The unsigned device
-build is ios.yml's `device-build`, on every PR. Never add a `pull_request`
+build is ios.yml's `device-build`, on every PR that builds iOS. Never add a `pull_request`
 trigger to it.
 
 **Updating safely (#167).** Once a version is in the App Store, a coach's

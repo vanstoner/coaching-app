@@ -3,11 +3,12 @@
 Junior football coaching app for one under-10s squad. Android first. Rob is
 Product Owner and the only approver.
 
-**Every session ends with a releasable artifact.** Every pull request
-publishes **Heart FC Beta Coach** (its own app id; one rolling `beta` release). A
-merge is Rob's approval, so a green build of `main` publishes the full
-**Heart FC Coach** release, marked Latest, and replaces the beta with a note pointing to it, unless a newer open PR's beta is there (#128). If a session produces no installable
-APK, it produced nothing.
+**Every session ends with a releasable artifact.** Every PR that changes the app
+publishes **Heart FC Beta Coach** once it is ready or labelled `ci:full` (#231;
+its own app id, one rolling `beta` release). A merge is Rob's approval, so a
+green build of `main` publishes the full **Heart FC Coach** release, marked
+Latest, and replaces the beta with a note pointing to it, unless a newer open
+PR's beta is there (#128). No installable APK means the session produced nothing.
 
 ## What we are building
 
@@ -41,30 +42,36 @@ clock matters more than refining it. Don't buy precision past that bar.
 
 ## How we work
 
-**Delivery first.** At the last count this repository held 6,147 lines of
-documentation against 114 lines of app. That ratio is the problem, not the
-solution. Before writing a document, ask whether an issue comment would do.
+**Delivery first.** Docs once outweighed the app 50 to 1. Before writing a
+document, ask whether an issue comment would do.
 
 - **Issues are the audit trail.** Decisions, rulings, findings and status go in
   the issue they affect. `decision-needed` is the label for anything waiting on
-  Rob. Don't create a document where an issue comment works.
-- **Build, then test the build.** Those two together are a working, documented
-  codebase. Everything else is overhead until proven otherwise.
-- **Work an issue, not an idea.** The 21 open issues are the intent. Iterate:
-  each release better than the last.
-- **Acceptance criteria come from the issue**, never from whoever implements it.
-  No criteria, no merge — infrastructure included.
-- **Dry-run every gate against the healthy case**, not just the failure case.
-  Five of six CI failures here were assertions rejecting a correct artifact.
-- **Verify preconditions before designing on them.** The release pipeline was
-  built on a tag push nobody had checked was possible. It wasn't.
+  Rob.
+- **Build, then test the build.** All else is overhead until proven otherwise.
+- **Work an issue, not an idea.** Open issues are the intent. Iterate: each
+  release better than the last.
+- **Definition of Ready (#231).** No code before the issue's feature form is
+  complete and Rob has approved it once. Bea writes the criteria, never whoever
+  implements them; Dee agrees the screens with her first. No criteria, no
+  merge — infrastructure included.
+- **Scope freeze.** Once a release PR enters QA, new asks go to the next
+  version, except regressions and release blockers.
+- **Decisions are batched daily** through the `queue` skill, each with a
+  recommendation. Urgent blockers go straight away.
+- **Dry-run every gate against the healthy case** too: five of six CI failures
+  here rejected a correct artifact. **Verify preconditions before designing on
+  them**: the release pipeline was built on a tag push that was not possible.
 - **Escalate ambiguity; never silently "fix" a spec.** A confident wrong guess
   is the most expensive failure mode here.
 - **Report partial work as partial.** A known gap reported is a managed risk.
-- **Every handoff that stops short leaves Rob a checklist (#229).** List what is
-  his (merge, approve a run) and what he *could* do by hand, and give a
-  copy-paste prompt for anything a fresh session can pick up. Sessions die to
-  limits; the work should not.
+- **Lean loops.** Agent hand-backs are at most 15 lines; detail goes in one
+  issue comment or commit message. QA checks the diff since its last pass plus
+  the regression suite. Claude pushes once per integrated step. After two failed
+  Mac runs, a diagnostic run that captures every screen precedes another guess.
+- **Every handoff that stops short leaves Rob a checklist (#229):** what is his
+  (merge, approve a run), what he *could* do by hand, and a copy-paste prompt
+  for anything a fresh session can pick up.
 - **Every app change moves the version and brings its notes (#217).** A PR
   that touches `App.tsx`, `src/` or `assets/` opens its description with
   `## Version`: **minor** (something new a coach can see or do), **patch** (a
@@ -102,9 +109,8 @@ Agents die to rate limits often. When one does, say so — work silently falling
 back to the orchestrator is how the boundaries dissolve.
 
 End every commit with a `Refs:` trailer naming the issue it serves, then
-`Squad-Role:`, above `Co-Authored-By`. `Refs:` is CI-gated (#47 D5) — a
-subject-line `(#NN)` does not count, because it means the PR on some commits
-and the issue on others.
+`Squad-Role:`, above `Co-Authored-By`. `Refs:` is CI-gated (#47 D5); a
+subject-line `(#NN)` does not count, as it names a PR on some commits.
 
 ```
 Refs: #4, #9

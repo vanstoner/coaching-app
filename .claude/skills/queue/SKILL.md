@@ -31,7 +31,7 @@ git log origin/main..main --oneline
    of `origin/main` (work that bypassed a PR).
 6. **Next up** — the highest-priority unblocked item.
 
-Ask for rulings in one batch (AskUserQuestion where options are clear).
+Ask for rulings in one batch (AskUserQuestion where options are clear). Send the batch once a day; only an urgent blocker goes on its own (#231).
 
 ## Record
 

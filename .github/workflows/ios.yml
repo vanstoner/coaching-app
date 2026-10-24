@@ -18,27 +18,136 @@ name: iOS
 # be run in the iPhone simulator on a Mac (README, "Run it on a Mac").
 
 on:
+  # #230: ready_for_review and labeled too, as in android-apk.yml, so marking
+  # a draft ready or labelling it `ci:full` builds the unchanged head.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: ios-${{ github.ref }}
-  cancel-in-progress: true
+# #230: NO workflow-level concurrency, for the reason android-apk.yml gives:
+# it would cancel `attach` mid-upload (F3, Q2). The two macOS jobs carry
+# their own groups, keyed on the PR ref (superseded by a newer push) or on
+# the run id (main and dispatch: never cancelled). `attach` has none.
 
 permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # What this run builds — #230
+  # ---------------------------------------------------------------------------
+  #
+  # Cheap, on every event, so a check from this workflow is never left
+  # "Expected" (criterion 13): the expensive jobs below are skipped by `if:`,
+  # which reports skipped (passing), never by `on: paths`, which reports
+  # nothing. ci_scope.py decides, self-tested first, from:
+  #   * the changed files: a docs-only, issue-template or store/ text change
+  #     builds nothing; anything unlisted builds (criteria 5-8, Q1);
+  #   * the PR's state: a draft runs the cheap checks only, until it is
+  #     ready for review or labelled `ci:full` (criteria 25-28, Q7);
+  #   * whether an earlier run already built this PR head (criterion 14).
+  scope:
+    name: Decide what the iOS run builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read               # criterion 14: earlier runs for this head
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      # A pull request checks out its test merge, whose first parent is the
+      # base: depth 2 is the whole diff. A push compares with `before`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: ${{ github.event_name != 'push' && 2 || 0 }}
+
+      - name: Self-test the decision before trusting it
+        run: |
+          python3 .github/scripts/ci_scope.py --self-test > /tmp/scope-self-test.txt 2>&1 || {
+            cat /tmp/scope-self-test.txt
+            echo "WHY THIS JOB FAILED: ci_scope.py failed its own self-test (lines marked x above)"; exit 1; }
+          tail -n 1 /tmp/scope-self-test.txt
+
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ios
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Criterion 14: an earlier completed run for this head in which these
+          # succeeded (and the publish succeeded or was skipped) needs no rerun.
+          DONE_JOBS: '["Compile for the iOS simulator (signing off)", "Archive for a device (signing off)"]'
+          PUBLISH_JOB: 'Attach the simulator build to the release'
+        run: |
+          set -uo pipefail
+          FILES=/tmp/changed.txt
+          case "$EVENT" in
+            pull_request)
+              git diff --name-only --no-renames HEAD^1 HEAD > "$FILES" || FILES=- ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+                  && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+                git diff --name-only --no-renames "$BEFORE" HEAD > "$FILES" || FILES=-
+              else
+                git diff --name-only --no-renames HEAD^ HEAD > "$FILES" || FILES=-
+              fi ;;
+            *) FILES=- ;;
+          esac
+          if [ "$FILES" = - ] && [ "$EVENT" != workflow_dispatch ]; then
+            echo "the changed files could not be listed: building everything (fail-safe)"
+          fi
+
+          PRIOR_OK=false
+          if [ "$EVENT" = pull_request ]; then
+            RUNS="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW.yml/runs?head_sha=$HEAD_SHA&event=pull_request&status=completed&per_page=20" \
+                    --jq '.workflow_runs[].id' 2>/dev/null)" || RUNS=""
+            for id in $RUNS; do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" > /tmp/jobs.json 2>/dev/null || continue
+              if jq -e --argjson need "$DONE_JOBS" --arg pub "$PUBLISH_JOB" \
+                  '([.jobs[] | {(.name): .conclusion}] | add // {}) as $c
+                   | ($need | all($c[.] == "success")) and ($c[$pub] == "success" or $c[$pub] == "skipped")' \
+                  /tmp/jobs.json > /dev/null 2>&1; then
+                PRIOR_OK=true
+                echo "run $id already built, proved and published ${HEAD_SHA:0:7}"
+                break
+              fi
+            done
+          fi
+          export PRIOR_OK
+
+          python3 .github/scripts/ci_scope.py decide "$FILES" > /tmp/decision.txt || {
+            echo "WHY THIS JOB FAILED: ci_scope.py could not decide (above)"; exit 1; }
+          cat /tmp/decision.txt | tee -a "$GITHUB_OUTPUT"
+          {
+            echo "### ios: $(sed -n 's/^reason=//p' /tmp/decision.txt)"
+            echo
+            echo "build=$(sed -n 's/^build=//p' /tmp/decision.txt) (event $EVENT, draft ${DRAFT:-n/a}, labels $LABELS)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   simulator-build:
     name: Compile for the iOS simulator (signing off)
     # Pinned, not macos-latest: the -latest label migrates between images
     # over weeks and would change Xcode under us without a commit. macos-26 is
     # arm64 with Xcode 26 and CocoaPods preinstalled (actions/runner-images
     # README, read 2026-10-04). ExpoModulesCore needs Swift 6 (Xcode 16+).
+    # #230: only when the scope job says so. On a PR, not for a docs-only
+    # or Android-only change, nor a draft; on main, exactly when Android
+    # builds (Q1); always on a dispatch.
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
     runs-on: macos-26
     timeout-minutes: 75
+    concurrency:
+      group: ios-simulator-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: true
     env:
       # #79/#107: a PR build is Heart FC Beta Coach (com.vanstoner.coachingapp.beta);
       # main is Heart FC Coach (com.vanstoner.coachingapp). Job level, so the
@@ -246,7 +355,8 @@ jobs:
   # ---------------------------------------------------------------------------
   #
   # The healthy case of the TestFlight build, proved on every PR and every
-  # push to main before any secret is used. It archives the iPhone device
+  # push to main that builds iOS (#230: a version bump, which changes
+  # app.json, always does) before any secret is used. It archives the iPhone device
   # build (not the simulator build above) and asserts the A8 keys on that
   # archive's Info.plist: bundle id, display name, version, build number,
   # backup key and the no-encryption flag (B1), plus the bundle's label and
@@ -254,8 +364,13 @@ jobs:
   # with signing on, and only on main.
   device-build:
     name: Archive for a device (signing off)
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
     runs-on: macos-26
     timeout-minutes: 75
+    concurrency:
+      group: ios-device-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: true
     env:
       APP_VARIANT: ${{ github.event_name == 'pull_request' && 'beta' || '' }}
       IOS_BUILD_NUMBER: ${{ github.run_number }}
@@ -345,12 +460,15 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    # #230 Q2: no concurrency group, so a newer push never cancels an upload.
     permissions:
       contents: write             # least privilege: this job only
+      pull-requests: read         # #230: has a newer push superseded this head?
     env:
       GH_TOKEN: ${{ github.token }}
       SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       KIND: ${{ github.event_name == 'pull_request' && 'beta' || 'main' }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -373,6 +491,18 @@ jobs:
             ID="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" 2>/dev/null \
                   | jq -r --arg sha "$SHA" "$FILTER" 2>/dev/null)" || ID=""
             [ -n "$ID" ] && break
+            # #230: this job is no longer cancelled with its run, so on a PR
+            # it stops waiting once a newer push has replaced this head: that
+            # head's beta (and its own attach) replace whatever this head
+            # would have had. Nothing is uploaded.
+            if [ "$KIND" = beta ] && [ -n "$PR_NUMBER" ]; then
+              CURRENT="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha 2>/dev/null)" || CURRENT=""
+              if [ -n "$CURRENT" ] && [ "$CURRENT" != "$SHA" ]; then
+                echo "PR #$PR_NUMBER is now at ${CURRENT:0:7}, not ${SHA:0:7}: superseded, nothing attached."
+                echo "### iPhone simulator build: superseded by ${CURRENT:0:7}, nothing attached" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
             echo "attempt $i: no $KIND release at ${SHA:0:7} yet; waiting 30s"
             sleep 30
           done

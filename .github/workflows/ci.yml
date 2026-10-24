@@ -1,11 +1,15 @@
 name: CI
 
 on:
+  # #230: ready_for_review and labeled too, so the screenshot-set check
+  # below runs when a draft is marked ready or labelled `ci:full`.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
 
-# Cancel superseded runs on the same branch; the latest push is the one that matters.
+# Cancel superseded runs on the same branch; the latest push is the one that
+# matters. Nothing here writes, so cancelling a whole run is safe (#230).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -110,10 +114,8 @@ jobs:
 
       # #108 E: the screenshot and preview checks run on a Mac in
       # store-media.yml; their self-test runs here on every PR, healthy first.
-      # #226: so does the compositor's (Pillow pinned by hash), and the
-      # committed screenshots must be exactly the captioned set, because the
-      # release run uploads them before it submits. Until a store-media run's
-      # shots are approved and committed, this names the gap.
+      # #226: so does the compositor's (Pillow pinned by hash) and the
+      # caption check. The committed set itself is the `store-set` job below.
       - name: Prove the App Store media checks and the compositor
         run: |
           set -euo pipefail
@@ -121,12 +123,11 @@ jobs:
           python3 .github/scripts/check_store_media.py --self-test
           python3 .github/scripts/composite_shots.py --self-test
           python3 .github/scripts/composite_shots.py check-captions store/app-store/en-GB/screenshot_captions.txt
-          python3 .github/scripts/check_store_media.py set store/app-store/screenshots \
-            store/app-store/en-GB/screenshot_captions.txt || {
-            echo "WHY THIS JOB FAILED: store/app-store/screenshots/ is not the approved, captioned set."
-            echo "Run store-media.yml on this branch, show Rob the shots, and commit them there."
-            exit 1
-          }
+
+      # #230 criterion 11: what each push builds. android-apk.yml and ios.yml
+      # run the same self-test in their scope jobs before deciding.
+      - name: Prove the build-scope decision before trusting it
+        run: python3 .github/scripts/ci_scope.py --self-test
 
       # #167: released data survives every update. The upgrade test runs in
       # vitest; this gate makes a version bump freeze the previous release's
@@ -184,3 +185,40 @@ jobs:
       # Exits non-zero on failure, so it gates like the other two steps.
       - name: Validate docs
         run: python3 docs/process/validate-docs.py
+
+  # ---------------------------------------------------------------------------
+  # The committed screenshot set — #226, #230 criteria 29-30
+  # ---------------------------------------------------------------------------
+  #
+  # The committed screenshots must be exactly the captioned set, because the
+  # release run uploads them before it submits. Its own named check, so a red
+  # set no longer hides whether the trailer and docs gates passed, and on a
+  # draft it is skipped (not red): a set waiting on store-media.yml and Rob's
+  # approval no longer fails every draft push. It runs, and blocks, when the
+  # PR is ready for review or labelled `ci:full`, and on main. testflight.yml
+  # and store-listing.yml still refuse a wrong set before any upload.
+  store-set:
+    name: App Store screenshots are the approved, captioned set
+    if: >-
+      github.event_name != 'pull_request' ||
+      !github.event.pull_request.draft ||
+      contains(github.event.pull_request.labels.*.name, 'ci:full')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: The committed screenshots are the captioned set
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/check_store_media.py --self-test
+          python3 .github/scripts/check_store_media.py set store/app-store/screenshots \
+            store/app-store/en-GB/screenshot_captions.txt || {
+            echo "WHY THIS JOB FAILED: store/app-store/screenshots/ is not the approved, captioned set."
+            echo "Run store-media.yml on this branch, show Rob the shots, and commit them there."
+            exit 1
+          }

@@ -9,6 +9,7 @@ Turn what Rob says into work someone else can pick up without asking him again.
 
 - **Issues.** One deliverable slice, naming the spec section it serves.
 - **Acceptance criteria**, written on the issue *before* implementation.
+- **The Definition of Ready**: the `feature.yml` issue form, complete and approved by Rob once before any code (#231).
 - **Specs** in `docs/specs/` — the what and why, stable once approved. Only
   when an issue genuinely will not hold it.
 - **Field notes**, kept verbatim as the record, with the analysis beneath.
