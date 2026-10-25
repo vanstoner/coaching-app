@@ -1,5 +1,11 @@
 # Handover prompt
 
+> **Archived, 25 October 2026 (#239 S2). Not maintained; do not use.** This
+> describes the project on 17 September, a walking skeleton with 66 engine
+> tests. The way of working now lives in [CLAUDE.md](../../../CLAUDE.md) and the
+> skills in `.claude/skills/`; the current spec is
+> [feature-specs](../../feature-specs.md).
+
 Copy everything below the line into a fresh session with a new team. It is
 written to be read cold, by people with no memory of this project.
 

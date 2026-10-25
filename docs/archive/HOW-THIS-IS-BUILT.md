@@ -252,5 +252,5 @@ Things that are not specific to AI agents, and would improve a human team.
 ---
 
 *This document describes the programme, not the product. For the product, start
-with [`specs/01-domain-model.md`](../specs/01-domain-model.md). For how work
+with [`specs/01-domain-model.md`](./v1-specs/01-domain-model.md). For how work
 reaches `main`, see [`process/operating-model.md`](./process/operating-model.md).*

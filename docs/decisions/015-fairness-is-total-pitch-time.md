@@ -79,13 +79,13 @@ stays fair to a child who was not there.
 **Text this supersedes.** It is to be updated by the work that implements
 #101, not by this ADR:
 
-- the [fairness spec](../specs/03-fairness-ledger.md): the outfield-only
+- the [fairness spec](../archive/v1-specs/03-fairness-ledger.md): the outfield-only
   measure, its `expectedMs` and GK-exclusion rules, and its flags;
-- the [domain model spec](../specs/01-domain-model.md): the line that makes
+- the [domain model spec](../archive/v1-specs/01-domain-model.md): the line that makes
   `outfieldMs` "the fairness figure";
-- the [match engine spec](../specs/02-match-engine.md), "Attribution of
+- the [match engine spec](../archive/v1-specs/02-match-engine.md), "Attribution of
   minutes";
-- the invariant 3 line in `docs/HANDOVER-PROMPT.md`;
+- the invariant 3 line in `docs/archive/v1-specs/HANDOVER-PROMPT.md`;
 - the comments in `src/app/playerMinutes.ts`.
 
 **Easier:** one figure that a parent can be shown. The keeper's time is

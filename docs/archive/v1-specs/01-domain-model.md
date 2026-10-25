@@ -1,18 +1,13 @@
 # Spec 01 — Domain Model
 
-Status: **Approved** by the Product Owner, 2026-09-18.
+Status: **Archived**, 25 October 2026 (#239 S2). Approved by the Product Owner, 2026-09-18, as the v1 foundation.
 
-**v1 foundation (approved 18 September 2026). Where a later issue or ADR
-differs, that wins.** Later behaviour lives in each issue's acceptance
-criteria and in [HISTORY.md](../../HISTORY.md).
+> **Archived: v1 intent, not maintained.** The current spec is
+> [feature-specs](../../feature-specs.md); [domain-models](../../domain-models.md)
+> and [system-architecture](../../system-architecture.md) describe the code.
+> Where this page differs from them, from an ADR or from an issue, they win.
+> Do not build from this page.
 
-> **As built, v1.0.1 (2026-10-09).** What v1 actually does is in
-> [system-architecture](../system-architecture.md), [domain-models](../domain-models.md)
-> and [feature-specs](../feature-specs.md). Where this spec and those pages differ,
-> those pages describe the code; this spec records the intent. Gaps are listed in the
-> [v1.0.1 audit](../audit/2026-10-09-v1.0.1.md#17-spec-drift-the-approved-specs-against-v1).
-
-> Approved 2026-09-18 — 12 of its 13 entities exist in `src/types/index.ts` and match. Only `Vacancy` is unbuilt. Open questions below are carried as issues, not blockers.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-20
 
@@ -33,12 +28,12 @@ here.
    timestamped interval, and every interval to the events behind it. Disputes
    are settled by replaying events, never by trusting a running total.
 4. **Append-only.** The persisted record is an append-only event log
-   ([ADR-007](../decisions/007-append-only-match-event-log.md)). Intervals are a
+   ([ADR-007](../../decisions/007-append-only-match-event-log.md)). Intervals are a
    projection of it and are never mutated; corrections are new events that
    reference what they correct and carry a note.
 5. **Proportionate.** This is a substitution reminder and a fairness tracker,
    not an audit-grade timing system (PO ruling, 2026-09-17,
-   [ADR-009](../decisions/009-single-clock-owner-per-match.md)). Seconds-level
+   [ADR-009](../../decisions/009-single-clock-owner-per-match.md)). Seconds-level
    accuracy is sufficient. The structural guarantees above are worth paying for;
    precision beyond that is not. Robustness when the coach forgets the clock
    matters more than either.
@@ -53,11 +48,11 @@ A named group of players, typically a team for a season.
 |---|---|---|
 | `id` | UUID | |
 | `name` | string | e.g. "U9 Reds" |
-| `formatId` | UUID | FK → Format — **default** for a new fixture ([ADR-012](../decisions/012-match-owns-its-format.md)) |
+| `formatId` | UUID | FK → Format — **default** for a new fixture ([ADR-012](../../decisions/012-match-owns-its-format.md)) |
 | `marginMs` | int | Quarter-end margin setting. Default 60 000. Range 30 000–300 000 inclusive. Copied onto each match at start — see Spec 02 § Margin |
 | `createdAt` | ISO timestamp | |
 
-> **Squad is the ownership boundary** ([ADR-010](../decisions/010-tenancy-boundary.md),
+> **Squad is the ownership boundary** ([ADR-010](../../decisions/010-tenancy-boundary.md),
 > accepted 2026-09-17). Every entity in this spec is reachable from exactly one
 > `squadId`. Access, export, deletion and any future sharing operate per squad.
 > There is no `Club` entity; if clubs ever arrive they *group* squads rather than
@@ -97,7 +92,7 @@ players on the pitch and the position set are configurable.
 | `onFieldCount` | int | e.g. 7 (includes the goalkeeper) |
 | `positions` | Position[] | Ordered; length must equal `onFieldCount` |
 
-> **Formats are copied, not shared** ([ADR-010](../decisions/010-tenancy-boundary.md) §2,
+> **Formats are copied, not shared** ([ADR-010](../../decisions/010-tenancy-boundary.md) §2,
 > accepted 2026-09-17). Built-in formats (5-a-side, 7-a-side, 9-a-side, 11-a-side)
 > are **templates**. Using one copies it into the squad. No mutable reference is
 > ever shared across squads, so editing a template cannot retrospectively change
@@ -123,7 +118,7 @@ players on the pitch and the position set are configurable.
 |---|---|---|
 | `id` | UUID | |
 | `squadId` | UUID | FK → Squad |
-| `formatId` | UUID | FK → Format. The format itself is **copied onto the stored match** ([ADR-012](../decisions/012-match-owns-its-format.md)). The squad format is only the default for a new fixture. |
+| `formatId` | UUID | FK → Format. The format itself is **copied onto the stored match** ([ADR-012](../../decisions/012-match-owns-its-format.md)). The squad format is only the default for a new fixture. |
 | `opponent` | string \| null | Free text, optional |
 | `kickoffAt` | ISO timestamp \| null | Planned start |
 | `totalMinutes` | int | Whole minutes, 20–120 — see [Match length](#match-length) |
@@ -205,14 +200,14 @@ question below.
 
 > **`elapsedMs` is no longer a stored field.** It was
 > *"authoritative accumulated play time for this quarter"*; under
-> [ADR-007](../decisions/007-append-only-match-event-log.md) it is **derived** by
+> [ADR-007](../../decisions/007-append-only-match-event-log.md) it is **derived** by
 > folding the quarter's clock events and is never persisted. This also closes
 > trial-review finding 4 on PR #15 (*"stored `Quarter.elapsedMs` is never
 > updated"*) — a stored derived value that can drift is exactly what invariant 1
 > forbids.
 >
 > `startedAt` and `endedAt` are **anchors**, and anchors are the only absolute
-> wall-clock values that feed minutes ([ADR-009](../decisions/009-single-clock-owner-per-match.md) §3).
+> wall-clock values that feed minutes ([ADR-009](../../decisions/009-single-clock-owner-per-match.md) §3).
 > `endChoiceRecordedAt` is provenance, not an anchor: a coach who taps "Ended at
 > planned time" two minutes late has an `effectiveEndElapsedMs` at the planned
 > length and an `endChoiceRecordedAt` two minutes after it.
@@ -369,8 +364,8 @@ arithmetic.
 ## The event log
 
 > **Added 2026-09-17 (#19)**, recording
-> [ADR-007](../decisions/007-append-only-match-event-log.md) and
-> [ADR-008](../decisions/008-record-provenance.md), both accepted.
+> [ADR-007](../../decisions/007-append-only-match-event-log.md) and
+> [ADR-008](../../decisions/008-record-provenance.md), both accepted.
 
 **The persisted record for a match is an append-only log of events.** Events are
 never updated and never deleted. Appearances, BenchStints, Vacancies and quarter
@@ -382,7 +377,7 @@ ADR-003 established still holds and is asserted on every fold.
 
 ### Event envelope
 
-Every event carries the same envelope ([ADR-008](../decisions/008-record-provenance.md)):
+Every event carries the same envelope ([ADR-008](../../decisions/008-record-provenance.md)):
 
 | Field | Type | Notes |
 |---|---|---|
@@ -433,7 +428,7 @@ migration, and provenance comes for free.
 ## Open questions for Product Owner
 
 1. ~~Should a player be able to appear for more than one squad in a season?~~
-   **Ruled 2026-09-17 ([ADR-010](../decisions/010-tenancy-boundary.md) §4):** no.
+   **Ruled 2026-09-17 ([ADR-010](../../decisions/010-tenancy-boundary.md) §4):** no.
    A player belongs to one squad. If the same child plays for two squads that is
    two player records, never a shared one, and their history stays with the
    squad it was earned in.

@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-18
+Last updated: 2026-10-25 (#239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -53,7 +53,7 @@ sequenceDiagram
     A->>A: step = resume | fixtures
     Note over A: every state change
     A->>E: engine.substitute / startQuarter / endQuarter (mutates state)
-    A->>S: saveSession (whole document, not queued)
+    A->>S: saveSession (whole document, queued)
     A->>S: saveLedger (only if records changed; a test match is in the session only, #194)
 ```
 
@@ -68,7 +68,8 @@ sequenceDiagram
   single clock. A beta phone's stored offset is kept, but the Test kit no
   longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
-  memory. The ledger's writes run one at a time per store; the session's do not.
+  memory. The session's and the ledger's writes both run one at a time per
+  store (`inTurn`, `src/app/persistence.ts`; `src/app/sessionStore.ts`).
 
 ## Storage
 
