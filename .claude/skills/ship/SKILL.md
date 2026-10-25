@@ -189,5 +189,21 @@ Write the self-test first. Run it in CI **before** the gate is trusted.
 
 ## Learned here
 
+- **Fresh cloud sessions set themselves up (#237).** `.claude/settings.json`
+  runs `.claude/hooks/session-start.sh` at `SessionStart` (timeout 300 s): only
+  when `CLAUDE_CODE_REMOTE=true`, `npm ci` only when the stamp
+  `node_modules/.session-start-lock.sha256` is missing, differs from
+  `package-lock.json`'s sha256, or is older than the lock. It always exits 0;
+  a failed install prints one line naming its log.
+- **The GitHub environments API is Rob's (#237).** Through the session proxy
+  it returns HTTP 403, so creating or editing an environment, its required
+  reviewers or its secrets is always his job. The handoff gives him the exact
+  click path: Settings > Environments > *name* > Environment secrets (or
+  Deployment protection rules).
+- **Read Actions job logs with the GitHub MCP `get_job_logs` tool**
+  (`return_content: true`; `tail_lines` for the WHY THIS JOB FAILED block,
+  `run_id` with `failed_only: true` for every failed job). Direct log
+  downloads through `gh` are blocked by the proxy (#237).
+
 - The emulator gate proves text is *present*. Not complete, not reachable, not
   correct. Three distinct defect classes have walked past it green.

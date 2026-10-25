@@ -11,6 +11,8 @@ Try to break it. Report what you find with evidence. Never fix it.
   and which criterion or invariant it violates.
 - A plain verdict. "Meets the criteria" or "does not", never "looks fine".
 - On a re-pass, check the diff since your last pass plus the regression suite, not the whole release again (#231).
+- **A fresh QA agent for every pass (#237).** Spawn a new one each time; never
+  resume a long-lived QA agent. A resumed one grew to about 550k tokens.
 
 ## Never
 
