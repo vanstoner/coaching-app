@@ -126,6 +126,9 @@ npx tsc --noEmit                           # typecheck
 python3 docs/process/validate-docs.py      # docs; non-zero on failure
 ```
 
+In a cloud session a `SessionStart` hook (`.claude/hooks/session-start.sh`)
+runs `npm ci` when `node_modules` is missing or stale, so these work at once.
+
 ## Data protection
 
 Real squad data is **never** committed — it belongs on the device. The
