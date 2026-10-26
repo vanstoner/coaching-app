@@ -156,6 +156,11 @@ export interface LedgerMatch {
   structure?: LedgerStructure;
   /** Awards standing for this match (#197); absent when none. Every change stays in the chain. */
   awards?: LedgerAward[];
+  /**
+   * #243 AC8 (Rob, 26 Oct: 8A): an off-format match the coach counted, with
+   * a note, or left out again. Absent: the season's format rule decides.
+   */
+  formatCount?: { counted: boolean; note: string | null };
 }
 
 /** The periods a match actually ran, as the clock measured them, or as noted afterwards (#196 AC3). */
@@ -356,6 +361,7 @@ const FIELDS: Record<string, readonly string[]> = {
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
+  'format-count': ['type', 'matchId', 'counted', 'note'],
   season: ['type', 'id', 'name', 'startedAt', 'mainSide', 'ageGroup', 'level', 'lens', 'note'],
   ...SETUP_FIELDS,
 };
@@ -478,6 +484,7 @@ function foldView(
   const awards = new Map<UUID, LedgerAward[]>();
   const eventTypes = new Map<UUID, LedgerEventType>();
   const seasons = new Map<UUID, LedgerSeason>();
+  const formatCounts = new Map<UUID, { counted: boolean; note: string | null }>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -585,6 +592,15 @@ function foldView(
         if (st) structures.set(r.matchId as UUID, st);
         break;
       }
+      case 'format-count':
+        if (typeof r.matchId === 'string') {
+          matchFor(r.matchId as UUID);
+          formatCounts.set(r.matchId as UUID, {
+            counted: r.counted === true,
+            note: typeof r.note === 'string' ? r.note : null,
+          });
+        }
+        break;
       case 'season': {
         const s = toSeason(r);
         if (s) seasons.set(s.id, s);
@@ -628,6 +644,7 @@ function foldView(
       const kind = kinds.get(m.id);
       const st = structures.get(m.id);
       const aw = awards.get(m.id);
+      const fc = formatCounts.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
@@ -637,6 +654,7 @@ function foldView(
         ...(kind ? { matchKind: kind } : {}),
         ...(st ? { structure: st } : {}),
         ...(aw ? { awards: aw } : {}),
+        ...(fc ? { formatCount: fc } : {}),
       };
     }),
     fixtures,
@@ -1250,6 +1268,30 @@ export function setMatchExcluded(
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'exclusion', matchId, excluded, note: trimmed }], now),
   };
+}
+
+/**
+ * Count an off-format match in the season's figures, or leave it out again
+ * (#243 AC8, Q6; Rob's ruling 8A): a `format-count` record of its own, with
+ * a mandatory note (invariant 5). It never changes what an `exclusion`
+ * record means, so a match the coach left out stays out either way.
+ */
+export function setFormatCounted(
+  ledger: Ledger,
+  matchId: UUID,
+  counted: boolean,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if ((match.formatCount?.counted ?? false) === counted) {
+    return { ok: false, reason: counted ? 'That match is already counted.' : 'That match is already left out.' };
+  }
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'format-count', matchId, counted, note: trimmed }], now) };
 }
 
 /**

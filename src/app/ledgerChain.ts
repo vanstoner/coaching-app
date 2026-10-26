@@ -117,6 +117,8 @@ export function keyOf(record: LedgerRecord): string | null {
       return `attendance:${String(record.matchId)}:${String(record.playerId)}`;
     case 'exclusion':
       return `exclusion:${String(record.matchId)}`;
+    case 'format-count':
+      return `format-count:${String(record.matchId)}`;
     case 'match-kind':
       return `match-kind:${String(record.matchId)}`;
     // ADR-021 D2 (#195–#199). An older build has no key for these, so it

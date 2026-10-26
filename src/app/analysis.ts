@@ -453,8 +453,13 @@ export function seasonSide(ledger: Ledger, kickoffs?: ReadonlyMap<UUID, string>)
  * stay in the totals; it is out of every fairness figure (§6a). A match
  * whose format is not recorded is never left out (R2).
  */
-export function isOffFormat(match: Pick<LedgerMatch, 'status' | 'excluded' | 'structure'>, side: number | null): boolean {
+export function isOffFormat(
+  match: Pick<LedgerMatch, 'status' | 'excluded' | 'structure' | 'formatCount'>,
+  side: number | null
+): boolean {
   const own = sideOf(match);
+  // #243 AC8 (8A): counted by the coach, with a note.
+  if (match.formatCount?.counted) return false;
   return isCounted(match) && side !== null && own !== null && own !== side;
 }
 

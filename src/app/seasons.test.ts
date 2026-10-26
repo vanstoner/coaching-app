@@ -19,6 +19,7 @@ import {
   recordMatches,
   saveSeason,
   serialiseLedger,
+  setFormatCounted,
   type Ledger,
 } from './ledger';
 import { verifyChain } from './ledgerChain';
@@ -27,7 +28,7 @@ import { newMatch } from './matchLifecycle';
 import { createMemoryStore, loadSession } from './persistence';
 import { openStoredLedger } from './storage/ledgerStore';
 import { figureDifferences, releaseFigures } from './releaseFigures';
-import { seasonSide } from './analysis';
+import { inFairness, isOffFormat, seasonSide } from './analysis';
 import {
   currentSeason,
   ledgerForSeason,
@@ -369,5 +370,52 @@ describe('an older build reads a record with seasons (ADR-021 D1, additive only)
     const read = released.parseLedger(text);
     expect(read.ok).toBe(true);
     if (read.ok) expect(JSON.stringify(read.ledger.entries)).toContain('"type":"season"');
+  });
+});
+
+describe('counting an off-format match (#243 AC8; Rob’s ruling 8A)', () => {
+  const sevens = { onField: 7, periodCount: 4, periodMs: [1], shape: null, note: null };
+  const fives = { ...sevens, onField: 5 };
+  const match = { status: 'completed' as const, structure: fives };
+
+  it('a 5-a-side week in a 7-a-side season is left out of fairness by default', () => {
+    expect(isOffFormat(match, 7)).toBe(true);
+    expect(isOffFormat({ ...match, structure: sevens }, 7)).toBe(false);
+  });
+
+  it('counted with a note, it is in; left out again, it is out', () => {
+    expect(isOffFormat({ ...match, formatCount: { counted: true, note: 'League said it counts' } }, 7)).toBe(false);
+    expect(isOffFormat({ ...match, formatCount: { counted: false, note: 'Changed our mind' } }, 7)).toBe(true);
+  });
+
+  it('the coach’s own “leave this match out” still wins (ADR-020)', () => {
+    const left = { ...match, excluded: { excluded: true, note: 'ad hoc' }, formatCount: { counted: true, note: 'x' } };
+    expect(inFairness(left, 7)).toBe(false);
+  });
+
+  it('needs a note, never repeats itself, and is a record of its own in the chain', async () => {
+    const dir = resolve(__dirname, 'fixtures', 'release-1.3.1');
+    const store = createMemoryStore();
+    for (const [k, v] of Object.entries(
+      JSON.parse(readFileSync(resolve(dir, 'store.json'), 'utf8')) as Record<string, string>
+    )) {
+      await store.setItem(k, v);
+    }
+    const { ledger } = await openStoredLedger(store, NOW);
+    if (!ledger) throw new Error('fixture did not open');
+    const id = ledger.matches[0].id;
+    expect(setFormatCounted(ledger, id, true, '  ', NOW).ok).toBe(false);
+    expect(setFormatCounted(ledger, id, false, 'x', NOW).ok).toBe(false);
+    const counted = ok(setFormatCounted(ledger, id, true, 'Counts for the league', NOW));
+    expect(counted.matches.find((m) => m.id === id)?.formatCount).toEqual({
+      counted: true,
+      note: 'Counts for the league',
+    });
+    expect(counted.matches.find((m) => m.id === id)?.excluded).toEqual(
+      ledger.matches.find((m) => m.id === id)?.excluded
+    );
+    const back = ok(setFormatCounted(counted, id, false, 'Not after all', NOW));
+    expect(back.matches.find((m) => m.id === id)?.formatCount?.counted).toBe(false);
+    expect(verifyChain(back.entries)).toEqual({ ok: true });
   });
 });
