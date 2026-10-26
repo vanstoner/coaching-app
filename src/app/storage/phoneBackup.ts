@@ -15,10 +15,10 @@
  * by `ledgerFile.ts`.
  */
 
-import { chainHead, serialiseChainHead } from './ledgerAnchor';
+import { chainHead, serialiseChainHead } from '../ledgerAnchor';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY } from './ledgerStore';
-import { isWritable, parseLedger, serialiseLedger, type Ledger } from './ledger';
-import { STORAGE_KEY, inTurn, readSession, type KeyValueStore, type SavedSession } from './persistence';
+import { isWritable, parseLedger, serialiseLedger, type Ledger } from '../ledger';
+import { STORAGE_KEY, inTurn, readSession, type KeyValueStore, type SavedSession } from '../persistence';
 
 export const BACKUP_ID = 'coaching-app/phone-backup';
 export const BACKUP_VERSION = 1;

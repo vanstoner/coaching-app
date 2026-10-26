@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LEDGER_VERSION, type Ledger } from './ledger';
 import { verifyChain } from './ledgerChain';
-import { openStoredLedger, saveLedger } from './ledgerStore';
+import { openStoredLedger, saveLedger } from './storage/ledgerStore';
 import {
   MIGRATIONS,
   SCHEMA_VERSION,

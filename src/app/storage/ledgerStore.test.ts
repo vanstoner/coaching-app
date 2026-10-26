@@ -4,19 +4,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { uuid } from '../types/index';
+import { uuid } from '../../types/index';
 import {
   STORAGE_KEY,
   clearSession,
   createMemoryStore,
   loadSession,
-} from './persistence';
-import { emptyLedger, foldLedger, recordMatches, type Ledger } from './ledger';
-import { makePlayer } from './squad';
+} from '../persistence';
+import { emptyLedger, foldLedger, recordMatches, type Ledger } from '../ledger';
+import { makePlayer } from '../squad';
 import { LEDGER_STORAGE_KEY, clearLedger, ledgerWriter, loadLedger, sameRecords, saveLedger } from './ledgerStore';
 import { forgetSession, saveSessionIfWritable } from './sessionStore';
-import { makeSevenASideFormat } from './placeholderSquad';
-import type { KeyValueStore } from './persistence';
+import { makeSevenASideFormat } from '../placeholderSquad';
+import type { KeyValueStore } from '../persistence';
 
 /** A ledger with one player and one completed match, built as the app builds it. */
 function sampleLedger(): Ledger {

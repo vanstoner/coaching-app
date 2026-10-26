@@ -16,7 +16,7 @@ import {
   type ClockSpeed,
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app/testKit';
-import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/phoneBackup';
+import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/storage/phoneBackup';
 import { addTestSeason } from './src/app/testSeason';
 import { currentDistribution } from './src/app/distribution';
 import { seedFor, shouldAutoSeed, storeContents } from './src/app/demoSeed';
@@ -72,9 +72,9 @@ import {
   type SavedSession,
   type SessionInput,
 } from './src/app/persistence';
-import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
-import { forgetAppData } from './src/app/forget';
-import { createDeviceStore } from './src/app/storage';
+import { openStoredSession, saveSessionIfWritable } from './src/app/storage/sessionStore';
+import { forgetAppData } from './src/app/storage/forget';
+import { createDeviceStore } from './src/app/storage/storage';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { PLAY_NOW_ROUTE, routeFormat, startOnRoute, type MatchRoute } from './src/app/matchRoute';
@@ -119,7 +119,7 @@ import {
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
+import { ledgerWriter, openStoredLedger } from './src/app/storage/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
 import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
 import {
@@ -131,7 +131,7 @@ import {
   type SquadOption,
 } from './src/app/squadMatch';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
-import { installDeviceSigner } from './src/app/deviceKey';
+import { installDeviceSigner } from './src/app/storage/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';

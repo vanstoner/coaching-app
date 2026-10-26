@@ -293,6 +293,6 @@ interface Ledger {                          // key coaching-app/ledger/v2
   ledger in one file. A restore copies what is there to
   `coaching-app/before-restore/<time>/…`, reads it back, then writes the backup.
 - **Forget everything removes every key the app owns, copies kept aside
-  included**, except the test clock's offset (#207, `src/app/forget.ts`). The
+  included**, except the test clock's offset (#207, `src/app/storage/forget.ts`). The
   removal runs behind any save in flight; its result is not shown, so a key it
   could not remove stays without a message.

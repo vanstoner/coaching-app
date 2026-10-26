@@ -69,7 +69,7 @@ sequenceDiagram
   longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
   memory. The session's and the ledger's writes both run one at a time per
-  store (`inTurn`, `src/app/persistence.ts`; `src/app/sessionStore.ts`).
+  store (`inTurn`, `src/app/persistence.ts`; `src/app/storage/sessionStore.ts`).
 
 ## Storage
 

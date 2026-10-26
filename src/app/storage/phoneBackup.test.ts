@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { emptyLedger, serialiseLedger, type Ledger } from './ledger';
+import { emptyLedger, serialiseLedger, type Ledger } from '../ledger';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY, openStoredLedger, saveLedger } from './ledgerStore';
 import {
   SCHEMA_VERSION,
@@ -16,8 +16,8 @@ import {
   type KeyValueStore,
   type SavedSession,
   type SessionInput,
-} from './persistence';
-import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from './placeholderSquad';
+} from '../persistence';
+import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from '../placeholderSquad';
 import {
   BACKUP_ID,
   RESTORE_ASIDE_PREFIX,
@@ -28,9 +28,9 @@ import {
   type ReadBackup,
 } from './phoneBackup';
 import { openStoredSession } from './sessionStore';
-import { addTestData } from './testKit';
-import { addTestSeason } from './testSeason';
-import { uuid, type UUID } from '../types/index';
+import { addTestData } from '../testKit';
+import { addTestSeason } from '../testSeason';
+import { uuid, type UUID } from '../../types/index';
 
 const NOW = new Date('2026-10-17T12:00:00.000Z');
 const FROM = { app: 'Heart FC Beta Coach', build: 'beta · build 200' };

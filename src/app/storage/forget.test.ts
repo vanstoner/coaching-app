@@ -6,17 +6,17 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { APP_KEY_PREFIX, forgetAppData } from './forget';
-import { GETTING_STARTED_KEY, parseCardClosed, serialiseCardClosed } from './gettingStarted';
-import { emptyLedger } from './ledger';
+import { GETTING_STARTED_KEY, parseCardClosed, serialiseCardClosed } from '../gettingStarted';
+import { emptyLedger } from '../ledger';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY, saveLedger } from './ledgerStore';
-import { STORAGE_KEY, createMemoryStore, saveSession, toSavedSession, type KeyValueStore } from './persistence';
+import { STORAGE_KEY, createMemoryStore, saveSession, toSavedSession, type KeyValueStore } from '../persistence';
 import { makePhoneBackup, readPhoneBackup, restorePhoneBackup } from './phoneBackup';
-import { makeSevenASideFormat } from './placeholderSquad';
-import { makePlayer } from './squad';
+import { makeSevenASideFormat } from '../placeholderSquad';
+import { makePlayer } from '../squad';
 import { UNREADABLE_SESSION_PREFIX, openStoredSession } from './sessionStore';
-import { TABLE_SORT_KEY } from './tableSort';
-import { TEST_CLOCK_KEY } from './testKit';
-import { uuid } from '../types/index';
+import { TABLE_SORT_KEY } from '../tableSort';
+import { TEST_CLOCK_KEY } from '../testKit';
+import { uuid } from '../../types/index';
 
 const NOW = new Date('2026-10-17T12:00:00.000Z');
 
@@ -106,7 +106,7 @@ describe('Forget everything (#207)', () => {
   });
 
   it('AC5: the privacy policy says what this does', () => {
-    const policy = readFileSync(new URL('../../PRIVACY.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+    const policy = readFileSync(new URL('../../../PRIVACY.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
     expect(policy).toContain(
       'Settings › Forget everything** removes the squad, its matches, every recorded minute and any copies the app kept aside'
     );

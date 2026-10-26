@@ -31,7 +31,7 @@ import {
   clearLedger,
   openStoredLedger,
   saveLedger,
-} from './ledgerStore';
+} from './storage/ledgerStore';
 
 const NOW = new Date('2026-10-04T12:00:00Z');
 

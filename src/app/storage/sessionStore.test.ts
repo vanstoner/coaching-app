@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { uuid } from '../types/index';
+import { uuid } from '../../types/index';
 import {
   MIN_READER_VERSION,
   SCHEMA_VERSION,
@@ -16,9 +16,9 @@ import {
   saveSession,
   type KeyValueStore,
   type SessionInput,
-} from './persistence';
-import { makeSevenASideFormat } from './placeholderSquad';
-import { makePlayer } from './squad';
+} from '../persistence';
+import { makeSevenASideFormat } from '../placeholderSquad';
+import { makePlayer } from '../squad';
 import { UNREADABLE_SESSION_PREFIX, openStoredSession, saveSessionIfWritable } from './sessionStore';
 
 const NOW = new Date('2026-10-10T09:00:00.000Z');
