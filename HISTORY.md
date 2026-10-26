@@ -388,3 +388,13 @@ analysis, iOS". Entries are added as each release ships.
       The match report has the opponent and score on one line, one "Not
       closed" or "Closed" pill, goals added later marked on their own lines,
       and "In the record ›" at the foot.
+- **26 October — Heart FC Coach 1.3.1: the match report reads the record
+  (#244).** Found by QA in the check ADR-022 D1 asked for: after a goal was
+  taken back or added with time unknown in "In the record", or the match's
+  structure was corrected there, the match report kept showing the phone's
+  copy. Its score was right, but the goals listed and the "50 min, quarters"
+  caption contradicted the record page one tap away. A match in the record
+  now reads the record for its goals, assists, goals conceded, tallies and
+  how it was played ("2 halves of 25:00"), as its record page does. Minutes
+  already agreed and are unchanged. A match still being played reads as
+  before.
