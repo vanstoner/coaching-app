@@ -36,7 +36,7 @@ state management does.
 | [004](./004-fairness-is-position-independent.md) | Fairness measured on total time, not per position | Superseded by [ADR-015](./015-fairness-is-total-pitch-time.md) | 2026-09-17 |
 | [005](./005-deterministic-docs-build.md) | Documentation site built deterministically | Accepted | 2026-09-17 |
 | [006](./006-sync-ready-not-hosted.md) | Build the spine sync-ready; do not build hosting yet | Accepted | 2026-09-17 |
-| [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Accepted, not built (#35) | 2026-09-17 |
+| [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Superseded by [ADR-022](./022-teams-and-seasons.md) | 2026-09-17 |
 | [008](./008-record-provenance.md) | Every event records who, where and when | Accepted, not built as written | 2026-09-17 |
 | [009](./009-single-clock-owner-per-match.md) | One device owns a match's clock | Accepted | 2026-09-17 |
 | [010](./010-tenancy-boundary.md) | Squad is the data-ownership boundary | Accepted | 2026-09-17 |
@@ -51,7 +51,7 @@ state management does.
 | [019](./019-shell-owns-state-step-machine-routes.md) | The shell owns app state; a step machine routes; no state or navigation library | Accepted | 2026-10-09 |
 | [020](./020-match-excluded-from-figures.md) | A match can be left out of the figures, by a noted record in the ledger | Accepted | 2026-10-16 |
 | [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Accepted | 2026-10-17 |
-| [022](./022-teams-and-seasons.md) | Teams are key prefixes, seasons live in each team's record, ADR-007 superseded | Proposed (D1, Q1, Q2 approved; #244 open) | 2026-10-25 |
+| [022](./022-teams-and-seasons.md) | Teams are key prefixes, seasons live in each team's record, ADR-007 superseded | Accepted | 2026-10-25 |
 
 ## Template
 
