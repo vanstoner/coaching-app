@@ -1,15 +1,17 @@
 # ADR-022: Teams are key prefixes, seasons live in each team's record, and ADR-007 is superseded
 
-**Status:** Proposed
+**Status:** Accepted (Rob, 26 Oct: "Accept and go with all recommendations")
 **Date:** 2026-10-25
 **Decision maker:** Architect, for the Product Owner's ruling (#224, #243; #239 S1 and S4)
 
-**Rulings so far.** Rob, 26 Oct, `Approve all 8`: **D1 approved**, and
-**Q1 and Q2 approved as recommended**. The ADR stays Proposed until Rob rules
-on Quinn's check of D1 (below), which found [#244](https://github.com/vanstoner/coaching-app/issues/244).
+**Rulings.** Rob, 26 Oct, `Approve all 8`: **D1 approved**, and **Q1 and Q2
+approved as recommended**. Quinn's check of D1 found
+[#244](https://github.com/vanstoner/coaching-app/issues/244). Rob then
+**accepted the ADR** the same day, with #244 tracked as a defect to fix as D1
+says: a recorded match's summary reads the record.
 
 **Relationship:** **Supersedes [ADR-007](./007-append-only-match-event-log.md)**
-on approval (D1). Implements [ADR-010](./010-tenancy-boundary.md) (a team is
+(D1). Implements [ADR-010](./010-tenancy-boundary.md) (a team is
 the squad it already names as the ownership unit). Extends
 [ADR-021](./021-the-record-of-truth.md) D2 with one record type and one
 optional field, inside its D1 "additive only" rule. Answers

@@ -26,9 +26,9 @@ dialled in by the coach, and the cost is always shown.
 Each is an ADR in `docs/decisions/`. Load-bearing, not preferences. If an
 implementation would break one, stop and escalate.
 
-1. **Minutes fold from events; nothing derived is stored as authoritative.**
+1. **Minutes fold from the record; nothing derived is stored as authoritative.**
    The displayed figure and the audit trail must be incapable of disagreeing
-   (ADR-007, supersedes ADR-003).
+   (ADR-022 D1; the record is ADR-013, 014, 021).
 2. **Elapsed time comes from wall-clock anchors, never tick counting.** Android
    throttles background timers; ticks are silently lost. Never increment an
    authoritative value in a timer callback. A timer may trigger a *repaint*; the
