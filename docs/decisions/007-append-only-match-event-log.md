@@ -1,6 +1,7 @@
 # ADR-007: Engine records an append-only event log; intervals are a checked projection
 
 **Status:** Accepted
+**Built:** no. The engine still changes state in place (`src/engine/MatchEngine.ts`) and Appearances are saved (`src/app/persistence.ts`); #35 is open. Whether to supersede this ADR is Ada's call in the #224 ADR (#239 S1).
 **Date:** 2026-09-17
 **Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 

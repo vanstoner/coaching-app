@@ -18,6 +18,9 @@ everyone getting a fair share?**
 
 It is a substitution reminder, not a timing system.
 
+**Heart of the Game:** defaults favour every child playing; competitiveness is
+dialled in by the coach, and the cost is always shown.
+
 ## Invariants — never break these
 
 Each is an ADR in `docs/decisions/`. Load-bearing, not preferences. If an

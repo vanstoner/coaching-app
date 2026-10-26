@@ -1,6 +1,7 @@
 # ADR-008: Every event records who, where and when it was recorded
 
 **Status:** Accepted
+**Built:** no (#239 audit).
 **Date:** 2026-09-17
 **Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 

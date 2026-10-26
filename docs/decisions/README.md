@@ -36,8 +36,8 @@ state management does.
 | [004](./004-fairness-is-position-independent.md) | Fairness measured on total time, not per position | Superseded by [ADR-015](./015-fairness-is-total-pitch-time.md) | 2026-09-17 |
 | [005](./005-deterministic-docs-build.md) | Documentation site built deterministically | Accepted | 2026-09-17 |
 | [006](./006-sync-ready-not-hosted.md) | Build the spine sync-ready; do not build hosting yet | Accepted | 2026-09-17 |
-| [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Accepted | 2026-09-17 |
-| [008](./008-record-provenance.md) | Every event records who, where and when | Accepted | 2026-09-17 |
+| [007](./007-append-only-match-event-log.md) | Append-only event log; intervals are a checked projection | Accepted, not built (#35) | 2026-09-17 |
+| [008](./008-record-provenance.md) | Every event records who, where and when | Accepted, not built as written | 2026-09-17 |
 | [009](./009-single-clock-owner-per-match.md) | One device owns a match's clock | Accepted | 2026-09-17 |
 | [010](./010-tenancy-boundary.md) | Squad is the data-ownership boundary | Accepted | 2026-09-17 |
 | [011](./011-player-data-stays-on-device.md) | Player data stays on device until a hosting ADR is approved | Accepted | 2026-09-17 |
@@ -46,11 +46,11 @@ state management does.
 | [014](./014-ledger-hash-chain.md) | Ledger v2 is a hash chain, and it records attendance | Accepted | 2026-10-04 |
 | [015](./015-fairness-is-total-pitch-time.md) | Fairness is total time on the pitch; averages are per match attended | Accepted | 2026-10-04 |
 | [016](./016-charts-drawn-from-views.md) | Charts are bars we draw ourselves, from a pure numbers module | Accepted | 2026-10-04 |
-| [017](./017-data-categories-and-audiences.md) | Data categories and audiences | Accepted | 2026-10-05 |
+| [017](./017-data-categories-and-audiences.md) | Data categories and audiences | Accepted, gate not built | 2026-10-05 |
 | [018](./018-session-and-ledger-in-asyncstorage.md) | Session and ledger as two JSON documents in AsyncStorage | Accepted | 2026-10-09 |
 | [019](./019-shell-owns-state-step-machine-routes.md) | The shell owns app state; a step machine routes; no state or navigation library | Accepted | 2026-10-09 |
 | [020](./020-match-excluded-from-figures.md) | A match can be left out of the figures, by a noted record in the ledger | Accepted | 2026-10-16 |
-| [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Proposed | 2026-10-17 |
+| [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Proposed, built in 1.3.0 | 2026-10-17 |
 
 ## Template
 

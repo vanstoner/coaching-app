@@ -1,18 +1,13 @@
 # Spec 02 — Match Engine & Clock
 
-Status: **Approved** by the Product Owner, 2026-09-18.
+Status: **Archived**, 25 October 2026 (#239 S2). Approved by the Product Owner, 2026-09-18, as the v1 foundation.
 
-**v1 foundation (approved 18 September 2026). Where a later issue or ADR
-differs, that wins.** Later behaviour lives in each issue's acceptance
-criteria and in [HISTORY.md](../../HISTORY.md).
+> **Archived: v1 intent, not maintained.** The current spec is
+> [feature-specs](../../feature-specs.md); [domain-models](../../domain-models.md)
+> and [system-architecture](../../system-architecture.md) describe the code.
+> Where this page differs from them, from an ADR or from an issue, they win.
+> Do not build from this page.
 
-> **As built, v1.0.1 (2026-10-09).** What v1 actually does is in
-> [system-architecture](../system-architecture.md), [domain-models](../domain-models.md)
-> and [feature-specs](../feature-specs.md). Where this spec and those pages differ,
-> those pages describe the code; this spec records the intent. Gaps are listed in the
-> [v1.0.1 audit](../audit/2026-10-09-v1.0.1.md#17-spec-drift-the-approved-specs-against-v1).
-
-> Approved 2026-09-18 — the engine is built and 66 tests pass against it. A line-by-line alignment audit of this spec is still outstanding; discrepancies will be raised as issues rather than held against approval.
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 
@@ -73,7 +68,7 @@ until that PR is approved it is not a ruling.
 **Why not round.** Rounding a quarter length that is not a whole number of
 milliseconds would make the quarters of a match add up to something other than
 the match length. Minutes are derived by folding intervals (invariant 1,
-[ADR-003](../decisions/003-intervals-as-source-of-truth.md)), so the planned
+[ADR-003](../../decisions/003-intervals-as-source-of-truth.md)), so the planned
 lengths the intervals are checked against must be exact. Rejecting the
 configuration keeps them exact; rounding would hide a discrepancy in the record.
 
@@ -267,7 +262,7 @@ matchElapsedMs = sum(elapsedMs(q) for q in quarters where q.status !== 'pending'
   [Ending a quarter](#ending-a-quarter)), not the wall-clock time the coach
   tapped.
 - A `running` quarter contributes its live elapsed (wall-clock anchor,
-  [ADR-002](../decisions/002-wall-clock-time-derivation.md)).
+  [ADR-002](../../decisions/002-wall-clock-time-derivation.md)).
 - A `pending` quarter contributes nothing. Time between quarters is not match
   elapsed.
 
@@ -724,7 +719,7 @@ separate prompt.
 Delivering the quarter-end prompt while the phone is locked or the app is
 backgrounded **depends on a scheduled local notification** (a platform
 capability). An in-app JS timer cannot be relied on, because Android suspends
-or throttles background timers ([ADR-002](../decisions/002-wall-clock-time-derivation.md)).
+or throttles background timers ([ADR-002](../../decisions/002-wall-clock-time-derivation.md)).
 This introduces a platform dependency (notification scheduling, vibration, and
 the permission to post notifications) that the Architect needs to assess,
 including rescheduling when a manual pause/resume moves the due point, and

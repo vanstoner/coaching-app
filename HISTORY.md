@@ -254,10 +254,11 @@ analysis, iOS". Entries are added as each release ships.
   (#217).
   Adding squad members keeps the name box focused, so a whole squad goes in
   one name after another (#219).
-- **Heart FC Coach 1.3.0 (in progress).** Rob, 18 Oct: *"I want all the
-  stuff above built … as 1.3.0 … that's probably a version I'll draw a line
-  under and release."* Each feature adds its line here as it lands on the
-  1.3.0 branch.
+- **24 October — Heart FC Coach 1.3.0, released.** Rob, 18 Oct: *"I want all
+  the stuff above built … as 1.3.0 … that's probably a version I'll draw a
+  line under and release."* First published as build 238 on 24 October; the
+  latest 1.3.0 build is 246. Its issues were closed with their final criteria
+  on 25 October (#239 S3).
   - **A screen reader reaches each part of a fixture card (#226).** A card on
     Home was one spoken element, its links buried inside it. Now its lines
     read as one button, "Open Practice Park, Sat 24 Oct …", and Plan this

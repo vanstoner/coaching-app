@@ -1,20 +1,20 @@
 # Spec 03 — Fairness Ledger (Season-Scoped)
 
-Status: **Approved** by the Product Owner, 2026-09-18.
+Status: **Archived**, 25 October 2026 (#239 S2). Approved by the Product Owner, 2026-09-18, as the v1 foundation.
 
-**v1 foundation (approved 18 September 2026). Where a later issue or ADR
-differs, that wins.** Later behaviour lives in each issue's acceptance
-criteria and in [HISTORY.md](../../HISTORY.md).
-
-> **As built, v1.0.1 (2026-10-09).** What v1 actually does is in
-> [system-architecture](../system-architecture.md), [domain-models](../domain-models.md)
-> and [feature-specs](../feature-specs.md). Where this spec and those pages differ,
-> those pages describe the code; this spec records the intent. Gaps are listed in the
-> [v1.0.1 audit](../audit/2026-10-09-v1.0.1.md#17-spec-drift-the-approved-specs-against-v1).
-
-> Approved 2026-09-18 — its defining rule (fairness is total outfield time, goalkeeper excluded, position never part of the arithmetic) is implemented in `src/app/playerMinutes.ts` and `src/app/lineup.ts`. The season-scoped ledger it describes is still ahead of what is built; that is REQ-07 (#7).
+> **Archived: v1 intent, not maintained.** The current spec is
+> [feature-specs](../../feature-specs.md); [domain-models](../../domain-models.md)
+> and [system-architecture](../../system-architecture.md) describe the code.
+> Where this page differs from them, from an ADR or from an issue, they win.
+> Do not build from this page.
 >
-> **Superseded in part, 2026-10-04** ([ADR-015](../decisions/015-fairness-is-total-pitch-time.md), #101, PO ruling 3 on #98). Fairness is now **total time on the pitch, goal plus outfield**; goalkeeper time is no longer excluded, and a full-match keeper is in the share like everyone else. Position is still never a fairness input. An optional per-player outfield-share target is shown beside their figures, never used as a fairness input. Where this spec says "outfield minutes" as the fairness figure, read "pitch time"; the GK-exclusion rules below no longer apply.
+> **Invariant 3 overrides this page.** Fairness is total time on the pitch,
+> goal plus outfield, never per position
+> ([ADR-015](../../decisions/015-fairness-is-total-pitch-time.md)). Every
+> outfield-only formula, `expectedMs`, goalkeeper exclusion and flag below is
+> the superseded v1 rule. The season ledger is built (`src/app/ledgerStore.ts`);
+> `balanceMs`, the flags, CSV export and season reset described here are not.
+
 Owner: Rob (Product Owner)
 Last updated: 2026-09-17
 

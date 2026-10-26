@@ -327,5 +327,5 @@ be more instructive than the successes.
 - [Squad roles and charters](../../roles/README.md)
 - [Delivery process](../process/README.md)
 - [Decision log (ADRs)](../../decisions/README.md)
-- [Specifications](../../specs/)
+- [Specifications (archived v1)](../v1-specs/01-domain-model.md)
 - [Glossary](./02-glossary.md)
