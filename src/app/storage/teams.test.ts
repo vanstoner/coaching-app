@@ -288,7 +288,7 @@ describe("Forget everything on a phone with teams (#207, #224 AC10)", () => {
     expect(await root.allKeys!()).toEqual(
       expect.arrayContaining([TEST_CLOCK_KEY, TEAMS_INDEX_KEY]),
     );
-    expect((await root.allKeys!()).sort()).toEqual(
+    expect([...(await root.allKeys!())].sort()).toEqual(
       [TEAMS_INDEX_KEY, TEST_CLOCK_KEY].sort(),
     );
     const again = await openTeams(root, NOW, ids(T2));
