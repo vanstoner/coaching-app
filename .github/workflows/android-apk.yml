@@ -716,7 +716,14 @@ jobs:
       # tesseract missed for "Add a fixture" (above), and today it sits below
       # the 320x640 fold under the full card (that run's OCR ends at the card).
       # Dry-run on good.png and good-one-line.png (test_smoke_assert.py).
-      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Your team|Test Rovers' || 'Your team|Getting started' }}
+      #
+      # #224 AC6 (2.0.0): a fresh install of the app or the beta has no team
+      # until the coach names one, so it opens on "No teams on this phone
+      # yet", under the title "Heart FC Coach" (white on the pitch, as "Your
+      # team" was), not on Home. The demo still opens on its made-up team.
+      # Not yet confirmed by an emulator frame: the first run's
+      # frame-assertions.txt is the evidence to confirm or move it by.
+      SMOKE_EXPECT: ${{ inputs.distribution == 'demo' && 'Your team|Test Rovers' || 'Heart FC Coach|No teams on this phone' }}
       SMOKE_OUT: smoke-evidence
       # #145: what Settings must show. 'beta' on a PR: every beta-only
       # feature. Empty on main: none. The same condition as APP_VARIANT in
