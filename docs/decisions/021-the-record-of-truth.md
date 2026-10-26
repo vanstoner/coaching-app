@@ -1,7 +1,7 @@
 # ADR-021: The minutes record becomes the record of truth: fixtures, results, awards, provenance
 
-**Status:** Proposed
-**Built:** yes, in 1.3.0 (#195, #199), while the ADR stays Proposed by the 18 October ruling (#239).
+**Status:** Accepted (Rob, 26 Oct, `Approve all 8`, item 7; #191)
+**Built:** yes, in 1.3.0 (#195, #199).
 **Date:** 2026-10-17
 **Decision maker:** Architect, for the Product Owner's ruling (epic #191)
 

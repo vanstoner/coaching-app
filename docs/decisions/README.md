@@ -50,7 +50,8 @@ state management does.
 | [018](./018-session-and-ledger-in-asyncstorage.md) | Session and ledger as two JSON documents in AsyncStorage | Accepted | 2026-10-09 |
 | [019](./019-shell-owns-state-step-machine-routes.md) | The shell owns app state; a step machine routes; no state or navigation library | Accepted | 2026-10-09 |
 | [020](./020-match-excluded-from-figures.md) | A match can be left out of the figures, by a noted record in the ledger | Accepted | 2026-10-16 |
-| [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Proposed, built in 1.3.0 | 2026-10-17 |
+| [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Accepted | 2026-10-17 |
+| [022](./022-teams-and-seasons.md) | Teams are key prefixes, seasons live in each team's record, ADR-007 superseded | Proposed (D1, Q1, Q2 approved; #244 open) | 2026-10-25 |
 
 ## Template
 
