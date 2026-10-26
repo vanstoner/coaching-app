@@ -73,8 +73,9 @@ import {
   type SessionInput,
 } from './src/app/persistence';
 import { openStoredSession, saveSessionIfWritable } from './src/app/storage/sessionStore';
-import { forgetAppData } from './src/app/storage/forget';
 import { createDeviceStore } from './src/app/storage/storage';
+import { forgetEveryTeam, openTeams, readOnlyStore, teamStore, type OpenedTeams } from './src/app/storage/teams';
+import type { KeyValueStore } from './src/app/persistence';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { PLAY_NOW_ROUTE, routeFormat, startOnRoute, type MatchRoute } from './src/app/matchRoute';
@@ -276,8 +277,22 @@ function scoresWithRecord(
   return out;
 }
 
-export default function App() {
-  const store = useMemo(() => createDeviceStore(), []);
+/**
+ * One team's app (ADR-022 D2): everything below works on "the" squad, given
+ * that team's store. The shell (`App`, at the foot) picks the team.
+ */
+function TeamApp({
+  store,
+  forgetAll,
+  readOnlyReason = null,
+}: {
+  /** This team's view of the device store (`teamStore`), or the read-only root. */
+  store: KeyValueStore;
+  /** Forget everything on the phone, every team included (#207). */
+  forgetAll: () => void;
+  /** Set when the move into teams could not prove its copy (ADR-022 D3): nothing is saved. */
+  readOnlyReason?: string | null;
+}) {
   // #208 AC6: each analytics table's sort, remembered on this phone. Forget
   // everything removes it from the store and starts the memory afresh.
   const [sortsForgotten, setSortsForgotten] = useState(0);
@@ -454,6 +469,14 @@ export default function App() {
       // #193: this install's key, before anything is recorded, so every entry
       // this launch writes is signed. Without one, recording goes on unsigned.
       await installDeviceSigner();
+
+      // ADR-022 D3: the move into teams did not prove its copy, so the
+      // phone's data is open where it was and nothing may be written.
+      if (readOnlyReason !== null) {
+        sessionWritableRef.current = false;
+        ledgerBlockedRef.current = true;
+        setSessionMessage(readOnlyReason);
+      }
 
       // #218: whether the coach closed Getting started on this phone.
       const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
@@ -1450,7 +1473,7 @@ export default function App() {
     // Every key this app owns, copies kept aside included (#207): this is how
     // a phone is handed on, and children's data must not stay behind. The
     // confirm text says to back up first.
-    void forgetAppData(store);
+    forgetAll();
     // Cleared above: nothing is left for the session block (#173) to protect.
     sessionWritableRef.current = true;
     setSessionMessage('');
@@ -1478,7 +1501,7 @@ export default function App() {
     setCardClosed(false);
     wasAllDone.current = null;
     showToast(FORGOTTEN_TOAST);
-  }, [store, showToast]);
+  }, [forgetAll, showToast]);
 
   /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
   const setDefaultShape = useCallback((shape: ShapeCode) => {
@@ -2432,5 +2455,51 @@ export default function App() {
       <StatusBar style="light" />
     </SafeAreaView>
     </SafeAreaProvider>
+  );
+}
+
+/**
+ * The shell (#224, ADR-022 D2): opens the device store, moves a phone from
+ * before teams into its first team once (D3), and opens that team. Each team
+ * mounts afresh (`key`), so no team's state can reach another.
+ */
+export default function App() {
+  const root = useMemo(() => createDeviceStore(), []);
+  const [opened, setOpened] = useState<OpenedTeams | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void openTeams(root, appNow(), uuid).then((o) => {
+      if (!cancelled) setOpened(o);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root]);
+  const teamId = opened?.kind === 'team' ? opened.teamId : null;
+  const store = useMemo(
+    () => (teamId !== null ? teamStore(root, teamId) : readOnlyStore(root)),
+    [root, teamId]
+  );
+  const forgetAll = useCallback(() => void forgetEveryTeam(root, teamId, appNow()), [root, teamId]);
+
+  if (opened === null) {
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={screen.safe}>
+          <View style={[screen.pane, screen.centre]}>
+            <ActivityIndicator color="#ffffff" />
+          </View>
+          <StatusBar style="light" />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
+  return (
+    <TeamApp
+      key={teamId ?? 'read-only'}
+      store={store}
+      forgetAll={forgetAll}
+      readOnlyReason={opened.kind === 'read-only' ? opened.reason : null}
+    />
   );
 }
