@@ -27,7 +27,8 @@
 
 import { TEST_CLOCK_KEY } from '../testKit';
 import { forgetAppData, type Forgotten } from './forget';
-import { inTurn, type KeyValueStore } from '../persistence';
+import { STORAGE_KEY, inTurn, type KeyValueStore } from '../persistence';
+import { LEDGER_STORAGE_KEY } from './ledgerStore';
 import type { UUID } from '../../types/index';
 
 /** Every key this app writes starts with this. */
@@ -131,6 +132,8 @@ export function serialiseTeamIndex(index: TeamIndex): string {
 
 export type OpenedTeams =
   | { kind: 'team'; teamId: UUID; index: TeamIndex; moved: boolean }
+  /** No team on this phone yet, or every one set aside (#224 AC6). */
+  | { kind: 'none'; index: TeamIndex }
   /** The move could not prove its copy: the phone's data opens where it was, read-only (D3 step 3). */
   | { kind: 'read-only'; reason: string };
 
@@ -193,14 +196,16 @@ async function openTeamsNow(root: KeyValueStore, now: Date, newId: () => UUID): 
 
   // Moved already, and nothing left at the root: the everyday launch.
   if (index && (index.migration === undefined || index.migration.state === 'done') && legacy.length === 0) {
-    const current = index.current ?? index.teams.find((t) => t.removedAt === null)?.id ?? null;
-    if (current !== null)
-      return {
-        kind: 'team',
-        teamId: current,
-        index: { ...index, current },
-        moved: false,
-      };
+    const open = index.teams.find((t) => t.id === index?.current && t.removedAt === null);
+    const current = open?.id ?? index.teams.find((t) => t.removedAt === null)?.id ?? null;
+    if (current === null) return { kind: 'none', index: { ...index, current: null } };
+    return { kind: 'team', teamId: current, index: { ...index, current }, moved: false };
+  }
+
+  // #224 AC6: a fresh install has no team until the coach names one.
+  // Nothing is written for them.
+  if (index === null && legacy.length === 0) {
+    return { kind: 'none', index: { version: INDEX_VERSION, current: null, teams: [] } };
   }
 
   // Steps 1 and 2: a fresh install gets its first team; a phone with keys
@@ -305,4 +310,98 @@ export async function forgetEveryTeam(root: KeyValueStore, keep: UUID | null, no
     );
   }
   return forgotten;
+}
+
+// --- the coach's acts on teams (#224 AC1, AC5, AC9) ------------------------
+
+const EMPTY: TeamIndex = { version: INDEX_VERSION, current: null, teams: [] };
+
+/** Change the index in the device store's turn, proved by reading it back. */
+function changeIndex(root: KeyValueStore, change: (index: TeamIndex) => TeamIndex): Promise<TeamIndex | null> {
+  return inTurn(root, async () => {
+    const have = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null)) ?? EMPTY;
+    const next = change(have);
+    return (await writeProved(root, TEAMS_INDEX_KEY, serialiseTeamIndex(next))) ? next : null;
+  });
+}
+
+/** A new team, open from now (AC5). Null if the index could not be written. */
+export function addTeam(root: KeyValueStore, id: UUID, now: Date): Promise<TeamIndex | null> {
+  return changeIndex(root, (i) => ({
+    ...i,
+    current: id,
+    teams: [...i.teams, { id, createdAt: now.toISOString(), removedAt: null }],
+  }));
+}
+
+/** Open another team (AC1). */
+export function openTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
+  return changeIndex(root, (i) => (i.teams.some((t) => t.id === id && t.removedAt === null) ? { ...i, current: id } : i));
+}
+
+/**
+ * Set a team aside (AC9): it leaves the list, its keys stay where they are
+ * until Forget everything. The next team still listed opens; with none, the
+ * phone has no team (AC6).
+ */
+export function removeTeam(root: KeyValueStore, id: UUID, now: Date): Promise<TeamIndex | null> {
+  return changeIndex(root, (i) => {
+    const teams = i.teams.map((t) => (t.id === id ? { ...t, removedAt: now.toISOString() } : t));
+    const current = i.current === id ? (teams.find((t) => t.removedAt === null)?.id ?? null) : i.current;
+    return { ...i, teams, current };
+  });
+}
+
+/** Bring a set-aside team back, exactly as it was (AC9). It opens if no team is open. */
+export function bringBackTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
+  return changeIndex(root, (i) => ({
+    ...i,
+    teams: i.teams.map((t) => (t.id === id ? { ...t, removedAt: null } : t)),
+    current: i.current ?? id,
+  }));
+}
+
+/** One row of the team list (AC1): read from the team's own keys, never copied into the index. */
+export interface TeamSummary {
+  id: UUID;
+  /** The squad's name; "A team that could not be opened" when its squad will not read (D2). */
+  name: string;
+  /** Which of the six badge colours, by when it was added (T5). */
+  badge: number;
+  /** "2026–27 · U10 development · 7-a-side", or "This season". */
+  season: string;
+  /** A match is under way (T3): "Match on". */
+  live: boolean;
+  removed: boolean;
+}
+
+export const UNREADABLE_TEAM = 'A team that could not be opened';
+
+/**
+ * Every team on the phone, in the order added, read without writing
+ * anything. `read` turns a team's stored session and ledger text into its
+ * name, season line and whether a match is on: passed in, so this module
+ * stays storage only.
+ */
+export async function teamSummaries(
+  root: KeyValueStore,
+  index: TeamIndex,
+  read: (session: string | null, ledger: string | null) => { name: string | null; season: string; live: boolean }
+): Promise<TeamSummary[]> {
+  const out: TeamSummary[] = [];
+  for (const [n, t] of index.teams.entries()) {
+    const store = teamStore(root, t.id);
+    const session = await store.getItem(STORAGE_KEY).catch(() => null);
+    const ledger = await store.getItem(LEDGER_STORAGE_KEY).catch(() => null);
+    const r = read(session, ledger);
+    out.push({
+      id: t.id,
+      name: r.name ?? UNREADABLE_TEAM,
+      badge: n % 6,
+      season: r.season,
+      live: r.live,
+      removed: t.removedAt !== null,
+    });
+  }
+  return out;
 }

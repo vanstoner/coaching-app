@@ -15,11 +15,16 @@ import { TEST_CLOCK_KEY } from '../testKit';
 import type { UUID } from '../../types/index';
 import {
   BEFORE_TEAMS_PREFIX,
+  UNREADABLE_TEAM,
+  addTeam,
+  bringBackTeam,
+  openTeam,
+  removeTeam,
+  teamSummaries,
   forgetEveryTeam,
   MOVE_FAILED,
   TEAMS_INDEX_KEY,
   openTeams,
-  parseTeamIndex,
   readOnlyStore,
   teamKey,
   teamStore,
@@ -129,12 +134,12 @@ describe('teamStore (ADR-022 D2)', () => {
 });
 
 describe('opening teams at launch (ADR-022 D3, #224 AC3)', () => {
-  it('a fresh install gets one empty team', async () => {
+  // #224 AC6 (Rob, 26 Oct, Dee's T4) replaces ADR-022 D3 step 1's empty team.
+  it('a fresh install has no team until the coach names one, and nothing is written (AC6)', async () => {
     const root = createMemoryStore();
     const opened = await openTeams(root, NOW, ids(T1));
-    expect(opened).toMatchObject({ kind: 'team', teamId: T1, moved: false });
-    expect(parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY))?.teams.map((t) => t.id)).toEqual([T1]);
-    expect(await teamStore(root, T1).allKeys!()).toEqual([]);
+    expect(opened).toMatchObject({ kind: 'none' });
+    expect(await root.allKeys!()).toEqual([]);
   });
 
   it('a phone from before teams: its keys become team 1, byte for byte, asides included', async () => {
@@ -172,7 +177,7 @@ describe('opening teams at launch (ADR-022 D3, #224 AC3)', () => {
       const disk = await phoneWith(BEFORE);
       await openTeams(crashingAfter(disk, n), NOW, ids(T1)).catch(() => undefined);
       const opened = await openTeams(disk, NOW, ids(T2));
-      if (opened.kind !== 'team') throw new Error(opened.reason);
+      if (opened.kind !== 'team') throw new Error(opened.kind);
       // A crash before the index was first written leaves nothing to resume: the move starts afresh.
       expect(opened.teamId).toBe(n === 0 ? T2 : T1);
       const team = teamStore(disk, opened.teamId);
@@ -235,15 +240,72 @@ describe('opening teams at launch (ADR-022 D3, #224 AC3)', () => {
 });
 
 describe('Forget everything on a phone with teams (#207, #224 AC10)', () => {
-  it('removes every team’s keys and the before-teams aside; keeps the test clock; the open team starts empty', async () => {
+  it('removes every team’s keys and the before-teams aside; keeps the test clock; no team is left', async () => {
     const root = await phoneWith(BEFORE);
     await openTeams(root, NOW, ids(T1));
     await teamStore(root, T2).setItem('coaching-app/session/v1', 'second team');
-    await forgetEveryTeam(root, T1, NOW);
-    expect(await root.allKeys!()).toEqual(expect.arrayContaining([TEST_CLOCK_KEY, TEAMS_INDEX_KEY]));
-    expect([...(await root.allKeys!())].sort()).toEqual([TEAMS_INDEX_KEY, TEST_CLOCK_KEY].sort());
-    const again = await openTeams(root, NOW, ids(T2));
-    expect(again).toMatchObject({ kind: 'team', teamId: T1, moved: false });
-    expect(await teamStore(root, T1).allKeys!()).toEqual([]);
+    await forgetEveryTeam(root, null, NOW);
+    // AC10, AC6: every team goes; the phone opens as a fresh install, with no team.
+    expect(await root.allKeys!()).toEqual([TEST_CLOCK_KEY]);
+    expect(await openTeams(root, NOW, ids(T2))).toMatchObject({ kind: 'none' });
+  });
+});
+
+describe('the coach’s acts on teams (#224 AC1, AC5, AC6, AC9)', () => {
+  it('adding a team opens it; the first stays, untouched', async () => {
+    const root = await phoneWith(BEFORE);
+    await openTeams(root, NOW, ids(T1));
+    await addTeam(root, T2, NOW);
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'team', teamId: T2 });
+    expect(await teamStore(root, T2).allKeys!()).toEqual([]);
+    expect(await teamStore(root, T1).getItem('coaching-app/session/v1')).toBe(BEFORE['coaching-app/session/v1']);
+  });
+
+  it('switching opens the other team at the next launch too', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await addTeam(root, T2, NOW);
+    await openTeam(root, T1);
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'team', teamId: T1 });
+  });
+
+  it('removing the open team sets it aside and opens the next; its keys stay', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'one');
+    await addTeam(root, T2, NOW);
+    await openTeam(root, T1);
+    await removeTeam(root, T1, NOW);
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'team', teamId: T2 });
+    expect(await teamStore(root, T1).getItem('coaching-app/session/v1')).toBe('one');
+  });
+
+  it('removing the last team returns to "No teams on this phone yet" (AC6); bringing it back opens it as it was', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'one');
+    await removeTeam(root, T1, NOW);
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'none' });
+    await bringBackTeam(root, T1);
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'team', teamId: T1 });
+    expect(await teamStore(root, T1).getItem('coaching-app/session/v1')).toBe('one');
+  });
+
+  it('the team list reads each team’s own name and season, and names one that will not read', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await addTeam(root, T2, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'Unicorns');
+    const index = await openTeams(root, NOW, ids());
+    if (index.kind !== 'team') throw new Error('no team');
+    const list = await teamSummaries(root, index.index, (session) => ({
+      name: session,
+      season: 'This season',
+      live: false,
+    }));
+    expect(list.map((t) => [t.name, t.badge, t.removed])).toEqual([
+      ['Unicorns', 0, false],
+      [UNREADABLE_TEAM, 1, false],
+    ]);
   });
 });

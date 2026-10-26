@@ -85,3 +85,21 @@ export function nextAgeGroup(ageGroup: string | null): string | null {
   const n = ageGroup ? Number(ageGroup.slice(1)) : NaN;
   return Number.isFinite(n) ? `U${Math.min(18, n + 1)}` : null;
 }
+
+const LEVEL_WORD: Record<string, string> = { development: 'development', competitive: 'competitive' };
+
+/**
+ * One line for a season (#224 AC1, Dee's prototype): "2026–27 · U10
+ * development · 7-a-side". Only what the coach has set is shown: a first
+ * season with nothing set reads "This season".
+ */
+export function seasonLine(season: LedgerSeason): string {
+  const who = [season.ageGroup, season.level ? LEVEL_WORD[season.level] : null].filter(Boolean).join(' ');
+  return [seasonName(season), who, season.mainSide ? `${season.mainSide}-a-side` : null].filter(Boolean).join(' · ');
+}
+
+/** The season a team made today starts with (#224 AC5): "2026–27" from August, else the year before's. */
+export function seasonNameFor(now: Date): string {
+  const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${y}–${String((y + 1) % 100).padStart(2, '0')}`;
+}

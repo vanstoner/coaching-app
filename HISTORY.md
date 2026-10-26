@@ -415,3 +415,10 @@ analysis, iOS". Entries are added as each release ships.
     only one in 2.0.0). A match belongs to the season its fixture was made
     in, never to a date. Until the coach names it, a team is in one first
     season with nothing set, so every figure is what it was.
+  - **Teams, switched like profiles.** Home's title is now the team chip:
+    its badge, name and season line. A tap opens the team list, with "Match
+    on" beside a team whose match is running, and Add a team, which asks for
+    the team's name and first season (age group, level, main format;
+    fairness is Full equal time). Settings switches team too, and removes
+    the open team once its name is typed; a removed team is set aside and
+    can be brought back. A new phone opens on "No teams on this phone yet".

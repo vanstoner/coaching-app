@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -74,7 +74,23 @@ import {
 } from './src/app/persistence';
 import { openStoredSession, saveSessionIfWritable } from './src/app/storage/sessionStore';
 import { createDeviceStore } from './src/app/storage/storage';
-import { forgetEveryTeam, openTeams, readOnlyStore, teamStore, type OpenedTeams } from './src/app/storage/teams';
+import {
+  addTeam,
+  bringBackTeam,
+  forgetEveryTeam,
+  openTeam,
+  openTeams,
+  readOnlyStore,
+  removeTeam,
+  teamStore,
+  teamSummaries,
+  type OpenedTeams,
+  type TeamIndex,
+  type TeamSummary,
+} from './src/app/storage/teams';
+import { readTeamRow } from './src/app/teamRows';
+import { currentSeason, seasonLine, seasonNameFor } from './src/app/seasons';
+import { AddTeamScreen, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
 import type { KeyValueStore } from './src/app/persistence';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
@@ -116,6 +132,8 @@ import {
   setPlayerFairness,
   setMatchKind,
   visibleLedger,
+  saveSeason,
+  FIRST_SEASON_ID,
   type ImportChoice,
   type Ledger,
   type MatchRecord,
@@ -285,6 +303,8 @@ function TeamApp({
   store,
   forgetAll,
   readOnlyReason = null,
+  team = null,
+  initial = null,
 }: {
   /** This team's view of the device store (`teamStore`), or the read-only root. */
   store: KeyValueStore;
@@ -292,6 +312,10 @@ function TeamApp({
   forgetAll: () => void;
   /** Set when the move into teams could not prove its copy (ADR-022 D3): nothing is saved. */
   readOnlyReason?: string | null;
+  /** #224: this team among the phone's teams; null when read-only. */
+  team?: { badge: number; count: number; onSwitch: () => void; onRemove: () => void } | null;
+  /** #224 AC5: a team just added, with its name and first season, opened for the first time. */
+  initial?: NewTeam | null;
 }) {
   // #208 AC6: each analytics table's sort, remembered on this phone. Forget
   // everything removes it from the store and starts the memory afresh.
@@ -543,7 +567,7 @@ function TeamApp({
       // into the ledger here as it is played; the session goes on as if it
       // had been loaded, and the save after launch writes it.
       // The store build's seed also carries its screenshots' states (#226).
-      if (shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
+      if (initial === null && shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
         const seeded = seedFor(currentDistribution())(
           saved,
           ledgerRef.current,
@@ -555,6 +579,32 @@ function TeamApp({
       }
 
       if (!saved) {
+        // #224 AC5: a team just added opens with its name, format and first
+        // season; the rest is a fresh install's (AC4).
+        if (initial !== null) {
+          const firstFormat = formatForShape(initial.shape, null);
+          setSquadName(initial.name);
+          setFormat(firstFormat);
+          const seasoned = ledgerRef.current
+            ? saveSeason(
+                ledgerRef.current,
+                {
+                  id: FIRST_SEASON_ID,
+                  name: initial.seasonName,
+                  mainSide: initial.side,
+                  ageGroup: initial.ageGroup,
+                  level: initial.level,
+                },
+                appNow()
+              )
+            : null;
+          if (seasoned?.ok) commitLedger(seasoned.ledger);
+          void saveSessionIfWritable(
+            store,
+            sessionWritableRef.current,
+            sessionInput({ squadName: initial.name, format: firstFormat })
+          );
+        }
         setStep('fixtures');
         return;
       }
@@ -2116,6 +2166,22 @@ function TeamApp({
       return (
         <SettingsScreen
           squadName={squadName}
+          team={
+            team
+              ? {
+                  count: team.count,
+                  onSwitch: team.onSwitch,
+                  // T7: a team whose match is on cannot be removed until it ends.
+                  onRemove: () => {
+                    if (!(liveReal && matchIsUnderway(liveReal.state.quarters))) team.onRemove();
+                  },
+                  removeBlocked:
+                    liveReal && matchIsUnderway(liveReal.state.quarters)
+                      ? 'A team with a match on cannot be removed until that match ends.'
+                      : null,
+                }
+              : null
+          }
           onSquadName={setSquadName}
           totalMinutes={totalMinutes}
           periodCount={periodCount}
@@ -2356,6 +2422,16 @@ function TeamApp({
     return (
       <FixturesScreen
         squadName={squadName}
+        header={
+          team ? (
+            <TeamChip
+              name={squadName}
+              badge={team.badge}
+              season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
+              onPress={team.onSwitch}
+            />
+          ) : undefined
+        }
         matches={listedFixtures(real, showArchived)
           .map((m) => m.match)
           // #194: a match marked a test or void is on no screen.
@@ -2460,46 +2536,187 @@ function TeamApp({
 
 /**
  * The shell (#224, ADR-022 D2): opens the device store, moves a phone from
- * before teams into its first team once (D3), and opens that team. Each team
- * mounts afresh (`key`), so no team's state can reach another.
+ * before teams into its first team once (D3), and opens one team at a time.
+ * Each team mounts afresh (`key`), so no team's state can reach another.
+ * It owns the team list (AC1), Add a team (AC5), "No teams on this phone
+ * yet" (AC6) and Remove (AC9); every screen inside a team is unaware of
+ * the others.
  */
 export default function App() {
   const root = useMemo(() => createDeviceStore(), []);
   const [opened, setOpened] = useState<OpenedTeams | null>(null);
+  const [summaries, setSummaries] = useState<TeamSummary[]>([]);
+  const [sheet, setSheet] = useState<'switch' | 'remove' | null>(null);
+  const [adding, setAdding] = useState(false);
+  /** The team just added, opened for the first time with its name and season. */
+  const [initial, setInitial] = useState<NewTeam | null>(null);
+
+  const show = useCallback(
+    async (index: TeamIndex | null) => {
+      if (index === null) return;
+      const active = index.teams.find((t) => t.id === index.current && t.removedAt === null);
+      setOpened(active ? { kind: 'team', teamId: active.id, index, moved: false } : { kind: 'none', index });
+      setSummaries(await teamSummaries(root, index, readTeamRow));
+    },
+    [root]
+  );
+
   useEffect(() => {
     let cancelled = false;
-    void openTeams(root, appNow(), uuid).then((o) => {
-      if (!cancelled) setOpened(o);
+    void openTeams(root, appNow(), uuid).then(async (o) => {
+      if (cancelled) return;
+      // The demo and the store screenshots (#146, #226) open on their made-up
+      // team, seeded into a first team made for them. The coach's app and the
+      // beta open on "No teams on this phone yet" (#224 AC6).
+      const showcase = currentDistribution() === 'demo' || currentDistribution() === 'store';
+      if (o.kind === 'none' && o.index.teams.length === 0 && showcase) {
+        const made = await addTeam(root, uuid(), appNow());
+        if (cancelled || made === null) return setOpened(o);
+        return show(made);
+      }
+      setOpened(o);
+      if (o.kind !== 'read-only') setSummaries(await teamSummaries(root, o.index, readTeamRow));
     });
     return () => {
       cancelled = true;
     };
-  }, [root]);
+  }, [root, show]);
+
   const teamId = opened?.kind === 'team' ? opened.teamId : null;
   const store = useMemo(
     () => (teamId !== null ? teamStore(root, teamId) : readOnlyStore(root)),
     [root, teamId]
   );
-  const forgetAll = useCallback(() => void forgetEveryTeam(root, teamId, appNow()), [root, teamId]);
+
+  const openSwitcher = useCallback(() => {
+    // The list is read afresh, so a name or season changed in this team shows.
+    if (opened && opened.kind !== 'read-only') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);
+    setSheet('switch');
+  }, [opened, root]);
+
+  const forgetAll = useCallback(() => {
+    void forgetEveryTeam(root, null, appNow()).then(() => {
+      setInitial(null);
+      setSummaries([]);
+      setOpened({ kind: 'none', index: { version: 1, current: null, teams: [] } });
+    });
+  }, [root]);
+
+  const switchTo = useCallback(
+    (id: UUID) => {
+      setSheet(null);
+      if (id === teamId) return;
+      setInitial(null);
+      void openTeam(root, id).then(show);
+    },
+    [root, teamId, show]
+  );
+
+  const add = useCallback(
+    (t: NewTeam) => {
+      const id = uuid();
+      setAdding(false);
+      setInitial(t);
+      void addTeam(root, id, appNow()).then(show);
+    },
+    [root, show]
+  );
+
+  const bringBack = useCallback(
+    (id: UUID) => {
+      setSheet(null);
+      setInitial(null);
+      void bringBackTeam(root, id).then(show);
+    },
+    [root, show]
+  );
+
+  const remove = useCallback(() => {
+    setSheet(null);
+    if (teamId === null) return;
+    setInitial(null);
+    void removeTeam(root, teamId, appNow()).then(show);
+  }, [root, teamId, show]);
+
+  const frame = (body: ReactNode) => (
+    <SafeAreaProvider>
+      <SafeAreaView style={screen.safe}>
+        <View style={screen.column}>{body}</View>
+        <StatusBar style="light" />
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
 
   if (opened === null) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={screen.safe}>
-          <View style={[screen.pane, screen.centre]}>
-            <ActivityIndicator color="#ffffff" />
-          </View>
-          <StatusBar style="light" />
-        </SafeAreaView>
-      </SafeAreaProvider>
+    return frame(
+      <View style={[screen.pane, screen.centre]}>
+        <ActivityIndicator color="#ffffff" />
+      </View>
     );
   }
+
+  const listed = summaries.filter((t) => !t.removed);
+  if (adding) {
+    return frame(
+      <AddTeamScreen
+        otherNames={listed.map((t) => t.name)}
+        defaultSeasonName={seasonNameFor(appNow())}
+        onAdd={add}
+        onCancel={() => setAdding(false)}
+        cancelLabel={teamId === null ? 'Back to start' : 'Back'}
+      />
+    );
+  }
+  if (opened.kind === 'none') {
+    return frame(
+      <NoTeamsScreen aside={summaries.filter((t) => t.removed)} onAdd={() => setAdding(true)} onBringBack={bringBack} />
+    );
+  }
+
+  const here = summaries.find((t) => t.id === teamId);
+  // One provider for the team and its sheets: a second one beside the team
+  // would take half the screen. The sheets are Modals, outside the layout.
   return (
-    <TeamApp
-      key={teamId ?? 'read-only'}
-      store={store}
-      forgetAll={forgetAll}
-      readOnlyReason={opened.kind === 'read-only' ? opened.reason : null}
-    />
+    <SafeAreaProvider>
+      <TeamApp
+        key={teamId ?? 'read-only'}
+        store={store}
+        forgetAll={forgetAll}
+        readOnlyReason={opened.kind === 'read-only' ? opened.reason : null}
+        team={
+          opened.kind === 'team'
+            ? {
+                badge: here?.badge ?? 0,
+                count: listed.length,
+                onSwitch: openSwitcher,
+                onRemove: () => {
+                  // Its current name, as the coach will type it.
+                  if (opened.kind === 'team') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);
+                  setSheet('remove');
+                },
+              }
+            : null
+        }
+        initial={initial}
+      />
+      <TeamSwitcher
+          visible={sheet === 'switch'}
+          teams={summaries}
+          currentId={teamId}
+          onOpen={switchTo}
+          onAdd={() => {
+            setSheet(null);
+            setAdding(true);
+          }}
+          onBringBack={bringBack}
+          onClose={() => setSheet(null)}
+        />
+        <RemoveTeamSheet
+          visible={sheet === 'remove'}
+          name={here?.name ?? ''}
+          onRemove={remove}
+          onClose={() => setSheet(null)}
+        />
+    </SafeAreaProvider>
   );
 }

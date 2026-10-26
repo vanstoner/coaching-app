@@ -53,6 +53,7 @@ export function SettingsScreen({
   testKit,
   onForget,
   onShowGettingStarted = null,
+  team = null,
 }: {
   squadName: string;
   onSquadName: (s: string) => void;
@@ -77,6 +78,12 @@ export function SettingsScreen({
   onForget: () => void;
   /** #218 Q4: the Getting started card back, while it is closed and a step is undone. */
   onShowGettingStarted?: (() => void) | null;
+  /**
+   * #224: the teams on this phone (T1, T2, AC10). Switch opens the team list;
+   * Remove is for the open team only, and refused with a reason while its
+   * match is on (T7).
+   */
+  team?: { count: number; onSwitch: () => void; onRemove: () => void; removeBlocked: string | null } | null;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
@@ -112,6 +119,13 @@ export function SettingsScreen({
             maxLength={MAX_TEAM_NAME_LENGTH}
             returnKeyType="done"
           />
+          {team && (
+            <Pressable onPress={team.onSwitch} style={screen.linkHit} accessibilityRole="button">
+              <Text style={screen.link}>
+                {team.count} {team.count === 1 ? 'team' : 'teams'} on this phone · Switch team ›
+              </Text>
+            </Pressable>
+          )}
 
           <Text style={screen.fieldLabel}>Default match length</Text>
           <ChipRow>
@@ -179,13 +193,21 @@ export function SettingsScreen({
           {backup}
           {testKit}
 
+          {team && (
+            <>
+              <Pressable onPress={team.onRemove} style={screen.linkHit} accessibilityRole="button">
+                <Text style={screen.dangerLink}>Remove {squadName}</Text>
+              </Pressable>
+              {team.removeBlocked && <Text style={screen.hint}>{team.removeBlocked}</Text>}
+            </>
+          )}
+
           {confirmForget ? (
             <>
               <Text style={[screen.hint, screen.overtime]}>
-                This deletes the squad, the team name, every saved match, every
-                player's minutes and any copies the app kept aside after a
-                restore or a damaged save. Back up the app first if you want to
-                keep them.
+                {team && team.count > 1
+                  ? `This deletes all ${team.count} teams on this phone: each squad, team name, saved match and player's minutes, and any copies the app kept aside. Back up the app first if you want to keep them.`
+                  : "This deletes the squad, the team name, every saved match, every player's minutes and any copies the app kept aside after a restore or a damaged save. Back up the app first if you want to keep them."}
               </Text>
               <Pressable onPress={onForget} style={screen.linkHit}>
                 <Text style={screen.dangerLink}>Yes, forget everything</Text>
@@ -196,7 +218,9 @@ export function SettingsScreen({
             </>
           ) : (
             <Pressable onPress={() => setConfirmForget(true)} style={screen.linkHit}>
-              <Text style={screen.dangerLink}>Forget everything</Text>
+              <Text style={screen.dangerLink}>
+                {team && team.count > 1 ? `Forget everything (all ${team.count} teams)` : 'Forget everything'}
+              </Text>
             </Pressable>
           )}
         </ScrollView>

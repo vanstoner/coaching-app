@@ -65,6 +65,7 @@ export function FixturesScreen({
   nothingPlayed = null,
   highlightPlayNow = false,
   provenance = new Map(),
+  header,
 }: {
   squadName: string;
   matches: Match[];
@@ -118,6 +119,8 @@ export function FixturesScreen({
   highlightPlayNow?: boolean;
   /** How far each played match can be trusted (#199), derived from the record. */
   provenance?: ReadonlyMap<UUID, Provenance>;
+  /** #224 T1: the team chip, in place of the title. */
+  header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
   const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed, provenance };
@@ -128,9 +131,11 @@ export function FixturesScreen({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
-        <Text style={screen.title} numberOfLines={1}>
-          {squadName}
-        </Text>
+        {header ?? (
+          <Text style={screen.title} numberOfLines={1}>
+            {squadName}
+          </Text>
+        )}
         {notice ? <Text style={[screen.hint, screen.overtime]}>{notice}</Text> : null}
         {guide}
 
