@@ -9,7 +9,8 @@
  * against the match's fair share, subs made, absentees, and the format,
  * competition and date (AC2). Every figure is folded by `matchReport` from
  * the match record each time it is drawn; nothing is stored (AC3). No
- * player-of-the-week rating (AC4).
+ * player-of-the-week rating (AC4). A match in the record reads the record's
+ * events and structure, as its record page does (#244, `recordedReport`).
  *
  * This match only (#121 AC1): each child's minutes over the outline of their
  * average from the other matches, and one plain line saying the season
@@ -30,13 +31,14 @@ import { Text } from './Text';
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
 import { isExcluded, type Ledger } from '../app/ledger';
-import { goalOutfieldSplit, matchChart, matchReport, wholeMinutes } from '../app/analysis';
+import { goalOutfieldSplit, matchChart, wholeMinutes } from '../app/analysis';
 import { SEASON_POINTER } from '../app/childSeason';
-import { recordOnlyGoals, resultOf, scoreWithRecord } from '../app/matchRecord';
+import { resultOf } from '../app/matchRecord';
+import { recordedReport } from '../app/recordedReport';
 import { TALLY_CAPTION, matchTalliesWithGoals, tallyLineText } from '../app/tallies';
 import type { ProvenanceInfo } from '../app/provenance';
 import { TrustRow } from './RecordMatchScreen';
-import { formatClock, periodNounPlural } from '../app/matchClock';
+import { formatClock } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
 import { Chip, ChipRow } from './Chip';
@@ -157,25 +159,24 @@ export function MatchSummaryScreen({
   // Only a match the ledger holds can be left out or counted (ADR-020).
   const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
   const excluded = inLedger ? isExcluded(inLedger) : false;
-  const report = matchReport(engine, state, players, format);
+  // #244 (ADR-022 D1): a match in the record reads the record, as its record
+  // page does: goals taken back or added there, and how it was played.
+  const { report, events, scorers, timeUnknown, structure } = recordedReport(engine, state, players, format, inLedger);
   const [moreStats, setMoreStats] = useState(false);
-  // #196 AC1: the phone's events plus any the record holds that it does not.
-  const phoneIds = new Set((state.events ?? []).map((e) => e.id));
-  const score = scoreWithRecord(report.score, phoneIds, inLedger);
-  const extraGoals = recordOnlyGoals(phoneIds, inLedger);
+  const score = report.score;
   const chart = matchChart(report, ledger, players, { kickoffs });
   const nameOf = (id: string | null) =>
     (id && report.players.find((p) => p.playerId === id)?.name) ||
     (id && players.find((p) => p.id === id)?.firstName) ||
     'someone';
-  const tallies = matchTalliesWithGoals(state.events, ledger?.eventTypes ?? [], (id) => nameOf(id));
+  const tallies = matchTalliesWithGoals(events, ledger?.eventTypes ?? [], (id) => nameOf(id));
 
   const competition = competitionLabel(report.competition);
   const details = [
     kickoffLabel(state.match, now, state.quarters),
     competition === '' ? 'League' : competition,
     report.formatName,
-    `${report.totalMinutes} min, ${periodNounPlural(report.periodCount).toLowerCase()}`,
+    structure,
   ].filter((x): x is string => !!x);
 
   return (
@@ -210,17 +211,17 @@ export function MatchSummaryScreen({
         {closed && trust && <TrustRow trust={trust} />}
 
         <Text style={screen.fieldLabel}>Goals</Text>
-        {report.scorers.length === 0 ? (
+        {scorers.length === 0 && timeUnknown.every((g) => g.kind !== 'goal') ? (
           <Text style={local.line}>No goals recorded.</Text>
         ) : (
-          report.scorers.map((s) => (
+          scorers.map((s) => (
             <Text key={s.playerId} style={local.line} numberOfLines={1}>
               {s.name} · {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
             </Text>
           ))
         )}
         {/* #228: a goal added in the record with time unknown is marked on its own line. */}
-        {extraGoals
+        {timeUnknown
           .filter((g) => g.kind === 'goal')
           .map((g) => (
             <Text key={g.id} style={local.line} numberOfLines={1}>
@@ -241,7 +242,7 @@ export function MatchSummaryScreen({
 
         <Text style={screen.fieldLabel}>In goal</Text>
         <Text style={local.line}>{report.conceded} conceded</Text>
-        {extraGoals
+        {timeUnknown
           .filter((g) => g.kind === 'conceded')
           .map((g) => (
             <Text key={g.id} style={local.lineFaint} numberOfLines={1}>
