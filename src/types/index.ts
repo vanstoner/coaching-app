@@ -114,6 +114,11 @@ export interface Match {
    * on its own clock so ×5 and ×10 touch nothing else. Absent: a real match.
    */
   test?: TestMatchMark;
+  /**
+   * The season this fixture was made in (#243 AC11, ADR-022 D5), set when
+   * it is made and never re-derived. Absent: the team's first season.
+   */
+  seasonId?: UUID;
 }
 
 /** What makes a match a test match (#194): its own clock, real time plus an offset. */

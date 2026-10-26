@@ -410,3 +410,8 @@ analysis, iOS". Entries are added as each release ships.
     part-way through picks up where it stopped, and a copy that does not read
     back leaves the data where it was, read-only. Every released version's
     data, 1.0.0 to 1.3.1, moves with identical figures.
+  - **Seasons are kept in the record.** A team has seasons, each with its
+    name, main format, age group, level and fairness (Full equal time, the
+    only one in 2.0.0). A match belongs to the season its fixture was made
+    in, never to a date. Until the coach names it, a team is in one first
+    season with nothing set, so every figure is what it was.

@@ -122,6 +122,7 @@ export function keyOf(record: LedgerRecord): string | null {
     // ADR-021 D2 (#195–#199). An older build has no key for these, so it
     // carries them in the chain and never folds them.
     case 'fixture':
+    case 'season':
     case 'award-type':
     case 'event-type':
       return `${record.type}:${String(record.id)}`;

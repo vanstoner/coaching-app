@@ -265,6 +265,30 @@ export interface Ledger {
   awardTypes: LedgerAwardType[];
   /** Tally kinds the coach added in Settings (#198); the built-in ones are not records. */
   eventTypes: LedgerEventType[];
+  /** The team's seasons (#243, ADR-022 D5), oldest first. None: one implicit first season. */
+  seasons: LedgerSeason[];
+  /** Set on a view of one season (`ledgerForSeason`); never on the ledger itself, never stored. */
+  viewSeason?: UUID;
+}
+
+/**
+ * A team's season (#243 AC2, ADR-022 D5): the coach's settings, never a
+ * figure. Latest record wins. Absent means absent: nothing is written for
+ * the coach (AC11).
+ */
+export interface LedgerSeason {
+  id: UUID;
+  /** "2026–27"; null reads "This season". */
+  name: string | null;
+  startedAt: string;
+  /** Players a side; null: the dominating side, as before seasons (ADR-015 §6a). */
+  mainSide: number | null;
+  /** 'U7' … 'U18'; null: not set, never guessed. */
+  ageGroup: string | null;
+  level: 'development' | 'competitive' | null;
+  /** Only 'full' in 2.0.0. */
+  lens: string;
+  note: string | null;
 }
 
 /** A kind of coach's tally added without a release (#198 AC2). Its events' kind is `tally:<id>`. */
@@ -332,6 +356,7 @@ const FIELDS: Record<string, readonly string[]> = {
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
+  season: ['type', 'id', 'name', 'startedAt', 'mainSide', 'ageGroup', 'level', 'lens', 'note'],
   ...SETUP_FIELDS,
 };
 
@@ -351,6 +376,8 @@ const FILE_FIELDS = [
   'settings',
   'awardTypes',
   'eventTypes',
+  'seasons',
+  'viewSeason',
   'summary',
 ] as const;
 
@@ -431,7 +458,10 @@ function checkRecord(r: LedgerRecord): void {
 /** The ledger's squad, players and matches, folded from its chain. */
 function foldView(
   entries: LedgerEntry[]
-): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes'> {
+): Pick<
+  Ledger,
+  'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes' | 'seasons'
+> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -447,6 +477,7 @@ function foldView(
   const awardTypes = new Map<UUID, LedgerAwardType>(DEFAULT_AWARD_TYPES.map((t) => [t.id, t]));
   const awards = new Map<UUID, LedgerAward[]>();
   const eventTypes = new Map<UUID, LedgerEventType>();
+  const seasons = new Map<UUID, LedgerSeason>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -554,6 +585,11 @@ function foldView(
         if (st) structures.set(r.matchId as UUID, st);
         break;
       }
+      case 'season': {
+        const s = toSeason(r);
+        if (s) seasons.set(s.id, s);
+        break;
+      }
       case 'award-type':
         if (typeof r.id === 'string' && typeof r.name === 'string') {
           awardTypes.set(r.id as UUID, { id: r.id as UUID, name: r.name, active: r.active !== false });
@@ -608,6 +644,24 @@ function foldView(
     settings,
     awardTypes: [...awardTypes.values()],
     eventTypes: [...eventTypes.values()],
+    seasons: [...seasons.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+  };
+}
+
+const LEVELS: readonly string[] = ['development', 'competitive'];
+
+function toSeason(r: LedgerRecord): LedgerSeason | null {
+  if (typeof r.id !== 'string' || typeof r.startedAt !== 'string') return null;
+  const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
+  return {
+    id: r.id as UUID,
+    name: text(r.name),
+    startedAt: r.startedAt,
+    mainSide: typeof r.mainSide === 'number' && r.mainSide > 0 ? r.mainSide : null,
+    ageGroup: text(r.ageGroup),
+    level: LEVELS.includes(String(r.level)) ? (r.level as LedgerSeason['level']) : null,
+    lens: text(r.lens) ?? 'full',
+    note: text(r.note),
   };
 }
 
@@ -1074,6 +1128,66 @@ export function recordRemovedPlayers(ledger: Ledger, playerIds: readonly UUID[],
 }
 
 export type CorrectionResult = { ok: true; ledger: Ledger } | { ok: false; reason: string };
+
+/** The first season's fixed id (ADR-022 D5): a match whose fixture names no season belongs to it. */
+export const FIRST_SEASON_ID = 'first-season' as UUID;
+
+/** Age groups a season may name (#224 AC5): U7 to U18. */
+export const AGE_GROUPS: readonly string[] = Array.from({ length: 12 }, (_, i) => `U${i + 7}`);
+
+/** Main formats 2.0.0 offers, as players a side (#224 T9): 5 and 7. */
+export const MAIN_SIDES: readonly number[] = [5, 7];
+
+/** A season name's limit (#243 Q4). */
+export const SEASON_NAME_MAX = 16;
+
+export interface SeasonInput {
+  id: UUID;
+  name: string | null;
+  mainSide: number | null;
+  ageGroup: string | null;
+  level: 'development' | 'competitive' | null;
+  note?: string | null;
+}
+
+/**
+ * Write a season's settings (#243 AC1, AC2, AC4, AC9; ADR-022 D5): start a
+ * new one, confirm the first, or set its main format later. Only the
+ * coach's inputs; nothing is filled in on their behalf. A season keeps the
+ * time it started; only 'full' fairness exists in 2.0.0.
+ */
+export function saveSeason(ledger: Ledger, input: SeasonInput, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const name = input.name?.trim() ?? '';
+  if (name.length > SEASON_NAME_MAX) return { ok: false, reason: `A season name is up to ${SEASON_NAME_MAX} characters.` };
+  if (input.ageGroup !== null && !AGE_GROUPS.includes(input.ageGroup)) {
+    return { ok: false, reason: 'The age group is U7 to U18.' };
+  }
+  if (input.mainSide !== null && !MAIN_SIDES.includes(input.mainSide)) {
+    return { ok: false, reason: 'The main format is 5-a-side or 7-a-side.' };
+  }
+  const have = ledger.seasons.find((x) => x.id === input.id);
+  return {
+    ok: true,
+    ledger: appendRecords(
+      ledger,
+      [
+        {
+          type: 'season',
+          id: input.id,
+          name: name === '' ? null : name,
+          startedAt: have?.startedAt ?? now.toISOString(),
+          mainSide: input.mainSide,
+          ageGroup: input.ageGroup,
+          level: input.level,
+          lens: 'full',
+          note: input.note?.trim() || null,
+        },
+      ],
+      now
+    ),
+  };
+}
 
 /**
  * Change a player's attendance after kick-off (ADR-014 §4, #102 AC2,
