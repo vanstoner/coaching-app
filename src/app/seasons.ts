@@ -13,49 +13,43 @@
  *   with none, the first (AC1). A season ends when the next one starts.
  */
 
-import { FIRST_SEASON_ID, type Ledger, type LedgerSeason } from "./ledger";
-import type { UUID } from "../types/index";
+import { FIRST_SEASON_ID, type Ledger, type LedgerSeason } from './ledger';
+import type { UUID } from '../types/index';
 
 /** The first season before the coach has said anything about it: all fields absent. */
 function implicitFirst(): LedgerSeason {
   return {
     id: FIRST_SEASON_ID,
     name: null,
-    startedAt: "",
+    startedAt: '',
     mainSide: null,
     ageGroup: null,
     level: null,
-    lens: "full",
+    lens: 'full',
     note: null,
   };
 }
 
 /** Every season, first first: the first season is listed even with no record. */
-export function seasonsOf(ledger: Pick<Ledger, "seasons">): LedgerSeason[] {
-  const first =
-    ledger.seasons.find((s) => s.id === FIRST_SEASON_ID) ?? implicitFirst();
+export function seasonsOf(ledger: Pick<Ledger, 'seasons'>): LedgerSeason[] {
+  const first = ledger.seasons.find((s) => s.id === FIRST_SEASON_ID) ?? implicitFirst();
   return [first, ...ledger.seasons.filter((s) => s.id !== FIRST_SEASON_ID)];
 }
 
 /** The season the team is in now (AC1). */
-export function currentSeason(ledger: Pick<Ledger, "seasons">): LedgerSeason {
+export function currentSeason(ledger: Pick<Ledger, 'seasons'>): LedgerSeason {
   const all = seasonsOf(ledger);
   return all[all.length - 1];
 }
 
 /** "2026–27", or "This season" before it is named (AC1). */
-export function seasonName(season: Pick<LedgerSeason, "name">): string {
-  return season.name ?? "This season";
+export function seasonName(season: Pick<LedgerSeason, 'name'>): string {
+  return season.name ?? 'This season';
 }
 
 /** The season a match belongs to: its fixture's, else the first (AC11). */
-export function seasonOfMatch(
-  ledger: Pick<Ledger, "fixtures">,
-  matchId: UUID,
-): UUID {
-  return (
-    ledger.fixtures.find((f) => f.id === matchId)?.season ?? FIRST_SEASON_ID
-  );
+export function seasonOfMatch(ledger: Pick<Ledger, 'fixtures'>, matchId: UUID): UUID {
+  return ledger.fixtures.find((f) => f.id === matchId)?.season ?? FIRST_SEASON_ID;
 }
 
 /**
@@ -69,20 +63,18 @@ export function ledgerForSeason(ledger: Ledger, seasonId: UUID): Ledger {
   return {
     ...ledger,
     matches: ledger.matches.filter((m) => inSeason(m.id)),
-    fixtures: ledger.fixtures.filter(
-      (f) => (f.season ?? FIRST_SEASON_ID) === seasonId,
-    ),
+    fixtures: ledger.fixtures.filter((f) => (f.season ?? FIRST_SEASON_ID) === seasonId),
     viewSeason: seasonId,
   };
 }
 
 /** "2026–27" → "2027–28", "2026/27" → "2027/28", "2027" → "2028"; else the name unchanged (#243 Q4). */
 export function nextSeasonName(name: string | null): string {
-  if (name === null) return "";
+  if (name === null) return '';
   const pair = /^(\d{4})([–\-/])(\d{2})$/.exec(name);
   if (pair) {
     const y = Number(pair[1]) + 1;
-    return `${y}${pair[2]}${String((y + 1) % 100).padStart(2, "0")}`;
+    return `${y}${pair[2]}${String((y + 1) % 100).padStart(2, '0')}`;
   }
   const year = /^(\d{4})$/.exec(name);
   return year ? String(Number(year[1]) + 1) : name;
