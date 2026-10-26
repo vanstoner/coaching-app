@@ -398,3 +398,15 @@ analysis, iOS". Entries are added as each release ships.
   how it was played ("2 halves of 25:00"), as its record page does. Minutes
   already agreed and are unchanged. A match still being played reads as
   before.
+- **Heart FC Coach 2.0.0: teams and seasons (#224, #243; ADR-022), in
+  progress.** Rob, 18 Oct: *"if I am a coach of multiple squads I'll need to
+  switch to a squad and from there everything is only related to that
+  team … thinking like profiles in a browser."* Built in steps on one pull
+  request, each step a beta:
+  - **Each team keeps its own data, and the phone's data moves into the
+    first team.** Nothing changes on screen. On the first launch the phone's
+    squad, fixtures, minutes record and settings are copied, byte for byte,
+    into team 1, read back, and only then set aside. A launch interrupted
+    part-way through picks up where it stopped, and a copy that does not read
+    back leaves the data where it was, read-only. Every released version's
+    data, 1.0.0 to 1.3.1, moves with identical figures.
