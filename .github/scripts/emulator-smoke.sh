@@ -347,6 +347,50 @@ SET_OUT="$OUT/settings-assertions.txt"
 mkdir -p "$SDIR"
 : > "$SET_OUT"
 snote() { echo "ASSERTION FAILED (#145): $*" >> "$SET_OUT"; fail=1; }
+
+# #224 AC6 (2.0.0): a fresh install of the app or the beta opens on "No teams
+# on this phone yet", which has no tabs, so Settings cannot be reached until a
+# team exists. Add one through the app's own form, as a coach would: tap Add
+# your team, type a name, then scroll to Add and open (below the fold at
+# 320x640). On any other first screen (the demo opens on its made-up team)
+# there is nothing to do. Returns non-zero, with the reason in $SDIR/add-team.log.
+add_team_if_none() {
+  local log="$SDIR/add-team.log" xy n
+  : > "$log"
+  ui_dump "$SDIR/welcome.xml" || { echo "could not read the first screen's view tree" >> "$log"; return 1; }
+  xy="$(python3 "$CHECK" --centre-of "Add your team" "$SDIR/welcome.xml" 2> /dev/null)" || return 0
+  say "no team yet (#224 AC6): adding one through Add your team"
+  # shellcheck disable=SC2086 # "X Y", split on purpose
+  "$ADB" shell input tap $xy > /dev/null 2>&1
+  sleep 2
+  ui_dump "$SDIR/add-team-0.xml" || { echo "could not read Add a team's view tree" >> "$log"; return 1; }
+  xy="$(python3 "$CHECK" --centre-of "Team name" "$SDIR/add-team-0.xml" 2>> "$log")" || return 1
+  # shellcheck disable=SC2086
+  "$ADB" shell input tap $xy > /dev/null 2>&1
+  sleep 1
+  "$ADB" shell input text "SmokeFC" > /dev/null 2>&1
+  sleep 1
+  # Close the keyboard only if it is up: Back with no keyboard would leave the form.
+  if "$ADB" shell dumpsys input_method 2> /dev/null | grep -q "mInputShown=true"; then
+    "$ADB" shell input keyevent 4 > /dev/null 2>&1
+    sleep 1
+  fi
+  for n in 1 2 3 4 5 6; do
+    ui_dump "$SDIR/add-team-$n.xml" || { echo "could not read Add a team's view tree" >> "$log"; return 1; }
+    if xy="$(python3 "$CHECK" --centre-of "Add and open" "$SDIR/add-team-$n.xml" 2> /dev/null)"; then
+      # shellcheck disable=SC2086
+      "$ADB" shell input tap $xy > /dev/null 2>&1
+      sleep 3
+      return 0
+    fi
+    xy="$(python3 "$CHECK" --swipe "$SDIR/add-team-$n.xml" 2>> "$log")" || return 1
+    # shellcheck disable=SC2086
+    "$ADB" shell input swipe $xy 400 > /dev/null 2>&1
+    sleep 1
+  done
+  echo "scrolled Add a team six times and never found 'Add and open'" >> "$log"
+  return 1
+}
 # The demo (#146) is Heart FC Beta Coach too: the beta package, judged as a beta.
 case "$VARIANT:$PKG" in
   beta:*.beta | demo:*.beta) ;;
@@ -356,6 +400,8 @@ case "$VARIANT:$PKG" in
 esac
 if [ "$fail" != "0" ]; then
   echo "Settings not checked: an assertion above already failed" >> "$SET_OUT"
+elif ! add_team_if_none; then
+  snote "the first screen offers Add your team (#224 AC6), but adding one failed: $(cat "$SDIR/add-team.log")"
 elif ! ui_dump "$SDIR/first-screen.xml"; then
   snote "could not read the first screen's view tree to find the Settings tab: $(cat "$SDIR/first-screen.xml.log")"
 elif ! TAB="$(python3 "$CHECK" --tab-centre "$SDIR/first-screen.xml" 2> "$SDIR/tab.err")"; then
