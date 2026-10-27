@@ -29,7 +29,9 @@ import {
   matchIsUnderway,
   openDestination,
   whenLabel,
+  competitionLabel,
 } from './src/app/fixtures';
+import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
 import { currentQuarter, periodNounPlural } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
@@ -89,7 +91,33 @@ import {
   type TeamSummary,
 } from './src/app/storage/teams';
 import { readTeamRow } from './src/app/teamRows';
-import { currentSeason, seasonLine, seasonNameFor } from './src/app/seasons';
+import {
+  PROMPT_QUIET_MS,
+  SEASON_PROMPT_KEY,
+  currentSeason,
+  ledgerForSeason,
+  newSeasonPromptDue,
+  nextAgeGroup,
+  nextSeasonName,
+  seasonBegan,
+  seasonLine,
+  seasonName,
+  seasonNameFor,
+  seasonOfMatch,
+  seasonsOf,
+  sideCounts,
+  playedIn,
+} from './src/app/seasons';
+import { TEAM_FORMATS } from './src/app/teamRows';
+import {
+  NewSeasonPrompt,
+  OffFormatCard,
+  PastSeasonScreen,
+  SeasonSection,
+  StartSeasonScreen,
+  type NewSeason,
+  type PastMatchRow,
+} from './src/screens/Seasons';
 import { AddTeamScreen, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
 import type { KeyValueStore } from './src/app/persistence';
 import { TableSortProvider } from './src/screens/TableSort';
@@ -133,6 +161,7 @@ import {
   setMatchKind,
   visibleLedger,
   saveSeason,
+  setFormatCounted,
   FIRST_SEASON_ID,
   type ImportChoice,
   type Ledger,
@@ -176,7 +205,7 @@ import {
   withTestSpeed,
 } from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
-import { scoreWithRecord, type Score } from './src/app/matchRecord';
+import { scoreFromEvents, scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
 import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
 import { provenanceOf, provenances } from './src/app/provenance';
@@ -333,6 +362,10 @@ function TeamApp({
   // --- first open (#218) ----------------------------------------------------
   /** The coach closed Getting started: a view choice on this phone, never in the record (AC7). */
   const [cardClosed, setCardClosed] = useState(false);
+  /** #243 Q2: "Not yet" on the August prompt quiets it until then. A view choice, never in the record. */
+  const [promptQuietUntil, setPromptQuietUntil] = useState<number | null>(null);
+  /** #243 AC6: the past season open, read-only. */
+  const [pastSeasonId, setPastSeasonId] = useState<UUID | null>(null);
   /** A short message at the foot of the screen; Undo when it has one. Screen state only. */
   const [toast, setToast] = useState<{ id: number; text: string; onUndo?: () => void; ms: number } | null>(null);
   const showToast = useCallback((text: string, onUndo?: () => void) => {
@@ -437,6 +470,16 @@ function TeamApp({
   const [ledger, setLedger] = useState<Ledger | null>(null);
   /** What every screen sees: matches marked a test or void left out (#194). */
   const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
+  // #243 AC1, AC5 (ADR-022 D6): the season the team is in, and the figures
+  // of that season alone. With no season started this is the whole record,
+  // so every figure is as it was.
+  const season = useMemo(() => currentSeason(ledger ?? { seasons: [] }), [ledger]);
+  const seasonView = useMemo(
+    () => (viewLedger ? ledgerForSeason(viewLedger, season.id) : null),
+    [viewLedger, season.id]
+  );
+  /** A new fixture's season (#243 AC11): absent in the first season, so its record is as before. */
+  const newSeasonId = season.id === FIRST_SEASON_ID ? undefined : season.id;
   const [testMatchMessage, setTestMatchMessage] = useState('');
   const [ledgerMessage, setLedgerMessage] = useState('');
   // #195 (QA N1): a verified file waiting on the coach's choice of how its children line up.
@@ -504,6 +547,7 @@ function TeamApp({
 
       // #218: whether the coach closed Getting started on this phone.
       const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
+      const quietRaw = await store.getItem(SEASON_PROMPT_KEY).catch(() => null);
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -516,6 +560,7 @@ function TeamApp({
       const opened = await openStoredLedger(store, appNow());
       if (cancelled) return;
       setCardClosed(parseCardClosed(closedRaw));
+      setPromptQuietUntil(quietRaw !== null && Number.isFinite(Number(quietRaw)) ? Number(quietRaw) : null);
       if (!openedSession.writable) sessionWritableRef.current = false;
       if (openedSession.message !== '') setSessionMessage(openedSession.message);
       if (!opened.writable) ledgerBlockedRef.current = true;
@@ -960,6 +1005,7 @@ function TeamApp({
           opponent: draft.opponent,
           competition: draft.competition,
           kickoffAt: draft.kickoffAt,
+          seasonId: newSeasonId,
           excludeFromStats: draft.excludeFromStats,
         },
         appNow
@@ -978,7 +1024,7 @@ function TeamApp({
       persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
     },
-    [squadId, format, matches, persist, match, squad]
+    [squadId, format, matches, persist, match, squad, newSeasonId]
   );
 
   /**
@@ -1149,6 +1195,7 @@ function TeamApp({
         totalMinutes,
         periodCount,
         players: squad,
+        seasonId: newSeasonId,
         // #194: a test match from Settings, on its own clock, never recorded.
         ...(test === true ? { test: newTestMark(appNow().getTime()) } : {}),
       },
@@ -1157,7 +1204,7 @@ function TeamApp({
     releaseMatch({ engine: engineFor(held.state), ...held });
     setSubPlan([]);
     setStep('lineup');
-  }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch]);
+  }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch, newSeasonId]);
 
   const playNow = useCallback(() => {
     if (squadReadiness(squad, format.onFieldCount).ready) {
@@ -1557,6 +1604,56 @@ function TeamApp({
   const setDefaultShape = useCallback((shape: ShapeCode) => {
     setFormat((current) => formatForShape(shape, current));
   }, []);
+
+  // --- seasons (#243) ---------------------------------------------------------
+
+  /** AC9, Q7: the first season's age group, level and name, saved only now. */
+  const confirmFirstSeason = useCallback(
+    (name: string, ageGroup: string, level: 'development' | 'competitive') =>
+      applyToLedger((l) =>
+        saveSeason(l, { id: FIRST_SEASON_ID, name, mainSide: season.mainSide, ageGroup, level }, appNow())
+      ),
+    [applyToLedger, season.mainSide]
+  );
+
+  /** AC9: the main format set later, by the coach. */
+  const setSeasonSide = useCallback(
+    (side: number) =>
+      applyToLedger((l) =>
+        saveSeason(
+          l,
+          { id: season.id, name: season.name, mainSide: side, ageGroup: season.ageGroup, level: season.level },
+          appNow()
+        )
+      ),
+    [applyToLedger, season]
+  );
+
+  /** AC4: a new season, from now; the last one is kept, read-only. New fixtures default to its format. */
+  const startSeason = useCallback(
+    (next: NewSeason): string | null => {
+      const refused = applyToLedger((l) =>
+        saveSeason(
+          l,
+          { id: uuid(), name: next.name, mainSide: next.side, ageGroup: next.ageGroup, level: next.level },
+          appNow()
+        )
+      );
+      if (refused !== null) return refused;
+      setDefaultShape(next.shape);
+      setStep('fixtures');
+      showToast(`${next.name} started. ${seasonName(season)} is kept, read-only, under Settings › Season. Nothing was deleted.`);
+      return null;
+    },
+    [applyToLedger, setDefaultShape, showToast, season]
+  );
+
+  /** Q2: "Not yet" brings the prompt back in a week. */
+  const quietSeasonPrompt = useCallback(() => {
+    const until = appNow().getTime() + PROMPT_QUIET_MS;
+    setPromptQuietUntil(until);
+    void store.setItem(SEASON_PROMPT_KEY, String(until)).catch(() => undefined);
+  }, [store]);
 
   /** The engine changes the live match in place; this repaints after an absence mark. */
   const [, repaint] = useReducer((n: number) => n + 1, 0);
@@ -2026,6 +2123,28 @@ function TeamApp({
     ) : null;
   })();
 
+  /** #243 AC8 (8A): an off-format match's card on its report, or null. */
+  const formatCardFor = (matchId: UUID): ReactNode => {
+    if (!viewLedger || ledgerBlockedRef.current) return null;
+    const m = playedIn(viewLedger).find((x) => x.id === matchId);
+    if (!m) return null;
+    const sv = ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, matchId));
+    const side = seasonSide(sv);
+    const own = sideOf(m);
+    if (side === null || own === null || own === side) return null;
+    const its = seasonsOf(viewLedger).find((s) => s.id === sv.viewSeason) ?? season;
+    return (
+      <OffFormatCard
+        seasonName={seasonName(its)}
+        seasonSide={side}
+        ownSide={own}
+        counted={m.formatCount?.counted === true}
+        countedNote={m.formatCount?.note ?? null}
+        onCount={(counted, note) => applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()))}
+      />
+    );
+  };
+
   const body = (() => {
     if (effectiveStep === 'loading') {
       return (
@@ -2092,6 +2211,66 @@ function TeamApp({
     // Each match's kick-off, for ruling E: who was in the squad for it.
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
 
+    if (effectiveStep === 'seasonStart' && ledger) {
+      // AC4: the last season's format, unless the team's default fits it better.
+      const ownShape = shapeOfFormat(format);
+      const fits = TEAM_FORMATS.find((f) => f.shape === ownShape && (season.mainSide === null || f.side === season.mainSide));
+      const bySide = TEAM_FORMATS.find((f) => f.side === season.mainSide);
+      return (
+        <StartSeasonScreen
+          from={season}
+          fromMatches={playedIn(seasonView ?? { matches: [] }).length}
+          players={squad.length}
+          defaultName={nextSeasonName(season.name) || seasonNameFor(appNow())}
+          defaultAge={nextAgeGroup(season.ageGroup) ?? 'U10'}
+          defaultShape={(fits ?? bySide ?? TEAM_FORMATS[2]).shape}
+          onStart={startSeason}
+          onCancel={() => setStep('settings')}
+        />
+      );
+    }
+
+    if (effectiveStep === 'seasonPast' && pastSeasonId && viewLedger && ledger) {
+      const pastSeason = seasonsOf(ledger).find((s) => s.id === pastSeasonId);
+      const pastView = ledgerForSeason(viewLedger, pastSeasonId);
+      if (pastSeason) {
+        const side = seasonSide(pastView);
+        const rows: PastMatchRow[] = playedIn(pastView)
+          .sort((a, b) => (b.kickoffAt ?? '').localeCompare(a.kickoffAt ?? ''))
+          .map((m) => {
+            const sc = m.events ? scoreFromEvents(m.events) : null;
+            const own = sideOf(m);
+            return {
+              id: m.id,
+              title: `${m.kickoffAt ? whenLabel(new Date(m.kickoffAt), appNow()) : 'Date not recorded'} · ${m.opponent ?? 'Opponent not recorded'}`,
+              detail: [competitionLabel(m.competition) || 'League', own ? `${own}-a-side` : null].filter(Boolean).join(' · '),
+              score: sc ? `${sc.us}–${sc.them}` : '',
+              leftOut: isOffFormat(m, side),
+            };
+          });
+        return (
+          <PastSeasonScreen
+            season={pastSeason}
+            current={season}
+            figures={
+              <MinutesSection
+                ledger={pastView}
+                players={players}
+                kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
+                message=""
+                busy={false}
+                onExport={() => undefined}
+                onImport={() => undefined}
+                readOnly
+              />
+            }
+            matches={rows}
+            onBack={() => setStep('settings')}
+          />
+        );
+      }
+    }
+
     if (effectiveStep === 'record' && recordPage) {
       const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
       return (
@@ -2113,7 +2292,8 @@ function TeamApp({
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={viewLedger}
+          // Its averages are its own season's (#243 AC5, AC6).
+          ledger={viewLedger && ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, match.state.match.id))}
           kickoffs={kickoffs()}
           now={appNow()}
           // Ruling D: after the last period, the coach closes the match here.
@@ -2129,6 +2309,7 @@ function TeamApp({
           }}
           trust={provenanceOf(viewLedger, match.state.match.id)}
           awards={liveAwards}
+          formatCard={formatCardFor(match.state.match.id)}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
             setRecordReturn('summary');
@@ -2154,7 +2335,8 @@ function TeamApp({
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={viewLedger}
+          // Its averages are its own season's (#243 AC5, AC6).
+          ledger={viewLedger && ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, match.state.match.id))}
           kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
           onBack={() => setStep(analysisReturn)}
@@ -2166,6 +2348,33 @@ function TeamApp({
       return (
         <SettingsScreen
           squadName={squadName}
+          season={
+            ledger && !ledgerBlockedRef.current ? (
+              <SeasonSection
+                season={season}
+                began={seasonBegan(season, seasonView ?? { matches: [] })}
+                matches={playedIn(seasonView ?? { matches: [] }).length}
+                sides={sideCounts(seasonView ?? { matches: [] })}
+                past={seasonsOf(ledger)
+                  .slice(0, -1)
+                  .reverse()
+                  .map((s) => ({
+                    season: s,
+                    matches: viewLedger
+                      ? playedIn(ledgerForSeason(viewLedger, s.id)).length
+                      : 0,
+                  }))}
+                firstName={seasonNameFor(new Date(seasonBegan(season, seasonView ?? { matches: [] }) ?? appNow().getTime()))}
+                onConfirmFirst={confirmFirstSeason}
+                onSetMainSide={setSeasonSide}
+                onStart={() => setStep('seasonStart')}
+                onOpenPast={(id) => {
+                  setPastSeasonId(id);
+                  setStep('seasonPast');
+                }}
+              />
+            ) : null
+          }
           team={
             team
               ? {
@@ -2194,7 +2403,7 @@ function TeamApp({
           minutes={
             <>
               <MinutesSection
-                ledger={viewLedger}
+                ledger={seasonView}
                 players={players}
                 kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
                 message={ledgerMessage}
@@ -2325,7 +2534,7 @@ function TeamApp({
           squadId={squadId}
           players={players}
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
-          ledger={viewLedger}
+          ledger={seasonView}
           kickoffs={kickoffs()}
           onPlayers={changeSquad}
           fairness={squadFairness}
@@ -2490,6 +2699,15 @@ function TeamApp({
         // Neither shows on a phone with a real squad that has played (AC6).
         guide={
           <>
+            {ledger &&
+              !ledgerBlockedRef.current &&
+              newSeasonPromptDue(seasonBegan(season, seasonView ?? { matches: [] }), appNow(), promptQuietUntil) && (
+                <NewSeasonPrompt
+                  name={seasonName(season)}
+                  onStart={() => setStep('seasonStart')}
+                  onNotYet={quietSeasonPrompt}
+                />
+              )}
             {isMadeUpTeam(players, everyMatch) && <MadeUpBanner onSettings={() => goToTab('settings')} />}
             {showCard(cardClosed, startProgress) && (
               <GettingStartedLine

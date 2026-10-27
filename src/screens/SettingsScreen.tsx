@@ -54,6 +54,7 @@ export function SettingsScreen({
   onForget,
   onShowGettingStarted = null,
   team = null,
+  season = null,
 }: {
   squadName: string;
   onSquadName: (s: string) => void;
@@ -84,6 +85,8 @@ export function SettingsScreen({
    * match is on (T7).
    */
   team?: { count: number; onSwitch: () => void; onRemove: () => void; removeBlocked: string | null } | null;
+  /** #243 Q5: Settings › Season, drawn by the caller, first in Settings. */
+  season?: ReactNode;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
@@ -103,6 +106,7 @@ export function SettingsScreen({
             Defaults for a new match. Changing one never alters a fixture you
             have already saved.
           </Text>
+          {season}
 
           <Text style={screen.fieldLabel}>Team name</Text>
           <TextInput

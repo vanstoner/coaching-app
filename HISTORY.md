@@ -422,3 +422,14 @@ analysis, iOS". Entries are added as each release ships.
     fairness is Full equal time). Settings switches team too, and removes
     the open team once its name is typed; a removed team is set aside and
     can be brought back. A new phone opens on "No teams on this phone yet".
+  - **Seasons on screen.** Settings opens with the season: its name, age
+    group, level, main format and fairness, when it began and how many
+    matches. The first season asks the coach to confirm its age group and
+    name (U10 Development offered, nothing saved until Confirm), and to set
+    its main format, saying what that would change. Start a new season is
+    one screen copied from the last, with the age group moved up a year and
+    named on the button; from August a card on Home offers it ("Not yet"
+    for a week). Every figure now covers the current season only; past
+    seasons open read-only with their own. A match in another format is
+    left out of the season's figures unless the coach counts it, with a
+    note.

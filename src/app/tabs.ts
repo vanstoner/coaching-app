@@ -44,7 +44,11 @@ export type Step =
   | 'lineup'
   | 'playing'
   /** A played match from the minutes record, with no fixture on this phone (#195). Read-only. */
-  | 'record';
+  | 'record'
+  /** Start a new season (#243 AC4). Full screen, Cancel exits. */
+  | 'seasonStart'
+  /** A past season, read-only (#243 AC6). Full screen, Back exits. */
+  | 'seasonPast';
 
 export type Tab = 'home' | 'squad' | 'settings';
 

@@ -34,6 +34,9 @@ import {
   ledgerForSeason,
   nextAgeGroup,
   nextSeasonName,
+  newSeasonPromptDue,
+  PROMPT_QUIET_MS,
+  seasonBegan,
   seasonName,
   seasonOfMatch,
   seasonsOf,
@@ -417,5 +420,32 @@ describe('counting an off-format match (#243 AC8; Rob’s ruling 8A)', () => {
     const back = ok(setFormatCounted(counted, id, false, 'Not after all', NOW));
     expect(back.matches.find((m) => m.id === id)?.formatCount?.counted).toBe(false);
     expect(verifyChain(back.entries)).toEqual({ ok: true });
+  });
+});
+
+describe('the August prompt (#243 AC4, Q2, Q3)', () => {
+  const sep2026 = Date.parse('2026-09-01T10:00:00Z');
+  it('is due from 1 August once the season is about a year old', () => {
+    expect(newSeasonPromptDue(sep2026, new Date('2027-07-31T10:00:00Z'), null)).toBe(false);
+    expect(newSeasonPromptDue(sep2026, new Date('2027-08-03T10:00:00Z'), null)).toBe(true);
+    expect(newSeasonPromptDue(sep2026, new Date('2028-01-10T10:00:00Z'), null)).toBe(true);
+  });
+  it('a season begun in October is due the next August, at ten months', () => {
+    expect(newSeasonPromptDue(Date.parse('2026-10-05T10:00:00Z'), new Date('2027-08-06T10:00:00Z'), null)).toBe(true);
+  });
+  it('is never due in the season’s first months, even in August', () => {
+    expect(newSeasonPromptDue(Date.parse('2027-07-20T10:00:00Z'), new Date('2027-08-03T10:00:00Z'), null)).toBe(false);
+  });
+  it('"Not yet" quiets it for a week', () => {
+    const now = new Date('2027-08-03T10:00:00Z');
+    expect(newSeasonPromptDue(sep2026, now, now.getTime() + PROMPT_QUIET_MS)).toBe(false);
+    expect(newSeasonPromptDue(sep2026, new Date(now.getTime() + PROMPT_QUIET_MS), now.getTime() + PROMPT_QUIET_MS)).toBe(true);
+  });
+  it('a first season with no record begins at its earliest match; with none, never due', () => {
+    const first = currentSeason({ seasons: [] });
+    expect(seasonBegan(first, { matches: [] })).toBeNull();
+    expect(
+      seasonBegan(first, { matches: [{ kickoffAt: '2026-09-05T10:00:00Z' }, { kickoffAt: null }] as never })
+    ).toBe(Date.parse('2026-09-05T10:00:00Z'));
   });
 });

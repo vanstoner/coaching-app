@@ -46,6 +46,7 @@ export function MinutesSection({
   matching = null,
   onChoose,
   onCancelImport,
+  readOnly = false,
 }: {
   ledger: Ledger | null;
   /** The working squad, for each player's outfield-share target (#101). */
@@ -61,6 +62,8 @@ export function MinutesSection({
   matching?: SquadMatching | null;
   onChoose?: (option: SquadOption) => void;
   onCancelImport?: () => void;
+  /** A past season (#243 AC6): its figures only, no export or import. */
+  readOnly?: boolean;
 }) {
   // #208: sorted by the heading the coach chose, Total most first by default.
   // Squad order underneath, so ties keep it; anyone the ledger knows who is
@@ -142,6 +145,8 @@ export function MinutesSection({
         );
       })}
 
+      {!readOnly && (
+      <>
       <Pressable
         disabled={busy || matches === 0}
         onPress={onExport}
@@ -173,6 +178,8 @@ export function MinutesSection({
         recorded its own matches is refused. Nothing here is ever overwritten
         or deleted.
       </Text>
+      </>
+      )}
 
       {matching !== null && onChoose && onCancelImport && (
         <MatchStep

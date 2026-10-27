@@ -14,6 +14,7 @@
  */
 
 import { FIRST_SEASON_ID, type Ledger, type LedgerSeason } from './ledger';
+import { isCounted, sideOf } from './analysis';
 import type { UUID } from '../types/index';
 
 /** The first season before the coach has said anything about it: all fields absent. */
@@ -102,4 +103,57 @@ export function seasonLine(season: LedgerSeason): string {
 export function seasonNameFor(now: Date): string {
   const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
   return `${y}–${String((y + 1) % 100).padStart(2, '0')}`;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * When a season began: its record's start, or, for a first season with no
+ * record, its earliest match (kick-off, else when the record first saw it).
+ * Null when it has neither.
+ */
+export function seasonBegan(season: LedgerSeason, view: Pick<Ledger, 'matches'>): number | null {
+  if (season.startedAt !== '') return Date.parse(season.startedAt);
+  const times = view.matches.map((m) => (m.kickoffAt ? Date.parse(m.kickoffAt) : NaN)).filter(Number.isFinite);
+  return times.length > 0 ? Math.min(...times) : null;
+}
+
+/**
+ * The August prompt (#243 AC4; Rob's rulings Q2, Q3): due once a 1 August
+ * has passed since the season began and it is at least 10 months old; "Not
+ * yet" quiets it until `quietUntil`, a week on. Settings always has the button.
+ */
+export function newSeasonPromptDue(began: number | null, now: Date, quietUntil: number | null): boolean {
+  if (began === null) return false;
+  const t = now.getTime();
+  if (quietUntil !== null && t < quietUntil) return false;
+  if (t - began < 304 * DAY) return false;
+  const lastAugust = new Date(now.getFullYear() - (now.getMonth() >= 7 ? 0 : 1), 7, 1).getTime();
+  return lastAugust > began;
+}
+
+/** "Not yet" brings the prompt back after this (#243 Q2). */
+export const PROMPT_QUIET_MS = 7 * DAY;
+
+/** Where "Not yet" is kept: a view choice on this phone, per team, never in the record. */
+export const SEASON_PROMPT_KEY = 'coaching-app/season-prompt/v1';
+
+/** How many counted matches a season has of each side (#243 AC9), for "Set the main format". */
+export function sideCounts(view: Pick<Ledger, 'matches'>): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const m of view.matches) {
+    const side = sideOf(m);
+    if (side !== null && isCounted(m)) out.set(side, (out.get(side) ?? 0) + 1);
+  }
+  return out;
+}
+
+/**
+ * A season's closed matches, left-out ones included and marked by the
+ * caller, as Played lists them: for its match count and its list (#243 AC6).
+ * Never a figure: every figure folds from `ledgerForSeason` through
+ * `isCounted`.
+ */
+export function playedIn(view: Pick<Ledger, 'matches'>): Ledger['matches'] {
+  return view.matches.filter((m) => m.status === 'completed');
 }
