@@ -433,3 +433,7 @@ analysis, iOS". Entries are added as each release ships.
     seasons open read-only with their own. A match in another format is
     left out of the season's figures unless the coach counts it, with a
     note.
+  - **Back up every team in one file.** A backup now holds every team on
+    the phone. Restoring it replaces each team the phone already has (its
+    data set aside first, as before), adds the others, and leaves alone any
+    team not in the file. A backup from 1.x restores into the open team.

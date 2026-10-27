@@ -16,7 +16,14 @@ import {
   type ClockSpeed,
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app/testKit';
-import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/storage/phoneBackup';
+import {
+  describeTeamsBackup,
+  makePhoneBackup,
+  makeTeamsBackup,
+  readAnyBackup,
+  restorePhoneBackup,
+  type ReadTeamsBackup,
+} from './src/app/storage/phoneBackup';
 import { addTestSeason } from './src/app/testSeason';
 import { currentDistribution } from './src/app/distribution';
 import { seedFor, shouldAutoSeed, storeContents } from './src/app/demoSeed';
@@ -84,8 +91,12 @@ import {
   openTeams,
   readOnlyStore,
   removeTeam,
+  restoreTeams,
   teamStore,
   teamSummaries,
+  teamsForBackup,
+  parseTeamIndex,
+  TEAMS_INDEX_KEY,
   type OpenedTeams,
   type TeamIndex,
   type TeamSummary,
@@ -342,7 +353,15 @@ function TeamApp({
   /** Set when the move into teams could not prove its copy (ADR-022 D3): nothing is saved. */
   readOnlyReason?: string | null;
   /** #224: this team among the phone's teams; null when read-only. */
-  team?: { badge: number; count: number; onSwitch: () => void; onRemove: () => void } | null;
+  team?: {
+    badge: number;
+    count: number;
+    onSwitch: () => void;
+    onRemove: () => void;
+    /** #224 AC7: every team on the phone in one backup file, and its restore (ADR-022 D4). */
+    backupAll: () => Promise<{ text: string; skipped: number }>;
+    restoreAll: (read: ReadTeamsBackup) => Promise<string[]>;
+  } | null;
   /** #224 AC5: a team just added, with its name and first season, opened for the first time. */
   initial?: NewTeam | null;
 }) {
@@ -488,7 +507,7 @@ function TeamApp({
   // #192: back up this app, and restore it.
   const [backupMessage, setBackupMessage] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
-  const [pendingBackup, setPendingBackup] = useState<ReadBackup | null>(null);
+  const [pendingBackup, setPendingBackup] = useState<ReadTeamsBackup | null>(null);
   /** Bumped after a restore, to run the launch again over what was restored. */
   const [launchKey, setLaunchKey] = useState(0);
   /**
@@ -1281,16 +1300,26 @@ function TeamApp({
   const backUpApp = useCallback(async () => {
     setBackupBusy(true);
     const label = currentBuildLabel();
-    const text = makePhoneBackup(
-      toSavedSession({ ...sessionInput(), now: appNow() }),
-      ledgerRef.current,
-      { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
-      appNow()
-    );
+    // #224 AC7: every team, read as stored; a read-only phone backs up what it shows.
+    const all = team ? await team.backupAll() : null;
+    const text =
+      all?.text ??
+      makePhoneBackup(
+        toSavedSession({ ...sessionInput(), now: appNow() }),
+        ledgerRef.current,
+        { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
+        appNow()
+      );
     const outcome = await exportBackupFile(text, appNow());
     setBackupBusy(false);
-    setBackupMessage(outcome.ok ? '' : outcome.reason);
-  }, [sessionInput]);
+    setBackupMessage(
+      !outcome.ok
+        ? outcome.reason
+        : all && all.skipped > 0
+          ? `${all.skipped} ${all.skipped === 1 ? 'team' : 'teams'} could not be read and ${all.skipped === 1 ? 'is' : 'are'} not in the file.`
+          : ''
+    );
+  }, [sessionInput, team]);
 
   /** #192 AC2, AC5: read and check a backup; nothing changes until the coach confirms. */
   const pickBackup = useCallback(async () => {
@@ -1302,7 +1331,7 @@ function TeamApp({
       return;
     }
     if (picked.text === null) return; // cancelled
-    const read = readPhoneBackup(picked.text);
+    const read = readAnyBackup(picked.text);
     if (!read.ok) {
       setBackupMessage(read.reason);
       return;
@@ -1322,10 +1351,17 @@ function TeamApp({
     setPendingBackup(null);
     setBackupBusy(true);
     setStep('loading');
-    const outcome = await restorePhoneBackup(store, backup, appNow());
+    // #224 AC7, ADR-022 D4: every team in the file; a 1.x file into this team.
+    let problems: string[];
+    if (team) {
+      problems = await team.restoreAll(backup);
+    } else {
+      const outcome = await restorePhoneBackup(store, backup.teams[0].backup, appNow());
+      problems = outcome.ok ? [] : [outcome.reason];
+    }
     setBackupBusy(false);
-    if (!outcome.ok) {
-      setBackupMessage(outcome.reason);
+    if (problems.length > 0 && problems.length === backup.teams.length) {
+      setBackupMessage(problems.join(' '));
       setStep('settings');
       return;
     }
@@ -1341,9 +1377,13 @@ function TeamApp({
     setPlayers([]);
     setMatches([]);
     setSquadErrand('home');
-    setBackupMessage('Restored. What was on this phone before is kept aside, unchanged.');
+    setBackupMessage(
+      problems.length > 0
+        ? `Restored, except: ${problems.join(' ')} What was on this phone before is kept aside, unchanged.`
+        : 'Restored. What was on this phone before is kept aside, unchanged.'
+    );
     setLaunchKey((k) => k + 1);
-  }, [pendingBackup, store]);
+  }, [pendingBackup, store, team]);
 
   /**
    * The squad changed on the Squad screen. A player taken out before ever
@@ -2465,7 +2505,7 @@ function TeamApp({
             <BackupSection
               message={backupMessage}
               busy={backupBusy}
-              pending={pendingBackup ? describeBackup(pendingBackup.preview) : null}
+              pending={pendingBackup ? describeTeamsBackup(pendingBackup) : null}
               onBackup={() => void backUpApp()}
               onPick={() => void pickBackup()}
               onConfirm={() => void restoreBackup()}
@@ -2907,6 +2947,30 @@ export default function App() {
                 badge: here?.badge ?? 0,
                 count: listed.length,
                 onSwitch: openSwitcher,
+                backupAll: async () => {
+                  const index = opened.kind === 'team' ? opened.index : null;
+                  if (!index) return { text: '', skipped: 0 };
+                  const { parts, skipped } = await teamsForBackup(root, index);
+                  const label = currentBuildLabel();
+                  return {
+                    text: makeTeamsBackup(
+                      parts,
+                      { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
+                      appNow()
+                    ),
+                    skipped: skipped.length,
+                  };
+                },
+                restoreAll: async (read) => {
+                  const problems = await restoreTeams(root, read, teamId, appNow());
+                  const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+                  if (index && teamId !== null) {
+                    // The same team stays open (same key, no remount); the list gains any team added.
+                    setOpened({ kind: 'team', teamId, index, moved: false });
+                    setSummaries(await teamSummaries(root, index, readTeamRow));
+                  }
+                  return problems;
+                },
                 onRemove: () => {
                   // Its current name, as the coach will type it.
                   if (opened.kind === 'team') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);

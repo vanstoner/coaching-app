@@ -29,6 +29,7 @@ import { TEST_CLOCK_KEY } from '../testKit';
 import { forgetAppData, type Forgotten } from './forget';
 import { STORAGE_KEY, inTurn, type KeyValueStore } from '../persistence';
 import { LEDGER_STORAGE_KEY } from './ledgerStore';
+import { restorePhoneBackup, type ReadTeamsBackup, type TeamBackupPart } from './phoneBackup';
 import type { UUID } from '../../types/index';
 
 /** Every key this app writes starts with this. */
@@ -404,4 +405,77 @@ export async function teamSummaries(
     });
   }
   return out;
+}
+
+// --- every team in one backup (#224 AC7, ADR-022 D4) -----------------------
+
+/**
+ * Every team's stored squad and minutes record, for a backup of the phone.
+ * Read in the device store's turn, behind any save still queued. A team
+ * whose stored text will not parse is named in `skipped`, never dropped
+ * silently.
+ */
+export function teamsForBackup(
+  root: KeyValueStore,
+  index: TeamIndex
+): Promise<{ parts: TeamBackupPart[]; skipped: UUID[] }> {
+  return inTurn(root, async () => {
+    const parts: TeamBackupPart[] = [];
+    const skipped: UUID[] = [];
+    for (const t of index.teams) {
+      const store = teamStore(root, t.id);
+      try {
+        const session = await store.getItem(STORAGE_KEY);
+        const ledger = await store.getItem(LEDGER_STORAGE_KEY);
+        if (session === null) throw new Error('no squad');
+        parts.push({
+          id: t.id,
+          removed: t.removedAt !== null,
+          session: JSON.parse(session),
+          ledger: ledger === null ? null : JSON.parse(ledger),
+        });
+      } catch {
+        skipped.push(t.id);
+      }
+    }
+    return { parts, skipped };
+  });
+}
+
+/**
+ * Restore a backup (ADR-022 D4): each team whose id is on the phone is
+ * replaced, its data set aside first (as #192 does); a new id is added;
+ * teams on the phone not in the file are left alone. A 1.x backup (no id)
+ * restores into `openId`. Returns the reasons any team was not restored.
+ */
+export async function restoreTeams(
+  root: KeyValueStore,
+  read: ReadTeamsBackup,
+  openId: UUID | null,
+  now: Date
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const t of read.teams) {
+    const id = t.id ?? openId;
+    if (id === null) {
+      problems.push('A backup from 1.x restores into an open team; add a team first.');
+      continue;
+    }
+    const indexed = await changeIndex(root, (i) =>
+      i.teams.some((x) => x.id === id)
+        ? i
+        : {
+            ...i,
+            current: i.current ?? id,
+            teams: [...i.teams, { id, createdAt: now.toISOString(), removedAt: t.removed ? now.toISOString() : null }],
+          }
+    );
+    if (indexed === null) {
+      problems.push(`${t.backup.preview.squadName}: the team list could not be written.`);
+      continue;
+    }
+    const outcome = await restorePhoneBackup(teamStore(root, id), t.backup, now);
+    if (!outcome.ok) problems.push(`${t.backup.preview.squadName}: ${outcome.reason}`);
+  }
+  return problems;
 }

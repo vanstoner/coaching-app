@@ -22,12 +22,16 @@ import {
   BACKUP_ID,
   RESTORE_ASIDE_PREFIX,
   describeBackup,
+  describeTeamsBackup,
+  makeTeamsBackup,
+  readAnyBackup,
   makePhoneBackup,
   readPhoneBackup,
   restorePhoneBackup,
   type ReadBackup,
 } from './phoneBackup';
 import { openStoredSession } from './sessionStore';
+import { addTeam, openTeams, restoreTeams, teamStore, teamsForBackup } from './teams';
 import { addTestData } from '../testKit';
 import { addTestSeason } from '../testSeason';
 import { uuid, type UUID } from '../../types/index';
@@ -218,4 +222,81 @@ it('the two phones in these tests differ', async () => {
   const stored = JSON.parse((await store.getItem(STORAGE_KEY))!) as SavedSession;
   expect(stored.squadName).toBe('Other FC');
   expect(stored.squadId).not.toBe(phone().session.squadId as UUID);
+});
+
+describe('a backup of every team (#224 AC7, ADR-022 D4)', () => {
+  /** A phone with teams A and B, each a squad with a played season, stored as the app stores them. */
+  async function twoTeams(names: [string, string]) {
+    const root = createMemoryStore();
+    const ids = [uuid(), uuid()] as UUID[];
+    for (const [n, id] of ids.entries()) {
+      await addTeam(root, id, NOW);
+      const p = phone();
+      await saveSession(teamStore(root, id), { ...p.input, squadName: names[n] });
+      await saveLedger(teamStore(root, id), p.ledger);
+    }
+    const opened = await openTeams(root, NOW, () => uuid());
+    if (opened.kind !== 'team') throw new Error('no team');
+    return { root, ids, index: opened.index };
+  }
+
+  it('one file holds every team; it reads back team by team with the same names and minutes', async () => {
+    const { root, index } = await twoTeams(['Unicorns', 'Rovers']);
+    const { parts, skipped } = await teamsForBackup(root, index);
+    expect(skipped).toEqual([]);
+    const back = readAnyBackup(makeTeamsBackup(parts, FROM, NOW));
+    if (!back.ok) throw new Error(back.reason);
+    expect(back.teams.map((t) => t.backup.preview.squadName)).toEqual(['Unicorns', 'Rovers']);
+    expect(back.teams.every((t) => t.backup.ledger !== null && t.backup.ledger.entries.length > 0)).toBe(true);
+    expect(describeTeamsBackup(back)).toMatch(/^2 teams: Unicorns, Rovers\./);
+  });
+
+  it('restoring replaces a team with the same id (set aside first), adds a new one, leaves the rest alone', async () => {
+    const source = await twoTeams(['Unicorns', 'Rovers']);
+    const back = readAnyBackup(makeTeamsBackup((await teamsForBackup(source.root, source.index)).parts, FROM, NOW));
+    if (!back.ok) throw new Error(back.reason);
+
+    // The target phone holds Unicorns (same id, changed since) and a team the file does not have.
+    const target = createMemoryStore();
+    const [unicorns, rovers] = source.ids;
+    const own = uuid() as UUID;
+    await addTeam(target, unicorns, NOW);
+    await saveSession(teamStore(target, unicorns), { ...phone().input, squadName: 'Unicorns, changed' });
+    await addTeam(target, own, NOW);
+    await saveSession(teamStore(target, own), { ...phone().input, squadName: 'Sunday U9s' });
+    const ownBefore = await teamStore(target, own).getItem(STORAGE_KEY);
+
+    expect(await restoreTeams(target, back, own, NOW)).toEqual([]);
+    const opened = await openTeams(target, NOW, () => uuid());
+    if (opened.kind !== 'team') throw new Error('no team');
+    expect(new Set(opened.index.teams.map((t) => t.id))).toEqual(new Set([unicorns, own, rovers]));
+    expect((await openStoredSession(teamStore(target, unicorns), NOW)).session?.squadName).toBe('Unicorns');
+    expect((await openStoredSession(teamStore(target, rovers), NOW)).session?.squadName).toBe('Rovers');
+    expect(await teamStore(target, own).getItem(STORAGE_KEY)).toBe(ownBefore);
+    // What Unicorns held before is kept aside, inside the team.
+    const aside = (await teamStore(target, unicorns).allKeys!()).filter((k) => k.startsWith(RESTORE_ASIDE_PREFIX));
+    expect(aside.length).toBeGreaterThan(0);
+  });
+
+  it('a backup from 1.x is one squad, restored into the open team (D4)', async () => {
+    const p = phone();
+    const v1 = readAnyBackup(makePhoneBackup(p.session, p.ledger, FROM, NOW));
+    if (!v1.ok) throw new Error(v1.reason);
+    expect(v1.teams.map((t) => t.id)).toEqual([null]);
+    const target = createMemoryStore();
+    const open = uuid() as UUID;
+    await addTeam(target, open, NOW);
+    expect(await restoreTeams(target, v1, open, NOW)).toEqual([]);
+    expect((await openStoredSession(teamStore(target, open), NOW)).session?.players.length).toBe(p.session.players.length);
+  });
+
+  it('one damaged team refuses the whole file, and 1.x refuses a 2.0.0 backup as newer', async () => {
+    const { root, index } = await twoTeams(['Unicorns', 'Rovers']);
+    const { parts } = await teamsForBackup(root, index);
+    const damaged = makeTeamsBackup([parts[0], { ...parts[1], session: { nonsense: true } }], FROM, NOW);
+    expect(readAnyBackup(damaged).ok).toBe(false);
+    const asOld = readPhoneBackup(makeTeamsBackup(parts, FROM, NOW));
+    expect(asOld.ok).toBe(false);
+    if (!asOld.ok) expect(asOld.reason).toMatch(/newer version/);
+  });
 });
