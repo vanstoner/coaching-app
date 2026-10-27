@@ -1,7 +1,7 @@
 # Domain models
 
 Status: **Draft**, retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-25 (#239; earlier #173, #180, #184, #188, #192, #193, #202, #195, #190)
+Last updated: 2026-10-27 (2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./archive/v1-specs/01-domain-model.md), archived
@@ -221,7 +221,9 @@ interface Ledger {                          // key coaching-app/ledger/v2
   // folded from entries, never stored:
   squad: { id: UUID; name: string }; players: LedgerPlayer[]; matches: LedgerMatch[];
   fixtures: LedgerFixture[]; profiles: LedgerProfile[]; settings: LedgerSettings | null;   // #195
+  awardTypes: LedgerAwardType[]; eventTypes: LedgerEventType[];                              // #197, #198
   seasons: LedgerSeason[];                  // #243, ADR-022 D5; none: one implicit first season
+  viewSeason?: UUID;                        // set only on a season's view (ledgerForSeason), never stored
 }
 // entry: { seq, prev, at, kind, records, hash, device?, sig? }
 // record types: squad | player | match | interval | event | attendance
@@ -248,12 +250,21 @@ interface Ledger {                          // key coaching-app/ledger/v2
 
 - **Left out of the figures** (ADR-020): an `exclusion` record, latest wins,
   with a note after kick-off. Views use `isCounted`; the file summary does not.
-- **Dominating format** (ADR-015 §6a, #223): derived on every read, never
-  stored. `seasonSide` takes the on-field count (`structure.onField`) with the
-  most counted matches, latest known on a tie; `inFairness` leaves a match in
+- **A season's side** (ADR-015 §6a, #223; #243 AC2): derived on every read,
+  never stored. `seasonSide` takes the season's `mainSide` once the coach has
+  set it; until then the dominating format, the on-field count
+  (`structure.onField`) with the most counted matches, latest known on a tie; `inFairness` leaves a match in
   another format out of every average, owed time and the trend, and keeps its
   minutes in totals. A match with no recorded format never votes and is never
-  left out.
+  left out. A `format-count` record with `counted: true` (#243 AC8) brings an
+  off-format match back in; latest wins, always with a note.
+- **Seasons** (#243, ADR-022 D5, D6; `src/app/seasons.ts`): a match belongs to
+  the season named on its fixture, else the first season (`first-season`),
+  never by date. The current season is the latest started after the first; a
+  season ends when the next starts. Every season figure folds from
+  `ledgerForSeason`, which keeps only that season's matches and fixtures.
+  `Season` and `PlayerSeasonTotals` in `src/types/index.ts` predate this and
+  are unused: a season is a `LedgerSeason`.
 - **Signed** (#193, ADR-021 D4): each install has an Ed25519 key in the
   platform's secure store and publishes its public key once in a `device`
   record. Its entries carry `device` and `sig` (over the entry without `hash`
@@ -307,10 +318,14 @@ interface Ledger {                          // key coaching-app/ledger/v2
   `validate()` checks players, positions, periods and stretches element by
   element: a bad squad is set aside, a bad match is left out after the whole
   document is copied aside (#184). Saves run one at a time per store.
-- **App backup** (#192): `coaching-app/phone-backup` v1, the session and the
-  ledger in one file. A restore copies what is there to
-  `coaching-app/before-restore/<time>/…`, reads it back, then writes the backup.
-- **Forget everything removes every key the app owns, copies kept aside
-  included**, except the test clock's offset (#207, `src/app/storage/forget.ts`). The
+- **App backup** (#192; #224 AC7, ADR-022 D4): `coaching-app/phone-backup`
+  version 2 since 2.0.0, `{ teams: [{ id, removed, session, ledger }] }`, every
+  team in one file; 1.x refuses it as newer. A restore is per team: the same
+  id is replaced after its data is copied to
+  `coaching-app/before-restore/<time>/…` and read back, a new id is added, a
+  team not in the file is left alone. A version 1 file restores into the open
+  team.
+- **Forget everything removes every key the app owns, every team's and the
+  team index included, copies kept aside included**, except the test clock's offset (#207, `src/app/storage/forget.ts`). The
   removal runs behind any save in flight; its result is not shown, so a key it
   could not remove stays without a message.

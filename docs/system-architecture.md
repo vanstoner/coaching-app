@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-25 (#239)
+Last updated: 2026-10-27 (2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -24,18 +24,19 @@ No navigation library, no state library, no network client. See [ADR-001](./deci
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell: all app state, every action, the router (1,582 lines)
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); 3,004 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
-src/app/            pure rules, each with a *.test.ts beside it; storage adapters
+src/app/            pure rules, each with a *.test.ts beside it
+src/app/storage/    the storage modules: teams, session, ledger store, backup, forget, device key
 src/screens/        React components; take props, hold only view state
 .github/            CI, APK/IPA builds, releases, store listing
 ```
 
 Rule: `src/engine` and `src/app` import no React and no platform module, with
-five exceptions in `src/app`: `storage/storage.ts` (AsyncStorage), `ledgerFile.ts`,
-`planImageFile.ts` (file system, sharing), `fonts.ts` and `storage/deviceKey.ts`
-(secure store, random bytes).
+four exceptions in `src/app`: `storage/storage.ts` (AsyncStorage), `ledgerFile.ts`,
+`planImageFile.ts` (file system, sharing) and `storage/deviceKey.ts` (secure
+store, random bytes).
 
 ## State lifecycle
 

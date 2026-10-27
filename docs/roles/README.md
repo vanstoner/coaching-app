@@ -12,7 +12,7 @@ skills still hold.
 |---|---|---|---|---|
 | **Bea** | Business Analyst | `analyse` | Specs, issues, acceptance criteria | Implements |
 | **Ada** | Architect | `architect` | ADRs, domain model, design | Writes feature code |
-| — | UX Designer | `design` | Clickable prototypes Rob opens on his phone | Implements |
+| **Dee** | UX Designer | `design` | Clickable prototypes Rob opens on his phone | Implements |
 | **Ellis** | Engineer | `implement` | Product code, tests, PRs with evidence | Writes its own acceptance criteria |
 | **Quinn** | QA | `verify` | Defects with evidence | Fixes what it finds |
 | **Pip** | Platform | `ship` | CI, builds, APKs, releases | Writes product features |
@@ -50,6 +50,9 @@ Rob's intent ──> analyse ──> issue + criteria
 
 ## Gates
 
+- **Definition of Ready (#231).** No code before the issue's feature form is
+  complete and Rob has approved it once. Bea writes the criteria; Dee agrees
+  the screens with her first.
 - **No acceptance criteria, no merge.** Infrastructure included.
 - **Rob approves every merge.** His interface is chat; he replies `approve <n>`.
 - **PRs carry pasted evidence**, never assertions.
