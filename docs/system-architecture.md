@@ -24,7 +24,7 @@ No navigation library, no state library, no network client. See [ADR-001](./deci
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); 3,004 lines
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,000 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it
@@ -100,7 +100,8 @@ removedAt }], migration? }`), `before-teams/…` (the keys as they were before
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
 | `coaching-app/season-prompt/v1` | When "Not yet" on the new-season prompt quiets it until (#243 Q2), a view choice | `App.tsx` | Never in the record; removed by Forget everything |
 | `coaching-app/teams/v1` (root) | The team index (ADR-022 D2) | `storage/teams.ts` | `version` 1; a damaged index is rebuilt from the teams' keys |
-| `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3) | `openTeams` | Removed by Forget everything |
+| `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3). A key found at the root later goes under `before-teams/later/<iso>/…`, never over them | `openTeams` | Removed by Forget everything |
+| `coaching-app/team-removed/v1` | The time a team was set aside, kept in the team's own keys so a rebuilt index keeps it aside | `removeTeam`, `restoreTeams`; removed by `bringBackTeam` | Removed with the team's keys by Forget everything |
 | `coaching-app/getting-started/v1` | `{"closed":true}` once the coach closes Getting started early, a view choice on this phone (#218) | `App.tsx` (`closeCard`) | Never in the record; removed by Forget everything, Undo or Show Getting started again |
 | Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
 | `TEST_CLOCK_KEY` (root) | Beta clock offset (speed folded to ×1 at launch since #228) | Beta builds only | |

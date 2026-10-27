@@ -313,3 +313,24 @@ it('the restore confirm names every team in the file, a set-aside one as such (Q
   if (!back.ok) throw new Error(back.reason);
   expect(describeTeamsBackup(back)).toMatch(/^2 teams: Unicorns, Rovers \(set aside\)\./);
 });
+
+it('a team restored as set aside stays aside even if the team list is later damaged (QA N2)', async () => {
+  const p = phone();
+  const kept = uuid() as UUID;
+  const aside = uuid() as UUID;
+  const part = (id: UUID, removed: boolean) => ({
+    id,
+    removed,
+    session: JSON.parse(JSON.stringify(p.session)),
+    ledger: JSON.parse(serialiseLedger(p.ledger, false)),
+  });
+  const back = readAnyBackup(makeTeamsBackup([part(kept, false), part(aside, true)], FROM, NOW));
+  if (!back.ok) throw new Error(back.reason);
+  const target = createMemoryStore();
+  expect(await restoreTeams(target, back, null, NOW)).toEqual([]);
+  await target.setItem('coaching-app/teams/v1', '{damaged');
+  const opened = await openTeams(target, NOW, () => uuid());
+  if (opened.kind !== 'team') throw new Error(opened.kind);
+  expect(opened.teamId).toBe(kept);
+  expect(opened.index.teams.find((t) => t.id === aside)?.removedAt).not.toBeNull();
+});

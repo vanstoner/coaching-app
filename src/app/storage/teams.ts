@@ -199,7 +199,10 @@ async function openTeamsNow(root: KeyValueStore, now: Date, newId: () => UUID): 
         version: INDEX_VERSION,
         current: open,
         teams: found.map((id) => ({ id, createdAt: '', removedAt: aside(id) ? now.toISOString() : null })),
-        migration: { state: copied ? 'copied' : 'copying', teamId: first },
+        // Only a move still under way is resumed (QA N3): with nothing left at
+        // the root, the index is simply rebuilt, and a phone whose every team
+        // is set aside opens on "No teams on this phone yet".
+        ...(legacy.length > 0 ? { migration: { state: copied ? 'copied' : 'copying', teamId: first } } : {}),
       };
     }
   }
@@ -498,6 +501,10 @@ export async function restoreTeams(
     }
     const outcome = await restorePhoneBackup(teamStore(root, id), t.backup, now);
     if (!outcome.ok) problems.push(`${t.backup.preview.squadName}: ${outcome.reason}`);
+    // A team the file holds as set aside says so in its own keys too (QA N2).
+    else if (t.removed && !indexed.teams.some((x) => x.id === id && x.removedAt === null)) {
+      await inTurn(root, () => root.setItem(teamKey(id, REMOVED_MARK), now.toISOString()).catch(() => undefined));
+    }
   }
   return problems;
 }

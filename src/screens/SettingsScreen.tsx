@@ -16,7 +16,7 @@
  * The squad moved out: it is a tab now, not a button here.
  */
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { sameTeamName } from '../app/teamRows';
 import {
   KeyboardAvoidingView,
@@ -101,9 +101,12 @@ export function SettingsScreen({
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
   const [confirmForget, setConfirmForget] = useState(false);
-  // QA D9: a rename to another team's name is put back, with the reason.
-  const lastName = useRef(squadName);
-  const [nameError, setNameError] = useState('');
+  // QA D9, N4: a name another team on this phone has is never saved, not even
+  // while typed: it stays in the box, with the reason, and leaving the box
+  // puts back the name that is saved. Any other name saves as it is typed.
+  const [clash, setClash] = useState<string | null>(null);
+  const taken = (name: string) =>
+    team !== null && team.otherNames.some((n) => sameTeamName(n, normaliseTeamName(name, PLACEHOLDER_SQUAD_NAME)));
 
   return (
     <View style={screen.safe}>
@@ -124,20 +127,22 @@ export function SettingsScreen({
           <Text style={screen.fieldLabel}>Team name</Text>
           <TextInput
             style={screen.input}
-            value={squadName}
-            onChangeText={onSquadName}
+            value={clash ?? squadName}
+            onChangeText={(text) => {
+              if (taken(text)) {
+                setClash(text);
+                return;
+              }
+              setClash(null);
+              onSquadName(text);
+            }}
             // Cleaned when the coach leaves the field rather than as they
             // type, so a space mid-word is not eaten under their thumb.
             onBlur={() => {
+              setClash(null);
               const next = normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME);
-              if (team && team.otherNames.some((n) => sameTeamName(n, next))) {
-                setNameError(`Another team on this phone is called ${next}. Kept as ${lastName.current}.`);
-                onSquadName(lastName.current);
-                return;
-              }
-              setNameError('');
-              lastName.current = next;
-              onSquadName(next);
+              // A name cleaned into another team's stays as it was saved.
+              if (!taken(next)) onSquadName(next);
             }}
             placeholder="Your team"
             placeholderTextColor={colours.inkFaint}
@@ -146,7 +151,12 @@ export function SettingsScreen({
             maxLength={MAX_TEAM_NAME_LENGTH}
             returnKeyType="done"
           />
-          {nameError !== '' && <Text style={screen.error}>{nameError}</Text>}
+          {clash !== null && (
+            <Text style={screen.error}>
+              Another team on this phone is called {normaliseTeamName(clash, PLACEHOLDER_SQUAD_NAME)}. It stays{' '}
+              {squadName} until the name is different.
+            </Text>
+          )}
           {team && (
             <Pressable onPress={team.onSwitch} style={screen.linkHit} accessibilityRole="button">
               <Text style={screen.link}>

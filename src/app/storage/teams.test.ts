@@ -361,3 +361,14 @@ describe('rebuilding a damaged index (QA D5, D6)', () => {
     for (const [k, v] of Object.entries(BEFORE)) expect(await teamStore(disk, opened.teamId).getItem(k), k).toBe(v);
   });
 });
+
+describe('QA re-check, N2 and N3', () => {
+  it('every team set aside, then a damaged index: no team opens (N3)', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'one');
+    await removeTeam(root, T1, NOW);
+    await root.setItem(TEAMS_INDEX_KEY, '{damaged');
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'none' });
+  });
+});
