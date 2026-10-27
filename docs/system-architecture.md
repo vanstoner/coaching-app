@@ -33,17 +33,20 @@ src/screens/        React components; take props, hold only view state
 ```
 
 Rule: `src/engine` and `src/app` import no React and no platform module, with
-five exceptions in `src/app`: `storage.ts` (AsyncStorage), `ledgerFile.ts`,
-`planImageFile.ts` (file system, sharing), `fonts.ts` and `deviceKey.ts`
+five exceptions in `src/app`: `storage/storage.ts` (AsyncStorage), `ledgerFile.ts`,
+`planImageFile.ts` (file system, sharing), `fonts.ts` and `storage/deviceKey.ts`
 (secure store, random bytes).
 
 ## State lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant A as App.tsx
+    participant Sh as App (shell, 2.0.0)
+    participant A as TeamApp
     participant S as AsyncStorage
     participant E as MatchEngine
+    Sh->>S: openTeams: index coaching-app/teams/v1; first launch of 2.0.0 moves the phone's keys into team 1 (copy, prove, commit, set aside, ADR-022 D3)
+    Sh->>A: mount the open team (key = team id) with teamStore(root, id); none → "No teams on this phone yet" (#224 AC6)
     A->>A: installDeviceSigner (key from the secure store, #193)
     A->>S: getItem getting-started/v1 (card closed on this phone? #218)
     A->>S: openStoredSession (session/v1; unreadable → set aside, #173)
@@ -57,8 +60,10 @@ sequenceDiagram
     A->>S: saveLedger (only if records changed; a test match is in the session only, #194)
 ```
 
-- **All durable state lives in `App.tsx`** `useState`s. Screens receive values
-  and callbacks.
+- **All durable state lives in `App.tsx`** `useState`s: the shell (`App`) holds
+  the team list and its sheets; `TeamApp` holds one team's state and is
+  remounted on a switch, so no team's state reaches another. Screens receive
+  values and callbacks.
 - **The live match** is `{ engine, state, format }`. The engine mutates
   `state` in place; the shell then calls `persist()` (and `repaint()` where no
   other state changes).
@@ -73,7 +78,16 @@ sequenceDiagram
 
 ## Storage
 
-| Key | Contents | Writer | Versioning |
+**Teams (2.0.0, ADR-022 D2).** Every per-team key below is stored under its
+team's prefix: `coaching-app/session/v1` in team T is
+`coaching-app/teams/T/session/v1`. `teamStore` (`src/app/storage/teams.ts`)
+rewrites the keys, so each module keeps its constants; work queues on the
+device store beneath it. Per install, at the root: the team index
+`coaching-app/teams/v1` (`{ version, current, teams: [{ id, createdAt,
+removedAt }], migration? }`), `before-teams/…` (the keys as they were before
+2.0.0, set aside by the move), the test clock and the signing key.
+
+| Key (per team unless marked) | Contents | Writer | Versioning |
 |---|---|---|---|
 | `coaching-app/session/v1` | `SavedSession`: squad, defaults, every match (planned, live, played), plans | `saveSession` | `schemaVersion` 6, `MIGRATIONS` in `persistence.ts`, unknown fields kept |
 | `coaching-app/ledger/v2` | Minutes ledger: hash-chained entries (ADR-013, ADR-014); since #195 also fixtures, profiles and settings, so a phone can be restored from it | `saveLedger` (serialised queue) | own format version; too-new → read-only |
@@ -83,9 +97,12 @@ sequenceDiagram
 | `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
 | `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | Removed by Forget everything (#207) |
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
+| `coaching-app/season-prompt/v1` | When "Not yet" on the new-season prompt quiets it until (#243 Q2), a view choice | `App.tsx` | Never in the record; removed by Forget everything |
+| `coaching-app/teams/v1` (root) | The team index (ADR-022 D2) | `storage/teams.ts` | `version` 1; a damaged index is rebuilt from the teams' keys |
+| `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3) | `openTeams` | Removed by Forget everything |
 | `coaching-app/getting-started/v1` | `{"closed":true}` once the coach closes Getting started early, a view choice on this phone (#218) | `App.tsx` (`closeCard`) | Never in the record; removed by Forget everything, Undo or Show Getting started again |
 | Secure store `coaching-app.device-key.v1` | This install's signing key (#193); only its public half reaches the ledger | `installDeviceSigner` | Never exported or backed up by the app |
-| `TEST_CLOCK_KEY` | Beta clock offset (speed folded to ×1 at launch since #228) | Beta builds only | |
+| `TEST_CLOCK_KEY` (root) | Beta clock offset (speed folded to ×1 at launch since #228) | Beta builds only | |
 
 Nothing leaves the device except a minutes file, an app backup (#192) or a
 plan image the coach shares explicitly (ADR-011). Android `allowBackup` is **true** for Heart FC Coach and
@@ -128,6 +145,12 @@ stateDiagram-v2
     analysis --> playing: Back
     summary --> fixtures: Back (match released)
     fixtures --> record: Open a match from the record (#195)
+    settings --> seasonStart: Start a new season (#243)
+    fixtures --> seasonStart: August prompt (#243 AC4)
+    seasonStart --> fixtures: Start
+    seasonStart --> settings: Cancel
+    settings --> seasonPast: A past season (#243 AC6)
+    seasonPast --> settings: Back
     record --> fixtures: Back
     summary --> record: In the record (#196)
     record --> summary: Back to the report
@@ -142,6 +165,10 @@ stateDiagram-v2
     summary --> settings: Back (test match released)
     summary --> fixtures: Void, with a note (match released, #194)
 ```
+
+Above every step, the shell (2.0.0, #224) shows "No teams on this phone yet"
+or Add a team when no team is open, and the team list as a sheet over any
+screen; opening a team remounts `TeamApp` at its first step.
 
 Every Saturday screen (lineup, playing, summary, analysis, plan from a match)
 is full screen with an explicit exit; the match keeps running when left. A

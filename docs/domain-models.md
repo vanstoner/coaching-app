@@ -63,6 +63,7 @@ interface Match {
   quarterCount: number;       // periods: 4 (quarters) or 2 (halves)
   status: MatchStatus; createdAt: string;
   test?: { clock: { offsetMs: number; speed: 1 | 5 | 10; sinceMs: number } }; // #194
+  seasonId?: UUID;                          // 2.0.0, #243 AC11: the season it was made in; absent = first season
 }
 ```
 
@@ -188,8 +189,18 @@ A plan only pre-fills the lineup. The running period's subs are saved as
 
 ## Persisted documents
 
+Since 2.0.0 every document below is one team's: it is stored under
+`coaching-app/teams/<teamId>/…` (ADR-022 D2), and the root holds only the team
+index `coaching-app/teams/v1`. A team's name is its squad's name, read from
+its session, never copied into the index.
+
 ```ts
-interface SavedSession {                    // key coaching-app/session/v1, schemaVersion 6
+interface TeamIndex {                       // key coaching-app/teams/v1, at the root (#224)
+  version: 1; current: UUID | null;         // null: "No teams on this phone yet" (AC6)
+  teams: { id: UUID; createdAt: string; removedAt: string | null }[];   // removed: set aside, keys kept (AC9)
+  migration?: { state: 'copying' | 'copied' | 'done'; teamId: UUID };   // the one-time move (D3)
+}
+interface SavedSession {                    // key coaching-app/session/v1 (per team), schemaVersion 6
   schemaVersion: number; minReaderVersion: number; savedAt: string;
   squadName: string; squadId: UUID; players: Player[];
   format: Format; totalMinutes: number; periodCount: number; buzzWhenSubDue: boolean;
@@ -210,13 +221,20 @@ interface Ledger {                          // key coaching-app/ledger/v2
   // folded from entries, never stored:
   squad: { id: UUID; name: string }; players: LedgerPlayer[]; matches: LedgerMatch[];
   fixtures: LedgerFixture[]; profiles: LedgerProfile[]; settings: LedgerSettings | null;   // #195
+  seasons: LedgerSeason[];                  // #243, ADR-022 D5; none: one implicit first season
 }
 // entry: { seq, prev, at, kind, records, hash, device?, sig? }
 // record types: squad | player | match | interval | event | attendance
 //             | exclusion (ADR-020) | device (#193) | match-kind (#194)
 //             | fixture | profile | settings (#195, ADR-021 D2)
+//             | season | format-count (2.0.0: #243, ADR-022 D5; Rob's ruling 8A)
 // fixture  { id, kickoffAt, opponent, competition, totalMinutes, periodCount, shape, labels[],
-//            excludeFromStats, state: 'planned' | 'cancelled', archived, note }
+//            excludeFromStats, state: 'planned' | 'cancelled', archived, note,
+//            season? }                    // 2.0.0: the season it was made in, kept by every save; absent = first season
+// season   { id, name, startedAt, mainSide: 5 | 7 | null, ageGroup: 'U7'…'U18' | null,
+//            level: 'development' | 'competitive' | null, lens: 'full', note }   // the coach's inputs only;
+//            first season's id is 'first-season'; current = latest started after it (#243 AC1, AC9)
+// format-count { matchId, counted, note }   // #243 AC8: an off-format match counted in, or left out again
 // profile  { playerId, keeperPreference, prefers, outfieldTarget, active, removed,
 //            fairness: 'counted' | 'not-counted', note }   // fairness changes only with a note (#190)
 // settings { squad, shape, labels[], totalMinutes, periodCount, buzzWhenSubDue }
