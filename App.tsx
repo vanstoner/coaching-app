@@ -345,6 +345,7 @@ function TeamApp({
   readOnlyReason = null,
   team = null,
   initial = null,
+  resumeOnOpen = false,
 }: {
   /** This team's view of the device store (`teamStore`), or the read-only root. */
   store: KeyValueStore;
@@ -356,6 +357,10 @@ function TeamApp({
   team?: {
     badge: number;
     count: number;
+    /** Every team on the phone, set-aside ones included (QA D2). */
+    forgetCount: number;
+    /** The other teams' names, set-aside ones included (QA D9). */
+    otherNames: readonly string[];
     onSwitch: () => void;
     onRemove: () => void;
     /** #224 AC7: every team on the phone in one backup file, and its restore (ADR-022 D4). */
@@ -364,10 +369,11 @@ function TeamApp({
   } | null;
   /** #224 AC5: a team just added, with its name and first season, opened for the first time. */
   initial?: NewTeam | null;
+  /** #224 T3: opened from the team list, so a match on goes straight to its clock, not the Resume screen. */
+  resumeOnOpen?: boolean;
 }) {
   // #208 AC6: each analytics table's sort, remembered on this phone. Forget
   // everything removes it from the store and starts the memory afresh.
-  const [sortsForgotten, setSortsForgotten] = useState(0);
 
   // The tap sheet's pictures (#185): loaded at launch so the first tap on
   // Saturday does not show empty stickers. A failure costs the pictures, not
@@ -1263,6 +1269,12 @@ function TeamApp({
     setPending(null);
   }, [pending]);
 
+  // #224 T3: a team reopened from the team list goes straight back to its
+  // match, as Resume would; the Resume screen is for a cold launch.
+  useEffect(() => {
+    if (resumeOnOpen && step === 'resume' && pending) resume();
+  }, [resumeOnOpen, step, pending, resume]);
+
   /**
    * Leave the resume prompt without resuming and without ending anything.
    *
@@ -1607,38 +1619,13 @@ function TeamApp({
   );
 
   const forgetEverything = useCallback(() => {
-    // Every key this app owns, copies kept aside included (#207): this is how
-    // a phone is handed on, and children's data must not stay behind. The
-    // confirm text says to back up first.
+    // Every key this app owns, every team's and the copies kept aside included
+    // (#207, #224 AC10): this is how a phone is handed on, and children's data
+    // must not stay behind. The confirm text says to back up first. The shell
+    // closes this team before anything is removed, so no save from it can land
+    // after the forget and bring the team back (QA D1).
     forgetAll();
-    // Cleared above: nothing is left for the session block (#173) to protect.
-    sessionWritableRef.current = true;
-    setSessionMessage('');
-    const nextSquadId = uuid();
-    // A fresh, empty ledger rather than none, so the next match is recorded.
-    const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME, appNow());
-    // Cleared above, so nothing newer is left to protect.
-    ledgerBlockedRef.current = false;
-    ledgerRef.current = fresh;
-    setLedger(fresh);
-    setLedgerMessage('');
-    setMatch(null);
-    setPending(null);
-    setSubPlan([]);
-    setPlayers([]);
-    setMatches([]);
-    setSquadId(nextSquadId);
-    setFormat(makeSevenASideFormat());
-    setSquadName(PLACEHOLDER_SQUAD_NAME);
-    setSquadErrand('home');
-    setStep('fixtures');
-    setSortsForgotten((n) => n + 1);
-    // #218 Q4: a forgotten phone is a fresh install, Getting started included
-    // (its key went with the rest above).
-    setCardClosed(false);
-    wasAllDone.current = null;
-    showToast(FORGOTTEN_TOAST);
-  }, [forgetAll, showToast]);
+  }, [forgetAll]);
 
   /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
   const setDefaultShape = useCallback((shape: ShapeCode) => {
@@ -2419,6 +2406,8 @@ function TeamApp({
             team
               ? {
                   count: team.count,
+                  forgetCount: team.forgetCount,
+                  otherNames: team.otherNames,
                   onSwitch: team.onSwitch,
                   // T7: a team whose match is on cannot be removed until it ends.
                   onRemove: () => {
@@ -2575,6 +2564,7 @@ function TeamApp({
           players={players}
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
           ledger={seasonView}
+          seasonName={ledger ? seasonName(season) : null}
           kickoffs={kickoffs()}
           onPlayers={changeSquad}
           fairness={squadFairness}
@@ -2778,7 +2768,8 @@ function TeamApp({
     <SafeAreaProvider>
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
-      <TableSortProvider key={sortsForgotten} store={store} remember={sortsForgotten === 0}>
+      {/* A team's sorts are its own: the team remounts after a switch or a forget (#224). */}
+      <TableSortProvider store={store} remember>
         <View style={screen.column}>
           {testBanner}
           {body}
@@ -2852,12 +2843,19 @@ export default function App() {
     setSheet('switch');
   }, [opened, root]);
 
+  /** #224 T3: the open team was opened from the list, not at launch. */
+  const [switched, setSwitched] = useState(false);
+  /** What "No teams on this phone yet" says after a Forget everything (#207). */
+  const [forgotten, setForgotten] = useState(false);
+
   const forgetAll = useCallback(() => {
-    void forgetEveryTeam(root, null, appNow()).then(() => {
-      setInitial(null);
-      setSummaries([]);
-      setOpened({ kind: 'none', index: { version: 1, current: null, teams: [] } });
-    });
+    // QA D1: close the team first, so nothing it saves can follow the forget.
+    setInitial(null);
+    setSwitched(false);
+    setSummaries([]);
+    setForgotten(true);
+    setOpened({ kind: 'none', index: { version: 1, current: null, teams: [] } });
+    void forgetEveryTeam(root, null, appNow());
   }, [root]);
 
   const switchTo = useCallback(
@@ -2865,6 +2863,7 @@ export default function App() {
       setSheet(null);
       if (id === teamId) return;
       setInitial(null);
+      setSwitched(true);
       void openTeam(root, id).then(show);
     },
     [root, teamId, show]
@@ -2884,6 +2883,7 @@ export default function App() {
     (id: UUID) => {
       setSheet(null);
       setInitial(null);
+      setSwitched(true);
       void bringBackTeam(root, id).then(show);
     },
     [root, show]
@@ -2917,7 +2917,8 @@ export default function App() {
   if (adding) {
     return frame(
       <AddTeamScreen
-        otherNames={listed.map((t) => t.name)}
+        // QA D9: set-aside teams' names are taken too; one could be brought back.
+        otherNames={summaries.map((t) => t.name)}
         defaultSeasonName={seasonNameFor(appNow())}
         onAdd={add}
         onCancel={() => setAdding(false)}
@@ -2927,7 +2928,15 @@ export default function App() {
   }
   if (opened.kind === 'none') {
     return frame(
-      <NoTeamsScreen aside={summaries.filter((t) => t.removed)} onAdd={() => setAdding(true)} onBringBack={bringBack} />
+      <NoTeamsScreen
+        aside={summaries.filter((t) => t.removed)}
+        notice={forgotten ? FORGOTTEN_TOAST : null}
+        onAdd={() => {
+          setForgotten(false);
+          setAdding(true);
+        }}
+        onBringBack={bringBack}
+      />
     );
   }
 
@@ -2946,6 +2955,8 @@ export default function App() {
             ? {
                 badge: here?.badge ?? 0,
                 count: listed.length,
+                forgetCount: summaries.length,
+                otherNames: summaries.filter((t) => t.id !== teamId).map((t) => t.name),
                 onSwitch: openSwitcher,
                 backupAll: async () => {
                   const index = opened.kind === 'team' ? opened.index : null;
@@ -2980,6 +2991,7 @@ export default function App() {
             : null
         }
         initial={initial}
+        resumeOnOpen={switched}
       />
       <TeamSwitcher
           visible={sheet === 'switch'}

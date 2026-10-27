@@ -294,7 +294,7 @@ export function readAnyBackup(text: string): ReadTeamsBackup | { ok: false; reas
 /** The confirm sheet's words for a backup of one team or several (#192 AC2). */
 export function describeTeamsBackup(read: ReadTeamsBackup): string {
   if (read.teams.length === 1 && read.teams[0].id === null) return describeBackup(read.teams[0].backup.preview);
-  const names = read.teams.filter((t) => !t.removed).map((t) => t.backup.preview.squadName);
+  const names = read.teams.map((t) => `${t.backup.preview.squadName}${t.removed ? ' (set aside)' : ''}`);
   const p = read.teams[0].backup.preview;
   const made = p.writtenAt
     ? new Date(p.writtenAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })

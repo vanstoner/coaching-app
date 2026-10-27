@@ -16,7 +16,8 @@
  * The squad moved out: it is a tab now, not a button here.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { sameTeamName } from '../app/teamRows';
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -84,13 +85,25 @@ export function SettingsScreen({
    * Remove is for the open team only, and refused with a reason while its
    * match is on (T7).
    */
-  team?: { count: number; onSwitch: () => void; onRemove: () => void; removeBlocked: string | null } | null;
+  team?: {
+    count: number;
+    /** Every team Forget everything removes, set-aside ones included (QA D2). */
+    forgetCount: number;
+    /** The other teams' names: a team's name is unique on the phone (#224 AC5, QA D9). */
+    otherNames: readonly string[];
+    onSwitch: () => void;
+    onRemove: () => void;
+    removeBlocked: string | null;
+  } | null;
   /** #243 Q5: Settings › Season, drawn by the caller, first in Settings. */
   season?: ReactNode;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
   const [confirmForget, setConfirmForget] = useState(false);
+  // QA D9: a rename to another team's name is put back, with the reason.
+  const lastName = useRef(squadName);
+  const [nameError, setNameError] = useState('');
 
   return (
     <View style={screen.safe}>
@@ -115,7 +128,17 @@ export function SettingsScreen({
             onChangeText={onSquadName}
             // Cleaned when the coach leaves the field rather than as they
             // type, so a space mid-word is not eaten under their thumb.
-            onBlur={() => onSquadName(normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME))}
+            onBlur={() => {
+              const next = normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME);
+              if (team && team.otherNames.some((n) => sameTeamName(n, next))) {
+                setNameError(`Another team on this phone is called ${next}. Kept as ${lastName.current}.`);
+                onSquadName(lastName.current);
+                return;
+              }
+              setNameError('');
+              lastName.current = next;
+              onSquadName(next);
+            }}
             placeholder="Your team"
             placeholderTextColor={colours.inkFaint}
             autoCapitalize="words"
@@ -123,6 +146,7 @@ export function SettingsScreen({
             maxLength={MAX_TEAM_NAME_LENGTH}
             returnKeyType="done"
           />
+          {nameError !== '' && <Text style={screen.error}>{nameError}</Text>}
           {team && (
             <Pressable onPress={team.onSwitch} style={screen.linkHit} accessibilityRole="button">
               <Text style={screen.link}>
@@ -209,8 +233,8 @@ export function SettingsScreen({
           {confirmForget ? (
             <>
               <Text style={[screen.hint, screen.overtime]}>
-                {team && team.count > 1
-                  ? `This deletes all ${team.count} teams on this phone: each squad, team name, saved match and player's minutes, and any copies the app kept aside. Back up the app first if you want to keep them.`
+                {team && team.forgetCount > 1
+                  ? `This deletes all ${team.forgetCount} teams on this phone: each squad, team name, saved match and player's minutes, and any copies the app kept aside. Back up the app first if you want to keep them.`
                   : "This deletes the squad, the team name, every saved match, every player's minutes and any copies the app kept aside after a restore or a damaged save. Back up the app first if you want to keep them."}
               </Text>
               <Pressable onPress={onForget} style={screen.linkHit}>
@@ -223,7 +247,7 @@ export function SettingsScreen({
           ) : (
             <Pressable onPress={() => setConfirmForget(true)} style={screen.linkHit}>
               <Text style={screen.dangerLink}>
-                {team && team.count > 1 ? `Forget everything (all ${team.count} teams)` : 'Forget everything'}
+                {team && team.forgetCount > 1 ? `Forget everything (all ${team.forgetCount} teams)` : 'Forget everything'}
               </Text>
             </Pressable>
           )}

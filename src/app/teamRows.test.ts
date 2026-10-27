@@ -7,6 +7,12 @@ import { describe, expect, it } from 'vitest';
 
 import { FIRST_SEASON_ID, emptyLedger, saveSeason, serialiseLedger } from './ledger';
 import { uuid } from '../types/index';
+import { MatchEngine } from '../engine/MatchEngine';
+import { createMemoryStore, loadSession, saveSession, toMatchState } from './persistence';
+import { addTeam, openTeam, openTeams, teamStore, teamSummaries } from './storage/teams';
+import { makeSevenASideFormat } from './placeholderSquad';
+import { makePlayer } from './squad';
+import { sheetFromSelection, toTeamSheet } from './teamSheet';
 import { formatForAge, readTeamRow, teamNameProblem } from './teamRows';
 import { seasonLine, seasonNameFor } from './seasons';
 
@@ -54,5 +60,63 @@ describe('Add a team (#224 AC5)', () => {
     expect(formatForAge('U8', '1-2-1')).toBe('1-2-1');
     expect(formatForAge('U11', '2-2')).toBe('2-3-1');
     expect(formatForAge('U15', '2-2')).toBe('2-2');
+  });
+});
+
+describe('a match left running in one team (#224 T3, AC1; ADR-022 D3 consequence)', () => {
+  it('is intact when the team is reopened, and the team list says "Match on"', async () => {
+    const root = createMemoryStore();
+    const squadId = uuid();
+    const kids = ['Ada', 'Bo', 'Cy', 'Di', 'Ed', 'Flo', 'Gil'].map((n) => makePlayer(squadId, n));
+    const format = makeSevenASideFormat();
+    let nowMs = Date.parse('2026-10-31T10:00:00Z');
+    const engine = new MatchEngine({ nowFn: () => new Date(nowMs) });
+    const state = engine.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 4 });
+    for (const k of kids) engine.setAvailability(state, k.id, 'available');
+    engine.startQuarter(
+      state,
+      state.quarters[0],
+      toTeamSheet(
+        sheetFromSelection(
+          kids.map((k) => k.id),
+          kids[0].id,
+          format
+        )
+      ),
+      format
+    );
+    nowMs += 4 * 60_000;
+    const T1 = uuid();
+    const T2 = uuid();
+    await addTeam(root, T1, NOW);
+    await saveSession(teamStore(root, T1), {
+      squadName: 'Unicorns',
+      squadId,
+      players: kids,
+      format,
+      totalMinutes: 50,
+      periodCount: 4,
+      plan: {},
+      state,
+      now: new Date(nowMs),
+    });
+    // The coach opens another team mid-period, then comes back.
+    await addTeam(root, T2, NOW);
+    await openTeam(root, T1);
+    const opened = await openTeams(root, NOW, () => uuid());
+    expect(opened).toMatchObject({ kind: 'team', teamId: T1 });
+    if (opened.kind !== 'team') return;
+
+    const list = await teamSummaries(root, opened.index, readTeamRow);
+    expect(list.map((t) => t.live)).toEqual([true, false]);
+    expect(list[0].name).toBe('Unicorns');
+
+    const saved = await loadSession(teamStore(root, T1));
+    const back = saved ? toMatchState(saved) : null;
+    if (!back) throw new Error('the match did not come back');
+    // Invariant 2: elapsed comes from the anchors, so ten minutes away reads as ten minutes more.
+    nowMs += 10 * 60_000;
+    const again = new MatchEngine({ nowFn: () => new Date(nowMs) });
+    expect(again.getMatchElapsedMs(back)).toBe(14 * 60_000);
   });
 });

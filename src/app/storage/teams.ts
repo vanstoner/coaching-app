@@ -42,6 +42,9 @@ export const BEFORE_TEAMS_PREFIX = 'coaching-app/before-teams/';
 
 const INDEX_VERSION = 1;
 
+/** Written in a team's own keys while it is set aside, so a rebuilt index knows (QA D5). */
+const REMOVED_MARK = 'coaching-app/team-removed/v1';
+
 export interface TeamEntry {
   id: UUID;
   createdAt: string;
@@ -186,11 +189,17 @@ async function openTeamsNow(root: KeyValueStore, now: Date, newId: () => UUID): 
       ),
     ].sort() as UUID[];
     if (found.length > 0) {
+      // A team set aside says so in its own keys (QA D5), so it stays aside.
+      const aside = (id: UUID) => keys.includes(teamKey(id, REMOVED_MARK));
+      const open = found.find((id) => !aside(id)) ?? null;
+      // QA D6: a team with no squad yet was still being copied into; copy again.
+      const first = open ?? found[0];
+      const copied = keys.includes(teamKey(first, STORAGE_KEY));
       index = {
         version: INDEX_VERSION,
-        current: found[0],
-        teams: found.map((id) => ({ id, createdAt: '', removedAt: null })),
-        migration: { state: 'copied', teamId: found[0] },
+        current: open,
+        teams: found.map((id) => ({ id, createdAt: '', removedAt: aside(id) ? now.toISOString() : null })),
+        migration: { state: copied ? 'copied' : 'copying', teamId: first },
       };
     }
   }
@@ -270,7 +279,13 @@ async function openTeamsNow(root: KeyValueStore, now: Date, newId: () => UUID): 
   for (const key of legacy) {
     const value = await root.getItem(key).catch(() => null);
     if (value === null) continue;
-    const aside = BEFORE_TEAMS_PREFIX + key.slice(APP.length);
+    // QA D4: never over the bytes 1.x left, which a 2.0.x patch could put back.
+    const first = BEFORE_TEAMS_PREFIX + key.slice(APP.length);
+    const there = await root.getItem(first).catch(() => null);
+    const aside =
+      there === null || there === value
+        ? first
+        : `${BEFORE_TEAMS_PREFIX}later/${now.toISOString()}/${key.slice(APP.length)}`;
     if (!(await writeProved(root, aside, value))) continue;
     await root.removeItem(key).catch(() => undefined);
   }
@@ -296,20 +311,20 @@ async function openTeamsNow(root: KeyValueStore, now: Date, newId: () => UUID): 
  */
 export async function forgetEveryTeam(root: KeyValueStore, keep: UUID | null, now: Date): Promise<Forgotten> {
   const forgotten = await forgetAppData(root);
-  if (keep !== null) {
-    await inTurn(root, () =>
-      root
-        .setItem(
-          TEAMS_INDEX_KEY,
-          serialiseTeamIndex({
-            version: INDEX_VERSION,
-            current: keep,
-            teams: [{ id: keep, createdAt: now.toISOString(), removedAt: null }],
-          })
-        )
-        .catch(() => undefined)
-    );
-  }
+  // An index of no teams, or of the one kept: a save that somehow follows the
+  // forget finds an index that does not list it, so no team comes back (QA D1).
+  await inTurn(root, () =>
+    root
+      .setItem(
+        TEAMS_INDEX_KEY,
+        serialiseTeamIndex({
+          version: INDEX_VERSION,
+          current: keep,
+          teams: keep === null ? [] : [{ id: keep, createdAt: now.toISOString(), removedAt: null }],
+        })
+      )
+      .catch(() => undefined)
+  );
   return forgotten;
 }
 
@@ -337,7 +352,9 @@ export function addTeam(root: KeyValueStore, id: UUID, now: Date): Promise<TeamI
 
 /** Open another team (AC1). */
 export function openTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
-  return changeIndex(root, (i) => (i.teams.some((t) => t.id === id && t.removedAt === null) ? { ...i, current: id } : i));
+  return changeIndex(root, (i) =>
+    i.teams.some((t) => t.id === id && t.removedAt === null) ? { ...i, current: id } : i
+  );
 }
 
 /**
@@ -345,21 +362,26 @@ export function openTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | nul
  * until Forget everything. The next team still listed opens; with none, the
  * phone has no team (AC6).
  */
-export function removeTeam(root: KeyValueStore, id: UUID, now: Date): Promise<TeamIndex | null> {
-  return changeIndex(root, (i) => {
+export async function removeTeam(root: KeyValueStore, id: UUID, now: Date): Promise<TeamIndex | null> {
+  const next = await changeIndex(root, (i) => {
     const teams = i.teams.map((t) => (t.id === id ? { ...t, removedAt: now.toISOString() } : t));
     const current = i.current === id ? (teams.find((t) => t.removedAt === null)?.id ?? null) : i.current;
     return { ...i, teams, current };
   });
+  // The team says so in its own keys too, so a rebuilt index keeps it aside (QA D5).
+  if (next) await inTurn(root, () => root.setItem(teamKey(id, REMOVED_MARK), now.toISOString()).catch(() => undefined));
+  return next;
 }
 
 /** Bring a set-aside team back, exactly as it was (AC9). It opens if no team is open. */
-export function bringBackTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
-  return changeIndex(root, (i) => ({
+export async function bringBackTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
+  const next = await changeIndex(root, (i) => ({
     ...i,
     teams: i.teams.map((t) => (t.id === id ? { ...t, removedAt: null } : t)),
     current: i.current ?? id,
   }));
+  if (next) await inTurn(root, () => root.removeItem(teamKey(id, REMOVED_MARK)).catch(() => undefined));
+  return next;
 }
 
 /** One row of the team list (AC1): read from the team's own keys, never copied into the index. */

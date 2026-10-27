@@ -439,13 +439,27 @@ describe('the August prompt (#243 AC4, Q2, Q3)', () => {
   it('"Not yet" quiets it for a week', () => {
     const now = new Date('2027-08-03T10:00:00Z');
     expect(newSeasonPromptDue(sep2026, now, now.getTime() + PROMPT_QUIET_MS)).toBe(false);
-    expect(newSeasonPromptDue(sep2026, new Date(now.getTime() + PROMPT_QUIET_MS), now.getTime() + PROMPT_QUIET_MS)).toBe(true);
+    expect(
+      newSeasonPromptDue(sep2026, new Date(now.getTime() + PROMPT_QUIET_MS), now.getTime() + PROMPT_QUIET_MS)
+    ).toBe(true);
   });
   it('a first season with no record begins at its earliest match; with none, never due', () => {
     const first = currentSeason({ seasons: [] });
     expect(seasonBegan(first, { matches: [] })).toBeNull();
-    expect(
-      seasonBegan(first, { matches: [{ kickoffAt: '2026-09-05T10:00:00Z' }, { kickoffAt: null }] as never })
-    ).toBe(Date.parse('2026-09-05T10:00:00Z'));
+    expect(seasonBegan(first, { matches: [{ kickoffAt: '2026-09-05T10:00:00Z' }, { kickoffAt: null }] as never })).toBe(
+      Date.parse('2026-09-05T10:00:00Z')
+    );
   });
+});
+
+it('a confirmed first season still began at its first match, not the day it was confirmed (QA D8)', () => {
+  const l = ok(
+    saveSeason(
+      emptyLedger(squadId, 'Mock FC', NOW),
+      { id: FIRST_SEASON_ID, name: '2026–27', mainSide: null, ageGroup: 'U10', level: 'development' },
+      new Date('2027-05-01T10:00:00Z')
+    )
+  );
+  const view = { matches: [{ kickoffAt: '2026-09-05T10:00:00Z' }] as never };
+  expect(seasonBegan(currentSeason(l), view)).toBe(Date.parse('2026-09-05T10:00:00Z'));
 });

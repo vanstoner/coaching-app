@@ -300,3 +300,16 @@ describe('a backup of every team (#224 AC7, ADR-022 D4)', () => {
     if (!asOld.ok) expect(asOld.reason).toMatch(/newer version/);
   });
 });
+
+it('the restore confirm names every team in the file, a set-aside one as such (QA D7)', async () => {
+  const p = phone();
+  const part = (id: string, name: string, removed: boolean) => ({
+    id: id as UUID,
+    removed,
+    session: { ...JSON.parse(JSON.stringify(p.session)), squadName: name },
+    ledger: JSON.parse(serialiseLedger(p.ledger, false)),
+  });
+  const back = readAnyBackup(makeTeamsBackup([part(uuid(), 'Unicorns', false), part(uuid(), 'Rovers', true)], FROM, NOW));
+  if (!back.ok) throw new Error(back.reason);
+  expect(describeTeamsBackup(back)).toMatch(/^2 teams: Unicorns, Rovers \(set aside\)\./);
+});

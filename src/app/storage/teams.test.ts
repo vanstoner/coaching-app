@@ -226,7 +226,11 @@ describe('opening teams at launch (ADR-022 D3, #224 AC3)', () => {
     await openTeams(root, NOW, ids(T2));
     expect(await teamStore(root, T1).getItem('coaching-app/session/v1')).toBe('newer');
     expect(await root.getItem('coaching-app/session/v1')).toBeNull();
-    expect(await root.getItem(`${BEFORE_TEAMS_PREFIX}session/v1`)).toBe('stale');
+    // QA D4: the bytes 1.x left stay where a 2.0.x patch would look; the stale key goes beside them.
+    expect(await root.getItem(`${BEFORE_TEAMS_PREFIX}session/v1`)).toBe(BEFORE['coaching-app/session/v1']);
+    const later = (await root.allKeys!()).filter((k) => k.startsWith(`${BEFORE_TEAMS_PREFIX}later/`));
+    expect(later).toHaveLength(1);
+    expect(await root.getItem(later[0])).toBe('stale');
   });
 
   it('an index that will not read is rebuilt from the teams on the phone, never replaced by an empty team', async () => {
@@ -246,7 +250,19 @@ describe('Forget everything on a phone with teams (#207, #224 AC10)', () => {
     await teamStore(root, T2).setItem('coaching-app/session/v1', 'second team');
     await forgetEveryTeam(root, null, NOW);
     // AC10, AC6: every team goes; the phone opens as a fresh install, with no team.
-    expect(await root.allKeys!()).toEqual([TEST_CLOCK_KEY]);
+    expect([...(await root.allKeys!())].sort()).toEqual([TEAMS_INDEX_KEY, TEST_CLOCK_KEY].sort());
+    expect(await openTeams(root, NOW, ids(T2))).toMatchObject({ kind: 'none' });
+  });
+
+  it('a save from the team that lands after the forget brings no team back (QA D1)', async () => {
+    const root = await phoneWith(BEFORE);
+    await openTeams(root, NOW, ids(T1));
+    const forgetting = forgetEveryTeam(root, null, NOW);
+    // The open team's save, queued behind the forget, as QA ran it.
+    const late = inTurn(teamStore(root, T1), () =>
+      teamStore(root, T1).setItem('coaching-app/session/v1', 'placeholder')
+    );
+    await Promise.all([forgetting, late]);
     expect(await openTeams(root, NOW, ids(T2))).toMatchObject({ kind: 'none' });
   });
 });
@@ -307,5 +323,41 @@ describe('the coach’s acts on teams (#224 AC1, AC5, AC6, AC9)', () => {
       ['Unicorns', 0, false],
       [UNREADABLE_TEAM, 1, false],
     ]);
+  });
+});
+
+describe('rebuilding a damaged index (QA D5, D6)', () => {
+  it('a team set aside stays aside, and the open one is a team still listed', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'one');
+    await addTeam(root, T2, NOW);
+    await teamStore(root, T2).setItem('coaching-app/session/v1', 'two');
+    await removeTeam(root, T1, NOW);
+    await root.setItem(TEAMS_INDEX_KEY, '{damaged');
+    const opened = await openTeams(root, NOW, ids());
+    if (opened.kind !== 'team') throw new Error(opened.kind);
+    expect(opened.teamId).toBe(T2);
+    expect(opened.index.teams.find((t) => t.id === T1)?.removedAt).not.toBeNull();
+  });
+
+  it('brought back, it is listed again after a rebuild', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    await teamStore(root, T1).setItem('coaching-app/session/v1', 'one');
+    await removeTeam(root, T1, NOW);
+    await bringBackTeam(root, T1);
+    await root.setItem(TEAMS_INDEX_KEY, '{damaged');
+    expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'team', teamId: T1 });
+  });
+
+  it('a copy cut short and then a damaged index copies again: never a team with no squad', async () => {
+    const disk = await phoneWith(BEFORE);
+    // The move stopped after its first copy; then the index was damaged.
+    await openTeams(crashingAfter(disk, 2), NOW, ids(T1)).catch(() => undefined);
+    await disk.setItem(TEAMS_INDEX_KEY, '{damaged');
+    const opened = await openTeams(disk, NOW, ids(T2));
+    if (opened.kind !== 'team') throw new Error(opened.kind);
+    for (const [k, v] of Object.entries(BEFORE)) expect(await teamStore(disk, opened.teamId).getItem(k), k).toBe(v);
   });
 });

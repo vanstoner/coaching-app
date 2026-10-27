@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 
 import { AGE_GROUPS } from '../app/ledger';
+import { MAX_TEAM_NAME_LENGTH } from '../app/settings';
 import { TEAM_FORMATS, formatForAge, sameTeamName, teamNameProblem } from '../app/teamRows';
 import type { TeamSummary } from '../app/storage/teams';
 import type { ShapeCode } from '../app/shapes';
@@ -275,7 +276,7 @@ export function AddTeamScreen({
           onChangeText={setName}
           placeholder="e.g. Unicorns U10"
           placeholderTextColor={colours.inkFaint}
-          maxLength={24}
+          maxLength={MAX_TEAM_NAME_LENGTH}
           autoCorrect={false}
           accessibilityLabel="Team name"
         />
@@ -362,10 +363,13 @@ export function AddTeamScreen({
 /** A phone with no team (AC6): a fresh install, or every team set aside. */
 export function NoTeamsScreen({
   aside,
+  notice = null,
   onAdd,
   onBringBack,
 }: {
   aside: readonly TeamSummary[];
+  /** After Forget everything: what happened, said once (#207). */
+  notice?: string | null;
   onAdd: () => void;
   onBringBack: (id: TeamSummary['id']) => void;
 }) {
@@ -373,6 +377,7 @@ export function NoTeamsScreen({
     <ScrollView contentContainerStyle={[screen.scroll, local.welcome]}>
       <Text style={screen.title}>Heart FC Coach</Text>
       <Text style={screen.caption}>Who comes off next, and is everyone getting a fair share?</Text>
+      {notice !== null && <Text style={[screen.hint, local.left]}>{notice}</Text>}
       <View style={local.empty}>
         <Text style={local.emptyText}>
           No teams on this phone yet. Start by naming the team you coach. You can add more teams later, each with its own

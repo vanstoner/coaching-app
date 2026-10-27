@@ -113,9 +113,13 @@ const DAY = 24 * 60 * 60 * 1000;
  * Null when it has neither.
  */
 export function seasonBegan(season: LedgerSeason, view: Pick<Ledger, 'matches'>): number | null {
-  if (season.startedAt !== '') return Date.parse(season.startedAt);
   const times = view.matches.map((m) => (m.kickoffAt ? Date.parse(m.kickoffAt) : NaN)).filter(Number.isFinite);
-  return times.length > 0 ? Math.min(...times) : null;
+  const firstMatch = times.length > 0 ? Math.min(...times) : null;
+  // The first season began with its first match, whenever the coach confirmed
+  // it (QA D8); a season the coach started began when they started it.
+  if (season.id === FIRST_SEASON_ID && firstMatch !== null) return firstMatch;
+  if (season.startedAt !== '') return Date.parse(season.startedAt);
+  return firstMatch;
 }
 
 /**
