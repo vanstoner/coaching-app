@@ -20,6 +20,7 @@ import {
   saveSeason,
   serialiseLedger,
   setFormatCounted,
+  startSeason,
   type Ledger,
 } from './ledger';
 import { verifyChain } from './ledgerChain';
@@ -462,4 +463,54 @@ it('a confirmed first season still began at its first match, not the day it was 
   );
   const view = { matches: [{ kickoffAt: '2026-09-05T10:00:00Z' }] as never };
   expect(seasonBegan(currentSeason(l), view)).toBe(Date.parse('2026-09-05T10:00:00Z'));
+});
+
+describe('a fixture counts in the season it is played in (Rob, 27 Oct: "season by play")', () => {
+  it('starting a season moves the fixtures still to be played; those played stay; one entry', () => {
+    let l = emptyLedger(squadId, 'Mock FC', NOW);
+    const played = withFixture(l, '2027-07-01T10:00:00Z');
+    l = played.ledger;
+    const upcoming = withFixture(l, '2027-09-04T10:00:00Z');
+    l = upcoming.ledger;
+    const entries = l.entries.length;
+    const next = uuid();
+    const started = ok(
+      startSeason(
+        l,
+        { id: next, name: '2027–28', mainSide: 7, ageGroup: 'U11', level: 'development' },
+        [upcoming.id],
+        LATER
+      )
+    );
+    expect(started.entries.length).toBe(entries + 1);
+    expect(currentSeason(started).id).toBe(next);
+    expect(seasonOfMatch(started, upcoming.id)).toBe(next);
+    expect(seasonOfMatch(started, played.id)).toBe(FIRST_SEASON_ID);
+    expect(verifyChain(started.entries)).toEqual({ ok: true });
+  });
+
+  it('a later save keeps the move, even from a copy that never heard of it', () => {
+    let l = emptyLedger(squadId, 'Mock FC', NOW);
+    const upcoming = withFixture(l, '2027-09-04T10:00:00Z');
+    l = upcoming.ledger;
+    const next = uuid();
+    l = ok(startSeason(l, { id: next, name: 'B', mainSide: 7, ageGroup: null, level: null }, [upcoming.id], LATER));
+    l = recordMatches(
+      l,
+      [],
+      kids,
+      'Mock FC',
+      NOW,
+      setupFrom({
+        players: kids,
+        matches: [{ match: upcoming.match, format }],
+        live: null,
+        format,
+        totalMinutes: 50,
+        periodCount: 4,
+        buzzWhenSubDue: true,
+      })
+    );
+    expect(seasonOfMatch(l, upcoming.id)).toBe(next);
+  });
 });

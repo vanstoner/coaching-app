@@ -245,11 +245,14 @@ export function StartSeasonScreen({
   defaultName,
   defaultAge,
   defaultShape,
+  upcoming,
   onStart,
   onCancel,
 }: {
   from: LedgerSeason;
   fromMatches: number;
+  /** Fixtures still to be played, which move into the new season (Rob, 27 Oct). */
+  upcoming: number;
   players: number;
   defaultName: string;
   defaultAge: string;
@@ -327,6 +330,12 @@ export function StartSeasonScreen({
             {seasonName(from)} is kept, read-only, with its {fromMatches} {fromMatches === 1 ? 'match' : 'matches'} and
             its own figures.
           </Fact>
+          {upcoming > 0 && (
+            <Fact>
+              {upcoming} {upcoming === 1 ? 'fixture' : 'fixtures'} still to be played {upcoming === 1 ? 'moves' : 'move'}{' '}
+              to {shown}, so {upcoming === 1 ? 'it counts' : 'they count'} there.
+            </Fact>
+          )}
           <Fact>Nothing is deleted or edited.</Fact>
           <Fact>
             All {players} {players === 1 ? 'player comes' : 'players come'} with you. Remove or add them on Squad.

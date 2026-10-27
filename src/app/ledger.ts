@@ -1175,7 +1175,40 @@ export interface SeasonInput {
  * time it started; only 'full' fairness exists in 2.0.0.
  */
 export function saveSeason(ledger: Ledger, input: SeasonInput, now: Date): CorrectionResult {
-  if (!isWritable(ledger)) return READ_ONLY;
+  const record = seasonRecord(ledger, input, now);
+  if (!record.ok) return record;
+  return { ok: true, ledger: appendRecords(ledger, [record.record], now) };
+}
+
+/**
+ * Start a new season (#243 AC4), and move into it every fixture still to be
+ * played (Rob's ruling 27 Oct, "season by play": a match counts in the season
+ * it is played in). One entry, so the season never exists without its
+ * fixtures moved. A fixture already played stays in the season it was
+ * played in; membership is still read from the fixture, never a date.
+ */
+export function startSeason(
+  ledger: Ledger,
+  input: SeasonInput,
+  upcoming: readonly UUID[],
+  now: Date
+): CorrectionResult {
+  const record = seasonRecord(ledger, input, now);
+  if (!record.ok) return record;
+  const moved: LedgerRecord[] = [];
+  for (const id of upcoming) {
+    const have = latestOf(ledger, `fixture:${id}`);
+    if (have) moved.push({ ...have, season: input.id });
+  }
+  return { ok: true, ledger: appendRecords(ledger, [record.record, ...moved], now) };
+}
+
+function seasonRecord(
+  ledger: Ledger,
+  input: SeasonInput,
+  now: Date
+): { ok: true; record: LedgerRecord } | { ok: false; reason: string } {
+  if (!isWritable(ledger)) return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
   const name = input.name?.trim() ?? '';
   if (name.length > SEASON_NAME_MAX) return { ok: false, reason: `A season name is up to ${SEASON_NAME_MAX} characters.` };
   if (input.ageGroup !== null && !AGE_GROUPS.includes(input.ageGroup)) {
@@ -1187,23 +1220,17 @@ export function saveSeason(ledger: Ledger, input: SeasonInput, now: Date): Corre
   const have = ledger.seasons.find((x) => x.id === input.id);
   return {
     ok: true,
-    ledger: appendRecords(
-      ledger,
-      [
-        {
-          type: 'season',
-          id: input.id,
-          name: name === '' ? null : name,
-          startedAt: have?.startedAt ?? now.toISOString(),
-          mainSide: input.mainSide,
-          ageGroup: input.ageGroup,
-          level: input.level,
-          lens: 'full',
-          note: input.note?.trim() || null,
-        },
-      ],
-      now
-    ),
+    record: {
+      type: 'season',
+      id: input.id,
+      name: name === '' ? null : name,
+      startedAt: have?.startedAt ?? now.toISOString(),
+      mainSide: input.mainSide,
+      ageGroup: input.ageGroup,
+      level: input.level,
+      lens: 'full',
+      note: input.note?.trim() || null,
+    },
   };
 }
 

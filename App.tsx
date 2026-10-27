@@ -172,6 +172,7 @@ import {
   setMatchKind,
   visibleLedger,
   saveSeason,
+  startSeason,
   setFormatCounted,
   FIRST_SEASON_ID,
   type ImportChoice,
@@ -1657,22 +1658,36 @@ function TeamApp({
   );
 
   /** AC4: a new season, from now; the last one is kept, read-only. New fixtures default to its format. */
-  const startSeason = useCallback(
+  /** Fixtures still to be played: they move into a season started now (Rob, 27 Oct: "season by play"). */
+  const upcomingIds = useMemo(
+    () =>
+      matches
+        .filter((m) => m.match.status === 'planned' && !isTestMatch(m.match) && !matchIsUnderway(m.quarters))
+        .map((m) => m.match.id),
+    [matches]
+  );
+
+  const startNewSeason = useCallback(
     (next: NewSeason): string | null => {
+      const id = uuid();
       const refused = applyToLedger((l) =>
-        saveSeason(
+        startSeason(
           l,
-          { id: uuid(), name: next.name, mainSide: next.side, ageGroup: next.ageGroup, level: next.level },
+          { id, name: next.name, mainSide: next.side, ageGroup: next.ageGroup, level: next.level },
+          upcomingIds,
           appNow()
         )
       );
       if (refused !== null) return refused;
+      // The phone's own copy follows, so a fixture not yet in the record moves too.
+      const moving = new Set(upcomingIds);
+      setMatches((all) => all.map((m) => (moving.has(m.match.id) ? { ...m, match: { ...m.match, seasonId: id } } : m)));
       setDefaultShape(next.shape);
       setStep('fixtures');
       showToast(`${next.name} started. ${seasonName(season)} is kept, read-only, under Settings › Season. Nothing was deleted.`);
       return null;
     },
-    [applyToLedger, setDefaultShape, showToast, season]
+    [applyToLedger, setDefaultShape, showToast, season, upcomingIds]
   );
 
   /** Q2: "Not yet" brings the prompt back in a week. */
@@ -2251,7 +2266,8 @@ function TeamApp({
           defaultName={nextSeasonName(season.name) || seasonNameFor(appNow())}
           defaultAge={nextAgeGroup(season.ageGroup) ?? 'U10'}
           defaultShape={(fits ?? bySide ?? TEAM_FORMATS[2]).shape}
-          onStart={startSeason}
+          upcoming={upcomingIds.length}
+          onStart={startNewSeason}
           onCancel={() => setStep('settings')}
         />
       );
