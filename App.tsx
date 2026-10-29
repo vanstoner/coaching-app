@@ -225,6 +225,8 @@ import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, children
 import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
+import { PitchAndReferee, type PitchValue } from './src/screens/PitchFields';
+import { withPitch } from './src/app/pitch';
 import { FixturesScreen } from './src/screens/FixturesScreen';
 import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
@@ -1041,6 +1043,9 @@ function TeamApp({
           kickoffAt: draft.kickoffAt,
           seasonId: newSeasonId,
           excludeFromStats: draft.excludeFromStats,
+          surface: draft.pitch.surface ?? undefined,
+          condition: draft.pitch.condition ?? undefined,
+          referee: draft.pitch.referee,
         },
         appNow
       );
@@ -1754,6 +1759,30 @@ function TeamApp({
   );
 
   /**
+   * #254 AC12: set or change a match's pitch and referee, before, during or
+   * after it. Surface and condition reach the record through the next save
+   * (a new `fixture` record, latest wins); the referee stays in the session.
+   */
+  const setPitch = useCallback(
+    (matchId: UUID, v: PitchValue) => {
+      const value = { surface: v.surface, condition: v.condition, referee: v.referee };
+      const live = match && match.state.match.id === matchId ? match : null;
+      if (live) {
+        const next = withPitch(live.state.match, value);
+        delete live.state.match.surface;
+        delete live.state.match.condition;
+        delete live.state.match.referee;
+        Object.assign(live.state.match, next);
+        repaint();
+      }
+      const nextMatches = matches.map((m) => (m.match.id === matchId ? { ...m, match: withPitch(m.match, value) } : m));
+      setMatches(nextMatches);
+      persist({ matches: nextMatches });
+    },
+    [match, matches, persist]
+  );
+
+  /**
    * A child marked absent has just come on: they arrived late (ruling F). An
    * explicit, noted correction in the ledger — before the save that follows,
    * so the save builds on it.
@@ -2223,6 +2252,7 @@ function TeamApp({
             periodCount,
             shape: shapeOfFormat(format) ?? DEFAULT_SHAPE,
             excludeFromStats: false,
+            pitch: { surface: null, condition: null, referee: '' },
           }}
           onSave={saveFixture}
           onCancel={() => setStep('fixtures')}
@@ -2329,6 +2359,8 @@ function TeamApp({
       const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
       return (
         <RecordMatchScreen
+          // AC14: read-only, surface and condition only; the record never holds a referee.
+          pitch={<PitchAndReferee match={viewLedger?.fixtures.find((f) => f.id === recordPage.match.id) ?? {}} onChange={null} />}
           page={recordPage}
           now={appNow()}
           onBack={() => setStep(back)}
@@ -2342,6 +2374,7 @@ function TeamApp({
     if (effectiveStep === 'summary' && match) {
       return (
         <MatchSummaryScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}
@@ -2385,6 +2418,7 @@ function TeamApp({
     if (effectiveStep === 'analysis' && match) {
       return (
         <MatchAnalysisScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}
@@ -2614,6 +2648,7 @@ function TeamApp({
     if (effectiveStep === 'lineup' && match) {
       return (
         <LineupScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}

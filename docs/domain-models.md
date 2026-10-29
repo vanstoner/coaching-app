@@ -64,6 +64,9 @@ interface Match {
   status: MatchStatus; createdAt: string;
   test?: { clock: { offsetMs: number; speed: 1 | 5 | 10; sinceMs: number } }; // #194
   seasonId?: UUID;                          // 2.0.0, #243 AC11: the season it was made in; absent = first season
+  surface?: '3g' | '4g' | 'grass';          // 2.1.0, #254: on the fixture record too
+  condition?: 'excellent' | 'good' | 'poor';
+  referee?: string;                         // 2.1.0, #254 Q2: this phone and the coach's backup only, NEVER the record
 }
 ```
 
@@ -232,7 +235,8 @@ interface Ledger {                          // key coaching-app/ledger/v2
 //             | season | format-count (2.0.0: #243, ADR-022 D5; Rob's ruling 8A)
 // fixture  { id, kickoffAt, opponent, competition, totalMinutes, periodCount, shape, labels[],
 //            excludeFromStats, state: 'planned' | 'cancelled', archived, note,
-//            season? }                    // 2.0.0: the season it was made in, kept by every save; absent = first season
+//            season?,                     // 2.0.0: the season it was made in, kept by every save; absent = first season
+//            surface?: '3g' | '4g' | 'grass', condition?: 'excellent' | 'good' | 'poor' }   // 2.1.0, #254: absent when unset
 // season   { id, name, startedAt, mainSide: 5 | 7 | null, ageGroup: 'U7'…'U18' | null,
 //            level: 'development' | 'competitive' | null, lens: 'full', note }   // the coach's inputs only;
 //            first season's id is 'first-season'; current = latest started after it (#243 AC1, AC9)

@@ -22,6 +22,8 @@ import { Text } from './Text';
 import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
+import { pitchTags } from '../app/pitch';
+import { PitchTags } from './PitchFields';
 import { resultOf } from '../app/matchRecord';
 import { provenanceTag, type Provenance } from '../app/provenance';
 import {
@@ -333,6 +335,7 @@ function RecordCard({
         {whenLabel(match.kickoffAt ? new Date(match.kickoffAt) : null, now)}
         {competition === '' ? '' : ` · ${competition}`}
       </Text>
+      <PitchTags surface={match.surface} condition={match.condition} />
       <Text style={match.score ? local.score : local.meta} numberOfLines={1}>
         {scoreLabel(match.score)}
       </Text>
@@ -404,7 +407,17 @@ function FixtureCard({
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={fixtureOpenLabel([opponent, when, length, scoreLine, tag, inProgress, notClosedLine, archivedLine])}
+        accessibilityLabel={fixtureOpenLabel([
+          opponent,
+          when,
+          length,
+          pitchTags(match.surface, match.condition).join(', '),
+          scoreLine,
+          tag,
+          inProgress,
+          notClosedLine,
+          archivedLine,
+        ])}
         accessibilityActions={[{ name: 'activate' }]}
         onAccessibilityAction={(e) => {
           if (e.nativeEvent.actionName === 'activate') onOpen(match.id);
@@ -420,6 +433,7 @@ function FixtureCard({
         <Text style={local.meta} numberOfLines={1}>
           {length}
         </Text>
+        <PitchTags surface={match.surface} condition={match.condition} />
         {scoreLine && (
           <Text style={local.score} numberOfLines={1}>
             {scoreLine}

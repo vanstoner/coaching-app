@@ -14,7 +14,7 @@
  * figure is total pitch time, goal plus outfield; "in goal" is its breakdown.
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
@@ -51,6 +51,7 @@ type Panel =
   | { kind: 'awardChange'; award: PageAward; to: UUID | null; note: string; error: string };
 
 export function RecordMatchScreen({
+  pitch = null,
   page,
   now,
   onBack,
@@ -66,6 +67,8 @@ export function RecordMatchScreen({
   /** How far it can be trusted, and why (#199 AC3), derived from the record. */
   trust?: ProvenanceInfo | null;
   backLabel?: string;
+  /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
+  pitch?: ReactNode;
 }) {
   const { match } = page;
   // #208: most minutes first by default; a tap on a heading re-sorts.
@@ -130,6 +133,7 @@ export function RecordMatchScreen({
             {competition === '' ? '' : ` · ${competition}`}
           </Text>
           <Text style={match.score ? local.score : screen.caption}>{scoreLabel(match.score)}</Text>
+          {pitch}
           {trust && <TrustRow trust={trust} />}
           {match.leftOut !== null && (
             <Text style={screen.hint}>

@@ -41,7 +41,7 @@
  * was stuck until they started a period they did not mean to start.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -86,6 +86,7 @@ import { shapeOfFormat } from '../app/shapes';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function LineupScreen({
+  pitch = null,
   engine,
   state,
   format,
@@ -129,6 +130,8 @@ export function LineupScreen({
     isAbsent: (id: UUID) => boolean;
     onToggle: (id: UUID, absent: boolean) => void;
   };
+  /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
+  pitch?: ReactNode;
 }) {
   const quarter = currentQuarter(state);
   const minutes = useMemo(
@@ -259,6 +262,7 @@ export function LineupScreen({
           {noun} {quarter?.index ?? 1} of {state.match.quarterCount}
           {shape ? ` · ${shape}` : ''}
         </Text>
+        {pitch}
 
         <ScrollView style={screen.list} scrollEnabled={!dragging}>
           {/* #83: the shape drawn as a pitch. Drag a player, or tap one and

@@ -55,6 +55,9 @@ export interface LedgerFixture {
   note: string | null;
   /** The season it was made in (ADR-022 D5); null: the team's first season. */
   season: UUID | null;
+  /** #254: the pitch, as the record holds it; a value this build doesn't know is kept, shown as nothing. */
+  surface: string | null;
+  condition: string | null;
 }
 
 export interface LedgerProfile {
@@ -112,6 +115,8 @@ export const SETUP_FIELDS: Record<string, readonly string[]> = {
     'archived',
     'note',
     'season',
+    'surface',
+    'condition',
   ],
   profile: ['type', 'playerId', 'keeperPreference', 'prefers', 'outfieldTarget', 'active', 'fairness', 'removed', 'note'],
   settings: ['type', 'squad', 'shape', 'labels', 'totalMinutes', 'periodCount', 'buzzWhenSubDue'],
@@ -150,6 +155,9 @@ export function fixtureRecord(f: SetupInput['fixtures'][number]): LedgerRecord {
     note: null,
     // Absent, not null, on a fixture made before seasons: its record is unchanged.
     ...(f.match.seasonId ? { season: f.match.seasonId } : {}),
+    // #254: absent when not set, so a fixture without them is unchanged. The match official stays on the phone (Q2).
+    ...(f.match.surface ? { surface: f.match.surface } : {}),
+    ...(f.match.condition ? { condition: f.match.condition } : {}),
   };
 }
 
@@ -212,6 +220,8 @@ export function toFixture(r: LedgerRecord): LedgerFixture | null {
     archived: r.archived === true,
     note: str(r.note),
     season: str(r.season) as UUID | null,
+    surface: str(r.surface),
+    condition: str(r.condition),
   };
 }
 

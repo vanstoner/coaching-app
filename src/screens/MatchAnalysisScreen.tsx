@@ -12,7 +12,7 @@
  * repaint recomputes from the anchors (invariant 2).
  */
 
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
@@ -26,6 +26,7 @@ import { MatchBars } from './Charts';
 import { screen } from './theme';
 
 export function MatchAnalysisScreen({
+  pitch = null,
   engine,
   state,
   format,
@@ -44,6 +45,8 @@ export function MatchAnalysisScreen({
   kickoffs: ReadonlyMap<UUID, string>;
   backLabel: string;
   onBack: () => void;
+  /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
+  pitch?: ReactNode;
 }) {
   const running = state.quarters.some((q) => q.status === 'running');
   const [, repaint] = useReducer((n: number) => n + 1, 0);
@@ -67,6 +70,7 @@ export function MatchAnalysisScreen({
           {opponentLabel(state.match)}
           {running ? ' · live, the clock keeps running' : ''}
         </Text>
+        {pitch}
 
         <Pressable onPress={onBack} style={screen.linkHit}>
           <Text style={screen.link}>{backLabel}</Text>

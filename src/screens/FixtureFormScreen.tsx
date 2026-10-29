@@ -43,6 +43,7 @@ import {
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
 import { Chip, ChipRow } from './Chip';
+import { PitchChips, RefereeField, type PitchValue } from './PitchFields';
 import { colours, screen } from './theme';
 import { appNow } from '../app/appClock';
 
@@ -67,6 +68,8 @@ export interface FixtureDraft {
    * one-off or ad hoc game. Its minutes are still recorded.
    */
   excludeFromStats: boolean;
+  /** #254: the pitch, and the referee (this phone only). */
+  pitch: PitchValue;
 }
 
 export function FixtureFormScreen({
@@ -85,6 +88,7 @@ export function FixtureFormScreen({
   const [shape, setShape] = useState<ShapeCode>(initial.shape);
   const [kickoffAt, setKickoffAt] = useState<string | null>(initial.kickoffAt);
   const [excludeFromStats, setExcludeFromStats] = useState(initial.excludeFromStats);
+  const [pitch, setPitch] = useState<PitchValue>(initial.pitch);
 
   return (
     <View style={screen.flex}>
@@ -124,6 +128,8 @@ export function FixtureFormScreen({
             ))}
           </ChipRow>
 
+          <PitchChips value={pitch} onChange={setPitch} />
+
           <Text style={screen.fieldLabel}>Stats</Text>
           <ChipRow>
             <Chip label="Counts" selected={!excludeFromStats} onPress={() => setExcludeFromStats(false)} />
@@ -136,6 +142,8 @@ export function FixtureFormScreen({
 
           <Text style={screen.fieldLabel}>Kick-off</Text>
           <KickoffField value={kickoffAt} onChange={setKickoffAt} />
+
+          <RefereeField value={pitch} onChange={setPitch} />
 
           <Text style={screen.fieldLabel}>This match's length</Text>
           <ChipRow>
@@ -183,7 +191,7 @@ export function FixtureFormScreen({
           <Pressable
             style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
             onPress={() =>
-              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape, excludeFromStats })
+              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape, excludeFromStats, pitch })
             }
           >
             <Text style={screen.buttonLabel}>Save fixture</Text>

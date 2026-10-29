@@ -60,6 +60,7 @@ function signed(ms: number): string {
 }
 
 export function MatchSummaryScreen({
+  pitch = null,
   engine,
   state,
   format,
@@ -127,6 +128,8 @@ export function MatchSummaryScreen({
   /** #243 AC8: an off-format match's card, drawn by the caller; null otherwise. */
   formatCard?: ReactNode;
   onBack: () => void;
+  /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
+  pitch?: ReactNode;
 }) {
   /** #228 Q5: End match was tapped with an award still to give; the card asks first. */
   const [askingAwards, setAskingAwards] = useState(false);
@@ -213,6 +216,7 @@ export function MatchSummaryScreen({
         )}
         {closed && trust && <TrustRow trust={trust} />}
         {formatCard}
+        {pitch}
 
         <Text style={screen.fieldLabel}>Goals</Text>
         {scorers.length === 0 && timeUnknown.every((g) => g.kind !== 'goal') ? (
