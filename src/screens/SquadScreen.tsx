@@ -1,7 +1,7 @@
 /**
  * The squad — REQ-09 (#9).
  *
- * First names only, enforced in `src/app/squad.ts` at entry (invariant 4).
+ * First names by default, a longer name only after a warning, checked in `src/app/squad.ts` at entry (invariant 4, #54).
  * Nothing leaves the phone (ADR-011).
  *
  * ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
  *
  * Charts are boxes drawn with Views (ADR-016), from `./Charts`.
  *
- * First names only (invariant 4).
+ * First names by default (invariant 4, #54).
  */
 
 import { useRef, useState, type ReactNode } from 'react';

@@ -447,3 +447,11 @@ analysis, iOS". Entries are added as each release ships.
   kick-off, still has no date (the record keeps no clock time for a period)
   and stays last. Release 2.0.0 is frozen as a fixture, in the team layout
   2.0.0 phones use (#167).
+- **2.1.0 (in progress) — first names by default (#54).** Rob, 26 Oct: relax
+  the one-name rule to a warning. One word is still added at once; a longer
+  name stops at a warning that says why first names are the default and
+  recommends an initial ("Alex S"), with Keep and Change it beside it. A
+  second child shown by the same name is offered an initial first, and a
+  child can be renamed from their page. Invariant 4 now reads "first names
+  by default", with still no field for a surname, date of birth, contact or
+  photo. Release 2.0.1 is frozen as a fixture (#167).

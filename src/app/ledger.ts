@@ -38,7 +38,7 @@
  * - **Forward-compatible (#99 AC2).** Unknown fields and record types are
  *   carried and hashed, never dropped. A file whose `minReaderVersion` is
  *   above this build's is refused for writing.
- * - **First names only (invariant 4).**
+ * - **First names by default (invariant 4, #54).**
  */
 
 import { uuid } from '../types/index';

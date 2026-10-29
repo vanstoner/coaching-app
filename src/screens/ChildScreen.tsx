@@ -18,7 +18,7 @@
  * Every figure arrives folded from the ledger by `src/app/childSeason.ts`
  * and `src/app/squadViews.ts`; nothing here is stored (invariant 1).
  *
- * First names only (invariant 4).
+ * First names by default (invariant 4, #54).
  */
 
 import { useState, type ReactNode } from 'react';

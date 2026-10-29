@@ -84,12 +84,12 @@ describe('the three steps (AC1, Q2)', () => {
     const s = steps(0);
     expect(s.map((x) => x.key)).toEqual(['squad', 'match', 'play']);
     expect(s.map((x) => x.done)).toEqual([false, false, false]);
-    expect(s[0].detail).toBe('First names only · 0 of 7 added');
+    expect(s[0].detail).toBe('First names · 0 of 7 added');
   });
 
   it('the squad ticks at seven players, Pick the lineup\'s threshold, and counts until then', () => {
     expect(format.onFieldCount).toBe(7);
-    expect(steps(6)[0]).toMatchObject({ done: false, detail: 'First names only · 6 of 7 added' });
+    expect(steps(6)[0]).toMatchObject({ done: false, detail: 'First names · 6 of 7 added' });
     expect(steps(7)[0]).toMatchObject({ done: true, detail: '7 players' });
     expect(steps(10)[0]).toMatchObject({ done: true, detail: '10 players' });
   });

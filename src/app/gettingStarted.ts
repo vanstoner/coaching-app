@@ -16,7 +16,7 @@
  * - **The made-up team** (AC5, Q5, Q6): the Test kit's squad and season, loaded
  *   only while the squad is empty, and recognised by its made-up names.
  *
- * Pure: no React, no device, no clock read. First names only (invariant 4).
+ * Pure: no React, no device, no clock read. First names by default (invariant 4, #54).
  */
 
 import type { Match, Player, UUID } from '../types/index';
@@ -130,7 +130,7 @@ export function startSteps(phone: PhoneContents): StartStep[] {
     {
       key: 'squad',
       name: 'Add your squad',
-      detail: squadDone ? `${n} players` : `First names only · ${n} of ${field} added`,
+      detail: squadDone ? `${n} players` : `First names · ${n} of ${field} added`,
       done: squadDone,
     },
     {

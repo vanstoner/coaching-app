@@ -7,7 +7,7 @@
  * until it lands, the clock needs a format and a team sheet to satisfy the
  * engine, and these are it.
  *
- * First names only, as invariant 4 requires of real players. The rule applies
+ * First names, as invariant 4 defaults real players to (#54). The rule applies
  * to placeholders too: a fixture that models the wrong shape is how the wrong
  * shape gets built.
  */

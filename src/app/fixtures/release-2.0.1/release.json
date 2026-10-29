@@ -1,0 +1,33 @@
+{
+  "version": "2.0.1",
+  "commit": "d500287d4f9140300b241f2894ca25a689856558",
+  "now": "2026-10-07T09:00:00.000Z",
+  "timeZone": "UTC",
+  "script": "scripts/freeze-release-fixture.ts",
+  "layout": "teams",
+  "teamId": "00000000-0000-4000-8000-0000000f1e1d",
+  "sessionSchemaVersion": 6,
+  "ledgerVersion": 2,
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2
+    },
+    {
+      "from": 2,
+      "to": 3
+    },
+    {
+      "from": 3,
+      "to": 4
+    },
+    {
+      "from": 4,
+      "to": 5
+    },
+    {
+      "from": 5,
+      "to": 6
+    }
+  ]
+}
