@@ -79,6 +79,9 @@ import {
   type Sheet,
 } from '../app/teamSheet';
 import { Chip, ChipRow } from './Chip';
+import { scoreBand, showsScoreBand } from '../app/scoreBand';
+import { opponentLabel } from '../app/fixtures';
+import { ScoreBand } from './ScoreBand';
 import { PitchView } from './PitchView';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
@@ -274,6 +277,13 @@ export function LineupScreen({
               ? `Now tap where ${nameOf.get(pitchPick) ?? ''} goes, or tap them again to cancel.`
               : 'Drag a player into place, or tap one and then where they go.'}
           </Text>
+          {/* #252 (Rob: "including between quarters"): the score on the pitch set up for the next period; none before kick-off. */}
+          {showsScoreBand(state.quarters) && (
+            <ScoreBand
+              {...scoreBand(state.events, squadName || PLACEHOLDER_SQUAD_NAME, opponentLabel(state.match))}
+              onPitch
+            />
+          )}
           <PitchView
             format={format}
             sheet={sheet}

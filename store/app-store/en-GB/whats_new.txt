@@ -2,6 +2,8 @@ New in 2.1.0:
 
 • First names by default: add an initial ("Alex S") to tell two children apart
 • Rename a child from their page
+• The score, big on the pitch, and still there between quarters
+• Pitch surface, condition and referee on each fixture
 
 New in 2.0.1:
 

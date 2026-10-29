@@ -455,3 +455,8 @@ analysis, iOS". Entries are added as each release ships.
   child can be renamed from their page. Invariant 4 now reads "first names
   by default", with still no field for a surname, date of birth, contact or
   photo. Release 2.0.1 is frozen as a fixture (#167).
+  The score is now a big band on the pitch, and stays in view between
+  quarters and at full time (#252). A fixture can carry its pitch surface
+  (3G, 4G, Grass), its condition and the referee, changeable at any time;
+  the referee never leaves the phone except in the coach's own backup
+  (#254).

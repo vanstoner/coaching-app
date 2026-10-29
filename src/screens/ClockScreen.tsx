@@ -78,11 +78,12 @@ import {
   UNDO_NOTE,
   UNDO_WINDOW_MS,
   assistCandidates,
-  scoreOf,
   tapEventsFor,
   timeStream,
 } from '../app/matchEvents';
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
+import { scoreBand, showsScoreBand } from '../app/scoreBand';
+import { ScoreBand } from './ScoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
@@ -251,7 +252,8 @@ export function ClockScreen({
   const onPitch = minutes.filter((m) => m.onPitchNow);
   const noun = periodNoun(state.match.quarterCount).toLowerCase();
   const nameOf = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? '—';
-  const score = scoreOf(state.events);
+  // #252: folded from the events on every paint, as the strip's score was (invariant 1).
+  const band = scoreBand(state.events, squadName || PLACEHOLDER_SQUAD_NAME, opponentLabel(state.match));
 
   const sheet = quarter ? liveSheet(state.appearances, quarter.id) : {};
   const keeperPos = format.positions.find((p) => p.kind === 'goalkeeper')?.id;
@@ -394,7 +396,8 @@ export function ClockScreen({
       <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
         {/* #228 (Dee's clutter fix 1): period, time left, clock and score in one strip. */}
-        <View style={local.strip} accessibilityLabel={`${squadName || PLACEHOLDER_SQUAD_NAME} ${score.us}, ${opponentLabel(state.match)} ${score.them}`}>
+        {/* #252: the score left the strip for the band below; its label says it once (AC4, AC12). */}
+        <View style={local.strip} accessibilityLabel={`${squadName || PLACEHOLDER_SQUAD_NAME} v ${opponentLabel(state.match)}`}>
           <View style={local.stripSide}>
             <Text style={local.stripPeriod} numberOfLines={1}>
               {shortPeriodLabel(view, quarter?.index ?? null, state.match.quarterCount)}
@@ -411,14 +414,14 @@ export function ClockScreen({
             {formatClock(view.quarterElapsedMs)}
           </Text>
           <View style={local.stripSide}>
-            <Text style={[local.stripScore, local.right]} numberOfLines={1}>
-              {score.us}–{score.them}
-            </Text>
             <Text style={[local.stripSub, local.right]} numberOfLines={1}>
               v {opponentLabel(state.match)}
             </Text>
           </View>
         </View>
+
+        {/* #252 AC3: at a break and at full time the pitch is not drawn, so the band sits under the strip. */}
+        {!running && showsScoreBand(state.quarters) && <ScoreBand text={band.text} label={band.label} />}
 
         {/* #228 (PO ruling `both`): at full time the award card sits under the strip. */}
         {awards?.atFullTime && !fullTimeAwardsHidden && (
@@ -501,6 +504,8 @@ export function ClockScreen({
                 {`Now tap where ${nameOf(selected)} goes, or tap ${nameOf(selected)} again to cancel.`}
               </Text>
             )}
+            {/* #252 AC1: in play the score is a band across the top of the formation box. */}
+            <ScoreBand text={band.text} label={band.label} onPitch />
             <PitchView
               format={format}
               sheet={sheet}
@@ -810,7 +815,6 @@ const local = StyleSheet.create({
   stripSide: { flex: 1 },
   stripPeriod: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
   stripSub: { color: colours.inkMuted, fontSize: 14, includeFontPadding: false },
-  stripScore: { color: colours.ink, fontSize: 24, fontWeight: '700', includeFontPadding: false },
   right: { alignSelf: 'stretch', textAlign: 'right' },
   clock: {
     color: colours.ink,
