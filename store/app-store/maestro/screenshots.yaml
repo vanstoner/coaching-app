@@ -201,6 +201,7 @@ env:
 - scrollUntilVisible:
     element: ${FORGET}
     timeout: 90000
+- takeScreenshot: diag-08a-forget-found
 - tapOn: ${FORGET}
 # Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
 # everything", under the tab bar. A tap at its centre landed on the Squad tab
@@ -222,17 +223,23 @@ env:
 - extendedWaitUntil:
     visible: ${ADD_YOUR_TEAM}
     timeout: 20000
+- takeScreenshot: diag-08b-no-teams
 - tapOn: ${ADD_YOUR_TEAM}
 - tapOn: ${TEAM_NAME_FIELD}
 - inputText: "Unicorns U10"
-- hideKeyboard
+# Run 40947194464, iPhone: hideKeyboard left the keyboard up over Add and
+# open. A single-line field closes it on Return (blurOnSubmit).
+- pressKey: Enter
+- takeScreenshot: diag-08c-team-named
 - scrollUntilVisible:
     element: ${ADD_AND_OPEN}
     timeout: 30000
+- takeScreenshot: diag-08d-add-and-open
 - tapOn: ${ADD_AND_OPEN}
 - extendedWaitUntil:
     visible: ${TAB_SQUAD}
     timeout: 20000
+- takeScreenshot: diag-08e-team-open
 - tapOn: ${TAB_SQUAD}
 # Proof Forget worked: the season's children are gone from Squad, in view or
 # not (the hierarchy holds rows below the fold).
