@@ -536,6 +536,13 @@ describe('a fixture counts in the season it is played in (Rob, 27 Oct: "season b
       NOW
     );
     expect(stillToPlay(l, [played.id, upcoming.id])).toEqual([upcoming.id]);
+    // What the engine writes mid-match: in progress, with play time.
+    const underway = { ...l, matches: l.matches.map((m) => ({ ...m, status: 'in_progress' as const })) };
+    expect(stillToPlay(underway, [played.id, upcoming.id])).toEqual([upcoming.id]);
+    const timed = { ...l, matches: l.matches.map((m) => ({ ...m, status: 'planned' as const })) };
+    const withPlay = { ...timed, matches: timed.matches.map((m) => ({ ...m, intervals: [{} as never] })) };
+    expect(stillToPlay(timed, [played.id])).toEqual([played.id]);
+    expect(stillToPlay(withPlay, [played.id])).toEqual([]);
     const next = uuid();
     const started = ok(
       startSeason(l, { id: next, name: 'B', mainSide: 7, ageGroup: null, level: null }, [played.id, upcoming.id], LATER)

@@ -1660,13 +1660,13 @@ function TeamApp({
 
   /** AC4: a new season, from now; the last one is kept, read-only. New fixtures default to its format. */
   /** Fixtures still to be played: they move into a season started now (Rob, 27 Oct: "season by play"). */
-  const upcomingIds = useMemo(
-    () =>
-      matches
-        .filter((m) => m.match.status === 'planned' && !isTestMatch(m.match) && !matchIsUnderway(m.quarters))
-        .map((m) => m.match.id),
-    [matches]
-  );
+  const upcomingIds = useMemo(() => {
+    const listed = matches
+      .filter((m) => m.match.status === 'planned' && !isTestMatch(m.match) && !matchIsUnderway(m.quarters))
+      .map((m) => m.match.id);
+    // The record has the last word, so the count shown is what moves (QA D4).
+    return ledger ? stillToPlay(ledger, listed) : listed;
+  }, [matches, ledger]);
 
   const startNewSeason = useCallback(
     (next: NewSeason): string | null => {
