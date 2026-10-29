@@ -83,6 +83,9 @@ env:
   # Settings › Forget everything, confirmed inline
   FORGET: "^Forget everything$"
   FORGET_YES: "^Yes, forget everything$"
+  ADD_YOUR_TEAM: "^Add your team$"
+  TEAM_NAME_FIELD: "e.g. Unicorns U10"
+  ADD_AND_OPEN: "^Add and open$"
   # A child of the made-up season: gone once Forget everything has worked
   SEASON_CHILD: "Dee,.*"
   # Squad: the name field and its button; Home's card after one step
@@ -193,8 +196,11 @@ env:
     visible: ${TAB_SETTINGS}
     timeout: 20000
 - tapOn: ${TAB_SETTINGS}
+# Run 40907567399, iPhone: 2.0.0's Settings (the season at the top, Remove
+# above Forget) is longer, and the default 20 s ran out on the minutes table.
 - scrollUntilVisible:
     element: ${FORGET}
+    timeout: 90000
 - tapOn: ${FORGET}
 # Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
 # everything", under the tab bar. A tap at its centre landed on the Squad tab
@@ -211,6 +217,19 @@ env:
 - scrollUntilVisible:
     element: ${FORGET_YES}
 - tapOn: ${FORGET_YES}
+# Run 40907567399, iPad: since 2.0.0 (#224 AC6) a phone with no team opens on
+# "No teams on this phone yet", with no tabs. Name a made-up team, then Squad.
+- extendedWaitUntil:
+    visible: ${ADD_YOUR_TEAM}
+    timeout: 20000
+- tapOn: ${ADD_YOUR_TEAM}
+- tapOn: ${TEAM_NAME_FIELD}
+- inputText: "Unicorns U10"
+- hideKeyboard
+- scrollUntilVisible:
+    element: ${ADD_AND_OPEN}
+    timeout: 30000
+- tapOn: ${ADD_AND_OPEN}
 - extendedWaitUntil:
     visible: ${TAB_SQUAD}
     timeout: 20000
