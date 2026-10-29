@@ -1,3 +1,7 @@
+New in 2.0.1:
+
+• Played lists a Play now match by the day it was played, newest first
+
 New in 2.0.0:
 
 • Run more than one team, switched like profiles

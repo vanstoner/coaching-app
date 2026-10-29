@@ -29,6 +29,7 @@ import { fixtureRecord, setupFrom } from './ledgerSetup';
 import { newMatch } from './matchLifecycle';
 import { createMemoryStore, loadSession } from './persistence';
 import { openStoredLedger } from './storage/ledgerStore';
+import { teamStore } from './storage/teams';
 import { figureDifferences, releaseFigures } from './releaseFigures';
 import { inFairness, isOffFormat, seasonSide } from './analysis';
 import {
@@ -110,12 +111,14 @@ describe('a team with no season record (#243 AC1, AC9; the healthy case)', () =>
     const versions = Object.keys(JSON.parse(readFileSync(resolve(dir, 'releases.json'), 'utf8')) as object);
     for (const version of versions) {
       const read = (f: string) => readFileSync(resolve(dir, `release-${version}`, f), 'utf8');
-      const meta = JSON.parse(read('release.json')) as { now: string };
+      const meta = JSON.parse(read('release.json')) as { now: string; layout?: 'teams'; teamId?: UUID };
       const now = new Date(meta.now);
-      const store = createMemoryStore();
+      const root = createMemoryStore();
       for (const [k, v] of Object.entries(JSON.parse(read('store.json')) as Record<string, string>)) {
-        await store.setItem(k, v);
+        await root.setItem(k, v);
       }
+      // From 2.0.0 a release kept its data in a team (ADR-022 D2).
+      const store = meta.layout === 'teams' ? teamStore(root, meta.teamId as UUID) : root;
       const session = await loadSession(store);
       const { ledger: stored } = await openStoredLedger(store, now);
       if (!session || !stored) throw new Error(`release ${version} did not open`);

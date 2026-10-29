@@ -37,6 +37,8 @@ import { resolve } from 'node:path';
 
 /** Fixed, so the fixture is reproducible. */
 const NOW = new Date('2026-10-07T09:00:00.000Z');
+/** From 2.0.0, the made-up team the release saves into (ADR-022 D2). */
+const FIXTURE_TEAM_ID = '00000000-0000-4000-8000-0000000f1e1d';
 
 /** The made-up install that signs a fixture's entries, for a release that signs. */
 const FIXTURE_DEVICE_ID = '00000000-0000-4000-8000-00000000fee1';
@@ -134,7 +136,17 @@ async function main(): Promise<void> {
   );
   if (!seeded.ledger) throw new Error('the seed produced no ledger');
 
-  const store = createMemoryStore();
+  // From 2.0.0 a phone keeps each team under its own keys, listed in a team
+  // index (ADR-022 D2): the release saves into its first team, as the coach's
+  // phone does once a team is added. Before 2.0.0 the keys sit at the root.
+  const teams = await import('../src/app/storage/teams').catch(() => null);
+  const root = createMemoryStore();
+  let store = root;
+  if (teams) {
+    if (!(await teams.addTeam(root, FIXTURE_TEAM_ID, NOW))) throw new Error('the team index was not written');
+    store = teams.teamStore(root, FIXTURE_TEAM_ID);
+    console.log(`saving into made-up team ${FIXTURE_TEAM_ID}`);
+  }
   const s = seeded.session;
   const savedSession = await saveSession(store, {
     squadName: s.squadName,
@@ -152,16 +164,23 @@ async function main(): Promise<void> {
   const savedLedger = await saveLedger(store, seeded.ledger);
   if (!savedSession || !savedLedger) throw new Error('a save failed');
 
-  // Every key, byte for byte. The memory store has no listing, so the keys
-  // this build writes are named; any other key it wrote would be missed, so
-  // the README says which these are.
+  // Every key, byte for byte. Before 2.0.0 the keys this build writes are
+  // named (that memory store had no listing); with teams, every key there is.
   const dump: Record<string, string> = {};
-  for (const key of [STORAGE_KEY, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY]) {
-    const value = await store.getItem(key);
+  const keys = teams && root.allKeys ? await root.allKeys() : [STORAGE_KEY, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY];
+  for (const key of keys) {
+    const value = await root.getItem(key);
     if (value !== null) dump[key] = value;
   }
+  const at = (key: string) => (teams ? teams.teamKey(FIXTURE_TEAM_ID, key) : key);
 
-  // Read back as this release reads it at launch.
+  // Read back as this release reads it at launch: the team first, if it has teams.
+  if (teams) {
+    const t = await teams.openTeams(root, NOW, () => {
+      throw new Error('the release made a new team instead of opening its own');
+    });
+    if (t.kind !== 'team' || t.teamId !== FIXTURE_TEAM_ID) throw new Error(`the release opened ${t.kind}`);
+  }
   const loaded = await loadSession(store);
   const opened = await openStoredLedger(store, NOW);
   if (!loaded || !opened.ledger || !opened.writable || opened.message) {
@@ -180,8 +199,9 @@ async function main(): Promise<void> {
         now: NOW.toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         script: 'scripts/freeze-release-fixture.ts',
-        sessionSchemaVersion: JSON.parse(dump[STORAGE_KEY]).schemaVersion,
-        ledgerVersion: JSON.parse(dump[LEDGER_STORAGE_KEY]).ledgerVersion,
+        ...(teams ? { layout: 'teams', teamId: FIXTURE_TEAM_ID } : {}),
+        sessionSchemaVersion: JSON.parse(dump[at(STORAGE_KEY)]).schemaVersion,
+        ledgerVersion: JSON.parse(dump[at(LEDGER_STORAGE_KEY)]).ledgerVersion,
         migrations: (await import('../src/app/persistence')).MIGRATIONS.map((m) => ({ from: m.from, to: m.to })),
       },
       null,

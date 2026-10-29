@@ -29,6 +29,8 @@ import {
   fixtureList,
   inBucket,
   kickoffLabel,
+  mostRecentFirst,
+  playedAt,
   whenLabel,
   lengthLabel,
   opponentLabel,
@@ -260,7 +262,8 @@ function Section({ title, rows, ...actions }: { title: string; rows: FixtureRow[
 
 /**
  * Played: this phone's finished fixtures and the record's other matches in
- * one list, most recent first, undated last, as `fixtureList` orders them.
+ * one list, most recent first by the date each card shows (planned kick-off,
+ * else first period start), undated last (#251).
  */
 function PlayedSection({
   rows,
@@ -269,14 +272,16 @@ function PlayedSection({
   ...actions
 }: { rows: FixtureRow[]; recordOnly: RecordOnlyMatch[]; onOpenRecord: (matchId: UUID) => void } & CardActions) {
   if (rows.length === 0 && recordOnly.length === 0) return null;
-  const time = (iso: string | null) => {
-    const t = iso ? Date.parse(iso) : NaN;
-    return Number.isFinite(t) ? t : null;
-  };
-  const items = [
-    ...rows.map((row) => ({ key: row.match.id, at: time(row.match.kickoffAt), row, record: null })),
-    ...recordOnly.map((m) => ({ key: m.id, at: time(m.kickoffAt), row: null, record: m })),
-  ].sort((a, b) => (a.at === null ? (b.at === null ? 0 : 1) : b.at === null ? -1 : b.at - a.at));
+  // #251: by the date each card shows, so a Play now match sits where it was played.
+  const items = mostRecentFirst([
+    ...rows.map((row) => ({
+      key: row.match.id,
+      at: playedAt(row.match, actions.periods.get(row.match.id)),
+      row,
+      record: null,
+    })),
+    ...recordOnly.map((m) => ({ key: m.id, at: playedAt(m), row: null, record: m })),
+  ]);
   return (
     <View style={local.section}>
       <Text style={screen.fieldLabel}>Played</Text>
