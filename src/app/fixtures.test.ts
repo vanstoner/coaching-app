@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { uuid } from '../types/index';
@@ -453,5 +456,20 @@ describe('Played sorts by the date each card shows (#251)', () => {
     const undated = fixture({ kickoffAt: null });
     const rows = inBucket(fixtureList([undated, later, sooner], NOW), 'future');
     expect(rows.map((r) => r.match.id)).toEqual([sooner.id, later.id, undated.id]);
+  });
+});
+
+describe('the Played screen uses that rule (#251; QA N1 on #256)', () => {
+  // Node can't render the screen, so this reads its source: the bug was the
+  // screen sorting by kick-off alone, with the right functions unused.
+  const played = readFileSync(resolve(__dirname, '../screens/FixturesScreen.tsx'), 'utf8').split(
+    'function PlayedSection('
+  )[1];
+
+  it('sorts with mostRecentFirst, dating each phone match by its periods and each record match by the record', () => {
+    expect(played).toContain('mostRecentFirst(');
+    expect(played).toMatch(/playedAt\(row\.match, actions\.periods\.get\(row\.match\.id\)\)/);
+    expect(played).toMatch(/playedAt\(m\)/);
+    expect(played.split('function ')[0]).not.toMatch(/\.sort\(/);
   });
 });

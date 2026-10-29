@@ -107,7 +107,9 @@ document, ask whether an issue comment would do.
 - **Rob's interface is chat.** Put decisions to him *before* the work, each with:
   what, the options, **a recommendation with reasoning**, cost to reverse, what
   it unblocks, and a link. A menu with no recommendation is an unfinished
-  handoff. He replies `approve <n>`; Claude merges.
+  handoff. He replies `approve <n>`; Claude merges. **Every step that is Rob's
+  (approve a run, tick a box, delete a branch) comes with its direct link**
+  (Rob, 29 Oct).
 - **Report only what you verified this session.** Counts, statuses and paths
   must come from a tool result.
 
