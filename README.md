@@ -1,15 +1,18 @@
 # Heart FC Coach
 
-A junior football coaching app for one under-10s squad. It answers one question
+A junior football coaching app for a coach and their teams. It answers one question
 at the touchline: **who comes off next, and is everyone getting a fair share?**
 It is a substitution reminder, not a timing system. Android first; iPhone
 builds are compiled in CI ahead of TestFlight.
 
-What it does today: a squad of first names with position preferences; fixtures
-and Play now; a plan for every period with projected minutes; a match clock
-with substitution reminders, a pitch you drag players around, goals, saves and
-a score; a match report closed with **End match**; each child's minutes against
-their season average; and a hash-chained ledger of every match's minutes. The
+What it does today: several teams on one phone, switched like browser
+profiles, each with its own seasons (age group, level, main format); a squad
+of first names with position preferences; fixtures and Play now, in 5-a-side
+or 7-a-side; a plan for every period with projected minutes; a match clock
+with substitution reminders, a pitch you drag players around, goals, assists,
+the coach's own tallies and a score; awards; a match report closed with **End
+match**; each child's minutes against the season average; and a signed,
+hash-chained record of every match, with an app backup that holds every team. The
 story of how it got here is in [HISTORY.md](./HISTORY.md).
 
 ## Install it
@@ -73,9 +76,9 @@ To test it with a season in it ([#157](https://github.com/vanstoner/coaching-app
 3. Test. Then **Settings › Forget everything** to empty the phone again.
 
 Import brings in the players and the minutes, so the Squad tab, its views,
-each child's page and the Settings minutes table fill. It does not bring in
-saved fixtures, so **Fixtures › Played** stays empty, keeper preferences are
-not carried, and a missed match does not count as missed (an imported player
+each child's page and the Settings minutes table fill, and **Played** lists the
+file's matches, read-only. The file holds no fixtures to come or keeper
+preferences, and a missed match does not count as missed (an imported player
 counts as joining the squad on the day of the import).
 `npm run test-season-file` remakes the file; a test fails until it is remade
 if the minutes format changes.
@@ -104,8 +107,8 @@ The beta zip is the one with the **Test kit** (made-up players and a past
 season): install `HeartFCBetaCoach.app` and open Settings › Test kit.
 
 To build the beta yourself, with the Test kit, use `npm run ios:beta` (or
-`npm run android:beta`) once route 2 below works. It builds **Coaching
-Beta**, with its own id, orange icon and storage, so test data never sits
+`npm run android:beta`) once route 2 below works. It builds **Heart FC Beta
+Coach**, with its own id, orange icon and storage, so test data never sits
 beside a real squad. Any development build shows the Test kit, and a release
 of Heart FC Coach never does (#134).
 

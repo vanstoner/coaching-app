@@ -244,6 +244,12 @@ export interface KeyValueStore {
   removeItem(key: string): Promise<void>;
   /** Every key held, so Forget everything can find copies kept aside (#207). */
   allKeys?(): Promise<readonly string[]>;
+  /**
+   * The device store under a team's view of it (ADR-022 D2). Work queues on
+   * this, so one team's saves, a restore and Forget everything never
+   * overtake each other.
+   */
+  readonly root?: KeyValueStore;
 }
 
 /** One match on disk: the log and the anchors, never a computed total. */
@@ -753,8 +759,10 @@ export async function clearSession(store: KeyValueStore): Promise<boolean> {
  * does not stop the next.
  */
 export function inTurn<T>(store: KeyValueStore, run: () => Promise<T>): Promise<T> {
-  const next = (queues.get(store) ?? Promise.resolve()).then(run, run);
-  queues.set(store, next);
+  // A team's store queues on the device store beneath it (ADR-022 D2).
+  const queue = store.root ?? store;
+  const next = (queues.get(queue) ?? Promise.resolve()).then(run, run);
+  queues.set(queue, next);
   return next;
 }
 

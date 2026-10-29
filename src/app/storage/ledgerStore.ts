@@ -10,8 +10,8 @@
  * upgrade it, and is never written again; Forget everything clears both.
  */
 
-import { inTurn, type KeyValueStore } from './persistence';
-import { parseLedger, serialiseLedger, type Ledger } from './ledger';
+import { inTurn, type KeyValueStore } from '../persistence';
+import { parseLedger, serialiseLedger, type Ledger } from '../ledger';
 import {
   anchorDamage,
   chainHead,
@@ -19,7 +19,7 @@ import {
   parseChainHead,
   serialiseChainHead,
   type ChainHead,
-} from './ledgerAnchor';
+} from '../ledgerAnchor';
 
 export const LEDGER_STORAGE_KEY = 'coaching-app/ledger/v2';
 /**

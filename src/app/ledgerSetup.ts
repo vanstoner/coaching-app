@@ -53,6 +53,8 @@ export interface LedgerFixture {
   state: FixtureState;
   archived: boolean;
   note: string | null;
+  /** The season it was made in (ADR-022 D5); null: the team's first season. */
+  season: UUID | null;
 }
 
 export interface LedgerProfile {
@@ -109,6 +111,7 @@ export const SETUP_FIELDS: Record<string, readonly string[]> = {
     'state',
     'archived',
     'note',
+    'season',
   ],
   profile: ['type', 'playerId', 'keeperPreference', 'prefers', 'outfieldTarget', 'active', 'fairness', 'removed', 'note'],
   settings: ['type', 'squad', 'shape', 'labels', 'totalMinutes', 'periodCount', 'buzzWhenSubDue'],
@@ -119,7 +122,8 @@ export const SETUP_FIELDS: Record<string, readonly string[]> = {
  * A save carries them from the latest record.
  */
 export const KEPT_BY_SAVE: Record<string, readonly string[]> = {
-  fixture: ['note'],
+  // The season is set when the fixture is made, never re-derived (ADR-022 D5).
+  fixture: ['note', 'season'],
   profile: ['fairness', 'note'],
   settings: [],
 };
@@ -144,6 +148,8 @@ export function fixtureRecord(f: SetupInput['fixtures'][number]): LedgerRecord {
     state: 'planned',
     archived: f.archived === true,
     note: null,
+    // Absent, not null, on a fixture made before seasons: its record is unchanged.
+    ...(f.match.seasonId ? { season: f.match.seasonId } : {}),
   };
 }
 
@@ -205,6 +211,7 @@ export function toFixture(r: LedgerRecord): LedgerFixture | null {
     state: str(r.state) ?? 'planned',
     archived: r.archived === true,
     note: str(r.note),
+    season: str(r.season) as UUID | null,
   };
 }
 

@@ -156,6 +156,11 @@ export interface LedgerMatch {
   structure?: LedgerStructure;
   /** Awards standing for this match (#197); absent when none. Every change stays in the chain. */
   awards?: LedgerAward[];
+  /**
+   * #243 AC8 (Rob, 26 Oct: 8A): an off-format match the coach counted, with
+   * a note, or left out again. Absent: the season's format rule decides.
+   */
+  formatCount?: { counted: boolean; note: string | null };
 }
 
 /** The periods a match actually ran, as the clock measured them, or as noted afterwards (#196 AC3). */
@@ -265,6 +270,30 @@ export interface Ledger {
   awardTypes: LedgerAwardType[];
   /** Tally kinds the coach added in Settings (#198); the built-in ones are not records. */
   eventTypes: LedgerEventType[];
+  /** The team's seasons (#243, ADR-022 D5), oldest first. None: one implicit first season. */
+  seasons: LedgerSeason[];
+  /** Set on a view of one season (`ledgerForSeason`); never on the ledger itself, never stored. */
+  viewSeason?: UUID;
+}
+
+/**
+ * A team's season (#243 AC2, ADR-022 D5): the coach's settings, never a
+ * figure. Latest record wins. Absent means absent: nothing is written for
+ * the coach (AC11).
+ */
+export interface LedgerSeason {
+  id: UUID;
+  /** "2026–27"; null reads "This season". */
+  name: string | null;
+  startedAt: string;
+  /** Players a side; null: the dominating side, as before seasons (ADR-015 §6a). */
+  mainSide: number | null;
+  /** 'U7' … 'U18'; null: not set, never guessed. */
+  ageGroup: string | null;
+  level: 'development' | 'competitive' | null;
+  /** Only 'full' in 2.0.0. */
+  lens: string;
+  note: string | null;
 }
 
 /** A kind of coach's tally added without a release (#198 AC2). Its events' kind is `tally:<id>`. */
@@ -332,6 +361,8 @@ const FIELDS: Record<string, readonly string[]> = {
   attendance: ['type', 'matchId', 'playerId', 'status', 'note'],
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
+  'format-count': ['type', 'matchId', 'counted', 'note'],
+  season: ['type', 'id', 'name', 'startedAt', 'mainSide', 'ageGroup', 'level', 'lens', 'note'],
   ...SETUP_FIELDS,
 };
 
@@ -351,6 +382,8 @@ const FILE_FIELDS = [
   'settings',
   'awardTypes',
   'eventTypes',
+  'seasons',
+  'viewSeason',
   'summary',
 ] as const;
 
@@ -431,7 +464,10 @@ function checkRecord(r: LedgerRecord): void {
 /** The ledger's squad, players and matches, folded from its chain. */
 function foldView(
   entries: LedgerEntry[]
-): Pick<Ledger, 'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes'> {
+): Pick<
+  Ledger,
+  'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes' | 'seasons'
+> {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
   const matches = new Map<UUID, LedgerMatch>();
@@ -447,6 +483,8 @@ function foldView(
   const awardTypes = new Map<UUID, LedgerAwardType>(DEFAULT_AWARD_TYPES.map((t) => [t.id, t]));
   const awards = new Map<UUID, LedgerAward[]>();
   const eventTypes = new Map<UUID, LedgerEventType>();
+  const seasons = new Map<UUID, LedgerSeason>();
+  const formatCounts = new Map<UUID, { counted: boolean; note: string | null }>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -554,6 +592,20 @@ function foldView(
         if (st) structures.set(r.matchId as UUID, st);
         break;
       }
+      case 'format-count':
+        if (typeof r.matchId === 'string') {
+          matchFor(r.matchId as UUID);
+          formatCounts.set(r.matchId as UUID, {
+            counted: r.counted === true,
+            note: typeof r.note === 'string' ? r.note : null,
+          });
+        }
+        break;
+      case 'season': {
+        const s = toSeason(r);
+        if (s) seasons.set(s.id, s);
+        break;
+      }
       case 'award-type':
         if (typeof r.id === 'string' && typeof r.name === 'string') {
           awardTypes.set(r.id as UUID, { id: r.id as UUID, name: r.name, active: r.active !== false });
@@ -592,6 +644,7 @@ function foldView(
       const kind = kinds.get(m.id);
       const st = structures.get(m.id);
       const aw = awards.get(m.id);
+      const fc = formatCounts.get(m.id);
       return {
         ...m,
         intervals: (intervals.get(m.id) ?? []).sort(byStart),
@@ -601,6 +654,7 @@ function foldView(
         ...(kind ? { matchKind: kind } : {}),
         ...(st ? { structure: st } : {}),
         ...(aw ? { awards: aw } : {}),
+        ...(fc ? { formatCount: fc } : {}),
       };
     }),
     fixtures,
@@ -608,6 +662,24 @@ function foldView(
     settings,
     awardTypes: [...awardTypes.values()],
     eventTypes: [...eventTypes.values()],
+    seasons: [...seasons.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+  };
+}
+
+const LEVELS: readonly string[] = ['development', 'competitive'];
+
+function toSeason(r: LedgerRecord): LedgerSeason | null {
+  if (typeof r.id !== 'string' || typeof r.startedAt !== 'string') return null;
+  const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
+  return {
+    id: r.id as UUID,
+    name: text(r.name),
+    startedAt: r.startedAt,
+    mainSide: typeof r.mainSide === 'number' && r.mainSide > 0 ? r.mainSide : null,
+    ageGroup: text(r.ageGroup),
+    level: LEVELS.includes(String(r.level)) ? (r.level as LedgerSeason['level']) : null,
+    lens: text(r.lens) ?? 'full',
+    note: text(r.note),
   };
 }
 
@@ -1075,6 +1147,103 @@ export function recordRemovedPlayers(ledger: Ledger, playerIds: readonly UUID[],
 
 export type CorrectionResult = { ok: true; ledger: Ledger } | { ok: false; reason: string };
 
+/** The first season's fixed id (ADR-022 D5): a match whose fixture names no season belongs to it. */
+export const FIRST_SEASON_ID = 'first-season' as UUID;
+
+/** Age groups a season may name (#224 AC5): U7 to U18. */
+export const AGE_GROUPS: readonly string[] = Array.from({ length: 12 }, (_, i) => `U${i + 7}`);
+
+/** Main formats 2.0.0 offers, as players a side (#224 T9): 5 and 7. */
+export const MAIN_SIDES: readonly number[] = [5, 7];
+
+/** A season name's limit (#243 Q4). */
+export const SEASON_NAME_MAX = 16;
+
+export interface SeasonInput {
+  id: UUID;
+  name: string | null;
+  mainSide: number | null;
+  ageGroup: string | null;
+  level: 'development' | 'competitive' | null;
+  note?: string | null;
+}
+
+/**
+ * Write a season's settings (#243 AC1, AC2, AC4, AC9; ADR-022 D5): start a
+ * new one, confirm the first, or set its main format later. Only the
+ * coach's inputs; nothing is filled in on their behalf. A season keeps the
+ * time it started; only 'full' fairness exists in 2.0.0.
+ */
+export function saveSeason(ledger: Ledger, input: SeasonInput, now: Date): CorrectionResult {
+  const record = seasonRecord(ledger, input, now);
+  if (!record.ok) return record;
+  return { ok: true, ledger: appendRecords(ledger, [record.record], now) };
+}
+
+/**
+ * Start a new season (#243 AC4), and move into it every fixture still to be
+ * played (Rob's ruling 27 Oct, "season by play": a match counts in the season
+ * it is played in). One entry, so the season never exists without its
+ * fixtures moved. A fixture already played stays in the season it was
+ * played in; membership is still read from the fixture, never a date.
+ */
+export function startSeason(
+  ledger: Ledger,
+  input: SeasonInput,
+  upcoming: readonly UUID[],
+  now: Date
+): CorrectionResult {
+  const record = seasonRecord(ledger, input, now);
+  if (!record.ok) return record;
+  const moved: LedgerRecord[] = [];
+  for (const id of stillToPlay(ledger, upcoming)) {
+    const have = latestOf(ledger, `fixture:${id}`);
+    if (have) moved.push({ ...have, season: input.id });
+  }
+  return { ok: true, ledger: appendRecords(ledger, [record.record, ...moved], now) };
+}
+
+/**
+ * The fixtures among `ids` the record holds no play for: no match record and
+ * no interval, or a match record still planned with none. A season start moves
+ * only these, whatever the phone's copy says (#243 QA D1).
+ */
+export function stillToPlay(ledger: Pick<Ledger, 'matches'>, ids: readonly UUID[]): UUID[] {
+  const played = new Set(ledger.matches.filter((m) => m.status !== 'planned' || m.intervals.length > 0).map((m) => m.id));
+  return ids.filter((id) => !played.has(id));
+}
+
+function seasonRecord(
+  ledger: Ledger,
+  input: SeasonInput,
+  now: Date
+): { ok: true; record: LedgerRecord } | { ok: false; reason: string } {
+  if (!isWritable(ledger)) return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  const name = input.name?.trim() ?? '';
+  if (name.length > SEASON_NAME_MAX) return { ok: false, reason: `A season name is up to ${SEASON_NAME_MAX} characters.` };
+  if (input.ageGroup !== null && !AGE_GROUPS.includes(input.ageGroup)) {
+    return { ok: false, reason: 'The age group is U7 to U18.' };
+  }
+  if (input.mainSide !== null && !MAIN_SIDES.includes(input.mainSide)) {
+    return { ok: false, reason: 'The main format is 5-a-side or 7-a-side.' };
+  }
+  const have = ledger.seasons.find((x) => x.id === input.id);
+  return {
+    ok: true,
+    record: {
+      type: 'season',
+      id: input.id,
+      name: name === '' ? null : name,
+      startedAt: have?.startedAt ?? now.toISOString(),
+      mainSide: input.mainSide,
+      ageGroup: input.ageGroup,
+      level: input.level,
+      lens: 'full',
+      note: input.note?.trim() || null,
+    },
+  };
+}
+
 /**
  * Change a player's attendance after kick-off (ADR-014 §4, #102 AC2,
  * invariant 5): a new record carrying a mandatory note. The snapshot it
@@ -1136,6 +1305,30 @@ export function setMatchExcluded(
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'exclusion', matchId, excluded, note: trimmed }], now),
   };
+}
+
+/**
+ * Count an off-format match in the season's figures, or leave it out again
+ * (#243 AC8, Q6; Rob's ruling 8A): a `format-count` record of its own, with
+ * a mandatory note (invariant 5). It never changes what an `exclusion`
+ * record means, so a match the coach left out stays out either way.
+ */
+export function setFormatCounted(
+  ledger: Ledger,
+  matchId: UUID,
+  counted: boolean,
+  note: string,
+  now: Date
+): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  const trimmed = note.trim();
+  if (trimmed === '') return { ok: false, reason: 'A change needs a note saying why.' };
+  const match = ledger.matches.find((m) => m.id === matchId);
+  if (!match) return { ok: false, reason: 'That match is not in the ledger.' };
+  if ((match.formatCount?.counted ?? false) === counted) {
+    return { ok: false, reason: counted ? 'That match is already counted.' : 'That match is already left out.' };
+  }
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'format-count', matchId, counted, note: trimmed }], now) };
 }
 
 /**

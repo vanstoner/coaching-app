@@ -91,7 +91,8 @@ async function main(): Promise<void> {
 
   // Imported after the ids are fixed: anything minted at module load uses them.
   const { createMemoryStore, loadSession, saveSession, STORAGE_KEY } = await import('../src/app/persistence');
-  const { openStoredLedger, saveLedger, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY } = await import('../src/app/ledgerStore');
+  const { openStoredLedger, saveLedger, LEDGER_STORAGE_KEY, LEDGER_HEAD_KEY } = await import('../src/app/storage/ledgerStore').catch(() => import('../src/app/ledgerStore'));
+  // 2.0.0 moved the storage modules into src/app/storage/ (ADR-022 D2); a release before it has them in src/app/.
   const { emptyLedger } = await import('../src/app/ledger');
   const { seedDemo } = await import('../src/app/demoSeed');
   const { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } =

@@ -25,12 +25,14 @@ const NOT_CROSS_GAME: Record<string, string> = {
   'src/app/matchAwards.ts': 'whether one match is still open for awards (#228)',
   'src/app/fixtures.ts': 'which list or screen one fixture belongs to',
   'src/app/recordOnly.ts': 'lists played matches for Played (#195), left-out ones included and marked, as Played always has',
-  'src/app/phoneBackup.ts': 'counts what a backup file holds (#192), not a figure: a left-out match is still in the file',
+  'src/app/storage/phoneBackup.ts': 'counts what a backup file holds (#192), not a figure: a left-out match is still in the file',
   'src/screens/MatchSummaryScreen.tsx': 'one match report',
   'src/app/gettingStarted.ts':
     'asks whether anything has been played at all (#218), not a figure: a left-out match has still been played',
   'src/app/provenance.ts': 'judges one match: whether anything was added after it ended (#199)',
   'src/screens/FixturesScreen.tsx': 'one card: a closed match shows its result (#196 AC1)',
+  'src/app/seasons.ts':
+    'playedIn lists and counts a season’s closed matches as Played does (#243 AC6); its figures fold through isCounted',
   'src/app/squadViews.ts':
     'seasonMatches lists every closed match on purpose and marks each with isCounted; every average then skips !counted',
 };

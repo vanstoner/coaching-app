@@ -38,7 +38,7 @@ import {
   openStoredLedger,
   readStoredLedger,
   saveLedger,
-} from './ledgerStore';
+} from './storage/ledgerStore';
 import { createMemoryStore } from './persistence';
 
 const MIN = 60_000;

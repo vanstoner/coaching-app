@@ -16,11 +16,11 @@
  * not here, and holds nothing about anyone.
  */
 
-import { GETTING_STARTED_KEY } from './gettingStarted';
+import { GETTING_STARTED_KEY } from '../gettingStarted';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY } from './ledgerStore';
-import { STORAGE_KEY, inTurn, type KeyValueStore } from './persistence';
-import { TABLE_SORT_KEY } from './tableSort';
-import { TEST_CLOCK_KEY } from './testKit';
+import { STORAGE_KEY, inTurn, type KeyValueStore } from '../persistence';
+import { TABLE_SORT_KEY } from '../tableSort';
+import { TEST_CLOCK_KEY } from '../testKit';
 
 /** Every key this app writes starts with this. */
 export const APP_KEY_PREFIX = 'coaching-app/';

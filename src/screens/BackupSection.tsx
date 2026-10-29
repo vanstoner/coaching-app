@@ -21,6 +21,7 @@ export function BackupSection({
   onPick,
   onConfirm,
   onCancel,
+  restoreOnly = false,
 }: {
   /** The outcome of the last backup or restore, in plain English. */
   message: string;
@@ -31,25 +32,31 @@ export function BackupSection({
   onPick: () => void;
   onConfirm: () => void;
   onCancel: () => void;
+  /** The first screen, with no team to back up: restore alone (Rob, 29 Oct). */
+  restoreOnly?: boolean;
 }) {
   return (
     <View style={local.section}>
-      <Text style={screen.fieldLabel}>Backup</Text>
-      <Text style={screen.hint}>
-        Everything this app keeps — squad, fixtures, plans, settings and the
-        minutes record — in one file. Nothing else on the phone.
-      </Text>
+      {!restoreOnly && (
+        <>
+          <Text style={screen.fieldLabel}>Backup</Text>
+          <Text style={screen.hint}>
+            Everything this app keeps — squad, fixtures, plans, settings and the
+            minutes record — in one file. Nothing else on the phone.
+          </Text>
 
-      <Pressable
-        disabled={busy}
-        onPress={onBackup}
-        style={({ pressed }) => [screen.buttonQuiet, busy && screen.buttonDisabled, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Back up this app</Text>
-      </Pressable>
-      <Text style={[screen.hint, screen.overtime]}>
-        The file contains the children's first names. Keep it somewhere private.
-      </Text>
+          <Pressable
+            disabled={busy}
+            onPress={onBackup}
+            style={({ pressed }) => [screen.buttonQuiet, busy && screen.buttonDisabled, pressed && screen.buttonPressed]}
+          >
+            <Text style={screen.buttonLabel}>Back up this app</Text>
+          </Pressable>
+          <Text style={[screen.hint, screen.overtime]}>
+            The file contains the children's first names. Keep it somewhere private.
+          </Text>
+        </>
+      )}
 
       <Pressable
         disabled={busy}

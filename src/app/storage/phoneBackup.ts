@@ -15,10 +15,11 @@
  * by `ledgerFile.ts`.
  */
 
-import { chainHead, serialiseChainHead } from './ledgerAnchor';
+import { chainHead, serialiseChainHead } from '../ledgerAnchor';
 import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY } from './ledgerStore';
-import { isWritable, parseLedger, serialiseLedger, type Ledger } from './ledger';
-import { STORAGE_KEY, inTurn, readSession, type KeyValueStore, type SavedSession } from './persistence';
+import { isWritable, parseLedger, serialiseLedger, type Ledger } from '../ledger';
+import { STORAGE_KEY, inTurn, readSession, type KeyValueStore, type SavedSession } from '../persistence';
+import type { UUID } from '../../types/index';
 
 export const BACKUP_ID = 'coaching-app/phone-backup';
 export const BACKUP_VERSION = 1;
@@ -110,7 +111,17 @@ export function readPhoneBackup(text: string): ReadBackup | { ok: false; reason:
   if (typeof file.version !== 'number' || file.version > BACKUP_VERSION) {
     return { ok: false, reason: `That backup was made by a newer version of the app. Update the app first. ${NOTHING}` };
   }
+  return readPart(file.session, file.ledger, file.from, file.writtenAt);
+}
 
+/** One squad and its minutes record, checked as this build reads its own. */
+function readPart(
+  sessionRaw: unknown,
+  ledgerRaw: unknown,
+  fromRaw: { app?: unknown; build?: unknown } | undefined,
+  writtenAt: unknown
+): ReadBackup | { ok: false; reason: string } {
+  const file = { session: sessionRaw, ledger: ledgerRaw, from: fromRaw, writtenAt };
   const sessionText = JSON.stringify(file.session ?? null);
   const session = readSession(sessionText);
   if (session.status === 'too_new') {
@@ -216,4 +227,82 @@ export function restorePhoneBackup(store: KeyValueStore, backup: ReadBackup, now
     return { ok: true, asideKey: aside };
   };
   return inTurn(store, run);
+}
+
+// --- every team in one file (#224 AC7, ADR-022 D4) -------------------------
+
+/**
+ * A backup of every team on the phone. 1.x refuses it with "made by a newer
+ * version" (its BACKUP_VERSION is 1), so it can never be read as one squad.
+ */
+export const TEAMS_BACKUP_VERSION = 2;
+
+/** One team as it is stored: its session and ledger, parsed from their stored text. */
+export interface TeamBackupPart {
+  id: UUID;
+  removed: boolean;
+  session: unknown;
+  ledger: unknown;
+}
+
+export function makeTeamsBackup(teams: readonly TeamBackupPart[], from: BackupSource, now: Date): string {
+  return JSON.stringify(
+    { backup: BACKUP_ID, version: TEAMS_BACKUP_VERSION, writtenAt: now.toISOString(), from, teams },
+    null,
+    2
+  );
+}
+
+/** A backup read and checked, team by team. `id` null: a 1.x backup, for the open team (D4). */
+export interface ReadTeamsBackup {
+  ok: true;
+  teams: { id: UUID | null; removed: boolean; backup: ReadBackup }[];
+}
+
+/**
+ * Read a backup of either version without touching the phone (#192 AC5): a
+ * 1.x file is one squad for the open team; a 2.0.0 file lists every team.
+ * One damaged team refuses the whole file, as one damaged squad always has.
+ */
+export function readAnyBackup(text: string): ReadTeamsBackup | { ok: false; reason: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: `That file is not a phone backup. ${NOTHING}` };
+  }
+  const version = (raw as { version?: unknown } | null)?.version;
+  if (version !== TEAMS_BACKUP_VERSION) {
+    const one = readPhoneBackup(text);
+    return one.ok ? { ok: true, teams: [{ id: null, removed: false, backup: one }] } : one;
+  }
+  const file = raw as { backup?: unknown; writtenAt?: unknown; from?: { app?: unknown; build?: unknown }; teams?: unknown };
+  if (file.backup !== BACKUP_ID || !Array.isArray(file.teams)) {
+    return { ok: false, reason: `That file is not a phone backup. ${NOTHING}` };
+  }
+  const teams: ReadTeamsBackup['teams'] = [];
+  for (const t of file.teams as { id?: unknown; removed?: unknown; session?: unknown; ledger?: unknown }[]) {
+    if (typeof t?.id !== 'string') return { ok: false, reason: `A team in that backup is damaged. ${NOTHING}` };
+    const part = readPart(t.session, t.ledger, file.from, file.writtenAt);
+    if (!part.ok) return part;
+    teams.push({ id: t.id as UUID, removed: t.removed === true, backup: part });
+  }
+  if (teams.length === 0) return { ok: false, reason: `That backup holds no team. ${NOTHING}` };
+  return { ok: true, teams };
+}
+
+/** The confirm sheet's words for a backup of one team or several (#192 AC2). */
+export function describeTeamsBackup(read: ReadTeamsBackup): string {
+  if (read.teams.length === 1 && read.teams[0].id === null) return describeBackup(read.teams[0].backup.preview);
+  const names = read.teams.map((t) => `${t.backup.preview.squadName}${t.removed ? ' (set aside)' : ''}`);
+  const p = read.teams[0].backup.preview;
+  const made = p.writtenAt
+    ? new Date(p.writtenAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'an unknown date';
+  return (
+    `${read.teams.length} ${read.teams.length === 1 ? 'team' : 'teams'}: ${names.join(', ')}. ` +
+    `Each team on this phone with the same id is replaced, its data set aside first; the others are added. ` +
+    `Teams on this phone that are not in the file are left alone. ` +
+    `Backed up from ${p.from.app}${p.from.build ? ` (${p.from.build})` : ''} on ${made}.`
+  );
 }

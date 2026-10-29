@@ -398,3 +398,43 @@ analysis, iOS". Entries are added as each release ships.
   how it was played ("2 halves of 25:00"), as its record page does. Minutes
   already agreed and are unchanged. A match still being played reads as
   before.
+- **Heart FC Coach 2.0.0: teams and seasons (#224, #243; ADR-022), in
+  progress.** Rob, 18 Oct: *"if I am a coach of multiple squads I'll need to
+  switch to a squad and from there everything is only related to that
+  team … thinking like profiles in a browser."* Built in steps on one pull
+  request, each step a beta:
+  - **Each team keeps its own data, and the phone's data moves into the
+    first team.** Nothing changes on screen. On the first launch the phone's
+    squad, fixtures, minutes record and settings are copied, byte for byte,
+    into team 1, read back, and only then set aside. A launch interrupted
+    part-way through picks up where it stopped, and a copy that does not read
+    back leaves the data where it was, read-only. Every released version's
+    data, 1.0.0 to 1.3.1, moves with identical figures.
+  - **Seasons are kept in the record.** A team has seasons, each with its
+    name, main format, age group, level and fairness (Full equal time, the
+    only one in 2.0.0). A match belongs to the season its fixture was made
+    in, never to a date. Until the coach names it, a team is in one first
+    season with nothing set, so every figure is what it was.
+  - **Teams, switched like profiles.** Home's title is now the team chip:
+    its badge, name and season line. A tap opens the team list, with "Match
+    on" beside a team whose match is running, and Add a team, which asks for
+    the team's name and first season (age group, level, main format;
+    fairness is Full equal time). Settings switches team too, and removes
+    the open team once its name is typed; a removed team is set aside and
+    can be brought back. A new phone opens on "No teams on this phone yet",
+    which also restores from a backup, so no team need be made first.
+  - **Seasons on screen.** Settings opens with the season: its name, age
+    group, level, main format and fairness, when it began and how many
+    matches. The first season asks the coach to confirm its age group and
+    name (U10 Development offered, nothing saved until Confirm), and to set
+    its main format, saying what that would change. Start a new season is
+    one screen copied from the last, with the age group moved up a year and
+    named on the button; from August a card on Home offers it ("Not yet"
+    for a week). Every figure now covers the current season only; past
+    seasons open read-only with their own. A match in another format is
+    left out of the season's figures unless the coach counts it, with a
+    note.
+  - **Back up every team in one file.** A backup now holds every team on
+    the phone. Restoring it replaces each team the phone already has (its
+    data set aside first, as before), adds the others, and leaves alone any
+    team not in the file. A backup from 1.x restores into the open team.

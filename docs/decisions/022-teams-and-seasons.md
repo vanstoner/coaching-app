@@ -1,6 +1,25 @@
 # ADR-022: Teams are key prefixes, seasons live in each team's record, and ADR-007 is superseded
 
 **Status:** Accepted (Rob, 26 Oct: "Accept and go with all recommendations")
+**Built:** in 2.0.0 (#248), with five points where the build departs from or
+adds to the text below, each ruled or flagged there:
+- **D3 step 1 is replaced by #224 AC6** (Rob, 26 Oct, Dee's T4): a fresh
+  install has no team until the coach names one. The demo and the store
+  screenshots still get a first team, for their made-up season.
+- **The first season has a fixed id, `first-season`** (D5): a match whose
+  fixture names no season belongs to it, with or without a `season` record,
+  so no default is written for the coach. The current season is the latest
+  started after it.
+- **#243 AC8 is its own record, `format-count`** (Rob's ruling 8A), never a
+  new meaning for `exclusion`.
+- **"Season by play"** (Rob, 27 Oct): starting a season moves every fixture
+  still to be played into it, written in the same entry. Membership is still
+  read from the fixture, never a date; a match counts in the season it is
+  played in.
+- **D4's backup is version 2**, `{ teams: [{ id, removed, session, ledger }] }`;
+  1.x refuses it as newer. Beyond the text: a damaged index is rebuilt from
+  the teams' own keys, and a key found at the root after the move is set
+  aside, never copied over the team.
 **Date:** 2026-10-25
 **Decision maker:** Architect, for the Product Owner's ruling (#224, #243; #239 S1 and S4)
 

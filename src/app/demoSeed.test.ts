@@ -9,7 +9,7 @@ import { seasonAttendance } from './attendance';
 import type { Distribution } from './distribution';
 import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { verifyChain } from './ledgerChain';
-import { clearLedger, openStoredLedger, saveLedger } from './ledgerStore';
+import { clearLedger, openStoredLedger, saveLedger } from './storage/ledgerStore';
 import { fixtureList, inBucket, listedFixtures } from './fixtures';
 import { progressById } from './liveMatch';
 import { createMemoryStore, clearSession, loadSession, saveSession } from './persistence';

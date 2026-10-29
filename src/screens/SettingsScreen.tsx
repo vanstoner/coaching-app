@@ -17,6 +17,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
+import { sameTeamName } from '../app/teamRows';
 import {
   KeyboardAvoidingView,
   Pressable,
@@ -53,6 +54,8 @@ export function SettingsScreen({
   testKit,
   onForget,
   onShowGettingStarted = null,
+  team = null,
+  season = null,
 }: {
   squadName: string;
   onSquadName: (s: string) => void;
@@ -77,10 +80,33 @@ export function SettingsScreen({
   onForget: () => void;
   /** #218 Q4: the Getting started card back, while it is closed and a step is undone. */
   onShowGettingStarted?: (() => void) | null;
+  /**
+   * #224: the teams on this phone (T1, T2, AC10). Switch opens the team list;
+   * Remove is for the open team only, and refused with a reason while its
+   * match is on (T7).
+   */
+  team?: {
+    count: number;
+    /** Every team Forget everything removes, set-aside ones included (QA D2). */
+    forgetCount: number;
+    /** The other teams' names: a team's name is unique on the phone (#224 AC5, QA D9). */
+    otherNames: readonly string[];
+    onSwitch: () => void;
+    onRemove: () => void;
+    removeBlocked: string | null;
+  } | null;
+  /** #243 Q5: Settings › Season, drawn by the caller, first in Settings. */
+  season?: ReactNode;
 }) {
   // Confirm before wiping, because the coach whose squad this deletes is the
   // one who typed all ten names in. Two taps, in-screen, no dialog module.
   const [confirmForget, setConfirmForget] = useState(false);
+  // QA D9, N4: a name another team on this phone has is never saved, not even
+  // while typed: it stays in the box, with the reason, and leaving the box
+  // puts back the name that is saved. Any other name saves as it is typed.
+  const [clash, setClash] = useState<string | null>(null);
+  const taken = (name: string) =>
+    team !== null && team.otherNames.some((n) => sameTeamName(n, normaliseTeamName(name, PLACEHOLDER_SQUAD_NAME)));
 
   return (
     <View style={screen.safe}>
@@ -96,15 +122,28 @@ export function SettingsScreen({
             Defaults for a new match. Changing one never alters a fixture you
             have already saved.
           </Text>
+          {season}
 
           <Text style={screen.fieldLabel}>Team name</Text>
           <TextInput
             style={screen.input}
-            value={squadName}
-            onChangeText={onSquadName}
+            value={clash ?? squadName}
+            onChangeText={(text) => {
+              if (taken(text)) {
+                setClash(text);
+                return;
+              }
+              setClash(null);
+              onSquadName(text);
+            }}
             // Cleaned when the coach leaves the field rather than as they
             // type, so a space mid-word is not eaten under their thumb.
-            onBlur={() => onSquadName(normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME))}
+            onBlur={() => {
+              setClash(null);
+              const next = normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME);
+              // A name cleaned into another team's stays as it was saved.
+              if (!taken(next)) onSquadName(next);
+            }}
             placeholder="Your team"
             placeholderTextColor={colours.inkFaint}
             autoCapitalize="words"
@@ -112,6 +151,19 @@ export function SettingsScreen({
             maxLength={MAX_TEAM_NAME_LENGTH}
             returnKeyType="done"
           />
+          {clash !== null && (
+            <Text style={screen.error}>
+              Another team on this phone is called {normaliseTeamName(clash, PLACEHOLDER_SQUAD_NAME)}. It stays{' '}
+              {squadName} until the name is different.
+            </Text>
+          )}
+          {team && (
+            <Pressable onPress={team.onSwitch} style={screen.linkHit} accessibilityRole="button">
+              <Text style={screen.link}>
+                {team.count} {team.count === 1 ? 'team' : 'teams'} on this phone · Switch team ›
+              </Text>
+            </Pressable>
+          )}
 
           <Text style={screen.fieldLabel}>Default match length</Text>
           <ChipRow>
@@ -179,13 +231,21 @@ export function SettingsScreen({
           {backup}
           {testKit}
 
+          {team && (
+            <>
+              <Pressable onPress={team.onRemove} style={screen.linkHit} accessibilityRole="button">
+                <Text style={screen.dangerLink}>Remove {squadName}</Text>
+              </Pressable>
+              {team.removeBlocked && <Text style={screen.hint}>{team.removeBlocked}</Text>}
+            </>
+          )}
+
           {confirmForget ? (
             <>
               <Text style={[screen.hint, screen.overtime]}>
-                This deletes the squad, the team name, every saved match, every
-                player's minutes and any copies the app kept aside after a
-                restore or a damaged save. Back up the app first if you want to
-                keep them.
+                {team && team.forgetCount > 1
+                  ? `This deletes all ${team.forgetCount} teams on this phone: each squad, team name, saved match and player's minutes, and any copies the app kept aside. Back up the app first if you want to keep them.`
+                  : "This deletes the squad, the team name, every saved match, every player's minutes and any copies the app kept aside after a restore or a damaged save. Back up the app first if you want to keep them."}
               </Text>
               <Pressable onPress={onForget} style={screen.linkHit}>
                 <Text style={screen.dangerLink}>Yes, forget everything</Text>
@@ -196,7 +256,9 @@ export function SettingsScreen({
             </>
           ) : (
             <Pressable onPress={() => setConfirmForget(true)} style={screen.linkHit}>
-              <Text style={screen.dangerLink}>Forget everything</Text>
+              <Text style={screen.dangerLink}>
+                {team && team.forgetCount > 1 ? `Forget everything (all ${team.forgetCount} teams)` : 'Forget everything'}
+              </Text>
             </Pressable>
           )}
         </ScrollView>

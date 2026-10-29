@@ -1,3 +1,8 @@
+New in 2.0.0:
+
+• Run more than one team, switched like profiles
+• Seasons for each team, with its age group, level and main format
+
 New in 1.3.1:
 
 • The match report shows goals and how the match was played as corrected in the record

@@ -18,7 +18,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { createMemoryStore, type KeyValueStore } from './persistence';
+import { createMemoryStore, type KeyValueStore } from '../persistence';
 
 /**
  * The device store, or an in-memory one if the native module is unusable.

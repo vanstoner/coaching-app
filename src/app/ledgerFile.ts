@@ -14,7 +14,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { ledgerFileName, serialiseLedger, type Ledger } from './ledger';
-import { backupFileName } from './phoneBackup';
+import { backupFileName } from './storage/phoneBackup';
 
 export type FileOutcome = { ok: true } | { ok: false; reason: string };
 

@@ -31,7 +31,7 @@ import {
   type KeyValueStore,
   type SavedSession,
   type SessionInput,
-} from './persistence';
+} from '../persistence';
 
 /** Where an unreadable session is kept: one key per launch that found one. */
 export const UNREADABLE_SESSION_PREFIX = `${STORAGE_KEY}/unreadable/`;

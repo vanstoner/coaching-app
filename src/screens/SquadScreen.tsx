@@ -110,6 +110,7 @@ export function SquadScreen({
   focusName = false,
   firstTime = null,
   onClearMadeUp = null,
+  seasonName = null,
 }: {
   squadId: UUID;
   /** Everyone ever in the squad, retired players included (#77). */
@@ -126,6 +127,8 @@ export function SquadScreen({
   onFieldCount: number;
   onStartMatch: (() => void) | null;
   onLeave: (() => void) | null;
+  /** #243 AC1: the current season's name, which every figure here covers. */
+  seasonName?: string | null;
   /** #218 Q5: load the made-up team. Passed only while the squad is empty. */
   onTryMadeUp?: (() => void) | null;
   /** #218: arrived to add the squad, so the name box is ready. */
@@ -246,6 +249,7 @@ export function SquadScreen({
       >
         <View style={screen.pane}>
           <Text style={screen.title}>Squad</Text>
+          {seasonName !== null && <Text style={screen.caption}>{seasonName}</Text>}
           <Text style={screen.hint}>First names only. Nothing leaves this phone.</Text>
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">

@@ -24,7 +24,7 @@
 
 import { AwardCard } from './AwardCard';
 import type { AwardRow } from '../app/matchAwards';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
@@ -76,6 +76,7 @@ export function MatchSummaryScreen({
   onOpenRecord,
   trust = null,
   awards = null,
+  formatCard = null,
   onBack,
 }: {
   engine: MatchEngine;
@@ -123,6 +124,8 @@ export function MatchSummaryScreen({
     onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
   } | null;
+  /** #243 AC8: an off-format match's card, drawn by the caller; null otherwise. */
+  formatCard?: ReactNode;
   onBack: () => void;
 }) {
   /** #228 Q5: End match was tapped with an award still to give; the card asks first. */
@@ -209,6 +212,7 @@ export function MatchSummaryScreen({
           </View>
         )}
         {closed && trust && <TrustRow trust={trust} />}
+        {formatCard}
 
         <Text style={screen.fieldLabel}>Goals</Text>
         {scorers.length === 0 && timeUnknown.every((g) => g.kind !== 'goal') ? (

@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LEDGER_VERSION, type Ledger } from './ledger';
 import { verifyChain } from './ledgerChain';
-import { openStoredLedger, saveLedger } from './ledgerStore';
+import { openStoredLedger, saveLedger } from './storage/ledgerStore';
 import {
   MIGRATIONS,
   SCHEMA_VERSION,
@@ -35,6 +35,8 @@ import {
   type SavedSession,
 } from './persistence';
 import { figureDifferences, releaseFigures } from './releaseFigures';
+import { BEFORE_TEAMS_PREFIX, openTeams, teamStore } from './storage/teams';
+import type { UUID } from '../types/index';
 
 const FIXTURES = resolve(__dirname, 'fixtures');
 const MANIFEST = resolve(FIXTURES, 'releases.json');
@@ -133,6 +135,44 @@ describe.each(onDisk)('release %s, loaded by this build (#167 AC2)', (version) =
     const again = await launch(store, now);
     expect(verifyChain(again.ledger.entries)).toEqual({ ok: true });
     expect(figureDifferences(expected, releaseFigures(again.session, again.ledger, now))).toEqual([]);
+  });
+
+  // --- 2.0.0: the phone's data becomes the first team (#224 AC3, ADR-022 D3) ---
+
+  const TEAM = '00000000-0000-4000-8000-00000000c0de' as UUID;
+
+  it('moves into the first team and shows every child the same figures', async () => {
+    const root = await phoneWith(dump);
+    const opened = await openTeams(root, now, () => TEAM);
+    expect(opened).toMatchObject({ kind: 'team', teamId: TEAM, moved: true });
+    const { session, ledger } = await launch(teamStore(root, TEAM), now);
+    expect(verifyChain(ledger.entries)).toEqual({ ok: true });
+    expect(figureDifferences(expected, releaseFigures(session, ledger, now))).toEqual([]);
+  });
+
+  it('keeps every key it moved byte for byte, in the team and set aside', async () => {
+    const root = await phoneWith(dump);
+    await openTeams(root, now, () => TEAM);
+    const team = teamStore(root, TEAM);
+    for (const [key, value] of Object.entries(dump)) {
+      expect(await team.getItem(key), key).toBe(value);
+      expect(await root.getItem(BEFORE_TEAMS_PREFIX + key.slice('coaching-app/'.length)), key).toBe(value);
+      expect(await root.getItem(key), `${key} left at the root`).toBeNull();
+    }
+  });
+
+  it('opens the same figures at the next launch, and after this build writes the team back', async () => {
+    const root = await phoneWith(dump);
+    await openTeams(root, now, () => TEAM);
+    const again = await openTeams(root, now, () => 'not-this' as UUID);
+    expect(again).toMatchObject({ kind: 'team', teamId: TEAM, moved: false });
+    const team = teamStore(root, TEAM);
+    const first = await launch(team, now);
+    await saveSession(team, { ...first.session, matches: first.session.matches, state: null, now });
+    await saveLedger(team, first.ledger);
+    const after = await launch(team, now);
+    expect(verifyChain(after.ledger.entries)).toEqual({ ok: true });
+    expect(figureDifferences(expected, releaseFigures(after.session, after.ledger, now))).toEqual([]);
   });
 
   // --- AC4: schema changes are deliberate ------------------------------------

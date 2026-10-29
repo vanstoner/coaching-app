@@ -82,6 +82,19 @@ document, ask whether an issue comment would do.
   `app.json` by that step, adds its `HISTORY.md` entry and freezes the release
   it supersedes, and updates the spec row, docs and any Mermaid diagram it
   makes wrong. CI (`version-impact.yml`) checks the first three.
+- **Closing a release (Rob, 27 Oct).** A major or minor release is not done
+  until the repo is clean enough that a fresh agent can pick it up from
+  CLAUDE.md, HISTORY.md and the issue stack alone:
+  - **The spec matches what is built.** Bea checks every row of
+    `docs/feature-specs.md`, the data model and the architecture doc
+    (diagrams included) against the code; fixes go in the release PR, and a
+    disagreement with an approved criterion goes to Rob before merge.
+  - **The issue stack is minimal.** Every issue the release finished is
+    closed naming its PR; superseded ones are closed pointing to what
+    replaced them; what stays open is live intent or waiting on Rob, and
+    labelled so.
+  - **No open PRs** once the release merges, and merged branches deleted.
+  - **HISTORY.md** has the release's entry.
 - **The match engine stays pure TypeScript** — no React or platform imports.
 
 ## Git and approval

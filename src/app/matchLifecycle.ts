@@ -40,6 +40,8 @@ export interface NewMatchInput {
   excludeFromStats?: boolean;
   /** A test match from Settings (#194): never recorded, on its own clock. */
   test?: TestMatchMark;
+  /** The season it is made in (#243 AC11); absent for the first season. */
+  seasonId?: UUID;
 }
 
 export interface NewMatch {
@@ -69,6 +71,7 @@ export function newMatch(input: NewMatchInput, nowFn: () => Date): NewMatch {
     excludeFromStats: input.excludeFromStats === true,
   });
   if (input.test) state.match.test = input.test;
+  if (input.seasonId) state.match.seasonId = input.seasonId;
   return {
     held: { state, format: input.format },
     // Through the same fold every save uses, so the stored shape cannot drift

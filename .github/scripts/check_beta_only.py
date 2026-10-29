@@ -29,6 +29,7 @@ text of every node on screen.
 
     check_beta_only.py --variant beta|demo|'' DUMP...  the verdict: exit 0 pass, 1 fail, 2 misuse
     check_beta_only.py --tab-centre DUMP          "X Y" of the Settings tab, to tap
+    check_beta_only.py --centre-of LABEL DUMP     "X Y" of the node labelled exactly LABEL, to tap (#224)
     check_beta_only.py --swipe DUMP               "X1 Y1 X2 Y2", a swipe up inside the scrolling view
     check_beta_only.py --same A B                 exit 0 if two dumps show the same screen
     check_beta_only.py --self-test
@@ -141,6 +142,17 @@ def settings_tab(nodes):
         tabs = [n for n in nodes if n[field].strip() == SETTINGS_TAB and n["bounds"]]
         if tabs:
             return max(tabs, key=lambda n: n["bounds"][3])
+    return None
+
+
+def labelled(nodes, label):
+    """The first node labelled exactly `label`, by text, else by content
+    description (a TextInput's accessibilityLabel is only there). #224: the
+    smoke adds a team through the app's own form on a fresh install."""
+    for field in ("text", "desc"):
+        found = [n for n in nodes if n[field].strip() == label and n["bounds"]]
+        if found:
+            return found[0]
     return None
 
 
@@ -343,6 +355,14 @@ def self_test():
     check("a tab labelled only by its content description is still found",
           settings_tab([dict(n, text="", desc=n["text"]) if n["text"] == SETTINGS_TAB else n
                         for n in home[0]]) is not None)
+    welcome = fake_dump(["Heart FC Coach", "No teams on this phone yet.", "Add your team"])
+    check("the welcome's 'Add your team' is found, to tap (#224 AC6)",
+          labelled(welcome, "Add your team") is not None)
+    check("a label is found by its content description, as a TextInput's is",
+          labelled([dict(n, text="", desc=n["text"]) for n in welcome], "Add your team") is not None)
+    check("Home, with its tabs, has no 'Add your team': nothing to add",
+          labelled(home[0], "Add your team") is None)
+    check("only an exact label matches: 'Add your team' is not 'Add'", labelled(welcome, "Add") is None)
     check("a swipe runs upward inside the scrolling view", swipe(release[0]) == (160, 452, 160, 131))
     check("two dumps of the same screen are the same", signature(release[2]) == signature(release[3]))
     check("a scrolled screen is not the same", signature(release[0]) != signature(release[1]))
@@ -364,6 +384,15 @@ def main(argv):
             print(f"no {SETTINGS_TAB!r} tab on this screen; it shows: {shown}", file=sys.stderr)
             return 1
         print("%d %d" % centre(tab["bounds"]))
+        return 0
+    if len(args) == 3 and args[0] == "--centre-of":
+        nodes = load(args[2])
+        node = labelled(nodes, args[1]) if nodes is not None else None
+        if node is None:
+            shown = labels(nodes)[:8] if nodes else "an unreadable dump"
+            print(f"no node labelled {args[1]!r} on this screen; it shows: {shown}", file=sys.stderr)
+            return 1
+        print("%d %d" % centre(node["bounds"]))
         return 0
     if len(args) == 2 and args[0] == "--swipe":
         nodes = load(args[1])

@@ -9,7 +9,7 @@ import { matchChart, matchReport, seasonStats } from './analysis';
 import { kickoffTimes, seasonAttendance } from './attendance';
 import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { verifyChain } from './ledgerChain';
-import { LEDGER_HEAD_KEY, openStoredLedger, saveLedger } from './ledgerStore';
+import { LEDGER_HEAD_KEY, openStoredLedger, saveLedger } from './storage/ledgerStore';
 import { chainHead, parseChainHead } from './ledgerAnchor';
 import { teamSheetFor } from './lineup';
 import { currentQuarter } from './matchClock';

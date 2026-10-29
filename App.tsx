@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +16,14 @@ import {
   type ClockSpeed,
 } from './src/app/appClock';
 import { TEST_CLOCK_KEY, addTestData, isBetaBuild, showTestKit } from './src/app/testKit';
-import { describeBackup, makePhoneBackup, readPhoneBackup, restorePhoneBackup, type ReadBackup } from './src/app/phoneBackup';
+import {
+  describeTeamsBackup,
+  makePhoneBackup,
+  makeTeamsBackup,
+  readAnyBackup,
+  restorePhoneBackup,
+  type ReadTeamsBackup,
+} from './src/app/storage/phoneBackup';
 import { addTestSeason } from './src/app/testSeason';
 import { currentDistribution } from './src/app/distribution';
 import { seedFor, shouldAutoSeed, storeContents } from './src/app/demoSeed';
@@ -29,7 +36,9 @@ import {
   matchIsUnderway,
   openDestination,
   whenLabel,
+  competitionLabel,
 } from './src/app/fixtures';
+import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
 import { currentQuarter, periodNounPlural } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
@@ -72,9 +81,56 @@ import {
   type SavedSession,
   type SessionInput,
 } from './src/app/persistence';
-import { openStoredSession, saveSessionIfWritable } from './src/app/sessionStore';
-import { forgetAppData } from './src/app/forget';
-import { createDeviceStore } from './src/app/storage';
+import { openStoredSession, saveSessionIfWritable } from './src/app/storage/sessionStore';
+import { createDeviceStore } from './src/app/storage/storage';
+import {
+  addTeam,
+  bringBackTeam,
+  forgetEveryTeam,
+  openTeam,
+  openTeams,
+  readOnlyStore,
+  removeTeam,
+  restoreTeams,
+  teamStore,
+  teamSummaries,
+  teamsForBackup,
+  parseTeamIndex,
+  TEAMS_INDEX_KEY,
+  type OpenedTeams,
+  type TeamIndex,
+  type TeamSummary,
+} from './src/app/storage/teams';
+import { readTeamRow, sameTeamName } from './src/app/teamRows';
+import {
+  PROMPT_QUIET_MS,
+  SEASON_PROMPT_KEY,
+  currentSeason,
+  ledgerForSeason,
+  newSeasonPromptDue,
+  nextAgeGroup,
+  nextSeasonName,
+  seasonBegan,
+  seasonLine,
+  seasonName,
+  seasonNameFor,
+  seasonOfMatch,
+  seasonsOf,
+  sideCounts,
+  playedIn,
+} from './src/app/seasons';
+import { TEAM_FORMATS } from './src/app/teamRows';
+import {
+  NewSeasonPrompt,
+  OffFormatCard,
+  PastSeasonScreen,
+  SeasonSection,
+  StartSeasonScreen,
+  type NewSeason,
+  type PastMatchRow,
+} from './src/screens/Seasons';
+import { AddTeamScreen, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
+import type { KeyValueStore } from './src/app/persistence';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
 import { PLAY_NOW_ROUTE, routeFormat, startOnRoute, type MatchRoute } from './src/app/matchRoute';
@@ -115,11 +171,16 @@ import {
   setPlayerFairness,
   setMatchKind,
   visibleLedger,
+  saveSeason,
+  startSeason,
+  stillToPlay,
+  setFormatCounted,
+  FIRST_SEASON_ID,
   type ImportChoice,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
-import { ledgerWriter, openStoredLedger } from './src/app/ledgerStore';
+import { ledgerWriter, openStoredLedger } from './src/app/storage/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
 import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
 import {
@@ -131,7 +192,7 @@ import {
   type SquadOption,
 } from './src/app/squadMatch';
 import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
-import { installDeviceSigner } from './src/app/deviceKey';
+import { installDeviceSigner } from './src/app/storage/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
 import { absentIds, beforeKickoff, fillSquadAtKickoff, pickablePlayers } from './src/app/absence';
@@ -157,7 +218,7 @@ import {
   withTestSpeed,
 } from './src/app/testMatches';
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
-import { scoreWithRecord, type Score } from './src/app/matchRecord';
+import { scoreFromEvents, scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
 import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
 import { provenanceOf, provenances } from './src/app/provenance';
@@ -276,11 +337,48 @@ function scoresWithRecord(
   return out;
 }
 
-export default function App() {
-  const store = useMemo(() => createDeviceStore(), []);
+/**
+ * One team's app (ADR-022 D2): everything below works on "the" squad, given
+ * that team's store. The shell (`App`, at the foot) picks the team.
+ */
+function TeamApp({
+  store,
+  forgetAll,
+  readOnlyReason = null,
+  team = null,
+  initial = null,
+  resumeOnOpen = false,
+  notice = null,
+}: {
+  /** This team's view of the device store (`teamStore`), or the read-only root. */
+  store: KeyValueStore;
+  /** Forget everything on the phone, every team included (#207). */
+  forgetAll: () => void;
+  /** Set when the move into teams could not prove its copy (ADR-022 D3): nothing is saved. */
+  readOnlyReason?: string | null;
+  /** #224: this team among the phone's teams; null when read-only. */
+  team?: {
+    badge: number;
+    count: number;
+    /** Every team on the phone, set-aside ones included (QA D2). */
+    forgetCount: number;
+    /** The other teams' names, set-aside ones included (QA D9). */
+    otherNames: readonly string[];
+    onSwitch: () => void;
+    onRemove: () => void;
+    /** #224 AC7: every team on the phone in one backup file, and its restore (ADR-022 D4). */
+    backupAll: () => Promise<{ text: string; skipped: number }>;
+    restoreAll: (read: ReadTeamsBackup) => Promise<string[]>;
+  } | null;
+  /** #224 AC5: a team just added, with its name and first season, opened for the first time. */
+  initial?: NewTeam | null;
+  /** #224 T3: opened from the team list, so a match on goes straight to its clock, not the Resume screen. */
+  resumeOnOpen?: boolean;
+  /** Said once as the team opens: what a first-screen restore could not bring back (QA, c4516e3). */
+  notice?: string | null;
+}) {
   // #208 AC6: each analytics table's sort, remembered on this phone. Forget
   // everything removes it from the store and starts the memory afresh.
-  const [sortsForgotten, setSortsForgotten] = useState(0);
 
   // The tap sheet's pictures (#185): loaded at launch so the first tap on
   // Saturday does not show empty stickers. A failure costs the pictures, not
@@ -294,11 +392,18 @@ export default function App() {
   // --- first open (#218) ----------------------------------------------------
   /** The coach closed Getting started: a view choice on this phone, never in the record (AC7). */
   const [cardClosed, setCardClosed] = useState(false);
+  /** #243 Q2: "Not yet" on the August prompt quiets it until then. A view choice, never in the record. */
+  const [promptQuietUntil, setPromptQuietUntil] = useState<number | null>(null);
+  /** #243 AC6: the past season open, read-only. */
+  const [pastSeasonId, setPastSeasonId] = useState<UUID | null>(null);
   /** A short message at the foot of the screen; Undo when it has one. Screen state only. */
   const [toast, setToast] = useState<{ id: number; text: string; onUndo?: () => void; ms: number } | null>(null);
   const showToast = useCallback((text: string, onUndo?: () => void) => {
     setToast((t) => ({ id: (t?.id ?? 0) + 1, text, onUndo, ms: onUndo ? UNDO_MS : TOAST_MS }));
   }, []);
+  useEffect(() => {
+    if (notice) showToast(notice);
+  }, [notice, showToast]);
   // A timer that only takes a message away: it holds no value (invariant 2).
   useEffect(() => {
     if (!toast) return;
@@ -398,6 +503,16 @@ export default function App() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   /** What every screen sees: matches marked a test or void left out (#194). */
   const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
+  // #243 AC1, AC5 (ADR-022 D6): the season the team is in, and the figures
+  // of that season alone. With no season started this is the whole record,
+  // so every figure is as it was.
+  const season = useMemo(() => currentSeason(ledger ?? { seasons: [] }), [ledger]);
+  const seasonView = useMemo(
+    () => (viewLedger ? ledgerForSeason(viewLedger, season.id) : null),
+    [viewLedger, season.id]
+  );
+  /** A new fixture's season (#243 AC11): absent in the first season, so its record is as before. */
+  const newSeasonId = season.id === FIRST_SEASON_ID ? undefined : season.id;
   const [testMatchMessage, setTestMatchMessage] = useState('');
   const [ledgerMessage, setLedgerMessage] = useState('');
   // #195 (QA N1): a verified file waiting on the coach's choice of how its children line up.
@@ -406,7 +521,7 @@ export default function App() {
   // #192: back up this app, and restore it.
   const [backupMessage, setBackupMessage] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
-  const [pendingBackup, setPendingBackup] = useState<ReadBackup | null>(null);
+  const [pendingBackup, setPendingBackup] = useState<ReadTeamsBackup | null>(null);
   /** Bumped after a restore, to run the launch again over what was restored. */
   const [launchKey, setLaunchKey] = useState(0);
   /**
@@ -455,8 +570,17 @@ export default function App() {
       // this launch writes is signed. Without one, recording goes on unsigned.
       await installDeviceSigner();
 
+      // ADR-022 D3: the move into teams did not prove its copy, so the
+      // phone's data is open where it was and nothing may be written.
+      if (readOnlyReason !== null) {
+        sessionWritableRef.current = false;
+        ledgerBlockedRef.current = true;
+        setSessionMessage(readOnlyReason);
+      }
+
       // #218: whether the coach closed Getting started on this phone.
       const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
+      const quietRaw = await store.getItem(SEASON_PROMPT_KEY).catch(() => null);
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -469,6 +593,7 @@ export default function App() {
       const opened = await openStoredLedger(store, appNow());
       if (cancelled) return;
       setCardClosed(parseCardClosed(closedRaw));
+      setPromptQuietUntil(quietRaw !== null && Number.isFinite(Number(quietRaw)) ? Number(quietRaw) : null);
       if (!openedSession.writable) sessionWritableRef.current = false;
       if (openedSession.message !== '') setSessionMessage(openedSession.message);
       if (!opened.writable) ledgerBlockedRef.current = true;
@@ -520,7 +645,7 @@ export default function App() {
       // into the ledger here as it is played; the session goes on as if it
       // had been loaded, and the save after launch writes it.
       // The store build's seed also carries its screenshots' states (#226).
-      if (shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
+      if (initial === null && shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
         const seeded = seedFor(currentDistribution())(
           saved,
           ledgerRef.current,
@@ -532,6 +657,32 @@ export default function App() {
       }
 
       if (!saved) {
+        // #224 AC5: a team just added opens with its name, format and first
+        // season; the rest is a fresh install's (AC4).
+        if (initial !== null) {
+          const firstFormat = formatForShape(initial.shape, null);
+          setSquadName(initial.name);
+          setFormat(firstFormat);
+          const seasoned = ledgerRef.current
+            ? saveSeason(
+                ledgerRef.current,
+                {
+                  id: FIRST_SEASON_ID,
+                  name: initial.seasonName,
+                  mainSide: initial.side,
+                  ageGroup: initial.ageGroup,
+                  level: initial.level,
+                },
+                appNow()
+              )
+            : null;
+          if (seasoned?.ok) commitLedger(seasoned.ledger);
+          void saveSessionIfWritable(
+            store,
+            sessionWritableRef.current,
+            sessionInput({ squadName: initial.name, format: firstFormat })
+          );
+        }
         setStep('fixtures');
         return;
       }
@@ -887,6 +1038,7 @@ export default function App() {
           opponent: draft.opponent,
           competition: draft.competition,
           kickoffAt: draft.kickoffAt,
+          seasonId: newSeasonId,
           excludeFromStats: draft.excludeFromStats,
         },
         appNow
@@ -905,7 +1057,7 @@ export default function App() {
       persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
     },
-    [squadId, format, matches, persist, match, squad]
+    [squadId, format, matches, persist, match, squad, newSeasonId]
   );
 
   /**
@@ -1076,6 +1228,7 @@ export default function App() {
         totalMinutes,
         periodCount,
         players: squad,
+        seasonId: newSeasonId,
         // #194: a test match from Settings, on its own clock, never recorded.
         ...(test === true ? { test: newTestMark(appNow().getTime()) } : {}),
       },
@@ -1084,7 +1237,7 @@ export default function App() {
     releaseMatch({ engine: engineFor(held.state), ...held });
     setSubPlan([]);
     setStep('lineup');
-  }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch]);
+  }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch, newSeasonId]);
 
   const playNow = useCallback(() => {
     if (squadReadiness(squad, format.onFieldCount).ready) {
@@ -1124,6 +1277,12 @@ export default function App() {
     setPending(null);
   }, [pending]);
 
+  // #224 T3: a team reopened from the team list goes straight back to its
+  // match, as Resume would; the Resume screen is for a cold launch.
+  useEffect(() => {
+    if (resumeOnOpen && step === 'resume' && pending) resume();
+  }, [resumeOnOpen, step, pending, resume]);
+
   /**
    * Leave the resume prompt without resuming and without ending anything.
    *
@@ -1161,16 +1320,26 @@ export default function App() {
   const backUpApp = useCallback(async () => {
     setBackupBusy(true);
     const label = currentBuildLabel();
-    const text = makePhoneBackup(
-      toSavedSession({ ...sessionInput(), now: appNow() }),
-      ledgerRef.current,
-      { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
-      appNow()
-    );
+    // #224 AC7: every team, read as stored; a read-only phone backs up what it shows.
+    const all = team ? await team.backupAll() : null;
+    const text =
+      all?.text ??
+      makePhoneBackup(
+        toSavedSession({ ...sessionInput(), now: appNow() }),
+        ledgerRef.current,
+        { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
+        appNow()
+      );
     const outcome = await exportBackupFile(text, appNow());
     setBackupBusy(false);
-    setBackupMessage(outcome.ok ? '' : outcome.reason);
-  }, [sessionInput]);
+    setBackupMessage(
+      !outcome.ok
+        ? outcome.reason
+        : all && all.skipped > 0
+          ? `${all.skipped} ${all.skipped === 1 ? 'team' : 'teams'} could not be read and ${all.skipped === 1 ? 'is' : 'are'} not in the file.`
+          : ''
+    );
+  }, [sessionInput, team]);
 
   /** #192 AC2, AC5: read and check a backup; nothing changes until the coach confirms. */
   const pickBackup = useCallback(async () => {
@@ -1182,7 +1351,7 @@ export default function App() {
       return;
     }
     if (picked.text === null) return; // cancelled
-    const read = readPhoneBackup(picked.text);
+    const read = readAnyBackup(picked.text);
     if (!read.ok) {
       setBackupMessage(read.reason);
       return;
@@ -1202,10 +1371,17 @@ export default function App() {
     setPendingBackup(null);
     setBackupBusy(true);
     setStep('loading');
-    const outcome = await restorePhoneBackup(store, backup, appNow());
+    // #224 AC7, ADR-022 D4: every team in the file; a 1.x file into this team.
+    let problems: string[];
+    if (team) {
+      problems = await team.restoreAll(backup);
+    } else {
+      const outcome = await restorePhoneBackup(store, backup.teams[0].backup, appNow());
+      problems = outcome.ok ? [] : [outcome.reason];
+    }
     setBackupBusy(false);
-    if (!outcome.ok) {
-      setBackupMessage(outcome.reason);
+    if (problems.length > 0 && problems.length === backup.teams.length) {
+      setBackupMessage(problems.join(' '));
       setStep('settings');
       return;
     }
@@ -1221,9 +1397,13 @@ export default function App() {
     setPlayers([]);
     setMatches([]);
     setSquadErrand('home');
-    setBackupMessage('Restored. What was on this phone before is kept aside, unchanged.');
+    setBackupMessage(
+      problems.length > 0
+        ? `Restored, except: ${problems.join(' ')} What was on this phone before is kept aside, unchanged.`
+        : 'Restored. What was on this phone before is kept aside, unchanged.'
+    );
     setLaunchKey((k) => k + 1);
-  }, [pendingBackup, store]);
+  }, [pendingBackup, store, team]);
 
   /**
    * The squad changed on the Squad screen. A player taken out before ever
@@ -1447,43 +1627,83 @@ export default function App() {
   );
 
   const forgetEverything = useCallback(() => {
-    // Every key this app owns, copies kept aside included (#207): this is how
-    // a phone is handed on, and children's data must not stay behind. The
-    // confirm text says to back up first.
-    void forgetAppData(store);
-    // Cleared above: nothing is left for the session block (#173) to protect.
-    sessionWritableRef.current = true;
-    setSessionMessage('');
-    const nextSquadId = uuid();
-    // A fresh, empty ledger rather than none, so the next match is recorded.
-    const fresh = emptyLedger(nextSquadId, PLACEHOLDER_SQUAD_NAME, appNow());
-    // Cleared above, so nothing newer is left to protect.
-    ledgerBlockedRef.current = false;
-    ledgerRef.current = fresh;
-    setLedger(fresh);
-    setLedgerMessage('');
-    setMatch(null);
-    setPending(null);
-    setSubPlan([]);
-    setPlayers([]);
-    setMatches([]);
-    setSquadId(nextSquadId);
-    setFormat(makeSevenASideFormat());
-    setSquadName(PLACEHOLDER_SQUAD_NAME);
-    setSquadErrand('home');
-    setStep('fixtures');
-    setSortsForgotten((n) => n + 1);
-    // #218 Q4: a forgotten phone is a fresh install, Getting started included
-    // (its key went with the rest above).
-    setCardClosed(false);
-    wasAllDone.current = null;
-    showToast(FORGOTTEN_TOAST);
-  }, [store, showToast]);
+    // Every key this app owns, every team's and the copies kept aside included
+    // (#207, #224 AC10): this is how a phone is handed on, and children's data
+    // must not stay behind. The confirm text says to back up first. The shell
+    // closes this team before anything is removed, so no save from it can land
+    // after the forget and bring the team back (QA D1).
+    forgetAll();
+  }, [forgetAll]);
 
   /** Change the DEFAULT shape. Saved fixtures keep the shape they were saved with. */
   const setDefaultShape = useCallback((shape: ShapeCode) => {
     setFormat((current) => formatForShape(shape, current));
   }, []);
+
+  // --- seasons (#243) ---------------------------------------------------------
+
+  /** AC9, Q7: the first season's age group, level and name, saved only now. */
+  const confirmFirstSeason = useCallback(
+    (name: string, ageGroup: string, level: 'development' | 'competitive') =>
+      applyToLedger((l) =>
+        saveSeason(l, { id: FIRST_SEASON_ID, name, mainSide: season.mainSide, ageGroup, level }, appNow())
+      ),
+    [applyToLedger, season.mainSide]
+  );
+
+  /** AC9: the main format set later, by the coach. */
+  const setSeasonSide = useCallback(
+    (side: number) =>
+      applyToLedger((l) =>
+        saveSeason(
+          l,
+          { id: season.id, name: season.name, mainSide: side, ageGroup: season.ageGroup, level: season.level },
+          appNow()
+        )
+      ),
+    [applyToLedger, season]
+  );
+
+  /** AC4: a new season, from now; the last one is kept, read-only. New fixtures default to its format. */
+  /** Fixtures still to be played: they move into a season started now (Rob, 27 Oct: "season by play"). */
+  const upcomingIds = useMemo(() => {
+    const listed = matches
+      .filter((m) => m.match.status === 'planned' && !isTestMatch(m.match) && !matchIsUnderway(m.quarters))
+      .map((m) => m.match.id);
+    // The record has the last word, so the count shown is what moves (QA D4).
+    return ledger ? stillToPlay(ledger, listed) : listed;
+  }, [matches, ledger]);
+
+  const startNewSeason = useCallback(
+    (next: NewSeason): string | null => {
+      const id = uuid();
+      // The record decides what is still to be played, not the phone's copy (QA D1).
+      const moving = new Set(ledgerRef.current ? stillToPlay(ledgerRef.current, upcomingIds) : []);
+      const refused = applyToLedger((l) =>
+        startSeason(
+          l,
+          { id, name: next.name, mainSide: next.side, ageGroup: next.ageGroup, level: next.level },
+          [...moving],
+          appNow()
+        )
+      );
+      if (refused !== null) return refused;
+      // The phone's own copy follows, so a fixture not yet in the record moves too.
+      setMatches((all) => all.map((m) => (moving.has(m.match.id) ? { ...m, match: { ...m.match, seasonId: id } } : m)));
+      setDefaultShape(next.shape);
+      setStep('fixtures');
+      showToast(`${next.name} started. ${seasonName(season)} is kept, read-only, under Settings › Season. Nothing was deleted.`);
+      return null;
+    },
+    [applyToLedger, setDefaultShape, showToast, season, upcomingIds]
+  );
+
+  /** Q2: "Not yet" brings the prompt back in a week. */
+  const quietSeasonPrompt = useCallback(() => {
+    const until = appNow().getTime() + PROMPT_QUIET_MS;
+    setPromptQuietUntil(until);
+    void store.setItem(SEASON_PROMPT_KEY, String(until)).catch(() => undefined);
+  }, [store]);
 
   /** The engine changes the live match in place; this repaints after an absence mark. */
   const [, repaint] = useReducer((n: number) => n + 1, 0);
@@ -1953,6 +2173,28 @@ export default function App() {
     ) : null;
   })();
 
+  /** #243 AC8 (8A): an off-format match's card on its report, or null. */
+  const formatCardFor = (matchId: UUID): ReactNode => {
+    if (!viewLedger || ledgerBlockedRef.current) return null;
+    const m = playedIn(viewLedger).find((x) => x.id === matchId);
+    if (!m) return null;
+    const sv = ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, matchId));
+    const side = seasonSide(sv);
+    const own = sideOf(m);
+    if (side === null || own === null || own === side) return null;
+    const its = seasonsOf(viewLedger).find((s) => s.id === sv.viewSeason) ?? season;
+    return (
+      <OffFormatCard
+        seasonName={seasonName(its)}
+        seasonSide={side}
+        ownSide={own}
+        counted={m.formatCount?.counted === true}
+        countedNote={m.formatCount?.note ?? null}
+        onCount={(counted, note) => applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()))}
+      />
+    );
+  };
+
   const body = (() => {
     if (effectiveStep === 'loading') {
       return (
@@ -2019,6 +2261,67 @@ export default function App() {
     // Each match's kick-off, for ruling E: who was in the squad for it.
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
 
+    if (effectiveStep === 'seasonStart' && ledger) {
+      // AC4: the last season's format, unless the team's default fits it better.
+      const ownShape = shapeOfFormat(format);
+      const fits = TEAM_FORMATS.find((f) => f.shape === ownShape && (season.mainSide === null || f.side === season.mainSide));
+      const bySide = TEAM_FORMATS.find((f) => f.side === season.mainSide);
+      return (
+        <StartSeasonScreen
+          from={season}
+          fromMatches={playedIn(seasonView ?? { matches: [] }).length}
+          players={squad.length}
+          defaultName={nextSeasonName(season.name) || seasonNameFor(appNow())}
+          defaultAge={nextAgeGroup(season.ageGroup) ?? 'U10'}
+          defaultShape={(fits ?? bySide ?? TEAM_FORMATS[2]).shape}
+          upcoming={upcomingIds.length}
+          onStart={startNewSeason}
+          onCancel={() => setStep('settings')}
+        />
+      );
+    }
+
+    if (effectiveStep === 'seasonPast' && pastSeasonId && viewLedger && ledger) {
+      const pastSeason = seasonsOf(ledger).find((s) => s.id === pastSeasonId);
+      const pastView = ledgerForSeason(viewLedger, pastSeasonId);
+      if (pastSeason) {
+        const side = seasonSide(pastView);
+        const rows: PastMatchRow[] = playedIn(pastView)
+          .sort((a, b) => (b.kickoffAt ?? '').localeCompare(a.kickoffAt ?? ''))
+          .map((m) => {
+            const sc = m.events ? scoreFromEvents(m.events) : null;
+            const own = sideOf(m);
+            return {
+              id: m.id,
+              title: `${m.kickoffAt ? whenLabel(new Date(m.kickoffAt), appNow()) : 'Date not recorded'} · ${m.opponent ?? 'Opponent not recorded'}`,
+              detail: [competitionLabel(m.competition) || 'League', own ? `${own}-a-side` : null].filter(Boolean).join(' · '),
+              score: sc ? `${sc.us}–${sc.them}` : '',
+              leftOut: isOffFormat(m, side),
+            };
+          });
+        return (
+          <PastSeasonScreen
+            season={pastSeason}
+            current={season}
+            figures={
+              <MinutesSection
+                ledger={pastView}
+                players={players}
+                kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
+                message=""
+                busy={false}
+                onExport={() => undefined}
+                onImport={() => undefined}
+                readOnly
+              />
+            }
+            matches={rows}
+            onBack={() => setStep('settings')}
+          />
+        );
+      }
+    }
+
     if (effectiveStep === 'record' && recordPage) {
       const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
       return (
@@ -2040,7 +2343,8 @@ export default function App() {
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={viewLedger}
+          // Its averages are its own season's (#243 AC5, AC6).
+          ledger={viewLedger && ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, match.state.match.id))}
           kickoffs={kickoffs()}
           now={appNow()}
           // Ruling D: after the last period, the coach closes the match here.
@@ -2056,6 +2360,7 @@ export default function App() {
           }}
           trust={provenanceOf(viewLedger, match.state.match.id)}
           awards={liveAwards}
+          formatCard={formatCardFor(match.state.match.id)}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
             setRecordReturn('summary');
@@ -2081,7 +2386,8 @@ export default function App() {
           state={match.state}
           format={match.format}
           players={playersForMatch(players, match.state.appearances)}
-          ledger={viewLedger}
+          // Its averages are its own season's (#243 AC5, AC6).
+          ledger={viewLedger && ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, match.state.match.id))}
           kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
           onBack={() => setStep(analysisReturn)}
@@ -2093,6 +2399,51 @@ export default function App() {
       return (
         <SettingsScreen
           squadName={squadName}
+          season={
+            ledger && !ledgerBlockedRef.current ? (
+              <SeasonSection
+                season={season}
+                began={seasonBegan(season, seasonView ?? { matches: [] })}
+                matches={playedIn(seasonView ?? { matches: [] }).length}
+                sides={sideCounts(seasonView ?? { matches: [] })}
+                past={seasonsOf(ledger)
+                  .slice(0, -1)
+                  .reverse()
+                  .map((s) => ({
+                    season: s,
+                    matches: viewLedger
+                      ? playedIn(ledgerForSeason(viewLedger, s.id)).length
+                      : 0,
+                  }))}
+                firstName={seasonNameFor(new Date(seasonBegan(season, seasonView ?? { matches: [] }) ?? appNow().getTime()))}
+                onConfirmFirst={confirmFirstSeason}
+                onSetMainSide={setSeasonSide}
+                onStart={() => setStep('seasonStart')}
+                onOpenPast={(id) => {
+                  setPastSeasonId(id);
+                  setStep('seasonPast');
+                }}
+              />
+            ) : null
+          }
+          team={
+            team
+              ? {
+                  count: team.count,
+                  forgetCount: team.forgetCount,
+                  otherNames: team.otherNames,
+                  onSwitch: team.onSwitch,
+                  // T7: a team whose match is on cannot be removed until it ends.
+                  onRemove: () => {
+                    if (!(liveReal && matchIsUnderway(liveReal.state.quarters))) team.onRemove();
+                  },
+                  removeBlocked:
+                    liveReal && matchIsUnderway(liveReal.state.quarters)
+                      ? 'A team with a match on cannot be removed until that match ends.'
+                      : null,
+                }
+              : null
+          }
           onSquadName={setSquadName}
           totalMinutes={totalMinutes}
           periodCount={periodCount}
@@ -2105,7 +2456,7 @@ export default function App() {
           minutes={
             <>
               <MinutesSection
-                ledger={viewLedger}
+                ledger={seasonView}
                 players={players}
                 kickoffs={kickoffTimes(withLiveMatch(real, liveReal))}
                 message={ledgerMessage}
@@ -2167,7 +2518,7 @@ export default function App() {
             <BackupSection
               message={backupMessage}
               busy={backupBusy}
-              pending={pendingBackup ? describeBackup(pendingBackup.preview) : null}
+              pending={pendingBackup ? describeTeamsBackup(pendingBackup) : null}
               onBackup={() => void backUpApp()}
               onPick={() => void pickBackup()}
               onConfirm={() => void restoreBackup()}
@@ -2236,7 +2587,8 @@ export default function App() {
           squadId={squadId}
           players={players}
           played={playedPlayerIds([...matches, ...(match ? [match.state] : [])])}
-          ledger={viewLedger}
+          ledger={seasonView}
+          seasonName={ledger ? seasonName(season) : null}
           kickoffs={kickoffs()}
           onPlayers={changeSquad}
           fairness={squadFairness}
@@ -2333,6 +2685,16 @@ export default function App() {
     return (
       <FixturesScreen
         squadName={squadName}
+        header={
+          team ? (
+            <TeamChip
+              name={squadName}
+              badge={team.badge}
+              season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
+              onPress={team.onSwitch}
+            />
+          ) : undefined
+        }
         matches={listedFixtures(real, showArchived)
           .map((m) => m.match)
           // #194: a match marked a test or void is on no screen.
@@ -2391,6 +2753,15 @@ export default function App() {
         // Neither shows on a phone with a real squad that has played (AC6).
         guide={
           <>
+            {ledger &&
+              !ledgerBlockedRef.current &&
+              newSeasonPromptDue(seasonBegan(season, seasonView ?? { matches: [] }), appNow(), promptQuietUntil) && (
+                <NewSeasonPrompt
+                  name={seasonName(season)}
+                  onStart={() => setStep('seasonStart')}
+                  onNotYet={quietSeasonPrompt}
+                />
+              )}
             {isMadeUpTeam(players, everyMatch) && <MadeUpBanner onSettings={() => goToTab('settings')} />}
             {showCard(cardClosed, startProgress) && (
               <GettingStartedLine
@@ -2421,7 +2792,8 @@ export default function App() {
     <SafeAreaProvider>
     <SafeAreaView style={screen.safe}>
       {/* #143 AC9: a centred column on a wide screen; a phone is narrower, so unchanged. */}
-      <TableSortProvider key={sortsForgotten} store={store} remember={sortsForgotten === 0}>
+      {/* A team's sorts are its own: the team remounts after a switch or a forget (#224). */}
+      <TableSortProvider store={store} remember>
         <View style={screen.column}>
           {testBanner}
           {body}
@@ -2431,6 +2803,303 @@ export default function App() {
       {tab !== null && <TabBar active={tab} onSelect={goToTab} />}
       <StatusBar style="light" />
     </SafeAreaView>
+    </SafeAreaProvider>
+  );
+}
+
+/**
+ * The shell (#224, ADR-022 D2): opens the device store, moves a phone from
+ * before teams into its first team once (D3), and opens one team at a time.
+ * Each team mounts afresh (`key`), so no team's state can reach another.
+ * It owns the team list (AC1), Add a team (AC5), "No teams on this phone
+ * yet" (AC6) and Remove (AC9); every screen inside a team is unaware of
+ * the others.
+ */
+export default function App() {
+  const root = useMemo(() => createDeviceStore(), []);
+  const [opened, setOpened] = useState<OpenedTeams | null>(null);
+  const [summaries, setSummaries] = useState<TeamSummary[]>([]);
+  const [sheet, setSheet] = useState<'switch' | 'remove' | null>(null);
+  const [adding, setAdding] = useState(false);
+  /** The team just added, opened for the first time with its name and season. */
+  const [initial, setInitial] = useState<NewTeam | null>(null);
+  /** Said by the team a first-screen restore opens, when part of the file could not be restored. */
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+
+  const show = useCallback(
+    async (index: TeamIndex | null) => {
+      if (index === null) return;
+      const active = index.teams.find((t) => t.id === index.current && t.removedAt === null);
+      setOpened(active ? { kind: 'team', teamId: active.id, index, moved: false } : { kind: 'none', index });
+      setSummaries(await teamSummaries(root, index, readTeamRow));
+    },
+    [root]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void openTeams(root, appNow(), uuid).then(async (o) => {
+      if (cancelled) return;
+      // The demo and the store screenshots (#146, #226) open on their made-up
+      // team, seeded into a first team made for them. The coach's app and the
+      // beta open on "No teams on this phone yet" (#224 AC6).
+      const showcase = currentDistribution() === 'demo' || currentDistribution() === 'store';
+      if (o.kind === 'none' && o.index.teams.length === 0 && showcase) {
+        const made = await addTeam(root, uuid(), appNow());
+        if (cancelled || made === null) return setOpened(o);
+        return show(made);
+      }
+      setOpened(o);
+      if (o.kind !== 'read-only') setSummaries(await teamSummaries(root, o.index, readTeamRow));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, show]);
+
+  const teamId = opened?.kind === 'team' ? opened.teamId : null;
+  const store = useMemo(
+    () => (teamId !== null ? teamStore(root, teamId) : readOnlyStore(root)),
+    [root, teamId]
+  );
+
+  const openSwitcher = useCallback(() => {
+    // The list is read afresh, so a name or season changed in this team shows.
+    if (opened && opened.kind !== 'read-only') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);
+    setSheet('switch');
+  }, [opened, root]);
+
+  /** #224 T3: the open team was opened from the list, not at launch. */
+  const [switched, setSwitched] = useState(false);
+  /** What "No teams on this phone yet" says after a Forget everything (#207). */
+  const [forgotten, setForgotten] = useState(false);
+
+  const forgetAll = useCallback(() => {
+    // QA D1: close the team first, so nothing it saves can follow the forget.
+    setRestoreNotice(null);
+    setInitial(null);
+    setSwitched(false);
+    setSummaries([]);
+    setForgotten(true);
+    setOpened({ kind: 'none', index: { version: 1, current: null, teams: [] } });
+    void forgetEveryTeam(root, null, appNow());
+  }, [root]);
+
+  const switchTo = useCallback(
+    (id: UUID) => {
+      setSheet(null);
+      if (id === teamId) return;
+      setRestoreNotice(null);
+      setInitial(null);
+      setSwitched(true);
+      void openTeam(root, id).then(show);
+    },
+    [root, teamId, show]
+  );
+
+  const add = useCallback(
+    (t: NewTeam) => {
+      const id = uuid();
+      setRestoreNotice(null);
+      setAdding(false);
+      setInitial(t);
+      void addTeam(root, id, appNow()).then(show);
+    },
+    [root, show]
+  );
+
+  const bringBack = useCallback(
+    (id: UUID) => {
+      setSheet(null);
+      setRestoreNotice(null);
+      setInitial(null);
+      setSwitched(true);
+      void bringBackTeam(root, id).then(show);
+    },
+    [root, show]
+  );
+
+  /** Rob, 29 Oct: with no team, restore from a backup on the first screen. */
+  const [firstRestore, setFirstRestore] = useState<{
+    busy: boolean;
+    message: string;
+    pending: ReadTeamsBackup | null;
+  }>({ busy: false, message: '', pending: null });
+
+  const pickFirstBackup = useCallback(async () => {
+    setFirstRestore({ busy: true, message: '', pending: null });
+    const picked = await pickLedgerFile();
+    if (!picked.ok) return setFirstRestore({ busy: false, message: picked.reason, pending: null });
+    if (picked.text === null) return setFirstRestore({ busy: false, message: '', pending: null }); // cancelled
+    const read = readAnyBackup(picked.text);
+    setFirstRestore(
+      read.ok ? { busy: false, message: '', pending: read } : { busy: false, message: read.reason, pending: null }
+    );
+  }, []);
+
+  const restoreFirstBackup = useCallback(async () => {
+    const read = firstRestore.pending;
+    if (!read) return;
+    setFirstRestore({ busy: true, message: '', pending: null });
+    // QA D7: a 1.x file goes back into the team of that name, if there is one.
+    const teamFor = (name: string) => summaries.find((t) => sameTeamName(t.name, name))?.id ?? uuid();
+    const problems = await restoreTeams(root, read, null, appNow(), teamFor);
+    const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+    const message = problems.length > 0 ? `Restored, except: ${problems.join(' ')}` : '';
+    setForgotten(false);
+    setInitial(null);
+    setSwitched(false);
+    // Said where it will be seen: by the team that opens, else on this screen.
+    const opens = index?.teams.some((t) => t.id === index.current && t.removedAt === null) ?? false;
+    setFirstRestore({ busy: false, message: opens ? '' : message, pending: null });
+    setRestoreNotice(opens && message !== '' ? message : null);
+    await show(index);
+  }, [firstRestore.pending, root, show, summaries]);
+
+  /** QA D9: the confirm says which set-aside team a 1.x file would replace. */
+  const describeFirstRestore = (read: ReadTeamsBackup) => {
+    const said = describeTeamsBackup(read);
+    if (read.teams.length !== 1 || read.teams[0].id !== null) return said;
+    const same = summaries.find((t) => sameTeamName(t.name, read.teams[0].backup.preview.squadName));
+    return same ? `${said} It replaces ${same.name}, set aside on this phone; its data is kept aside first.` : said;
+  };
+
+  const remove = useCallback(() => {
+    setSheet(null);
+    if (teamId === null) return;
+    setInitial(null);
+    setRestoreNotice(null);
+    void removeTeam(root, teamId, appNow()).then(show);
+  }, [root, teamId, show]);
+
+  const frame = (body: ReactNode) => (
+    <SafeAreaProvider>
+      <SafeAreaView style={screen.safe}>
+        <View style={screen.column}>{body}</View>
+        <StatusBar style="light" />
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+
+  if (opened === null) {
+    return frame(
+      <View style={[screen.pane, screen.centre]}>
+        <ActivityIndicator color="#ffffff" />
+      </View>
+    );
+  }
+
+  const listed = summaries.filter((t) => !t.removed);
+  if (adding) {
+    return frame(
+      <AddTeamScreen
+        // QA D9: set-aside teams' names are taken too; one could be brought back.
+        otherNames={summaries.map((t) => t.name)}
+        defaultSeasonName={seasonNameFor(appNow())}
+        onAdd={add}
+        onCancel={() => setAdding(false)}
+        cancelLabel={teamId === null ? 'Back to start' : 'Back'}
+      />
+    );
+  }
+  if (opened.kind === 'none') {
+    return frame(
+      <NoTeamsScreen
+        aside={summaries.filter((t) => t.removed)}
+        notice={forgotten ? FORGOTTEN_TOAST : null}
+        onAdd={() => {
+          setForgotten(false);
+          setAdding(true);
+        }}
+        onBringBack={bringBack}
+        restore={
+          <BackupSection
+            restoreOnly
+            message={firstRestore.message}
+            busy={firstRestore.busy}
+            pending={firstRestore.pending ? describeFirstRestore(firstRestore.pending) : null}
+            onBackup={() => undefined}
+            onPick={() => void pickFirstBackup()}
+            onConfirm={() => void restoreFirstBackup()}
+            onCancel={() => setFirstRestore((r) => ({ ...r, pending: null }))}
+          />
+        }
+      />
+    );
+  }
+
+  const here = summaries.find((t) => t.id === teamId);
+  // One provider for the team and its sheets: a second one beside the team
+  // would take half the screen. The sheets are Modals, outside the layout.
+  return (
+    <SafeAreaProvider>
+      <TeamApp
+        key={teamId ?? 'read-only'}
+        store={store}
+        forgetAll={forgetAll}
+        readOnlyReason={opened.kind === 'read-only' ? opened.reason : null}
+        team={
+          opened.kind === 'team'
+            ? {
+                badge: here?.badge ?? 0,
+                count: listed.length,
+                forgetCount: summaries.length,
+                otherNames: summaries.filter((t) => t.id !== teamId).map((t) => t.name),
+                onSwitch: openSwitcher,
+                backupAll: async () => {
+                  const index = opened.kind === 'team' ? opened.index : null;
+                  if (!index) return { text: '', skipped: 0 };
+                  const { parts, skipped } = await teamsForBackup(root, index);
+                  const label = currentBuildLabel();
+                  return {
+                    text: makeTeamsBackup(
+                      parts,
+                      { app: isBetaBuild(label) ? 'Heart FC Beta Coach' : 'Heart FC Coach', build: label },
+                      appNow()
+                    ),
+                    skipped: skipped.length,
+                  };
+                },
+                restoreAll: async (read) => {
+                  const problems = await restoreTeams(root, read, teamId, appNow());
+                  const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+                  if (index && teamId !== null) {
+                    // The same team stays open (same key, no remount); the list gains any team added.
+                    setOpened({ kind: 'team', teamId, index, moved: false });
+                    setSummaries(await teamSummaries(root, index, readTeamRow));
+                  }
+                  return problems;
+                },
+                onRemove: () => {
+                  // Its current name, as the coach will type it.
+                  if (opened.kind === 'team') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);
+                  setSheet('remove');
+                },
+              }
+            : null
+        }
+        initial={initial}
+        resumeOnOpen={switched}
+        notice={restoreNotice}
+      />
+      <TeamSwitcher
+          visible={sheet === 'switch'}
+          teams={summaries}
+          currentId={teamId}
+          onOpen={switchTo}
+          onAdd={() => {
+            setSheet(null);
+            setAdding(true);
+          }}
+          onBringBack={bringBack}
+          onClose={() => setSheet(null)}
+        />
+        <RemoveTeamSheet
+          visible={sheet === 'remove'}
+          name={here?.name ?? ''}
+          onRemove={remove}
+          onClose={() => setSheet(null)}
+        />
     </SafeAreaProvider>
   );
 }
