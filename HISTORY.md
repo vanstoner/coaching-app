@@ -438,3 +438,12 @@ analysis, iOS". Entries are added as each release ships.
     the phone. Restoring it replaces each team the phone already has (its
     data set aside first, as before), adds the others, and leaves alone any
     team not in the file. A backup from 1.x restores into the open team.
+- **29 October — Heart FC Coach 2.0.1: Played in date order (#251).** Rob,
+  after a Play now match: it went to the bottom of Played, not the top. A
+  Play now match has no planned kick-off, and Played sorted by kick-off
+  alone, so it sat with the undated. Its card already showed when it was
+  played (#126); Played now sorts by that same date, most recent first, with
+  ties in one fixed order. A match known only from the record, without a
+  kick-off, still has no date (the record keeps no clock time for a period)
+  and stays last. Release 2.0.0 is frozen as a fixture, in the team layout
+  2.0.0 phones use (#167).

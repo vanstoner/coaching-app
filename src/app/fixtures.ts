@@ -146,6 +146,7 @@ export function fixtureList(
     if (ta === null) return 1;
     if (tb === null) return -1;
     // Soonest first when looking forward, most recent first when looking back.
+    // Played re-sorts by the date each card shows (`mostRecentFirst`, #251).
     return a.bucket === 'past' ? tb - ta : ta - tb;
   });
 }
@@ -185,15 +186,30 @@ export function kickoffLabel(
   now: Date,
   periods: readonly StartedPeriod[] = []
 ): string {
-  const planned = match.kickoffAt ? new Date(match.kickoffAt) : null;
+  const at = playedAt(match, periods);
+  return whenLabel(at === null ? null : new Date(at), now);
+}
+
+/**
+ * The date a card shows, as a time: the planned kick-off, else when the
+ * first period started (#126). Null when neither is known. Played sorts by
+ * it, so a Play now match sits where it was played (#251).
+ */
+export function playedAt(match: { kickoffAt: string | null }, periods: readonly StartedPeriod[] = []): number | null {
+  const planned = match.kickoffAt ? Date.parse(match.kickoffAt) : NaN;
+  if (Number.isFinite(planned)) return planned;
   const started = firstStartedAt(periods);
-  const at =
-    planned && !Number.isNaN(planned.getTime())
-      ? planned
-      : started
-        ? new Date(started)
-        : null;
-  return whenLabel(at, now);
+  const t = started ? Date.parse(started) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Played's order (#251): most recent first by the date each card shows,
+ * undated last; a tie goes by id, so no card swaps places between visits.
+ */
+export function mostRecentFirst<T extends { key: string; at: number | null }>(items: readonly T[]): T[] {
+  const byDate = (a: T, b: T) => (a.at === null ? (b.at === null ? 0 : 1) : b.at === null ? -1 : b.at - a.at);
+  return [...items].sort((a, b) => byDate(a, b) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
 /** "Sat 12 Sep · 10:30", the year added only when it is not this one; "Date TBC" for none. */

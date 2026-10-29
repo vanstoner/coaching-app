@@ -16,7 +16,9 @@ import {
   lengthLabel,
   matchIsUnderway,
   matchProgress,
+  mostRecentFirst,
   opponentLabel,
+  playedAt,
   fixtureOpenLabel,
 } from './fixtures';
 
@@ -389,5 +391,67 @@ describe('fixtureOpenLabel: the card\'s open action, apart from its links (#226)
     expect(fixtureOpenLabel(['Trial Town', 'Sat 17 Oct', null, false, undefined, '', 'W 3 – 1'])).toBe(
       'Open Trial Town, Sat 17 Oct, W 3 – 1'
     );
+  });
+});
+
+describe('Played sorts by the date each card shows (#251)', () => {
+  const at = (iso: string) => Date.parse(iso);
+  const started = (iso: string) => [{ index: 1, startedAt: iso }];
+
+  it('AC1: the sort date is the shown date: planned kick-off, else the first period start', () => {
+    const planned = fixture({ kickoffAt: '2026-09-12T10:00:00Z', status: 'completed' });
+    expect(playedAt(planned, started('2026-09-12T10:04:00Z'))).toBe(at('2026-09-12T10:00:00Z'));
+    const playNow = fixture({ kickoffAt: null, status: 'completed' });
+    expect(playedAt(playNow, started('2026-09-19T08:00:00Z'))).toBe(at('2026-09-19T08:00:00Z'));
+    expect(kickoffLabel(playNow, NOW, started('2026-09-19T08:00:00Z'))).toBe(
+      kickoffLabel(fixture({ kickoffAt: '2026-09-19T08:00:00Z' }), NOW)
+    );
+    // The earliest period, whatever order the periods come in.
+    expect(
+      playedAt(playNow, [
+        { index: 2, startedAt: '2026-09-19T08:20:00Z' },
+        { index: 1, startedAt: '2026-09-19T08:00:00Z' },
+      ])
+    ).toBe(at('2026-09-19T08:00:00Z'));
+  });
+
+  it('AC2, AC3: a Play now match played today goes above earlier weeks, record-only matches among them', () => {
+    const items = mostRecentFirst([
+      { key: 'week-1', at: at('2026-09-05T10:00:00Z') },
+      { key: 'play-now', at: playedAt(fixture({ kickoffAt: null }), started('2026-09-19T08:00:00Z')) },
+      { key: 'record-only', at: playedAt({ kickoffAt: '2026-09-12T10:00:00Z' }) },
+    ]);
+    expect(items.map((i) => i.key)).toEqual(['play-now', 'record-only', 'week-1']);
+  });
+
+  it('AC3, AC4: a match with neither date (a record-only Play now match among them) goes last', () => {
+    expect(playedAt({ kickoffAt: null })).toBeNull();
+    expect(playedAt(fixture({ kickoffAt: null }), [{ index: 1, startedAt: null }])).toBeNull();
+    const items = mostRecentFirst([
+      { key: 'undated', at: null },
+      { key: 'dated', at: at('2026-09-05T10:00:00Z') },
+    ]);
+    expect(items.map((i) => i.key)).toEqual(['dated', 'undated']);
+  });
+
+  it('AC5: ties and undated matches keep one order, whatever order they arrive in', () => {
+    const same = at('2026-09-12T10:00:00Z');
+    const a = [
+      { key: 'b', at: same },
+      { key: 'a', at: same },
+      { key: 'z', at: null },
+      { key: 'y', at: null },
+    ];
+    const once = mostRecentFirst(a).map((i) => i.key);
+    expect(once).toEqual(['a', 'b', 'y', 'z']);
+    expect(mostRecentFirst([...a].reverse()).map((i) => i.key)).toEqual(once);
+  });
+
+  it('AC6: Coming up is unchanged: soonest first by planned kick-off, undated last', () => {
+    const later = fixture({ kickoffAt: '2026-09-26T10:00:00Z' });
+    const sooner = fixture({ kickoffAt: '2026-09-20T10:00:00Z' });
+    const undated = fixture({ kickoffAt: null });
+    const rows = inBucket(fixtureList([undated, later, sooner], NOW), 'future');
+    expect(rows.map((r) => r.match.id)).toEqual([sooner.id, later.id, undated.id]);
   });
 });

@@ -58,7 +58,9 @@ const kickoffTime = (m: { kickoffAt: string | null }): number | null => {
 
 /**
  * Every completed match in the record with no fixture among `fixtureIds`,
- * most recent first, undated last — the order Played uses (`fixtureList`).
+ * most recent first, undated last. The record holds no clock time for a
+ * period, so the date is the planned kick-off; Played merges these with this
+ * phone's by the date each card shows (`playedAt`, #251).
  */
 export function recordOnlyMatches(ledger: Ledger | null, fixtureIds: ReadonlySet<UUID>): RecordOnlyMatch[] {
   if (!ledger) return [];
