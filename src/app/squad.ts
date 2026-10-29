@@ -7,20 +7,20 @@
  * Invariant 4 is enforced here, not merely documented
  * ---------------------------------------------------------------------------
  *
- * These are children. The model holds a first name and nothing else: no
- * surname, no date of birth, no contact details, no photo. `validateName`
- * rejects anything that looks like more than a first name, so the rule is a
- * gate a coach meets at the point of entry rather than a line in a document
- * nobody reads.
+ * These are children. The model holds a name and nothing else: no surname
+ * field, no date of birth, no contact details, no photo. First names are the
+ * default (Rob, 26 Oct, #54): one word is added at once; a name of more than
+ * one word ("Alex S", "Alex Smith", "The Cat") is allowed only after the
+ * coach confirms a warning that says why. `validateName` reports it as
+ * `more-than-one-word`, never as ok, so no path can save it unconfirmed.
  *
- * Rejecting "Alex Smith" is deliberate and will occasionally annoy. That is the
- * correct trade: a surname typed once is a surname in the data forever, and
- * ADR-011 keeps all of this on the device precisely because it cannot be
- * un-leaked afterwards.
+ * A surname typed once is kept in the phone's record and every backup, and
+ * ADR-011 keeps all of this on the device because it cannot be un-leaked; so
+ * the warning recommends an initial first.
  *
  * Two children called Alex is the normal case, not an error — real squads have
- * them. They are disambiguated by a `displaySuffix` the coach controls, which
- * is what the domain model already provides.
+ * them. A confirmed name is split at the first space into `firstName` and a
+ * `displaySuffix` (Ada, #54 AC7), which is how two of them are told apart.
  */
 
 import { uuid } from '../types/index';
@@ -32,7 +32,8 @@ export const MAX_NAME_LENGTH = 16;
 export type NameRejection =
   | 'empty'
   | 'too-long'
-  | 'looks-like-a-full-name'
+  /** Allowed, but only after the coach confirms (#54 AC2, AC3): see `nameWarning`. */
+  | 'more-than-one-word'
   | 'not-a-name';
 
 export interface NameCheck {
@@ -65,14 +66,6 @@ export function validateName(raw: string): NameCheck {
       message: `Keep it to ${MAX_NAME_LENGTH} characters.`,
     };
   }
-  if (cleaned.includes(' ')) {
-    return {
-      ok: false,
-      cleaned,
-      reason: 'looks-like-a-full-name',
-      message: 'First names only — no surnames. This app never stores them.',
-    };
-  }
   // At least one letter. Rejects "123" and punctuation-only input without
   // trying to enumerate which letters a name may contain.
   if (!/\p{L}/u.test(cleaned)) {
@@ -83,8 +76,57 @@ export function validateName(raw: string): NameCheck {
       message: 'That does not look like a name.',
     };
   }
+  if (cleaned.includes(' ')) {
+    return {
+      ok: false,
+      cleaned,
+      reason: 'more-than-one-word',
+      message: `“${cleaned}” is more than a first name`,
+    };
+  }
 
   return { ok: true, cleaned, message: '' };
+}
+
+/** What the warning for a name of more than one word offers (#54 AC2; Dee's prototype). */
+export interface NameWarning {
+  /** The first word and the second word's initial: "Alex S". The recommended choice. */
+  initial: string;
+  /** The second word is already an initial ("Alex S", "Alex S."): no "Keep" button is needed. */
+  isInitial: boolean;
+}
+
+/** For a cleaned name of more than one word. */
+export function nameWarning(cleaned: string): NameWarning {
+  const [first, ...rest] = cleaned.split(' ');
+  const second = rest.join(' ');
+  const letter = [...second].find((c) => /\p{L}/u.test(c)) ?? '';
+  return {
+    initial: letter === '' ? first : `${first} ${letter.toLocaleUpperCase()}`,
+    isInitial: /^\p{L}\.?$/u.test(second),
+  };
+}
+
+/**
+ * A confirmed name as stored (#54 AC7, Ada): split at the first space into
+ * `firstName` and `displaySuffix`. The record already holds both fields, so
+ * nothing about its format changes.
+ */
+export function splitName(cleaned: string): { firstName: string; displaySuffix: string | null } {
+  const at = cleaned.indexOf(' ');
+  return at < 0
+    ? { firstName: cleaned, displaySuffix: null }
+    : { firstName: cleaned.slice(0, at), displaySuffix: cleaned.slice(at + 1) };
+}
+
+/**
+ * Another player already shown by this name (#54 AC4), so the coach can be
+ * offered an initial. Matching ignores case; `selfId` is the child being
+ * renamed.
+ */
+export function sameNameAs(players: Player[], name: string, selfId: UUID | null = null): Player | undefined {
+  const wanted = name.toLocaleLowerCase();
+  return players.find((p) => p.id !== selfId && displayName(p).toLocaleLowerCase() === wanted);
 }
 
 /** Build a Player. The only field carrying anything about a child is the name. */

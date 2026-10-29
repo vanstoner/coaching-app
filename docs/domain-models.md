@@ -18,8 +18,8 @@ type UUID = string & { readonly __brand: 'UUID' };  // uuid(): Hermes-safe, no c
 ```ts
 interface Player {
   id: UUID; squadId: UUID;
-  firstName: string;              // validateName: trimmed, ≤16 chars, ONE word (invariant 4)
-  displaySuffix: string | null;   // ≤2 chars, to tell two Alexes apart
+  firstName: string;              // validateName: trimmed; the first word of a confirmed name (#54, invariant 4)
+  displaySuffix: string | null;   // the rest of a confirmed name ("S", "Van Stone"); whole name ≤16 chars (#54)
   squadNumber: number | null;
   active: boolean;                // false = retired; kept forever, never deleted once played
   createdAt: string;

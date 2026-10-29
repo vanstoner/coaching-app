@@ -70,8 +70,9 @@ it's a test version, Google needs Rob to add you first.
 
 ## Getting started (both phones)
 
-1. Open the app and add your squad. **First names only.** The app never asks
-   for surnames, birthdays or photos, and you shouldn't add them.
+1. Open the app and add your squad. **First names are best.** For two
+   children with the same name, add an initial ("Alex S"). The app never asks
+   for surnames, birthdays or photos, and warns before saving a longer name.
 2. Add your next fixture, then press **Play now** when you kick off. The app
    tells you who's due off.
 3. After the match, the **Played** list and the season tables show everyone's

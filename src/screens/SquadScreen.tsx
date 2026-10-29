@@ -66,6 +66,8 @@ import {
   preferenceSummary,
   removePlayer,
   restorePlayer,
+  sameNameAs,
+  splitName,
   squadReadiness,
   validateName,
 } from '../app/squad';
@@ -76,6 +78,7 @@ import { provenances, withoutReconstructed } from '../app/provenance';
 import { VIEW_TITLE, squadViews, type SquadView } from '../app/squadViews';
 import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
+import { MoreThanFirstName } from './NameWarning';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
 import { MADE_UP_GUARD, emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
@@ -153,6 +156,14 @@ export function SquadScreen({
   const [error, setError] = useState('');
   /** The name waiting on the made-up guard's answer; screen state only. */
   const [asking, setAsking] = useState<string | null>(null);
+  /**
+   * #54: a name waiting on the coach. `more`: more than one word, which is
+   * only saved once the coach picks a button. `same`: another child is
+   * already shown by this name, so an initial is offered first.
+   */
+  const [naming, setNaming] = useState<
+    { kind: 'more'; cleaned: string } | { kind: 'same'; name: string; other: string } | null
+  >(null);
   /** "Keep exploring" was chosen: not asked again while this screen is open. */
   const [keptExploring, setKeptExploring] = useState(false);
   const onTab = onStartMatch === null && onLeave === null;
@@ -179,26 +190,59 @@ export function SquadScreen({
   ).map((r) => r.player);
   const back = () => setPages((stack) => stack.slice(0, -1));
 
+  /** The name is settled: add the child (through the made-up guard if it applies). */
+  const commit = useCallback(
+    (name: string) => {
+      setNaming(null);
+      if (onClearMadeUp && !keptExploring) {
+        setAsking(name);
+        setError('');
+        return;
+      }
+      const { firstName, displaySuffix } = splitName(name);
+      onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]);
+      setDraft('');
+      setError('');
+      nameInput.current?.focus();
+    },
+    [everyone, onPlayers, squadId, onClearMadeUp, keptExploring]
+  );
+
+  /** #54 AC4: a second child shown by the same name is offered an initial first. */
+  const settle = useCallback(
+    (name: string) => {
+      const other = sameNameAs(everyone, name);
+      if (other) setNaming({ kind: 'same', name, other: displayName(other) });
+      else commit(name);
+    },
+    [everyone, commit]
+  );
+
+  // #54 AC3: Add and the keyboard's Enter both come here, so a name of more
+  // than one word is never saved without the coach's choice.
   const add = useCallback(() => {
     const check = validateName(draft);
+    if (check.reason === 'more-than-one-word') {
+      setError('');
+      setNaming({ kind: 'more', cleaned: check.cleaned });
+      return;
+    }
     if (!check.ok) {
       setError(check.message);
       return;
     }
-    if (onClearMadeUp && !keptExploring) {
-      setAsking(check.cleaned);
-      setError('');
-      return;
-    }
-    onPlayers([...everyone, makePlayer(squadId, check.cleaned)]);
-    setDraft('');
-    setError('');
+    settle(check.cleaned);
+  }, [draft, settle]);
+
+  const changeIt = () => {
+    setNaming(null);
     nameInput.current?.focus();
-  }, [draft, everyone, onPlayers, squadId, onClearMadeUp, keptExploring]);
+  };
 
   const keepExploring = () => {
     if (asking === null) return;
-    onPlayers([...everyone, makePlayer(squadId, asking)]);
+    const { firstName, displaySuffix } = splitName(asking);
+    onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]);
     setKeptExploring(true);
     setAsking(null);
     setDraft('');
@@ -250,7 +294,7 @@ export function SquadScreen({
         <View style={screen.pane}>
           <Text style={screen.title}>Squad</Text>
           {seasonName !== null && <Text style={screen.caption}>{seasonName}</Text>}
-          <Text style={screen.hint}>First names only. Nothing leaves this phone.</Text>
+          <Text style={screen.hint}>First names are best. Nothing leaves this phone.</Text>
 
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
@@ -277,6 +321,8 @@ export function SquadScreen({
                 onChangeText={(t) => {
                   setDraft(t);
                   if (error) setError('');
+                  // A changed name is checked afresh when added.
+                  if (naming) setNaming(null);
                 }}
                 placeholder="First name"
                 placeholderTextColor={colours.inkFaint}
@@ -299,6 +345,31 @@ export function SquadScreen({
 
             {error !== '' && <Text style={screen.error}>{error}</Text>}
 
+            {naming?.kind === 'more' && <MoreThanFirstName cleaned={naming.cleaned} onUse={settle} onChange={changeIt} />}
+            {naming?.kind === 'same' && (
+              <View style={local.guard}>
+                <Text style={local.guardText}>
+                  You already have {naming.other}. Add an initial so you can tell them apart.
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setDraft(`${naming.name} `);
+                    changeIt();
+                  }}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>Add an initial</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => commit(naming.name)}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+                >
+                  <Text style={screen.buttonLabel}>Add as “{naming.name}” anyway</Text>
+                </Pressable>
+              </View>
+            )}
             {asking !== null && (
               <View style={local.guard}>
                 <Text style={local.guardText}>{MADE_UP_GUARD.question}</Text>

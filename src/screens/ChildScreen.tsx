@@ -35,7 +35,10 @@ import {
   KEEPER_LABEL,
   UNIT_PREF_LABEL,
   displayName,
+  sameNameAs,
   setKeeperPreference,
+  splitName,
+  validateName,
   setUnitPreference,
 } from '../app/squad';
 import { OUTFIELD_TARGET_CHOICES, setOutfieldTarget } from '../app/outfieldTarget';
@@ -43,6 +46,7 @@ import { Chip, ChipRow } from './Chip';
 import { AverageBar, ColumnChart, KeyItem, UnitStack, chartColours, type Column } from './Charts';
 import { Picked, UnitKey } from './SquadViews';
 import { colours, screen } from './theme';
+import { MoreThanFirstName, guard } from './NameWarning';
 
 export function ChildScreen({
   player,
@@ -105,6 +109,7 @@ export function ChildScreen({
         <Text style={screen.title} numberOfLines={1}>
           {name}
         </Text>
+        <Rename player={player} everyone={everyone} onPlayers={onPlayers} />
         {player.keeper === 'main' && <Text style={screen.caption}>{KEEPER_LABEL.main}</Text>}
 
         {/* AC6: Playing time first and always; the order is `lensCards`. */}
@@ -425,6 +430,7 @@ function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairnes
 }
 
 const local = StyleSheet.create({
+  rename: { alignSelf: 'stretch', marginBottom: 8 },
   card: {
     alignSelf: 'stretch',
     marginTop: 14,
@@ -479,3 +485,96 @@ const local = StyleSheet.create({
   key: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', alignSelf: 'stretch' },
   unitText: { alignSelf: 'stretch', color: colours.ink, fontSize: 15, includeFontPadding: false, marginTop: 8 },
 });
+
+/**
+ * #54 AC6, AC8: rename a child. The same check and warning as Squad › Add;
+ * the id, minutes and history never change, and the save writes a new
+ * `player` record (latest wins, the earlier one stays in the chain).
+ */
+function Rename({
+  player,
+  everyone,
+  onPlayers,
+}: {
+  player: Player;
+  everyone: Player[];
+  onPlayers: (p: Player[]) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [more, setMore] = useState<string | null>(null);
+  const [same, setSame] = useState<{ name: string; other: string } | null>(null);
+  const close = () => {
+    setDraft(null);
+    setError('');
+    setMore(null);
+    setSame(null);
+  };
+  const commit = (name: string) => {
+    const { firstName, displaySuffix } = splitName(name);
+    onPlayers(everyone.map((p) => (p.id === player.id ? { ...p, firstName, displaySuffix } : p)));
+    close();
+  };
+  const settle = (name: string) => {
+    setMore(null);
+    const other = sameNameAs(everyone, name, player.id);
+    if (other) setSame({ name, other: displayName(other) });
+    else commit(name);
+  };
+  const save = () => {
+    const check = validateName(draft ?? '');
+    if (check.reason === 'more-than-one-word') return setMore(check.cleaned);
+    if (!check.ok) return setError(check.message);
+    settle(check.cleaned);
+  };
+  if (draft === null) {
+    return (
+      <Pressable onPress={() => setDraft(displayName(player))} style={screen.linkHit} accessibilityRole="button">
+        <Text style={screen.link}>Rename</Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={local.rename}>
+      <TextInput
+        style={screen.input}
+        value={draft}
+        onChangeText={(t) => {
+          setDraft(t);
+          setError('');
+          setMore(null);
+          setSame(null);
+        }}
+        autoFocus
+        autoCapitalize="words"
+        autoCorrect={false}
+        returnKeyType="done"
+        onSubmitEditing={save}
+        accessibilityLabel="New name"
+      />
+      <Text style={screen.hint}>Every match shows the new name. Minutes don&apos;t change.</Text>
+      {error !== '' && <Text style={screen.error}>{error}</Text>}
+      {more !== null && <MoreThanFirstName cleaned={more} onUse={settle} onChange={() => setMore(null)} />}
+      {same !== null && (
+        <View style={guard.box}>
+          <Text style={guard.text}>You already have {same.other}. Add an initial so you can tell them apart.</Text>
+          <Pressable
+            onPress={() => commit(same.name)}
+            accessibilityRole="button"
+            style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
+          >
+            <Text style={screen.buttonLabel}>Use “{same.name}” anyway</Text>
+          </Pressable>
+        </View>
+      )}
+      {more === null && same === null && (
+        <Pressable onPress={save} accessibilityRole="button" style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}>
+          <Text style={screen.buttonLabel}>Save the name</Text>
+        </Pressable>
+      )}
+      <Pressable onPress={close} style={screen.linkHit} accessibilityRole="button">
+        <Text style={screen.link}>Cancel</Text>
+      </Pressable>
+    </View>
+  );
+}

@@ -52,6 +52,7 @@ import {
   makePlayer,
   playedPlayerIds,
   playersForMatch,
+  splitName,
   squadReadiness,
 } from './src/app/squad';
 import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
@@ -2139,7 +2140,9 @@ function TeamApp({
         setSubPlan([]);
       }
       if (out.ledger && out.ledger !== ledgerRef.current) commitLedger(out.ledger);
-      const nextPlayers = [...out.players, makePlayer(squadId, firstName)];
+      // #54: a confirmed name of more than one word keeps its second part as the suffix.
+      const named = splitName(firstName);
+      const nextPlayers = [...out.players, makePlayer(squadId, named.firstName, named.displaySuffix)];
       setPlayers(nextPlayers);
       setMatches(out.matches);
       persist({

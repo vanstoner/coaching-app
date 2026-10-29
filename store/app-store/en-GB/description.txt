@@ -39,7 +39,7 @@ EASY TO START
 • Test matches from Settings, at up to ten times speed, never touch your real figures.
 
 PRIVATE BY DESIGN
-• First names only: no surnames, dates of birth, contact details or photos.
+• First names by default, with an initial to tell two children apart. No place for surnames, dates of birth, contact details or photos.
 • Everything stays on your phone. No account, no server, no analytics, no adverts and no tracking.
 • Included in your phone's own backup, held in your own Apple account. Back up to one file whenever you choose.
 

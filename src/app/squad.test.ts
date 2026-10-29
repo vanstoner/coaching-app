@@ -11,6 +11,9 @@ import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import {
   validateName,
+  nameWarning,
+  splitName,
+  sameNameAs,
   makePlayer,
   displayName,
   hasDuplicateName,
@@ -31,14 +34,46 @@ import {
 const squadId = uuid();
 const P = (name: string, suffix: string | null = null) => makePlayer(squadId, name, suffix);
 
-describe('invariant 4 — first names only, no PII', () => {
-  it('rejects anything with a second word, which is almost always a surname', () => {
-    for (const input of ['Alex Smith', 'Jo  Bloggs', ' Sam Jones ', 'Casey Van Stone']) {
+describe('invariant 4 — first names by default, no PII fields (#54)', () => {
+  it('never passes a second word as ok: it needs the coach to confirm a warning', () => {
+    for (const input of ['Alex Smith', 'Jo  Bloggs', ' Sam Jones ', 'Casey Van Stone', 'The Cat', 'Alex S']) {
       const r = validateName(input);
-      expect(r.ok, `${input} must be rejected`).toBe(false);
-      expect(r.reason).toBe('looks-like-a-full-name');
-      expect(r.message).toMatch(/surname/i);
+      expect(r.ok, `${input} must not pass unconfirmed`).toBe(false);
+      expect(r.reason).toBe('more-than-one-word');
+      expect(r.message).toBe(`“${r.cleaned}” is more than a first name`);
     }
+  });
+
+  it('the warning recommends an initial, and knows when the second word already is one', () => {
+    expect(nameWarning('Alex Smith')).toEqual({ initial: 'Alex S', isInitial: false });
+    expect(nameWarning('Casey Van Stone')).toEqual({ initial: 'Casey V', isInitial: false });
+    expect(nameWarning('The Cat')).toEqual({ initial: 'The C', isInitial: false });
+    expect(nameWarning('Alex S')).toEqual({ initial: 'Alex S', isInitial: true });
+    expect(nameWarning('Alex s.')).toEqual({ initial: 'Alex S', isInitial: true });
+    expect(nameWarning('Zoë élan')).toEqual({ initial: 'Zoë É', isInitial: false });
+  });
+
+  it('a confirmed name is split at the first space into first name and suffix (AC7)', () => {
+    expect(splitName('Alex')).toEqual({ firstName: 'Alex', displaySuffix: null });
+    expect(splitName('Alex S')).toEqual({ firstName: 'Alex', displaySuffix: 'S' });
+    expect(splitName('Casey Van Stone')).toEqual({ firstName: 'Casey', displaySuffix: 'Van Stone' });
+    const p = P('Casey', 'Van Stone');
+    expect(displayName(p)).toBe('Casey Van Stone');
+  });
+
+  it('the 16-character limit covers the whole name as shown, second word included (AC5)', () => {
+    expect(validateName('Casey Van Stone').reason).toBe('more-than-one-word');
+    expect(validateName('Alexandra Smithers').reason).toBe('too-long');
+  });
+
+  it('a second child shown by the same name is found, case aside, so an initial can be offered (AC4)', () => {
+    const alex = P('Alex');
+    const alexS = P('Alex', 'S');
+    expect(sameNameAs([alex, alexS], 'alex')).toBe(alex);
+    expect(sameNameAs([alex, alexS], 'Alex S')).toBe(alexS);
+    expect(sameNameAs([alex, alexS], 'Alex T')).toBeUndefined();
+    // Renaming a child to its own name is not a clash.
+    expect(sameNameAs([alex], 'Alex', alex.id)).toBeUndefined();
   });
 
   it('accepts real first names that are not plain ASCII', () => {

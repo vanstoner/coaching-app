@@ -152,7 +152,7 @@ export interface Player {
   id: UUID;
   squadId: UUID;
   firstName: string; // First name only
-  displaySuffix: string | null; // Max 2 chars, for disambiguation
+  displaySuffix: string | null; // The rest of a confirmed name of more than one word (#54); the whole name is at most 16 characters
   squadNumber: number | null;
   active: boolean;
   createdAt: string;
