@@ -21,3 +21,16 @@ export function scoreBand(
   const { us, them } = scoreOf(events);
   return { us, them, text: `${us}–${them}`, label: `${squadName} ${us}, ${opponent} ${them}` };
 }
+
+/**
+ * #252 (Rob: "Half time" for halves; Dee's prototype): what the band says
+ * when play has stopped. Null while a period runs or before kick-off.
+ */
+export function bandCaption(quarters: readonly { index: number; status?: string }[], periodCount: number): string | null {
+  if (quarters.some((q) => q.status === 'running')) return null;
+  const ended = quarters.filter((q) => q.status === 'ended');
+  if (ended.length === 0) return null;
+  if (ended.length >= periodCount) return 'Full time';
+  if (periodCount === 2) return 'Half time';
+  return `End of Q${Math.max(...ended.map((q) => q.index))}`;
+}

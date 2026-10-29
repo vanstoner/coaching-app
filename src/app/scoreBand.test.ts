@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { uuid, type MatchEvent, type MatchEventKind, type UUID } from '../types/index';
 import { scoreOf } from './matchEvents';
-import { scoreBand, showsScoreBand } from './scoreBand';
+import { bandCaption, scoreBand, showsScoreBand } from './scoreBand';
 
 const matchId = uuid();
 const quarterId = uuid();
@@ -58,5 +58,19 @@ describe('the score band (#252)', () => {
     expect(clock.match(/<ScoreBand /g)?.length).toBe(2);
     expect(read('screens/LineupScreen.tsx')).toMatch(/<ScoreBand/);
     expect(read('types/index.ts')).not.toMatch(/\bscore\s*[?:]/);
+  });
+});
+
+describe('what the band says when play stops (#252; Rob: "Half time" for halves; QA G1)', () => {
+  const q = (index: number, status: string) => ({ index, status });
+  it('nothing while a period runs or before kick-off', () => {
+    expect(bandCaption([q(1, 'pending'), q(2, 'pending')], 2)).toBeNull();
+    expect(bandCaption([q(1, 'running'), q(2, 'pending')], 2)).toBeNull();
+  });
+  it('"Half time" in halves, "End of Q2" in quarters, "Full time" at the end', () => {
+    expect(bandCaption([q(1, 'ended'), q(2, 'pending')], 2)).toBe('Half time');
+    expect(bandCaption([q(1, 'ended'), q(2, 'ended'), q(3, 'pending'), q(4, 'pending')], 4)).toBe('End of Q2');
+    expect(bandCaption([q(1, 'ended'), q(2, 'ended')], 2)).toBe('Full time');
+    expect(bandCaption([q(1, 'ended'), q(2, 'ended'), q(3, 'ended'), q(4, 'ended')], 4)).toBe('Full time');
   });
 });

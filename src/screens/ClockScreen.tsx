@@ -82,7 +82,7 @@ import {
   timeStream,
 } from '../app/matchEvents';
 import { liveMove, liveSheet, reverseOf, type LiveMove } from '../app/teamSheet';
-import { scoreBand, showsScoreBand } from '../app/scoreBand';
+import { bandCaption, scoreBand, showsScoreBand } from '../app/scoreBand';
 import { ScoreBand } from './ScoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
@@ -421,7 +421,9 @@ export function ClockScreen({
         </View>
 
         {/* #252 AC3: at a break and at full time the pitch is not drawn, so the band sits under the strip. */}
-        {!running && showsScoreBand(state.quarters) && <ScoreBand text={band.text} label={band.label} />}
+        {!running && showsScoreBand(state.quarters) && (
+          <ScoreBand text={band.text} label={band.label} caption={bandCaption(state.quarters, state.match.quarterCount)} />
+        )}
 
         {/* #228 (PO ruling `both`): at full time the award card sits under the strip. */}
         {awards?.atFullTime && !fullTimeAwardsHidden && (

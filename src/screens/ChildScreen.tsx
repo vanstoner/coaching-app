@@ -559,6 +559,16 @@ function Rename({
         <View style={guard.box}>
           <Text style={guard.text}>You already have {same.other}. Add an initial so you can tell them apart.</Text>
           <Pressable
+            onPress={() => {
+              setDraft(`${same.name} `);
+              setSame(null);
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
+          >
+            <Text style={screen.buttonLabel}>Add an initial</Text>
+          </Pressable>
+          <Pressable
             onPress={() => commit(same.name)}
             accessibilityRole="button"
             style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}

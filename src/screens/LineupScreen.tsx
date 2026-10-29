@@ -79,7 +79,7 @@ import {
   type Sheet,
 } from '../app/teamSheet';
 import { Chip, ChipRow } from './Chip';
-import { scoreBand, showsScoreBand } from '../app/scoreBand';
+import { bandCaption, scoreBand, showsScoreBand } from '../app/scoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { ScoreBand } from './ScoreBand';
 import { PitchView } from './PitchView';
@@ -281,6 +281,7 @@ export function LineupScreen({
           {showsScoreBand(state.quarters) && (
             <ScoreBand
               {...scoreBand(state.events, squadName || PLACEHOLDER_SQUAD_NAME, opponentLabel(state.match))}
+              caption={bandCaption(state.quarters, state.match.quarterCount)}
               onPitch
             />
           )}

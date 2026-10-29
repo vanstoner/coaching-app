@@ -347,3 +347,11 @@ describe('Share plan: what it does first (#165, #226)', () => {
     expect(shareFirstStep(4, 'store')).toBe('grid');
   });
 });
+
+describe('the referee is never in the shared plan picture (#254 AC8)', () => {
+  it('the picture built from a match with a referee holds no trace of the name', () => {
+    const { format, players, plan } = setup();
+    const img = planImage({ match: { ...match(), referee: 'Sam Refwood' }, squadName: 'Heart FC', format, plan, players });
+    expect(JSON.stringify(img)).not.toContain('Refwood');
+  });
+});

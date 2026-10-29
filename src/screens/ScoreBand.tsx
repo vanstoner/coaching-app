@@ -10,15 +10,31 @@ import { Text } from './Text';
 
 import { colours } from './theme';
 
-export function ScoreBand({ text, label, onPitch = false }: { text: string; label: string; onPitch?: boolean }) {
+export function ScoreBand({
+  text,
+  label,
+  caption = null,
+  onPitch = false,
+}: {
+  text: string;
+  label: string;
+  /** "Half time", "End of Q2", "Full time" when play has stopped (`bandCaption`). */
+  caption?: string | null;
+  onPitch?: boolean;
+}) {
   return (
     <View
       style={[local.band, onPitch && local.onPitch]}
       pointerEvents="none"
       accessible
       accessibilityRole="text"
-      accessibilityLabel={label}
+      accessibilityLabel={caption ? `${caption}. ${label}` : label}
     >
+      {caption !== null && (
+        <Text style={local.caption} numberOfLines={1}>
+          {caption}
+        </Text>
+      )}
       <Text style={local.digits} numberOfLines={1}>
         {text}
       </Text>
@@ -39,6 +55,7 @@ const local = StyleSheet.create({
   },
   // Joined to the top of the formation box below it.
   onPitch: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0, marginBottom: -1 },
+  caption: { color: colours.ink, fontSize: 15, fontWeight: '600', includeFontPadding: false, marginTop: 2 },
   digits: {
     // A fixed box, never sized to the digits it shows (the clipped-glyph trap).
     width: 160,

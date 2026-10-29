@@ -18,7 +18,7 @@
  * Pure TypeScript. No minute is made here: minutes fold from intervals.
  */
 
-import type { Format, Player, UUID } from '../types/index';
+import type { Format, Match, Player, UUID } from '../types/index';
 import { isHidden, type Ledger, type LedgerFixture, type LedgerPlayer, type LedgerSettings } from './ledger';
 import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
@@ -96,6 +96,10 @@ export function fixtureFromRecord(
       competition: f.competition,
       kickoffAt: f.kickoffAt,
       excludeFromStats: f.excludeFromStats,
+      // #254 (QA D1): the pitch comes back with the fixture, a later build's value
+      // as written, so the next save writes it again rather than dropping it.
+      surface: (f.surface ?? undefined) as Match['surface'],
+      condition: (f.condition ?? undefined) as Match['condition'],
     },
     nowFn
   );

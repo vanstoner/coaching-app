@@ -139,3 +139,35 @@ describe('the referee is never shared (#254 AC8)', () => {
     }
   });
 });
+
+describe('the pitch survives a restore and an older build (#254 AC2, AC4, AC16; QA D1, G2)', () => {
+  it('a fixture rebuilt from the record keeps its surface and condition, a later build’s value as written', async () => {
+    const { fixtureFromRecord } = await import('./recordRestore');
+    const { toFixture: read } = await import('./ledgerSetup');
+    const back = fixtureFromRecord(
+      read({ type: 'fixture', id: uuid(), totalMinutes: 50, periodCount: 4, surface: '4g', condition: 'poor' })!,
+      kids,
+      squadId,
+      format,
+      () => NOW
+    );
+    expect(back.match).toMatchObject({ surface: '4g', condition: 'poor' });
+    // The next ordinary save writes them again, not a fixture without them.
+    expect(fixtureRecord({ match: back.match, format })).toMatchObject({ surface: '4g', condition: 'poor' });
+    const later = fixtureFromRecord(read({ type: 'fixture', id: uuid(), totalMinutes: 50, periodCount: 4, surface: 'indoor' })!, kids, squadId, format, () => NOW);
+    expect(fixtureRecord({ match: later.match, format })).toMatchObject({ surface: 'indoor' });
+  });
+
+  it('the released 1.2.0 reader opens a 2.1.0 record and keeps the fields it does not know', async () => {
+    const released = await import('./fixtures/reader-1.2.0/ledger');
+    const m = fixture({ surface: '3g', condition: 'good' });
+    const text = serialiseLedger(recordMatches(emptyLedger(squadId, 'Mock FC', NOW), [], kids, 'Mock FC', NOW, setup([m])));
+    const read = released.parseLedger(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const fixtureEntry = JSON.stringify(read.ledger.entries);
+    expect(fixtureEntry).toContain('"surface":"3g"');
+    expect(fixtureEntry).toContain('"condition":"good"');
+    expect(released.serialiseLedger(read.ledger)).toContain('"surface"');
+  });
+});
