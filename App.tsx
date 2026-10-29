@@ -2956,10 +2956,19 @@ export default function App() {
     await show(index);
   }, [firstRestore.pending, root, show, summaries]);
 
+  /** QA D9: the confirm says which set-aside team a 1.x file would replace. */
+  const describeFirstRestore = (read: ReadTeamsBackup) => {
+    const said = describeTeamsBackup(read);
+    if (read.teams.length !== 1 || read.teams[0].id !== null) return said;
+    const same = summaries.find((t) => sameTeamName(t.name, read.teams[0].backup.preview.squadName));
+    return same ? `${said} It replaces ${same.name}, set aside on this phone; its data is kept aside first.` : said;
+  };
+
   const remove = useCallback(() => {
     setSheet(null);
     if (teamId === null) return;
     setInitial(null);
+    setRestoreNotice(null);
     void removeTeam(root, teamId, appNow()).then(show);
   }, [root, teamId, show]);
 
@@ -3008,7 +3017,7 @@ export default function App() {
             restoreOnly
             message={firstRestore.message}
             busy={firstRestore.busy}
-            pending={firstRestore.pending ? describeTeamsBackup(firstRestore.pending) : null}
+            pending={firstRestore.pending ? describeFirstRestore(firstRestore.pending) : null}
             onBackup={() => undefined}
             onPick={() => void pickFirstBackup()}
             onConfirm={() => void restoreFirstBackup()}
