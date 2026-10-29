@@ -1,7 +1,7 @@
 # System architecture
 
-Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-27 (2.0.0 truth pass, #248; earlier #239)
+Status: **Current** (checked against the code of 2.1.0 at `64d145f`, 29 Oct 2026, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
+Last updated: 2026-10-29 (2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -16,15 +16,15 @@ One page. Where it and the code disagree, the code wins. Fix this page.
 | Storage | `@react-native-async-storage/async-storage` 3.1.1 | Behind `KeyValueStore` |
 | Safe areas | `react-native-safe-area-context` ~5.7.0 | The shell pads once; bottom sheets add the bottom inset (#174) |
 | Signing (#193) | `@noble/ed25519` 3.2, `@noble/hashes` 2.4 (pure TS); `expo-secure-store`, `expo-crypto` ~57.0.4 | Key made from `expo-crypto` bytes, kept in the Keystore/Keychain; the biometric permissions the store brings are blocked in `app.json` |
-| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot` | Minutes file and app backup export/import, Share plan image |
+| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot`, `expo-status-bar`, `@expo/vector-icons` | Minutes file and app backup export/import, Share plan image, the Barlow font, icons on the event buttons and Getting started |
 
-No navigation library, no state library, no network client. See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
+No navigation library, no state library, no network client. The one React Context is `TableSortProvider` (`src/screens/TableSort.tsx`), which remembers each table's sort: a view choice, not app state (ADR-019). See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
 
 ## Layout
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,000 lines
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,100 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it
@@ -64,18 +64,20 @@ sequenceDiagram
 - **All durable state lives in `App.tsx`** `useState`s: the shell (`App`) holds
   the team list and its sheets; `TeamApp` holds one team's state and is
   remounted on a switch, so no team's state reaches another. Screens receive
-  values and callbacks.
+  values and callbacks. Screens take the raw `Ledger`: ADR-017's gate
+  (`ledgerGate.ts`, `LedgerView`) is not built.
 - **The live match** is `{ engine, state, format }`. The engine mutates
   `state` in place; the shell then calls `persist()` (and `repaint()` where no
   other state changes).
 - **Time** is never counted. `getQuarterElapsedMs` = `accumulatedMs + now −
   runningSinceWallClock`. `ClockScreen` reschedules a `setTimeout` to the next
-  displayed second, only to repaint. `appNow()` (`src/app/appClock.ts`) is the
+  displayed second, and `MatchAnalysisScreen` runs a 1 s `setInterval`, both
+  only to repaint. `appNow()` (`src/app/appClock.ts`) is the
   single clock. A beta phone's stored offset is kept, but the Test kit no
   longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
   memory. The session's and the ledger's writes both run one at a time per
-  store (`inTurn`, `src/app/persistence.ts`; `src/app/storage/sessionStore.ts`).
+  store (`inTurn`, in `src/app/storage/sessionStore.ts` and `src/app/storage/ledgerStore.ts`).
 
 ## Storage
 
@@ -185,4 +187,7 @@ the app from every screen (#175).
 
 `APP_VARIANT=beta` (pull requests) gives Heart FC Beta Coach its own app id,
 icon and empty storage. `main` builds Heart FC Coach. Version from `app.json`,
-build numbers from CI run numbers (`app.config.js`).
+build numbers from CI run numbers (`app.config.js`). Before bundling, CI
+writes two modules the app reads: `generated-build-label.ts` (the build
+label, #52) and `generated-distribution.ts` (`app`, `beta`, `demo` or
+`store`, read by `src/app/distribution.ts`; anything else reads as `app`).

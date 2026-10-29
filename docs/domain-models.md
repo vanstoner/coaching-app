@@ -1,7 +1,7 @@
 # Domain models
 
-Status: **Draft**, retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-27 (2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
+Status: **Current** (checked against the code of 2.1.0 at `64d145f`, 29 Oct 2026, #259). First retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
+Last updated: 2026-10-29 (2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./archive/v1-specs/01-domain-model.md), archived
@@ -30,7 +30,15 @@ interface Player {
 ```
 
 - No surname, DOB, contact or photo field may be added (invariant 4).
+- First names by default (#54): a name of more than one word is saved only
+  after the coach confirms a warning, split at the first space into
+  `firstName` and `displaySuffix` (`splitName`). A rename keeps the id and
+  writes a new `player` record; latest wins.
 - A player who has played is retired, not deleted (`playedPlayerIds`).
+- `PlayerPositionAffinity` (`primary | secondary` per position) is read by
+  `suggestLineup`, but no screen passes any: the keeper preference
+  (`keeper`, #86) does that job. `Squad` and `Availability` are declared and
+  unused; availability is stored per match (below).
 
 ## Format and positions
 
@@ -62,6 +70,7 @@ interface Match {
   totalMinutes: number;       // default 50; offered 40, 50, 60, 75, 90 (40: #223)
   quarterCount: number;       // periods: 4 (quarters) or 2 (halves)
   status: MatchStatus; createdAt: string;
+  excludeFromStats?: boolean;               // #187: "Leave out" on the form; the record's `exclusion` takes over (ADR-020)
   test?: { clock: { offsetMs: number; speed: 1 | 5 | 10; sinceMs: number } }; // #194
   seasonId?: UUID;                          // 2.0.0, #243 AC11: the season it was made in; absent = first season
   surface?: '3g' | '4g' | 'grass';          // 2.1.0, #254: on the fixture record too
@@ -207,6 +216,7 @@ interface SavedSession {                    // key coaching-app/session/v1 (per 
   schemaVersion: number; minReaderVersion: number; savedAt: string;
   squadName: string; squadId: UUID; players: Player[];
   format: Format; totalMinutes: number; periodCount: number; buzzWhenSubDue: boolean;
+  plan: Record<string, UUID[]>;             // the old squad-level plan; this build writes {} (plans are per match, #72)
   matches: SavedMatch[]; currentMatchId: UUID | null;
   // + any unknown fields from a newer build, preserved on write
 }
@@ -233,6 +243,8 @@ interface Ledger {                          // key coaching-app/ledger/v2
 //             | exclusion (ADR-020) | device (#193) | match-kind (#194)
 //             | fixture | profile | settings (#195, ADR-021 D2)
 //             | season | format-count (2.0.0: #243, ADR-022 D5; Rob's ruling 8A)
+//             | origin (ADR-021 D2: read if a file carries one, never written by this build)
+// player   { id, firstName, displaySuffix, active }   // #54: displaySuffix null for a one-word name
 // fixture  { id, kickoffAt, opponent, competition, totalMinutes, periodCount, shape, labels[],
 //            excludeFromStats, state: 'planned' | 'cancelled', archived, note,
 //            season?,                     // 2.0.0: the season it was made in, kept by every save; absent = first season
@@ -267,8 +279,11 @@ interface Ledger {                          // key coaching-app/ledger/v2
   never by date. The current season is the latest started after the first; a
   season ends when the next starts. Every season figure folds from
   `ledgerForSeason`, which keeps only that season's matches and fixtures.
-  `Season` and `PlayerSeasonTotals` in `src/types/index.ts` predate this and
-  are unused: a season is a `LedgerSeason`.
+  A season is a `LedgerSeason`. **The code differs from ADR-022 D5 here
+  (#261 D4):** the ADR says `PlayerSeasonTotals` is deleted from
+  `src/types/index.ts` and `Season` redrawn without `squadId` and `endDate`;
+  both are still there as before, and nothing imports either. No figure is
+  stored per season either way. Removing them is the Engineer's (#261).
 - **Signed** (#193, ADR-021 D4): each install has an Ed25519 key in the
   platform's secure store and publishes its public key once in a `device`
   record. Its entries carry `device` and `sig` (over the entry without `hash`
