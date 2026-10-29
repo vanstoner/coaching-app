@@ -257,7 +257,8 @@ export function sortReportMinutes(rows: readonly ReportPlayer[], sort: TableSort
     if (key === 'total') return total;
     if (key === 'gk') return goal;
     if (key === 'out') return outfield;
-    if (key === 'delta') return wholeMinutes(r.deltaMs);
+    // Not in the share (#261 AC2): sorted after every figure, whichever way.
+    if (key === 'delta') return r.deltaMs === null ? null : wholeMinutes(r.deltaMs);
     return null;
   });
 }

@@ -245,7 +245,7 @@ describe('ties, blanks and the keeper, on rows made up here (AC4, AC5)', () => {
 
   it('vs fair: one straight descending order, +6 … 0 … −5 (ruling 4a)', () => {
     const rows = [-2, 6, 0, -5, 3, -1, 1].map((d, i) => report(`P${i}`, 20 + d, d));
-    expect(sortReportMinutes(rows, { key: 'delta', dir: 'desc' }).map((r) => r.deltaMs / MIN)).toEqual([
+    expect(sortReportMinutes(rows, { key: 'delta', dir: 'desc' }).map((r) => r.deltaMs! / MIN)).toEqual([
       6, 3, 1, 0, -1, -2, -5,
     ]);
   });

@@ -29,6 +29,7 @@
  * share, deltas and spread are all on the total.
  */
 
+import { matchFairShare, type NotInShare } from './fairShare';
 import type { Format, Player, Position, UUID } from '../types/index';
 import { formatClock, periodNoun } from './matchClock';
 import { NO_SUB_PLANNED, type PlannedSub } from './subPlan';
@@ -341,10 +342,11 @@ export interface ProjectedRow {
   /** Goal plus outfield: the fairness figure (ADR-015). */
   pitchMs: number;
   /**
-   * Difference from the fair share, on pitch time. A full-match keeper is in
-   * the share like everyone else (#101 supersedes the old "in goal" null).
+   * Difference from the fair share, on pitch time; null when the child is not
+   * in the share: absent (#262) or the Main keeper (#261 Q1 b).
    */
-  deltaMs: number;
+  deltaMs: number | null;
+  notInShare?: NotInShare;
 }
 
 export interface Projection {
@@ -352,7 +354,7 @@ export interface Projection {
   rows: ProjectedRow[];
   /** Goal plus outfield, summed over the squad. */
   totalPitchMs: number;
-  /** Total pitch time ÷ squad players. */
+  /** The pitch time of the children in the share ÷ how many (`matchFairShare`, #261 item 1). */
   fairShareMs: number;
   /** Most minus least pitch time across the squad. */
   spreadMs: number;
@@ -386,7 +388,9 @@ export function projectPlan(
   live: {
     fromPeriod: number;
     baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }>;
-  } | null = null
+  } | null = null,
+  /** Not available for this match (#262): out of the share, no gap. */
+  absent: ReadonlySet<UUID> = new Set()
 ): Projection {
   const periodMs = periodLengthMs(totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
@@ -464,31 +468,35 @@ export function projectPlan(
     credit(at, periodMs);
   });
 
-  // Invariant 3 (ADR-015, #101): the fairness figure is goal plus outfield,
-  // and every squad player is in the share. A full-match keeper used to be
-  // left out of it, which made a dedicated keeper look unplayed.
+  // Invariant 3 (ADR-015, #101): the fairness figure is goal plus outfield.
+  // Who is in the share is the one rule the match report uses too (#261
+  // item 1, Rob 1b): the available, a Main keeper left out, fill-ins in (#262).
   const pitch = (id: UUID) => (outfield.get(id) ?? 0) + (keeping.get(id) ?? 0);
-  const shares = players.map((p) => pitch(p.id));
-  const totalPitchMs = shares.reduce((a, b) => a + b, 0);
-  const fairShareMs = players.length === 0 ? 0 : totalPitchMs / players.length;
-  const spreadMs = shares.length === 0 ? 0 : Math.max(...shares) - Math.min(...shares);
+  const share = matchFairShare(
+    players.map((p) => ({ playerId: p.id, pitchMs: pitch(p.id), present: !absent.has(p.id), mainKeeper: p.keeper === 'main' }))
+  );
+  const inShare = players.filter((p) => !share.out.has(p.id)).map((p) => pitch(p.id));
+  const totalPitchMs = inShare.reduce((a, b) => a + b, 0);
+  const fairShareMs = share.shareMs ?? 0;
+  const spreadMs = inShare.length === 0 ? 0 : Math.max(...inShare) - Math.min(...inShare);
 
   const rows: ProjectedRow[] = players.map((p) => {
     const pitchMs = pitch(p.id);
+    const out = share.out.get(p.id);
     return {
       playerId: p.id,
       firstName: p.firstName,
       outfieldMs: outfield.get(p.id) ?? 0,
       goalkeeperMs: keeping.get(p.id) ?? 0,
       pitchMs,
-      deltaMs: Math.round(pitchMs - fairShareMs),
+      deltaMs: out || share.shareMs === null ? null : Math.round(pitchMs - fairShareMs),
+      ...(out ? { notInShare: out } : {}),
     };
   });
-  // Most owed first, as the live fairness table does; ties in squad order.
+  // Furthest under the share first; those not in it last; ties in squad order.
   const order = new Map(players.map((p, i) => [p.id, i]));
-  rows.sort(
-    (a, b) => a.deltaMs - b.deltaMs || order.get(a.playerId)! - order.get(b.playerId)!
-  );
+  const key = (r: ProjectedRow) => (r.deltaMs === null ? Number.POSITIVE_INFINITY : r.deltaMs);
+  rows.sort((a, b) => key(a) - key(b) || order.get(a.playerId)! - order.get(b.playerId)!);
 
   return { rows, totalPitchMs, fairShareMs, spreadMs, problems };
 }

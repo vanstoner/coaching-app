@@ -22,6 +22,7 @@
  * correction (invariant 5). Leaving without either keeps everything.
  */
 
+import { NOT_IN_SHARE_TEXT } from '../app/fairShare';
 import { AwardCard } from './AwardCard';
 import type { AwardRow } from '../app/matchAwards';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -292,13 +293,16 @@ export function MatchSummaryScreen({
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
         <Text style={local.lineFaint}>
           Fair share {formatClock(report.fairShareMs)} each, goal and outfield together.
+          {report.players.some((r) => r.notInShare === 'main-keeper')
+            ? ` ${report.players.filter((r) => r.notInShare === 'main-keeper').map((r) => r.name).join(', ')}: Main keeper, not in the share.`
+            : ''}
         </Text>
         <View style={local.head}>
           <SortHeading label="Player" column={NAME} {...minutesSort} align="left" style={local.nameHead} />
           <SortHeading label="Total" column="total" {...minutesSort} style={local.figureHead} />
           <SortHeading label="GK" column="gk" {...minutesSort} style={local.figureHead} />
           <SortHeading label="Out" column="out" {...minutesSort} style={local.figureHead} />
-          <SortHeading label="vs fair" column="delta" {...minutesSort} style={local.figureHead} />
+          <SortHeading label="vs share" column="delta" {...minutesSort} style={local.figureHead} />
         </View>
         {sortReportMinutes(report.players, minutesSort.sort).map((row) => {
           // #142: GK and Out add up to the Total beside them.
@@ -308,7 +312,9 @@ export function MatchSummaryScreen({
               key={row.playerId}
               style={local.row}
               accessible
-              accessibilityLabel={`${row.name}, ${wholeMinutes(row.totalMs)} minutes, ${signed(row.deltaMs)} against the fair share`}
+              accessibilityLabel={`${row.name}, ${wholeMinutes(row.totalMs)} minutes, ${
+                row.deltaMs === null ? NOT_IN_SHARE_TEXT[row.notInShare ?? 'absent'] : `${signed(row.deltaMs)} against the fair share`
+              }`}
             >
               <Text style={local.name} numberOfLines={1}>
                 {row.name}
@@ -322,8 +328,9 @@ export function MatchSummaryScreen({
               <Text style={[local.figure, row.outfieldMs === 0 && local.faint]} numberOfLines={1}>
                 {row.outfieldMs === 0 ? '—' : outfield}
               </Text>
-              <Text style={local.figure} numberOfLines={1}>
-                {signed(row.deltaMs)}
+              {/* #261 AC2: not in the share reads "—", the reason under the table. */}
+              <Text style={[local.figure, row.deltaMs === null && local.faint]} numberOfLines={1}>
+                {row.deltaMs === null ? '—' : signed(row.deltaMs)}
               </Text>
             </View>
           );

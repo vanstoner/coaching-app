@@ -17,6 +17,7 @@
  * file draws them.
  */
 
+import { NOT_IN_SHARE_SHORT } from '../app/fairShare';
 import { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
@@ -112,7 +113,8 @@ export function PlanScreen({
   const plan = planFor(stored, periodCount);
   const periodMs = periodLengthMs(match.totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
-  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players, live ?? null);
+  // #262: the absent are out of the share, with no gap.
+  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players, live ?? null, absent);
   const firstOpen = Math.min(live?.fromPeriod ?? 0, periodCount - 1);
   const allPlayed = (live?.fromPeriod ?? 0) >= periodCount;
 
@@ -436,8 +438,9 @@ export function PlanScreen({
               {formatClock(row.outfieldMs)}
               {row.goalkeeperMs > 0 ? ` · GK ${formatClock(row.goalkeeperMs)}` : ''}
             </Text>
-            <Text style={[local.delta, row.deltaMs < 0 && local.owed]} numberOfLines={1}>
-              {formatDelta(row.deltaMs)}
+            {/* #261 AC7: a shortfall is neutral text, never the warning colour. */}
+            <Text style={[local.delta, row.deltaMs === null && local.faint]} numberOfLines={1}>
+              {row.deltaMs === null ? NOT_IN_SHARE_SHORT[row.notInShare ?? 'absent'] : formatDelta(row.deltaMs)}
             </Text>
           </View>
         ))}
@@ -655,7 +658,7 @@ const local = StyleSheet.create({
     width: 64,
     textAlign: 'right',
   },
-  owed: { color: colours.warn },
+  faint: { color: colours.inkFaint },
   menuLine: {
     alignSelf: 'stretch',
     color: colours.inkMuted,
