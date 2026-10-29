@@ -43,7 +43,7 @@ export const BEFORE_TEAMS_PREFIX = 'coaching-app/before-teams/';
 const INDEX_VERSION = 1;
 
 /** Written in a team's own keys while it is set aside, so a rebuilt index knows (QA D5). */
-const REMOVED_MARK = 'coaching-app/team-removed/v1';
+export const REMOVED_MARK = 'coaching-app/team-removed/v1';
 
 export interface TeamEntry {
   id: UUID;
@@ -471,19 +471,24 @@ export function teamsForBackup(
  * Restore a backup (ADR-022 D4): each team whose id is on the phone is
  * replaced, its data set aside first (as #192 does); a new id is added;
  * teams on the phone not in the file are left alone. A 1.x backup (no id)
- * restores into `openId`. Returns the reasons any team was not restored.
+ * restores into `openId`. A team the file holds as active comes back if it
+ * was set aside here, and the open team is always one not set aside (QA D5,
+ * D6). Returns the reasons any team was not restored.
  */
 export async function restoreTeams(
   root: KeyValueStore,
   read: ReadTeamsBackup,
   openId: UUID | null,
   now: Date,
-  /** With no team open (the first screen), a 1.x file becomes a new team. */
-  newId?: () => UUID
+  /**
+   * With no team open (the first screen): the team a 1.x file goes into,
+   * from its squad name. A team already here with that name, or a new one.
+   */
+  teamFor?: (squadName: string) => UUID
 ): Promise<string[]> {
   const problems: string[] = [];
   for (const t of read.teams) {
-    const id = t.id ?? openId ?? newId?.() ?? null;
+    const id = t.id ?? openId ?? teamFor?.(t.backup.preview.squadName) ?? null;
     if (id === null) {
       problems.push('A backup from 1.x restores into an open team; add a team first.');
       continue;
@@ -493,7 +498,6 @@ export async function restoreTeams(
         ? i
         : {
             ...i,
-            current: i.current ?? id,
             teams: [...i.teams, { id, createdAt: now.toISOString(), removedAt: t.removed ? now.toISOString() : null }],
           }
     );
@@ -502,11 +506,19 @@ export async function restoreTeams(
       continue;
     }
     const outcome = await restorePhoneBackup(teamStore(root, id), t.backup, now);
+    const asideHere = indexed.teams.some((x) => x.id === id && x.removedAt !== null);
     if (!outcome.ok) problems.push(`${t.backup.preview.squadName}: ${outcome.reason}`);
     // A team the file holds as set aside says so in its own keys too (QA N2).
-    else if (t.removed && !indexed.teams.some((x) => x.id === id && x.removedAt === null)) {
+    else if (t.removed && asideHere) {
       await inTurn(root, () => root.setItem(teamKey(id, REMOVED_MARK), now.toISOString()).catch(() => undefined));
     }
+    // The file holds it as active: it is restored as active (QA D6).
+    else if (!t.removed && asideHere) await bringBackTeam(root, id);
   }
+  // The open team is one not set aside, or none (QA D5).
+  await changeIndex(root, (i) => {
+    const active = i.teams.filter((x) => x.removedAt === null);
+    return active.some((x) => x.id === i.current) ? i : { ...i, current: active[0]?.id ?? null };
+  });
   return problems;
 }

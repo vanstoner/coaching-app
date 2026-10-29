@@ -31,7 +31,19 @@ import {
   type ReadBackup,
 } from './phoneBackup';
 import { openStoredSession } from './sessionStore';
-import { addTeam, forgetEveryTeam, openTeams, restoreTeams, teamStore, teamsForBackup } from './teams';
+import {
+  addTeam,
+  forgetEveryTeam,
+  openTeams,
+  parseTeamIndex,
+  REMOVED_MARK,
+  removeTeam,
+  restoreTeams,
+  teamKey,
+  TEAMS_INDEX_KEY,
+  teamStore,
+  teamsForBackup,
+} from './teams';
 import { addTestData } from '../testKit';
 import { addTestSeason } from '../testSeason';
 import { uuid, type UUID } from '../../types/index';
@@ -315,6 +327,49 @@ describe('a backup of every team (#224 AC7, ADR-022 D4)', () => {
     if (two.kind !== 'team') throw new Error(two.kind);
     expect(two.index.teams.map((t) => t.id)).toEqual(source.ids);
     expect(two.teamId).toBe(source.ids[0]);
+  });
+
+  it('a file listing a set-aside team first opens its active one (QA D5)', async () => {
+    const p = phone();
+    const part = (id: UUID, name: string, removed: boolean) => ({
+      id,
+      removed,
+      session: { ...JSON.parse(JSON.stringify(p.session)), squadName: name },
+      ledger: JSON.parse(serialiseLedger(p.ledger, false)),
+    });
+    const [aside, rovers] = [uuid(), uuid()] as UUID[];
+    const back = readAnyBackup(makeTeamsBackup([part(aside, 'Unicorns', true), part(rovers, 'Rovers', false)], FROM, NOW));
+    if (!back.ok) throw new Error(back.reason);
+    const bare = createMemoryStore();
+    await forgetEveryTeam(bare, null, NOW);
+    expect(await restoreTeams(bare, back, null, NOW, () => uuid())).toEqual([]);
+    const index = parseTeamIndex(await bare.getItem(TEAMS_INDEX_KEY));
+    expect(index?.current).toBe(rovers);
+    expect(index?.teams.find((t) => t.id === aside)?.removedAt).not.toBeNull();
+  });
+
+  it('a team set aside here, active in the file, comes back; a 1.x file finds its team by name (QA D6, D7)', async () => {
+    const source = await twoTeams(['Unicorns', 'Rovers']);
+    const back = readAnyBackup(makeTeamsBackup((await teamsForBackup(source.root, source.index)).parts, FROM, NOW));
+    if (!back.ok) throw new Error(back.reason);
+    for (const id of source.ids) await removeTeam(source.root, id, NOW);
+    expect(await restoreTeams(source.root, back, null, NOW, () => uuid())).toEqual([]);
+    const opened = await openTeams(source.root, NOW, () => uuid());
+    if (opened.kind !== 'team') throw new Error(opened.kind);
+    expect(opened.index.teams.every((t) => t.removedAt === null)).toBe(true);
+    expect(await source.root.getItem(teamKey(source.ids[0], REMOVED_MARK))).toBeNull();
+
+    // A 1.x file named like a team here goes back into it, not a second team.
+    const p = phone();
+    const v1 = readAnyBackup(makePhoneBackup(p.session, p.ledger, FROM, NOW));
+    if (!v1.ok) throw new Error(v1.reason);
+    const empty = createMemoryStore();
+    await forgetEveryTeam(empty, null, NOW);
+    const ids: UUID[] = [];
+    const teamFor = () => ids[0] ?? (ids.push(uuid() as UUID), ids[0]);
+    await restoreTeams(empty, v1, null, NOW, teamFor);
+    await restoreTeams(empty, v1, null, NOW, teamFor);
+    expect(parseTeamIndex(await empty.getItem(TEAMS_INDEX_KEY))?.teams.map((t) => t.id)).toEqual(ids);
   });
 
   it('one damaged team refuses the whole file, and 1.x refuses a 2.0.0 backup as newer', async () => {

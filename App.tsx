@@ -101,7 +101,7 @@ import {
   type TeamIndex,
   type TeamSummary,
 } from './src/app/storage/teams';
-import { readTeamRow } from './src/app/teamRows';
+import { readTeamRow, sameTeamName } from './src/app/teamRows';
 import {
   PROMPT_QUIET_MS,
   SEASON_PROMPT_KEY,
@@ -348,6 +348,7 @@ function TeamApp({
   team = null,
   initial = null,
   resumeOnOpen = false,
+  notice = null,
 }: {
   /** This team's view of the device store (`teamStore`), or the read-only root. */
   store: KeyValueStore;
@@ -373,6 +374,8 @@ function TeamApp({
   initial?: NewTeam | null;
   /** #224 T3: opened from the team list, so a match on goes straight to its clock, not the Resume screen. */
   resumeOnOpen?: boolean;
+  /** Said once as the team opens: what a first-screen restore could not bring back (QA, c4516e3). */
+  notice?: string | null;
 }) {
   // #208 AC6: each analytics table's sort, remembered on this phone. Forget
   // everything removes it from the store and starts the memory afresh.
@@ -398,6 +401,9 @@ function TeamApp({
   const showToast = useCallback((text: string, onUndo?: () => void) => {
     setToast((t) => ({ id: (t?.id ?? 0) + 1, text, onUndo, ms: onUndo ? UNDO_MS : TOAST_MS }));
   }, []);
+  useEffect(() => {
+    if (notice) showToast(notice);
+  }, [notice, showToast]);
   // A timer that only takes a message away: it holds no value (invariant 2).
   useEffect(() => {
     if (!toast) return;
@@ -2817,6 +2823,8 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   /** The team just added, opened for the first time with its name and season. */
   const [initial, setInitial] = useState<NewTeam | null>(null);
+  /** Said by the team a first-screen restore opens, when part of the file could not be restored. */
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
 
   const show = useCallback(
     async (index: TeamIndex | null) => {
@@ -2868,6 +2876,7 @@ export default function App() {
 
   const forgetAll = useCallback(() => {
     // QA D1: close the team first, so nothing it saves can follow the forget.
+    setRestoreNotice(null);
     setInitial(null);
     setSwitched(false);
     setSummaries([]);
@@ -2880,6 +2889,7 @@ export default function App() {
     (id: UUID) => {
       setSheet(null);
       if (id === teamId) return;
+      setRestoreNotice(null);
       setInitial(null);
       setSwitched(true);
       void openTeam(root, id).then(show);
@@ -2890,6 +2900,7 @@ export default function App() {
   const add = useCallback(
     (t: NewTeam) => {
       const id = uuid();
+      setRestoreNotice(null);
       setAdding(false);
       setInitial(t);
       void addTeam(root, id, appNow()).then(show);
@@ -2900,6 +2911,7 @@ export default function App() {
   const bringBack = useCallback(
     (id: UUID) => {
       setSheet(null);
+      setRestoreNotice(null);
       setInitial(null);
       setSwitched(true);
       void bringBackTeam(root, id).then(show);
@@ -2929,16 +2941,20 @@ export default function App() {
     const read = firstRestore.pending;
     if (!read) return;
     setFirstRestore({ busy: true, message: '', pending: null });
-    const problems = await restoreTeams(root, read, null, appNow(), uuid);
+    // QA D7: a 1.x file goes back into the team of that name, if there is one.
+    const teamFor = (name: string) => summaries.find((t) => sameTeamName(t.name, name))?.id ?? uuid();
+    const problems = await restoreTeams(root, read, null, appNow(), teamFor);
     const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+    const message = problems.length > 0 ? `Restored, except: ${problems.join(' ')}` : '';
     setForgotten(false);
-    setFirstRestore({
-      busy: false,
-      message: problems.length > 0 ? `Restored, except: ${problems.join(' ')}` : '',
-      pending: null,
-    });
+    setInitial(null);
+    setSwitched(false);
+    // Said where it will be seen: by the team that opens, else on this screen.
+    const opens = index?.teams.some((t) => t.id === index.current && t.removedAt === null) ?? false;
+    setFirstRestore({ busy: false, message: opens ? '' : message, pending: null });
+    setRestoreNotice(opens && message !== '' ? message : null);
     await show(index);
-  }, [firstRestore.pending, root, show]);
+  }, [firstRestore.pending, root, show, summaries]);
 
   const remove = useCallback(() => {
     setSheet(null);
@@ -3055,6 +3071,7 @@ export default function App() {
         }
         initial={initial}
         resumeOnOpen={switched}
+        notice={restoreNotice}
       />
       <TeamSwitcher
           visible={sheet === 'switch'}
