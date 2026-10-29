@@ -173,6 +173,7 @@ import {
   visibleLedger,
   saveSeason,
   startSeason,
+  stillToPlay,
   setFormatCounted,
   FIRST_SEASON_ID,
   type ImportChoice,
@@ -1670,17 +1671,18 @@ function TeamApp({
   const startNewSeason = useCallback(
     (next: NewSeason): string | null => {
       const id = uuid();
+      // The record decides what is still to be played, not the phone's copy (QA D1).
+      const moving = new Set(ledgerRef.current ? stillToPlay(ledgerRef.current, upcomingIds) : []);
       const refused = applyToLedger((l) =>
         startSeason(
           l,
           { id, name: next.name, mainSide: next.side, ageGroup: next.ageGroup, level: next.level },
-          upcomingIds,
+          [...moving],
           appNow()
         )
       );
       if (refused !== null) return refused;
       // The phone's own copy follows, so a fixture not yet in the record moves too.
-      const moving = new Set(upcomingIds);
       setMatches((all) => all.map((m) => (moving.has(m.match.id) ? { ...m, match: { ...m.match, seasonId: id } } : m)));
       setDefaultShape(next.shape);
       setStep('fixtures');

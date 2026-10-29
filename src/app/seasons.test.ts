@@ -21,6 +21,7 @@ import {
   serialiseLedger,
   setFormatCounted,
   startSeason,
+  stillToPlay,
   type Ledger,
 } from './ledger';
 import { verifyChain } from './ledgerChain';
@@ -512,5 +513,34 @@ describe('a fixture counts in the season it is played in (Rob, 27 Oct: "season b
       })
     );
     expect(seasonOfMatch(l, upcoming.id)).toBe(next);
+  });
+
+  it('a played match is never moved, whatever the phone’s copy says (QA D1)', () => {
+    let l = emptyLedger(squadId, 'Mock FC', NOW);
+    const played = withFixture(l, '2027-07-01T10:00:00Z');
+    l = played.ledger;
+    const upcoming = withFixture(l, '2027-09-04T10:00:00Z');
+    l = upcoming.ledger;
+    // Full time is in the record; the phone's copy may still read it as planned.
+    l = recordMatches(
+      l,
+      [
+        {
+          match: { ...played.match, status: 'completed' },
+          quarters: [{ id: uuid(), index: 1, status: 'completed', accumulatedMs: 0 }],
+          appearances: [],
+        },
+      ],
+      kids,
+      'Mock FC',
+      NOW
+    );
+    expect(stillToPlay(l, [played.id, upcoming.id])).toEqual([upcoming.id]);
+    const next = uuid();
+    const started = ok(
+      startSeason(l, { id: next, name: 'B', mainSide: 7, ageGroup: null, level: null }, [played.id, upcoming.id], LATER)
+    );
+    expect(seasonOfMatch(started, played.id)).toBe(FIRST_SEASON_ID);
+    expect(seasonOfMatch(started, upcoming.id)).toBe(next);
   });
 });

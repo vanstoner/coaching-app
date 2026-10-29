@@ -1196,11 +1196,21 @@ export function startSeason(
   const record = seasonRecord(ledger, input, now);
   if (!record.ok) return record;
   const moved: LedgerRecord[] = [];
-  for (const id of upcoming) {
+  for (const id of stillToPlay(ledger, upcoming)) {
     const have = latestOf(ledger, `fixture:${id}`);
     if (have) moved.push({ ...have, season: input.id });
   }
   return { ok: true, ledger: appendRecords(ledger, [record.record, ...moved], now) };
+}
+
+/**
+ * The fixtures among `ids` the record holds no play for: no match record and
+ * no interval, or a match record still planned with none. A season start moves
+ * only these, whatever the phone's copy says (#243 QA D1).
+ */
+export function stillToPlay(ledger: Pick<Ledger, 'matches'>, ids: readonly UUID[]): UUID[] {
+  const played = new Set(ledger.matches.filter((m) => m.status !== 'planned' || m.intervals.length > 0).map((m) => m.id));
+  return ids.filter((id) => !played.has(id));
 }
 
 function seasonRecord(

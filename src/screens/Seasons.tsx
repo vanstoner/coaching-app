@@ -336,7 +336,7 @@ export function StartSeasonScreen({
               to {shown}, so {upcoming === 1 ? 'it counts' : 'they count'} there.
             </Fact>
           )}
-          <Fact>Nothing is deleted or edited.</Fact>
+          <Fact>Nothing is deleted, and no played match changes.</Fact>
           <Fact>
             All {players} {players === 1 ? 'player comes' : 'players come'} with you. Remove or add them on Squad.
           </Fact>
