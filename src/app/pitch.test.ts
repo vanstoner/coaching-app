@@ -15,6 +15,7 @@ import { makeSevenASideFormat } from './placeholderSquad';
 import {
   cleanReferee,
   conditionOf,
+  keepUnknown,
   pitchAndRefereeLine,
   pitchTags,
   REFEREE_MAX_LENGTH,
@@ -169,5 +170,16 @@ describe('the pitch survives a restore and an older build (#254 AC2, AC4, AC16; 
     expect(fixtureEntry).toContain('"surface":"3g"');
     expect(fixtureEntry).toContain('"condition":"good"');
     expect(released.serialiseLedger(read.ledger)).toContain('"surface"');
+  });
+});
+
+describe('the sheet keeps a later build’s value the coach left alone (QA N1 on #260)', () => {
+  it('Done after changing only the referee keeps an unknown surface and condition', () => {
+    const v = keepUnknown({ surface: 'indoor', condition: 'muddy' }, { surface: null, condition: null, referee: 'Sam' });
+    expect(v).toEqual({ surface: 'indoor', condition: 'muddy', referee: 'Sam' });
+  });
+  it('a value the coach picks replaces it, and known values pass through untouched', () => {
+    expect(keepUnknown({ surface: 'indoor' }, { surface: '3g', condition: null, referee: '' }).surface).toBe('3g');
+    expect(keepUnknown({ surface: '4g' }, { surface: null, condition: null, referee: '' }).surface).toBeNull();
   });
 });

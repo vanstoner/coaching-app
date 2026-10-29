@@ -14,6 +14,7 @@ import {
   REFEREE_MAX_LENGTH,
   SURFACES,
   conditionOf,
+  keepUnknown,
   pitchAndRefereeLine,
   pitchTags,
   surfaceOf,
@@ -126,7 +127,7 @@ export function PitchAndReferee({
         title="Pitch and referee"
         closeLabel="Done"
         onClose={() => {
-          if (draft) onChange(draft);
+          if (draft) onChange(keepUnknown(match, draft));
           setDraft(null);
         }}
       >

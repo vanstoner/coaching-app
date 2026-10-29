@@ -72,3 +72,21 @@ export function withPitch<M extends { surface?: PitchSurface; condition?: PitchC
     ...(referee ? { referee } : {}),
   };
 }
+
+/**
+ * QA N1 on #260 (#254 AC4): a value from a later build shows as nothing in
+ * the sheet, so a field the coach left alone keeps it rather than being
+ * cleared by Done.
+ */
+export function keepUnknown<V extends { surface: PitchSurface | null; condition: PitchCondition | null }>(
+  match: { surface?: unknown; condition?: unknown },
+  draft: V
+): V {
+  const unknownSurface = typeof match.surface === 'string' && surfaceOf(match.surface) === null;
+  const unknownCondition = typeof match.condition === 'string' && conditionOf(match.condition) === null;
+  return {
+    ...draft,
+    surface: unknownSurface && draft.surface === null ? (match.surface as PitchSurface) : draft.surface,
+    condition: unknownCondition && draft.condition === null ? (match.condition as PitchCondition) : draft.condition,
+  };
+}
