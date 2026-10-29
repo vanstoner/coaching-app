@@ -268,8 +268,13 @@ env:
 - inputText: "Gwen"
 - tapOn: ${ADD_NAME}
 # The keyboard covers the tab bar on a phone: a tap on "Home" would land on
-# a key. Put it away first.
-- hideKeyboard
+# a key. Put it away first. Run 40953960645 (diagnostic), iPhone: hideKeyboard
+# left it up (step-090), as it did on the Add a team form. The name field
+# keeps focus on Return (#219), so tap the page's heading instead: a tap on
+# plain content dismisses the keyboard (keyboardShouldPersistTaps="handled").
+- tapOn:
+    point: "50%,9%"
+- takeScreenshot: diag-08f-keyboard-down
 - tapOn: ${TAB_HOME}
 - extendedWaitUntil:
     visible: ${GETTING_STARTED}
