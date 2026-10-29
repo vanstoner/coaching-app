@@ -2907,6 +2907,39 @@ export default function App() {
     [root, show]
   );
 
+  /** Rob, 29 Oct: with no team, restore from a backup on the first screen. */
+  const [firstRestore, setFirstRestore] = useState<{
+    busy: boolean;
+    message: string;
+    pending: ReadTeamsBackup | null;
+  }>({ busy: false, message: '', pending: null });
+
+  const pickFirstBackup = useCallback(async () => {
+    setFirstRestore({ busy: true, message: '', pending: null });
+    const picked = await pickLedgerFile();
+    if (!picked.ok) return setFirstRestore({ busy: false, message: picked.reason, pending: null });
+    if (picked.text === null) return setFirstRestore({ busy: false, message: '', pending: null }); // cancelled
+    const read = readAnyBackup(picked.text);
+    setFirstRestore(
+      read.ok ? { busy: false, message: '', pending: read } : { busy: false, message: read.reason, pending: null }
+    );
+  }, []);
+
+  const restoreFirstBackup = useCallback(async () => {
+    const read = firstRestore.pending;
+    if (!read) return;
+    setFirstRestore({ busy: true, message: '', pending: null });
+    const problems = await restoreTeams(root, read, null, appNow(), uuid);
+    const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+    setForgotten(false);
+    setFirstRestore({
+      busy: false,
+      message: problems.length > 0 ? `Restored, except: ${problems.join(' ')}` : '',
+      pending: null,
+    });
+    await show(index);
+  }, [firstRestore.pending, root, show]);
+
   const remove = useCallback(() => {
     setSheet(null);
     if (teamId === null) return;
@@ -2954,6 +2987,18 @@ export default function App() {
           setAdding(true);
         }}
         onBringBack={bringBack}
+        restore={
+          <BackupSection
+            restoreOnly
+            message={firstRestore.message}
+            busy={firstRestore.busy}
+            pending={firstRestore.pending ? describeTeamsBackup(firstRestore.pending) : null}
+            onBackup={() => undefined}
+            onPick={() => void pickFirstBackup()}
+            onConfirm={() => void restoreFirstBackup()}
+            onCancel={() => setFirstRestore((r) => ({ ...r, pending: null }))}
+          />
+        }
       />
     );
   }

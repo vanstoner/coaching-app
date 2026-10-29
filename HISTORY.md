@@ -421,7 +421,8 @@ analysis, iOS". Entries are added as each release ships.
     the team's name and first season (age group, level, main format;
     fairness is Full equal time). Settings switches team too, and removes
     the open team once its name is typed; a removed team is set aside and
-    can be brought back. A new phone opens on "No teams on this phone yet".
+    can be brought back. A new phone opens on "No teams on this phone yet",
+    which also restores from a backup, so no team need be made first.
   - **Seasons on screen.** Settings opens with the season: its name, age
     group, level, main format and fairness, when it began and how many
     matches. The first season asks the coach to confirm its age group and

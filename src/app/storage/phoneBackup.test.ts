@@ -31,7 +31,7 @@ import {
   type ReadBackup,
 } from './phoneBackup';
 import { openStoredSession } from './sessionStore';
-import { addTeam, openTeams, restoreTeams, teamStore, teamsForBackup } from './teams';
+import { addTeam, forgetEveryTeam, openTeams, restoreTeams, teamStore, teamsForBackup } from './teams';
 import { addTestData } from '../testKit';
 import { addTestSeason } from '../testSeason';
 import { uuid, type UUID } from '../../types/index';
@@ -288,6 +288,33 @@ describe('a backup of every team (#224 AC7, ADR-022 D4)', () => {
     await addTeam(target, open, NOW);
     expect(await restoreTeams(target, v1, open, NOW)).toEqual([]);
     expect((await openStoredSession(teamStore(target, open), NOW)).session?.players.length).toBe(p.session.players.length);
+  });
+
+  it('on a phone with no teams, any backup restores and opens (Rob, 29 Oct: restore on the first screen)', async () => {
+    // After Forget everything: an empty team list.
+    const p = phone();
+    const v1 = readAnyBackup(makePhoneBackup(p.session, p.ledger, FROM, NOW));
+    if (!v1.ok) throw new Error(v1.reason);
+    const empty = createMemoryStore();
+    await forgetEveryTeam(empty, null, NOW);
+    const made = uuid() as UUID;
+    expect(await restoreTeams(empty, v1, null, NOW, () => made)).toEqual([]);
+    const opened = await openTeams(empty, NOW, () => uuid());
+    if (opened.kind !== 'team') throw new Error(opened.kind);
+    expect(opened.teamId).toBe(made);
+    expect((await openStoredSession(teamStore(empty, made), NOW)).session?.players.length).toBe(p.session.players.length);
+
+    // A 2.0.0 file of two teams: both come back, the first one open.
+    const source = await twoTeams(['Unicorns', 'Rovers']);
+    const back = readAnyBackup(makeTeamsBackup((await teamsForBackup(source.root, source.index)).parts, FROM, NOW));
+    if (!back.ok) throw new Error(back.reason);
+    const bare = createMemoryStore();
+    await forgetEveryTeam(bare, null, NOW);
+    expect(await restoreTeams(bare, back, null, NOW, () => uuid())).toEqual([]);
+    const two = await openTeams(bare, NOW, () => uuid());
+    if (two.kind !== 'team') throw new Error(two.kind);
+    expect(two.index.teams.map((t) => t.id)).toEqual(source.ids);
+    expect(two.teamId).toBe(source.ids[0]);
   });
 
   it('one damaged team refuses the whole file, and 1.x refuses a 2.0.0 backup as newer', async () => {

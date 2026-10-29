@@ -17,7 +17,7 @@
  * (the clipped-glyph trap); every Modal pads itself (#174).
  */
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
@@ -366,8 +366,11 @@ export function NoTeamsScreen({
   notice = null,
   onAdd,
   onBringBack,
+  restore = null,
 }: {
   aside: readonly TeamSummary[];
+  /** "Restore from a backup", for a coach whose teams are in a file (Rob, 29 Oct). */
+  restore?: ReactNode;
   /** After Forget everything: what happened, said once (#207). */
   notice?: string | null;
   onAdd: () => void;
@@ -391,6 +394,7 @@ export function NoTeamsScreen({
       >
         <Text style={screen.buttonLabel}>Add your team</Text>
       </Pressable>
+      {restore}
       {aside.map((t) => (
         <Pressable key={t.id} onPress={() => onBringBack(t.id)} style={screen.linkHit} accessibilityRole="button">
           <Text style={screen.link}>Bring back {t.name}</Text>

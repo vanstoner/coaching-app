@@ -477,11 +477,13 @@ export async function restoreTeams(
   root: KeyValueStore,
   read: ReadTeamsBackup,
   openId: UUID | null,
-  now: Date
+  now: Date,
+  /** With no team open (the first screen), a 1.x file becomes a new team. */
+  newId?: () => UUID
 ): Promise<string[]> {
   const problems: string[] = [];
   for (const t of read.teams) {
-    const id = t.id ?? openId;
+    const id = t.id ?? openId ?? newId?.() ?? null;
     if (id === null) {
       problems.push('A backup from 1.x restores into an open team; add a team first.');
       continue;

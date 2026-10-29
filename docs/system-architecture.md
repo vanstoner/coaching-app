@@ -169,7 +169,7 @@ stateDiagram-v2
 ```
 
 Above every step, the shell (2.0.0, #224) shows "No teams on this phone yet"
-or Add a team when no team is open, and the team list as a sheet over any
+(with Add your team and Restore from a backup) or Add a team when no team is open, and the team list as a sheet over any
 screen; opening a team remounts `TeamApp` at its first step.
 
 Every Saturday screen (lineup, playing, summary, analysis, plan from a match)
