@@ -1,7 +1,7 @@
 # ADR-008: Every event records who, where and when it was recorded
 
-**Status:** Accepted
-**Built:** no (#239 audit).
+**Status:** Accepted, not built as written
+**Built:** no (#239 audit; checked again 29 Oct, #259). There is no `actorId` or `clockAnchorAt` in `src/`. Which install wrote each entry is shown instead by per-install signing (`src/app/entrySigning.ts`, `src/app/storage/deviceKey.ts`, ADR-021 D4).
 **Date:** 2026-09-17
 **Decision maker:** Architect; approved by the Product Owner 2026-09-17 (#19)
 

@@ -1,7 +1,7 @@
 # ADR-017: Data categories and audiences
 
-**Status:** Accepted
-**Built:** in part. The data categories stand; the gate (`ledgerGate.ts`, `LedgerView`) does not exist, and screens take the raw `Ledger` (#239).
+**Status:** Accepted, gate not built
+**Built:** in part. The data categories stand; the gate (`ledgerGate.ts`, `LedgerView`) does not exist, and screens take the raw `Ledger` (#239; checked again 29 Oct, #259).
 **Date:** 2026-10-05
 **Decision maker:** Architect, on the Product Owner's rulings of 2026-10-05 (#136 `approve 20a 20b 20c 20d` and `Approve 27 28`; #138 `approve 24, 25, 26`)
 
