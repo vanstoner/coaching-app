@@ -73,6 +73,8 @@ env:
   BACK_FROM_CHILD: "Back to.*"
   # Home's fixtures: a played match, the 5-a-side card, the planned match
   PLAYED_MATCH: ".*Trial Town.*"
+  # The match report's status line: proof the report, not Home, is on screen
+  REPORT_OPEN: "Closed.*counts towards season averages"
   FIVE_A_SIDE_CARD: "Open Practice Park, .*"
   PLANNED_CARD: "Open Mock Albion, .*"
   EDIT_PLAN: "Edit the plan"
@@ -160,7 +162,21 @@ env:
 - tapOn: ${TAB_HOME}
 - scrollUntilVisible:
     element: ${PLAYED_MATCH}
-- tapOn: ${PLAYED_MATCH}
+# Run 41045358017 (iPad): the tap landed while the list was still moving and
+# only stopped it, so 04-report showed Played. Let it settle, and check the
+# report opened before the shot.
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          when:
+            notVisible: ${REPORT_OPEN}
+          commands:
+            - tapOn: ${PLAYED_MATCH}
+      - extendedWaitUntil:
+          visible: ${REPORT_OPEN}
+          timeout: 8000
 - waitForAnimationToEnd
 - takeScreenshot: 04-report
 
