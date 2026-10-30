@@ -15,7 +15,7 @@
  * changes weight or size between states (V5, the theme.ts rule).
  */
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { Text } from '../Text';
 
@@ -146,20 +146,29 @@ export function MainFoot({ children }: { children: ReactNode }) {
   return <View style={rows.foot}>{children}</View>;
 }
 
-/** Field row (V27): label left, text right. */
+/**
+ * Field row (V27): label left, text right. A tap anywhere on the row, the
+ * label included, puts the cursor in the field.
+ */
 export function FieldRow({ label, first = false, ...input }: { label: string; first?: boolean } & TextInputProps) {
+  const field = useRef<TextInput>(null);
   return (
-    <View style={[rows.row, first && rows.first]}>
+    <Pressable
+      onPress={() => field.current?.focus()}
+      accessible={false}
+      style={[rows.row, first && rows.first]}
+    >
       <Text style={rows.fieldLabel} numberOfLines={1}>
         {label}
       </Text>
       <TextInput
+        ref={field}
         accessibilityLabel={label}
         placeholderTextColor={colours.inkFaint}
         {...input}
         style={[rows.field, input.style]}
       />
-    </View>
+    </Pressable>
   );
 }
 

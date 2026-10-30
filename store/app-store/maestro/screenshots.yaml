@@ -208,6 +208,11 @@ env:
     element: ${DANGER_ZONE}
 - tapOn: ${DANGER_ZONE}
 - takeScreenshot: diag-08a-forget-found
+# Run 40989556461: with the Danger zone open, Forget everything sat under the
+# tab bar, so the tap landed on Squad. Bring it to the middle first.
+- scrollUntilVisible:
+    element: ${FORGET}
+    centerElement: true
 - tapOn: ${FORGET}
 - scrollUntilVisible:
     element: ${FORGET_YES}
