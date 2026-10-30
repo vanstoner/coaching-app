@@ -25,5 +25,14 @@ export { Icon, type IconName } from './Icon';
 export { Action, ActionRow, BackLink, FieldRow, GroupLabel, MainButton, MainFoot, RowNav, TopBar } from './Rows';
 export { FormStatus, SavedTick, Section, useSavedTick, useSavedTicks } from './Section';
 export { Segmented, SegmentedRow, Stepper, type Option } from './Choice';
-export { CheckLine, FormSheet, LeaveAsk, ListSheet, MultiListSheet, SheetNote, type ListItem } from './Sheets';
+export {
+  CheckLine,
+  FormSheet,
+  LeaveAsk,
+  ListSheet,
+  MultiListSheet,
+  SheetNote,
+  useBackLeaves,
+  type ListItem,
+} from './Sheets';
 export { Danger, DangerRow, UndoToast } from './Danger';

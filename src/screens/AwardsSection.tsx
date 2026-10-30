@@ -74,6 +74,8 @@ export function AwardsSection({
         title={editing === 'new' ? 'Add an award' : 'Award'}
         onCancel={close}
         saveDisabled={draft.trim() === '' || (current !== undefined && draft === current.name)}
+        dirty={editing !== null && draft !== (current?.name ?? '')}
+        thing="award"
         onSave={() =>
           done(editing === 'new' ? onAdd(draft) : current ? onUpdate(current.id, { name: draft }) : null)
         }

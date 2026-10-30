@@ -40,6 +40,7 @@ import {
   RowNav,
   SegmentedRow,
   TopBar,
+  useBackLeaves,
 } from './controls';
 import { colours, screen } from './theme';
 
@@ -258,6 +259,8 @@ export function StartSeasonScreen({
   const setLevel = changed(setLevelRaw);
   const setShape = changed(setShapeRaw);
   const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // Android Back asks too (V30; QA on #260, D6).
+  useBackLeaves(leave);
   const shown = name.trim() || 'the new season';
   const ready = name.trim() !== '';
   const ageHint =
@@ -524,6 +527,8 @@ export function OffFormatCard({
         }}
         onSave={save}
         saveDisabled={(note ?? '').trim() === ''}
+        dirty={(note ?? '') !== ''}
+        thing="note"
       >
         <Text style={screen.fieldLabel}>{counted ? 'Why leave it out? (needed)' : 'Why count it? (needed)'}</Text>
         <TextInput

@@ -76,6 +76,8 @@ export function PositionNameSheet({
       title={position ? `Rename ${position.label}` : ''}
       onCancel={onClose}
       onSave={save}
+      dirty={position !== null && (typed !== position.label || keep)}
+      thing="name"
     >
       {position && (
         <>

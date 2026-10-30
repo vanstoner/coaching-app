@@ -74,6 +74,20 @@ export function RecordMatchScreen({
   // #208: most minutes first by default; a tap on a heading re-sorts.
   const { sort, onSort } = useTableSort('recordMinutes');
   const [panel, setPanel] = useState<Panel | null>(null);
+  // What the sheet opened with, so a changed draft asks before it is thrown away (V30).
+  const [opened, setOpened] = useState<Panel | null>(null);
+  const openPanel = (p: Panel) => {
+    setPanel(p);
+    setOpened(p);
+  };
+  const unchanged = (p: Panel) => JSON.stringify({ ...p, error: '' });
+  const panelDirty = panel !== null && opened !== null && unchanged(panel) !== unchanged(opened);
+  // #264 C4 (QA D14): where the record needs a note, Save waits for one.
+  const saveDisabled =
+    panel === null ||
+    ((panel.kind === 'add' || panel.kind === 'withdraw' || panel.kind === 'structure') && panel.note.trim() === '') ||
+    (panel.kind === 'structure' && panel.lengths.trim() === '') ||
+    (panel.kind === 'award' && (panel.typeId === null || panel.playerId === null));
   const [moreStats, setMoreStats] = useState(false);
   const competition = competitionLabel(match.competition);
   const st = page.structure;
@@ -108,7 +122,7 @@ export function RecordMatchScreen({
         label={goalText(g, label)}
         value="Take back"
         accessibilityLabel={`Take back ${label}`}
-        onPress={() => setPanel({ kind: 'withdraw', goal: g, note: '', error: '' })}
+        onPress={() => openPanel({ kind: 'withdraw', goal: g, note: '', error: '' })}
       />
     ) : (
       <View key={g.id} style={local.goalRow}>
@@ -183,7 +197,7 @@ export function RecordMatchScreen({
             <RowNav
               label="Correct how it was played"
               onPress={() =>
-                setPanel({
+                openPanel({
                   kind: 'structure',
                   lengths: st.periodMs.map((p) => String(Math.round((p / 60_000) * 10) / 10)).join(' '),
                   note: '',
@@ -205,7 +219,7 @@ export function RecordMatchScreen({
           {actions && (
             <RowNav
               label="Add goal / conceded (time unknown)"
-              onPress={() => setPanel({ kind: 'add', event: 'goal', scorer: null, note: '', error: '' })}
+              onPress={() => openPanel({ kind: 'add', event: 'goal', scorer: null, note: '', error: '' })}
             />
           )}
 
@@ -219,7 +233,7 @@ export function RecordMatchScreen({
                 label={`${a.award}: ${a.name}${a.note ? ` (${a.note})` : ''}`}
                 value="Change"
                 accessibilityLabel={`Change ${a.award} for ${a.name}`}
-                onPress={() => setPanel({ kind: 'awardChange', award: a, to: null, note: '', error: '' })}
+                onPress={() => openPanel({ kind: 'awardChange', award: a, to: null, note: '', error: '' })}
               />
             ) : (
               <View key={`${a.awardTypeId}:${a.playerId}`} style={local.goalRow}>
@@ -234,7 +248,7 @@ export function RecordMatchScreen({
             <RowNav
               label="Add award"
               onPress={() =>
-                setPanel({ kind: 'award', typeId: page.awardTypes[0].id, playerId: null, note: '', error: '' })
+                openPanel({ kind: 'award', typeId: page.awardTypes[0].id, playerId: null, note: '', error: '' })
               }
             />
           )}
@@ -291,6 +305,9 @@ export function RecordMatchScreen({
         saveLabel={saveLabel}
         onCancel={() => setPanel(null)}
         onSave={submit}
+        saveDisabled={saveDisabled}
+        dirty={panelDirty}
+        thing={panel?.kind === 'award' || panel?.kind === 'awardChange' ? 'award' : 'correction'}
       >
         {panel?.kind === 'structure' && (
           <>

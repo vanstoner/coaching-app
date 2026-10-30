@@ -8,6 +8,9 @@
  *
  * - **FormSheet**: the general one, for a form or a note (Rename, a fill-in,
  *   a correction). Its Save is off until the caller says the draft is valid.
+ *   A caller that passes `dirty` gets the form's status line ("Not saved
+ *   yet" once changed, V29) and, while changed, Cancel, a tap outside and
+ *   Android Back ask before the draft is thrown away (V30; QA on #260, D5).
  * - **ListSheet**: a list with a tick. Single: tapping a line picks it and
  *   closes, no Save. Multi (Here today): each line its own tick, then Save.
  * - **LeaveAsk**: "Leave without saving this *thing*?", Keep editing or Leave
@@ -18,13 +21,15 @@
  * platforms.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { BackHandler, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../Text';
 
+import { sheetExit, sheetStatus } from '../../app/saveState';
 import { CONTENT_MAX_WIDTH, colours, TOUCH_TARGET } from '../theme';
 import { Icon } from './Icon';
+import { FormStatus } from './Section';
 
 export function FormSheet({
   visible,
@@ -35,6 +40,8 @@ export function FormSheet({
   cancelLabel = 'Cancel',
   saveDisabled = false,
   saveDanger = false,
+  dirty,
+  thing = 'change',
   children,
 }: {
   visible: boolean;
@@ -49,15 +56,28 @@ export function FormSheet({
   saveDisabled?: boolean;
   /** Save does what cannot be undone (Remove a team): the danger colour (#264 V33). */
   saveDanger?: boolean;
+  /**
+   * A form or a note: whether the draft differs from what it opened with.
+   * Left out, the sheet has no status line and closes at once.
+   */
+  dirty?: boolean;
+  /** What leaving would lose: "Leave without saving this name?" */
+  thing?: string;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const [asking, setAsking] = useState(false);
+  useEffect(() => {
+    if (!visible) setAsking(false);
+  }, [visible]);
+  const leave = () => (sheetExit(dirty) === 'ask' ? setAsking(true) : onCancel());
+  const status = sheetStatus(dirty);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={leave}>
       <KeyboardAvoidingView style={sheet.flex} behavior="padding">
         <Pressable
           style={sheet.scrim}
-          onPress={onCancel}
+          onPress={leave}
           accessibilityRole="button"
           accessibilityLabel="Close without saving"
         >
@@ -67,7 +87,7 @@ export function FormSheet({
                 <View style={sheet.head}>
                   <View style={sheet.side}>
                     <Pressable
-                      onPress={onCancel}
+                      onPress={leave}
                       accessibilityRole="button"
                       style={({ pressed }) => [sheet.headHit, pressed && sheet.pressed]}
                     >
@@ -93,6 +113,7 @@ export function FormSheet({
                     )}
                   </View>
                 </View>
+                {status !== null && <FormStatus phase={status} />}
                 <ScrollView style={sheet.body} keyboardShouldPersistTaps="handled">
                   {children}
                 </ScrollView>
@@ -101,6 +122,18 @@ export function FormSheet({
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
+      {/* Its own Modal, above this one; Back on it is Keep editing. */}
+      {dirty !== undefined && (
+        <LeaveAsk
+          visible={visible && asking}
+          thing={thing}
+          onKeep={() => setAsking(false)}
+          onLeave={() => {
+            setAsking(false);
+            onCancel();
+          }}
+        />
+      )}
     </Modal>
   );
 }
@@ -263,6 +296,23 @@ export function LeaveAsk({
       </Pressable>
     </FormSheet>
   );
+}
+
+/**
+ * Android Back on a full-screen form is a way out too, and asks the same
+ * question as Cancel (V30): `leave` decides whether to ask. While the screen
+ * is up, Back never falls through to the app (QA on #260, D6).
+ */
+export function useBackLeaves(leave: () => void): void {
+  const ref = useRef(leave);
+  ref.current = leave;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      ref.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 }
 
 /** A line of plain words in a sheet: what a choice does, a warning. */

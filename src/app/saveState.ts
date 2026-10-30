@@ -93,3 +93,21 @@ export type SheetClose = 'save' | 'cancel' | 'outside' | 'back';
 export function sheetCommit<T>(how: SheetClose, draft: T): T | null {
   return how === 'save' ? draft : null;
 }
+
+/**
+ * A form sheet's status line (V29; QA on PR #260, D5): none when the caller
+ * does not track changes (a list, a read-only sheet); else "Nothing to save
+ * yet" until the first change, then "Not saved yet".
+ */
+export function sheetStatus(dirty: boolean | undefined): FormPhase | null {
+  return dirty === undefined ? null : dirty ? 'dirty' : 'pristine';
+}
+
+/**
+ * Cancel, a tap outside or Android Back on a form sheet (V30; D5): a changed
+ * draft asks "Leave without saving?" first; anything else closes at once.
+ * Either way nothing is written (`sheetCommit`).
+ */
+export function sheetExit(dirty: boolean | undefined): 'ask' | 'close' {
+  return dirty === true ? 'ask' : 'close';
+}

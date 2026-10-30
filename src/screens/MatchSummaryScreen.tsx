@@ -375,6 +375,11 @@ export function MatchSummaryScreen({
               visible={correcting !== null}
               title="Correct attendance"
               onCancel={() => setCorrecting(null)}
+              dirty={
+                correcting !== null &&
+                (correcting.playerId !== null || correcting.status !== 'available' || correcting.note !== '')
+              }
+              thing="correction"
               saveLabel="Save"
               saveDisabled={correcting === null || correcting.playerId === null || correcting.note.trim() === ''}
               onSave={() => {
@@ -543,6 +548,8 @@ function NoteSheet({
       onCancel={() => onChange(null)}
       onSave={onSave}
       saveDisabled={value === null || value.note.trim() === ''}
+      dirty={value !== null && value.note !== ''}
+      thing="note"
     >
       <SheetNote>{hint}</SheetNote>
       <FieldRow

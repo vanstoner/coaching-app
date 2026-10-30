@@ -14,6 +14,8 @@ import {
   savedTickRemainingMs,
   savedTickVisible,
   sheetCommit,
+  sheetExit,
+  sheetStatus,
   type FormAction,
   type FormPhase,
 } from './saveState';
@@ -92,5 +94,22 @@ describe('a sheet writes only on Save (V32, C3)', () => {
     expect(sheetCommit('cancel', draft)).toBeNull();
     expect(sheetCommit('outside', draft)).toBeNull();
     expect(sheetCommit('back', draft)).toBeNull();
+  });
+});
+
+describe('a form sheet says Not saved yet and asks before discarding (V29, V30; QA on #260, D5)', () => {
+  it('a sheet that tracks no changes has no status line and closes at once', () => {
+    expect(sheetStatus(undefined)).toBeNull();
+    expect(sheetExit(undefined)).toBe('close');
+  });
+
+  it('unchanged: "Nothing to save yet", and Cancel closes', () => {
+    expect(formStatusText(sheetStatus(false)!)).toBe('Nothing to save yet');
+    expect(sheetExit(false)).toBe('close');
+  });
+
+  it('changed: "Not saved yet", and Cancel, a tap outside or Back asks first', () => {
+    expect(formStatusText(sheetStatus(true)!)).toBe('Not saved yet');
+    expect(sheetExit(true)).toBe('ask');
   });
 });

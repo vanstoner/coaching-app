@@ -47,6 +47,7 @@ import {
   RowNav,
   SegmentedRow,
   TopBar,
+  useBackLeaves,
 } from './controls';
 import { CONTENT_MAX_WIDTH, colours, screen } from './theme';
 
@@ -258,6 +259,8 @@ export function AddTeamScreen({
     setShapeRaw((s) => formatForAge(a, s));
   });
   const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // Android Back asks too (V30; QA on #260, D6).
+  useBackLeaves(leave);
   const problem = teamNameProblem(name, otherNames);
   const shownProblem = name.trim() === '' ? null : problem;
   const lighter = Number(ageGroup.slice(1)) >= 12 || level === 'competitive';

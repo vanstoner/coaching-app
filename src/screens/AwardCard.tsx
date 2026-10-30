@@ -92,6 +92,8 @@ export function AwardCard({
               saveLabel={open?.mode === 'take' ? 'Take it back' : 'Give'}
               onCancel={() => setPending(null)}
               onSave={submit}
+              dirty={open !== null && open.note !== ''}
+              thing="note"
             >
               {open && (
                 <>

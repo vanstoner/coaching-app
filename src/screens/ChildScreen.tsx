@@ -481,6 +481,8 @@ function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairnes
         }}
         onSave={save}
         saveDisabled={note.trim() === ''}
+        dirty={note !== ''}
+        thing="note"
       >
         <FieldRow
           label="Why"
@@ -609,6 +611,8 @@ function Rename({
         onCancel={close}
         onSave={more === null && same === null ? save : undefined}
         saveDisabled={(draft ?? '').trim() === ''}
+        dirty={draft !== null && draft !== displayName(player)}
+        thing="name"
       >
       <FieldRow
         label="First name"

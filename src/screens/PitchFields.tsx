@@ -132,6 +132,12 @@ export function PitchAndReferee({
         visible={draft !== null}
         title="Pitch and referee"
         onCancel={() => setDraft(null)}
+        dirty={
+          draft !== null &&
+          (draft.surface !== surfaceOf(match.surface) ||
+            draft.condition !== conditionOf(match.condition) ||
+            draft.referee !== (match.referee ?? ''))
+        }
         onSave={() => {
           const saved = draft && sheetCommit('save', draft);
           if (saved) onChange(keepUnknown(match, saved));

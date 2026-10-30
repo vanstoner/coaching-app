@@ -81,6 +81,8 @@ export function TalliesSection({
         visible={adding}
         title="Add a tally"
         onCancel={close}
+        dirty={draft.trim() !== ''}
+        thing="tally"
         onSave={add}
         saveDisabled={draft.trim() === ''}
       >
