@@ -14,6 +14,7 @@ import { makePhoneBackup, readPhoneBackup, restorePhoneBackup } from './phoneBac
 import { makeSevenASideFormat } from '../placeholderSquad';
 import { makePlayer } from '../squad';
 import { UNREADABLE_SESSION_PREFIX, openStoredSession } from './sessionStore';
+import { LAST_BACKUP_KEY, SETTINGS_SECTIONS_KEY, serialiseLastBackup, serialiseOpenSections } from '../settingsSections';
 import { TABLE_SORT_KEY } from '../tableSort';
 import { TEST_CLOCK_KEY } from '../testKit';
 import { uuid } from '../../types/index';
@@ -103,6 +104,23 @@ describe('Forget everything (#207)', () => {
     const unlisted: KeyValueStore = { getItem: memory.getItem, setItem: memory.setItem, removeItem: memory.removeItem };
     await forgetAppData(unlisted);
     expect(await memory.getItem(GETTING_STARTED_KEY)).toBeNull();
+  });
+
+  it('#263 AC19: the open Settings sections and the last-backup date go too, even from a store that cannot list its keys', async () => {
+    const listed = await usedPhone();
+    await listed.setItem(SETTINGS_SECTIONS_KEY, serialiseOpenSections(new Set(['backup'])));
+    await listed.setItem(LAST_BACKUP_KEY, serialiseLastBackup(NOW.getTime()));
+    await forgetAppData(listed);
+    expect(await listed.getItem(SETTINGS_SECTIONS_KEY)).toBeNull();
+    expect(await listed.getItem(LAST_BACKUP_KEY)).toBeNull();
+
+    const memory = await usedPhone();
+    await memory.setItem(SETTINGS_SECTIONS_KEY, serialiseOpenSections(new Set(['backup'])));
+    await memory.setItem(LAST_BACKUP_KEY, serialiseLastBackup(NOW.getTime()));
+    const unlisted: KeyValueStore = { getItem: memory.getItem, setItem: memory.setItem, removeItem: memory.removeItem };
+    await forgetAppData(unlisted);
+    expect(await memory.getItem(SETTINGS_SECTIONS_KEY)).toBeNull();
+    expect(await memory.getItem(LAST_BACKUP_KEY)).toBeNull();
   });
 
   it('AC5: the privacy policy says what this does', () => {

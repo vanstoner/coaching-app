@@ -231,7 +231,10 @@ jobs:
             if [ "$fail" != 0 ]; then
               echo "the $2 flow failed once; retrying from a fresh boot"
               fail=0
-              rm -rf "media/$2" "media/raw-$2" "media/maestro-$2" "media/debug-$2"
+              # Keep the failed attempt's Maestro screenshots: run 41031067106
+              # lost the only evidence of the iPad's first failure.
+              if [ -d "media/debug-$2" ]; then rm -rf "media/debug-$2-attempt1"; mv "media/debug-$2" "media/debug-$2-attempt1"; fi
+              rm -rf "media/$2" "media/raw-$2" "media/maestro-$2"
               xcrun simctl shutdown "$1" || true
               prepare "$1"
               shots "$1" "$2"

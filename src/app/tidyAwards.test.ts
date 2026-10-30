@@ -287,7 +287,8 @@ describe('a test match has no awards (#228 AC27, Q6)', () => {
     const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf8');
     expect(app).toMatch(/if \(!match \|\| !l \|\| !awardsOffered\(l, match\.state\)\) return null;/);
     const clock = readFileSync(join(__dirname, '..', 'screens', 'ClockScreen.tsx'), 'utf8');
-    expect(clock).toMatch(/\{awards && \(\s*<SheetButton\s*label=\{`Give \$\{nameOf\(sheetFor\)\} an award ›`\}/);
+    // #264 V2: the › is an icon (`more`), not text.
+    expect(clock).toMatch(/\{awards && \(\s*<SheetButton\s*label=\{`Give \$\{nameOf\(sheetFor\)\} an award`\}\s*more/);
     expect(clock).toMatch(/\{awards && !running && !view\.isMatchOver && \(/);
   });
 });

@@ -11,7 +11,7 @@ PLAN BEFORE KICK-OFF
 • Build your squad by first name, with each child's position preferences and who likes to go in goal.
 • Add fixtures, or just press Play now.
 • Plan every period: the starting line-up, each substitution and when it happens, with every child's projected minutes shown before a ball is kicked.
-• Suggested line-ups put the children who are owed time on first and share the goalkeeping round. The app suggests; you decide.
+• Suggested line-ups put on first the children who have had least time in the match so far, and share the goalkeeping round. The app suggests; you decide.
 
 RUN THE MATCH
 • A match clock that keeps true time even if the phone locks or the app is closed.
@@ -22,7 +22,7 @@ RUN THE MATCH
 
 SEE THE SEASON
 • A match report at the final whistle: the result, every child's time on the pitch, in goal and outfield, against their own average.
-• Squad views: everyone's minutes match by match, how close the squad is to an even share, who is owed time going into the next match, and the positions each child has tried.
+• Squad views: everyone's minutes match by match, how close the squad is to an even share, who is next in line for more time going into the next match, and the positions each child has tried.
 • The squad list in order of minutes a game, so gaps stand out.
 • A page for every child: playing time, match by match, positions tried and preferences.
 • Fill-in players from another team get a fair share on the day without skewing your squad's figures.
@@ -39,7 +39,7 @@ EASY TO START
 • Test matches from Settings, at up to ten times speed, never touch your real figures.
 
 PRIVATE BY DESIGN
-• First names only: no surnames, dates of birth, contact details or photos.
+• First names by default, with an initial to tell two children apart. No place for surnames, dates of birth, contact details or photos.
 • Everything stays on your phone. No account, no server, no analytics, no adverts and no tracking.
 • Included in your phone's own backup, held in your own Apple account. Back up to one file whenever you choose.
 

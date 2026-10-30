@@ -20,7 +20,7 @@ import {
   nameSuggestions,
   renameScopeHint,
 } from '../app/positionNames';
-import { ActionSheet, SheetButton } from './Sheet';
+import { FormSheet, SegmentedRow } from './controls';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** What a screen that may rename positions is handed (#166). */
@@ -70,10 +70,14 @@ export function PositionNameSheet({
   };
 
   return (
-    <ActionSheet
+    // #264: a sheet with Cancel and Save; a tap outside is Cancel and renames nothing.
+    <FormSheet
       visible={position !== null}
       title={position ? `Rename ${position.label}` : ''}
-      onClose={onClose}
+      onCancel={onClose}
+      onSave={save}
+      dirty={position !== null && (typed !== position.label || keep)}
+      thing="name"
     >
       {position && (
         <>
@@ -113,22 +117,22 @@ export function PositionNameSheet({
           </View>
           <Text style={local.line}>{POSITION_NAME_HINT}</Text>
           {problem !== '' && <Text style={local.problem}>{problem}</Text>}
+          {/* #264: the bespoke tick box is a segmented choice. */}
           {offerKeep && (
-            <Pressable
-              onPress={() => setKeep((k) => !k)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: keep }}
-              style={local.keepRow}
-            >
-              {/* Colour only between states: metrics never change (theme.ts). */}
-              <View style={[local.box, keep && local.boxOn]} />
-              <Text style={local.keepLabel}>Use these names for new matches</Text>
-            </Pressable>
+            <SegmentedRow
+              label="Use these names for new matches"
+              stacked
+              options={[
+                { value: false, label: 'No' },
+                { value: true, label: 'Yes' },
+              ]}
+              value={keep}
+              onChange={(k) => k !== null && setKeep(k)}
+            />
           )}
-          <SheetButton label="Save" strong onPress={save} />
         </>
       )}
-    </ActionSheet>
+    </FormSheet>
   );
 }
 
@@ -147,7 +151,7 @@ const local = StyleSheet.create({
     minHeight: TOUCH_TARGET,
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colours.line,
+    borderColor: colours.edge,
     borderRadius: TOUCH_TARGET / 2,
     paddingHorizontal: 8,
     marginRight: 8,
@@ -167,21 +171,4 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginBottom: 8,
   },
-  keepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    minHeight: TOUCH_TARGET,
-    marginBottom: 8,
-  },
-  box: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: colours.inkMuted,
-    marginRight: 12,
-  },
-  boxOn: { backgroundColor: colours.accent, borderColor: colours.accent },
-  keepLabel: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
 });

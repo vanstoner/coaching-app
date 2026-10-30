@@ -73,6 +73,8 @@ env:
   BACK_FROM_CHILD: "Back to.*"
   # Home's fixtures: a played match, the 5-a-side card, the planned match
   PLAYED_MATCH: ".*Trial Town.*"
+  # The match report's status line: proof the report, not Home, is on screen
+  REPORT_OPEN: "Closed.*counts towards season averages"
   FIVE_A_SIDE_CARD: "Open Practice Park, .*"
   PLANNED_CARD: "Open Mock Albion, .*"
   EDIT_PLAN: "Edit the plan"
@@ -80,9 +82,14 @@ env:
   LINEUP: "On the pitch"
   PLAN_STARTING: "Starting"
   SHARE_PLAN: "Share plan"
-  # Settings › Forget everything, confirmed inline
+  # Settings › Danger zone (#263 AC17): its heading, then Forget everything,
+  # confirmed inline. The heading's accessible name is its title and summary.
+  DANGER_ZONE: "Danger zone.*"
   FORGET: "^Forget everything$"
   FORGET_YES: "^Yes, forget everything$"
+  ADD_YOUR_TEAM: "^Add your team$"
+  TEAM_NAME_FIELD: "e.g. Unicorns U10"
+  ADD_AND_OPEN: "^Add and open$"
   # A child of the made-up season: gone once Forget everything has worked
   SEASON_CHILD: "Dee,.*"
   # Squad: the name field and its button; Home's card after one step
@@ -117,14 +124,19 @@ env:
 - extendedWaitUntil:
     visible: ${HOME_OR_RESUME}
     timeout: 30000
-- runFlow:
-    when:
-      visible: ${RESUME_TO_HOME}
+# Run 41031067106 (iPhone): the when-check ran before Resume had drawn, so it
+# was skipped and Squad never came. Check again until Squad shows.
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn: ${RESUME_TO_HOME}
-- extendedWaitUntil:
-    visible: ${TAB_SQUAD}
-    timeout: 20000
+      - runFlow:
+          when:
+            visible: ${RESUME_TO_HOME}
+          commands:
+            - tapOn: ${RESUME_TO_HOME}
+      - extendedWaitUntil:
+          visible: ${TAB_SQUAD}
+          timeout: 8000
 
 # 05-squad, 02-fairness, 06-child: the made-up season (all three taken on
 # the iPad in run 40001608860).
@@ -150,7 +162,21 @@ env:
 - tapOn: ${TAB_HOME}
 - scrollUntilVisible:
     element: ${PLAYED_MATCH}
-- tapOn: ${PLAYED_MATCH}
+# Run 41045358017 (iPad): the tap landed while the list was still moving and
+# only stopped it, so 04-report showed Played. Let it settle, and check the
+# report opened before the shot.
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          when:
+            notVisible: ${REPORT_OPEN}
+          commands:
+            - tapOn: ${PLAYED_MATCH}
+      - extendedWaitUntil:
+          visible: ${REPORT_OPEN}
+          timeout: 8000
 - waitForAnimationToEnd
 - takeScreenshot: 04-report
 
@@ -193,27 +219,52 @@ env:
     visible: ${TAB_SETTINGS}
     timeout: 20000
 - tapOn: ${TAB_SETTINGS}
+# #263 AC17: Settings is in sections, with only Season and Team open, so the
+# Danger zone heading sits near the top and the 90 s scroll for Forget (run
+# 40907567399) and the two blind scrolls that kept "Yes" off the tab bar
+# (runs 40033174404, 40039113281) are gone. Danger zone always starts closed
+# (AC6), so tapping its heading unconditionally opens it, even after a
+# relaunch without clearState.
+- scrollUntilVisible:
+    element: ${DANGER_ZONE}
+- tapOn: ${DANGER_ZONE}
+- takeScreenshot: diag-08a-forget-found
+# Run 40989556461: with the Danger zone open, Forget everything sat under the
+# tab bar, so the tap landed on Squad. Bring it to the middle first.
 - scrollUntilVisible:
     element: ${FORGET}
+    centerElement: true
 - tapOn: ${FORGET}
-# Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
-# everything", under the tab bar. A tap at its centre landed on the Squad tab
-# ([146,866][293,922], centre x 220). Nothing was forgotten, and the seven
-# names joined the made-up season. Bring it into view first.
-# Run 40039113281, iPhone: scrolled "into view" was not enough. Maestro's
-# visibility is measured against the screen, not the scroll view, so the Yes
-# link counted as on screen while it sat past the scroll view's bottom edge,
-# where the tab bar is; the tap still landed on Squad. Scroll Settings to its
-# end (no pills here, so a centre swipe scrolls), which leaves Yes above the
-# tab bar: only "Keep it" and 28 pt of padding follow it.
-- scroll
+# Run 41025915210 (iPhone): "Yes" sat clipped at the scroll view's bottom edge,
+# which Maestro counts as visible, so the tap missed. Run 41031067106 (iPad):
+# it was the last row, so it could not be centred. One swipe lifts it clear on
+# the iPhone and changes nothing on the iPad.
 - scroll
 - scrollUntilVisible:
     element: ${FORGET_YES}
 - tapOn: ${FORGET_YES}
+# Run 40907567399, iPad: since 2.0.0 (#224 AC6) a phone with no team opens on
+# "No teams on this phone yet", with no tabs. Name a made-up team, then Squad.
+- extendedWaitUntil:
+    visible: ${ADD_YOUR_TEAM}
+    timeout: 20000
+- takeScreenshot: diag-08b-no-teams
+- tapOn: ${ADD_YOUR_TEAM}
+- tapOn: ${TEAM_NAME_FIELD}
+- inputText: "Unicorns U10"
+# Run 40947194464, iPhone: hideKeyboard left the keyboard up over Add and
+# open. A single-line field closes it on Return (blurOnSubmit).
+- pressKey: Enter
+- takeScreenshot: diag-08c-team-named
+- scrollUntilVisible:
+    element: ${ADD_AND_OPEN}
+    timeout: 30000
+- takeScreenshot: diag-08d-add-and-open
+- tapOn: ${ADD_AND_OPEN}
 - extendedWaitUntil:
     visible: ${TAB_SQUAD}
     timeout: 20000
+- takeScreenshot: diag-08e-team-open
 - tapOn: ${TAB_SQUAD}
 # Proof Forget worked: the season's children are gone from Squad, in view or
 # not (the hierarchy holds rows below the fold).
@@ -242,9 +293,21 @@ env:
 - inputText: "Gwen"
 - tapOn: ${ADD_NAME}
 # The keyboard covers the tab bar on a phone: a tap on "Home" would land on
-# a key. Put it away first.
-- hideKeyboard
+# a key. Put it away first. Run 40953960645 (diagnostic), iPhone: hideKeyboard
+# left it up (step-090), as it did on the Add a team form. The name field
+# keeps focus on Return (#219). Run 41038444305: since #264 the heading is
+# outside the list, so a tap on it no longer closes the keyboard (Home was
+# never reached). Drag the list instead (keyboardDismissMode="on-drag").
+- swipe:
+    start: "50%,45%"
+    end: "50%,30%"
+- waitForAnimationToEnd
+- takeScreenshot: diag-08f-keyboard-down
 - tapOn: ${TAB_HOME}
+# Run 41031067106 (iPad): Getting started was not found on Home, and the retry
+# wiped the evidence. Capture Home first (the compositor ignores diag-*).
+- waitForAnimationToEnd
+- takeScreenshot: diag-08g-home
 - extendedWaitUntil:
     visible: ${GETTING_STARTED}
     timeout: 10000

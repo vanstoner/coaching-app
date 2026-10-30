@@ -19,6 +19,7 @@ import {
 import { Text } from './Text';
 
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { Icon } from './controls/Icon';
 
 export function Chip({
   label,
@@ -37,6 +38,11 @@ export function Chip({
   compact,
   /** For a chip whose label needs the room, e.g. a shape and its cue. */
   wide,
+  /**
+   * #264 V2: a tick drawn as an icon, never "✓" as text (Barlow has none).
+   * When given, true or false, its slot is always kept so nothing moves.
+   */
+  tick,
 }: {
   label: string;
   detail?: string;
@@ -45,12 +51,14 @@ export function Chip({
   narrow?: boolean;
   compact?: boolean;
   wide?: boolean;
+  tick?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, ...(tick === undefined ? {} : { checked: tick }) }}
+      accessibilityLabel={detail ? `${label}, ${detail}` : label}
       style={({ pressed }) => [
         local.chip,
         narrow && local.narrow,
@@ -60,9 +68,18 @@ export function Chip({
         pressed && screen.buttonPressed,
       ]}
     >
-      <Text style={[local.label, selected && local.labelOn]} numberOfLines={1}>
-        {label}
-      </Text>
+      {tick === undefined ? (
+        <Text style={[local.label, selected && local.labelOn]} numberOfLines={1}>
+          {label}
+        </Text>
+      ) : (
+        <View style={local.tickRow}>
+          <View style={local.tickSlot}>{tick && <Icon name="check-bold" size={13} color={colours.ink} />}</View>
+          <Text style={[local.label, local.tickLabel, selected && local.labelOn]} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      )}
       {/* Two lines allowed on the cue: the box has a FIXED width, so wrapping
           is safe where sizing a box to its own text is not. */}
       {detail !== undefined && (
@@ -86,7 +103,8 @@ const local = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colours.pitchRaised,
-    borderColor: colours.line,
+    // #264 V3, V4: the edge reads at 4.16:1 on this fill (the old line was 1.7:1).
+    borderColor: colours.edge,
     borderWidth: 1,
     borderRadius: 10,
     minHeight: TOUCH_TARGET,
@@ -98,9 +116,10 @@ const local = StyleSheet.create({
   narrow: { width: 66 },
   compact: { width: 56 },
   wide: { width: 164 },
-  selected: { backgroundColor: colours.accent, borderColor: colours.accent },
+  selected: { backgroundColor: colours.accent },
   label: {
-    color: colours.inkMuted,
+    // #264 V3: white whether chosen or not (the muted label was 4.45:1).
+    color: colours.ink,
     fontSize: 15,
     fontWeight: '600',
     includeFontPadding: false,
@@ -108,8 +127,11 @@ const local = StyleSheet.create({
     textAlign: 'center',
   },
   labelOn: { color: colours.ink },
+  tickRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  tickSlot: { width: 15, flexShrink: 0, alignItems: 'center' },
+  tickLabel: { flex: 1, alignSelf: 'auto' },
   detail: {
-    color: colours.inkFaint,
+    color: colours.inkMuted,
     fontSize: 11,
     includeFontPadding: false,
     alignSelf: 'stretch',

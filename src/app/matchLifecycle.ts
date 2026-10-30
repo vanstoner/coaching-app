@@ -14,7 +14,8 @@
  */
 
 import { MatchEngine, type MatchState } from '../engine/MatchEngine';
-import type { AvailabilityStatus, Competition, Format, Player, TestMatchMark, UUID } from '../types/index';
+import type { AvailabilityStatus, Competition, Format, Match, Player, TestMatchMark, UUID } from '../types/index';
+import { cleanReferee } from './pitch';
 import { canDeleteFixture } from './fixtures';
 import { withLiveMatch, type HeldMatch } from './liveMatch';
 import { mergeCurrentMatch, type SavedMatch } from './persistence';
@@ -42,6 +43,10 @@ export interface NewMatchInput {
   test?: TestMatchMark;
   /** The season it is made in (#243 AC11); absent for the first season. */
   seasonId?: UUID;
+  /** #254: the pitch, and the referee (this phone only). */
+  surface?: Match['surface'];
+  condition?: Match['condition'];
+  referee?: string | null;
 }
 
 export interface NewMatch {
@@ -72,6 +77,10 @@ export function newMatch(input: NewMatchInput, nowFn: () => Date): NewMatch {
   });
   if (input.test) state.match.test = input.test;
   if (input.seasonId) state.match.seasonId = input.seasonId;
+  if (input.surface) state.match.surface = input.surface;
+  if (input.condition) state.match.condition = input.condition;
+  const referee = cleanReferee(input.referee);
+  if (referee) state.match.referee = referee;
   return {
     held: { state, format: input.format },
     // Through the same fold every save uses, so the stored shape cannot drift

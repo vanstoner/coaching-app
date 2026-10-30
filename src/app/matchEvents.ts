@@ -13,6 +13,7 @@
  */
 
 import type { Appearance, MatchEvent, Player, TapEventKind, UUID } from '../types/index';
+import { displayName } from './squad';
 
 /** How long the touchline Undo is offered after a tap (PO ruling 12). */
 export const UNDO_WINDOW_MS = 10_000;
@@ -186,8 +187,10 @@ export function timeStream(
   /** The coach's own tally kinds' names (#198), by kind. */
   tallyLabels: ReadonlyMap<string, string> = new Map()
 ): StreamRow[] {
-  const name = (id: UUID | null) =>
-    (id && players.find((p) => p.id === id)?.firstName) || 'someone';
+  const name = (id: UUID | null) => {
+    const p = id ? players.find((x) => x.id === id) : undefined;
+    return p ? displayName(p) : 'someone';
+  };
   const rows: StreamRow[] = [];
 
   // A substitution: a stint ending 'substitution' and another starting at the

@@ -157,7 +157,7 @@ Route 1 is standalone. Each step below is one that failed when skipped (#133):
 2. **Elapsed time comes from wall-clock anchors, never tick counting.**
 3. **Fairness is total time on the pitch, in goal plus outfield, never per
    position.**
-4. **First names only. No PII.**
+4. **First names by default. No PII fields.**
 5. **Corrections are explicit, noted, and never destructive.**
 
 [CLAUDE.md](./CLAUDE.md) states them in full; each is an ADR in

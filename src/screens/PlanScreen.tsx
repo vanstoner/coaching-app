@@ -13,31 +13,33 @@
  * forget. A plan that does not add up says so and is kept anyway (AC5),
  * because a Tuesday plan is usually a draft.
  *
+ * #264: each save shows ✓ Saved right-justified on the top bar for two
+ * seconds (Dee: the plan saves as one, so its tick belongs to the screen).
+ * The period is a segmented choice. Each sub is a Row › opening "name comes
+ * on": At on the compact stepper at the Plan's own 15 s step (Rob, Q2), and
+ * For as a list with a tick; Cancel changes nothing. Done is the top-left
+ * way out; Share plan is the one Main button.
+ *
  * All the rules live in `src/app/matchPlan.ts` and are tested there. This
  * file draws them.
  */
 
+import { NOT_IN_SHARE_SHORT } from '../app/fairShare';
+import { InfoTap } from './FiguresHelp';
 import { useEffect, useRef, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Text } from './Text';
 
 import type { Format, Match, Player, UUID } from '../types/index';
-import { formatClock, periodNoun } from '../app/matchClock';
+import { displayName } from '../app/squad';
+import { formatClock, formatSubTime, periodNoun } from '../app/matchClock';
+import { plannedSubText, subsPlannedSummary } from '../app/plannedSubSheet';
 import {
   addSwap,
   benchSubIndex,
-  benchSubOffChoices,
   clampSwapTime,
   formatDelta,
   newSubTimeMs,
-  nudgeSwap,
-  planBenchSub,
   SUB_STEP_MS,
   periodLengthMs,
   planFor,
@@ -46,12 +48,25 @@ import {
   sameAsPrevious,
   swapChoices,
   setPeriodSlots,
-  setSlot,
   updateSwap,
+  longestOnAt,
   type MatchPlan,
 } from '../app/matchPlan';
 import { opponentLabel } from '../app/fixtures';
-import { Chip, ChipRow } from './Chip';
+import {
+  Action,
+  BackLink,
+  CheckLine,
+  FormSheet,
+  MainButton,
+  MainFoot,
+  RowNav,
+  SavedTick,
+  Segmented,
+  Stepper,
+  TopBar,
+  useSavedTick,
+} from './controls';
 import { PitchView } from './PitchView';
 import { ActionSheet, SheetButton } from './Sheet';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
@@ -63,11 +78,15 @@ import { currentDistribution } from '../app/distribution';
 import { releasePlanImage, sharePlanImage } from '../app/planImageFile';
 import { PlanImageView } from './PlanImageView';
 
-/** What the picker is choosing for, when it is open. */
-type Picking =
-  | { kind: 'slot'; positionId: UUID }
-  | { kind: 'on' | 'off'; swapIndex: number }
-  | null;
+/** The sub sheet's draft (#264 V20): which sub (-1 for a new one), and its picks. */
+interface SubDraft {
+  swapIndex: number;
+  onId: UUID | null;
+  offId: UUID | null;
+  /** "Whoever is on longest" ticked: resolved to a name on Save (`longestOnAt`). */
+  longest: boolean;
+  atMs: number;
+}
 
 export function PlanScreen({
   match,
@@ -112,25 +131,20 @@ export function PlanScreen({
   const plan = planFor(stored, periodCount);
   const periodMs = periodLengthMs(match.totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
-  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players, live ?? null);
+  // #262: the absent are out of the share, with no gap.
+  const projection = projectPlan(plan, format, match.totalMinutes, periodCount, players, live ?? null, absent);
   const firstOpen = Math.min(live?.fromPeriod ?? 0, periodCount - 1);
   const allPlayed = (live?.fromPeriod ?? 0) >= periodCount;
 
   const [periodIndex, setPeriodIndex] = useState(firstOpen);
-  const [picking, setPicking] = useState<Picking>(null);
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
-  /**
-   * The bench player's menu (#120): who, the time it offers, and whether it
-   * is asking for a time and who comes off (`editing`) or showing the sub
-   * they already have.
-   */
-  const [benchMenu, setBenchMenu] = useState<
-    { playerId: UUID; atMs: number; editing: boolean } | null
-  >(null);
+  /** The sub sheet (#120, #264): a draft until Save. */
+  const [subSheet, setSubSheet] = useState<SubDraft | null>(null);
+  const tick = useSavedTick();
 
   // Share plan (#165): which image is laid out off-screen for capture, if
   // any, and whether the layout question is open.
@@ -167,12 +181,15 @@ export function PlanScreen({
   };
 
   const period = plan.periods[periodIndex];
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID | null) =>
     id === null ? 'Pick' : (nameOf.get(id) ?? 'Removed player');
   const problemsHere = projection.problems.filter((p) => p.periodIndex === periodIndex);
 
-  const change = onChange;
+  const change = (next: MatchPlan) => {
+    onChange(next);
+    tick.mark();
+  };
   // "Same as" the previous period (#111): what was on the pitch at its end if
   // it has been played, else its plan. Null means there is nothing to copy.
   const sameAs =
@@ -180,100 +197,100 @@ export function PlanScreen({
       ? sameAsPrevious(plan, periodIndex, live?.recordedEnd?.[periodIndex - 1] ?? null)
       : null;
 
-  const pick = (playerId: UUID | null) => {
-    if (!picking) return;
-    if (picking.kind === 'slot') {
-      change(setSlot(plan, periodIndex, picking.positionId, playerId));
-    } else {
-      const field = picking.kind === 'on' ? 'onId' : 'offId';
-      change(updateSwap(plan, periodIndex, picking.swapIndex, { [field]: playerId }));
-    }
-    setPicking(null);
-  };
-
   const choosePeriod = (i: number) => {
     setPeriodIndex(i);
-    setPicking(null);
     setPitchPick(null);
-    setBenchMenu(null);
+    setSubSheet(null);
   };
 
   const benchIds = players
     .map((p) => p.id)
     .filter((id) => !Object.values(period.slots).includes(id));
 
-  // #120: a tap on a bench player opens their menu; a tap on a player in a
-  // position selects them for tap-then-place, as before. Placing a bench
-  // player by tap is one button in the menu; dragging is unchanged.
+  /** Open "name comes on" for an existing sub, a bench player, or a new sub (#264 V20). */
+  const openSub = (swapIndex: number, onId: UUID | null) => {
+    const swap = swapIndex === -1 ? null : period.subs[swapIndex];
+    setSubSheet({
+      swapIndex,
+      onId: swap ? swap.onId : onId,
+      offId: swap ? swap.offId : null,
+      longest: false,
+      atMs: swap ? swap.atMs : newSubTimeMs(periodMs),
+    });
+  };
+
+  // #120: a tap on a bench player opens their sub; a tap on a player in a
+  // position selects them for tap-then-place, as before. Dragging is unchanged.
   const tapPlayer = (id: UUID) => {
     if (!benchIds.includes(id)) {
       setPitchPick(id);
       return;
     }
-    setPicking(null);
-    const existing = benchSubIndex(period, id);
-    setBenchMenu(
-      existing === -1
-        ? { playerId: id, atMs: newSubTimeMs(periodMs), editing: true }
-        : { playerId: id, atMs: period.subs[existing].atMs, editing: false }
-    );
+    openSub(benchSubIndex(period, id), id);
   };
-  const menuSubIndex = benchMenu ? benchSubIndex(period, benchMenu.playerId) : -1;
-  const menuSub = menuSubIndex === -1 ? null : period.subs[menuSubIndex];
-  const offChoices = benchMenu?.editing
-    ? benchSubOffChoices(period, benchMenu.playerId, benchMenu.atMs, players)
-    : [];
-  const nudgeMenu = (steps: number) =>
-    benchMenu &&
-    setBenchMenu({
-      ...benchMenu,
-      atMs: clampSwapTime(benchMenu.atMs + steps * SUB_STEP_MS, periodMs),
-    });
 
-  // A sub only offers who can come on or go off at that moment; a starting
-  // slot offers the whole squad (match day 4).
-  const choices =
-    picking && picking.kind !== 'slot'
-      ? swapChoices(period, picking.swapIndex, players)[picking.kind]
-      : players;
+  /** Who the sheet's sub can bring on and take off at its time (`swapChoices`, match day 4). */
+  const sheetChoices = (() => {
+    if (!subSheet) return { on: [] as Player[], off: [] as Player[] };
+    const probe = { onId: subSheet.onId, offId: subSheet.offId, atMs: subSheet.atMs };
+    const subs =
+      subSheet.swapIndex === -1 ? [...period.subs, probe] : period.subs.map((s, i) => (i === subSheet.swapIndex ? probe : s));
+    const index = subSheet.swapIndex === -1 ? subs.length - 1 : subSheet.swapIndex;
+    const c = swapChoices({ ...period, subs }, index, players);
+    return { on: c.on, off: c.off.filter((p) => p.id !== subSheet.onId) };
+  })();
 
-  const picker = (
-    <View style={local.picker}>
-      <ChipRow>
-        {choices.map((p) => (
-          <Chip key={p.id} label={p.firstName} selected={false} onPress={() => pick(p.id)} />
-        ))}
-        <Chip label="Nobody" selected={false} onPress={() => pick(null)} />
-      </ChipRow>
-    </View>
-  );
+  // QA on #260 (D12): who "whoever is on longest" is at the sheet's time, by the plan.
+  const longestId = subSheet
+    ? longestOnAt(period, subSheet.swapIndex, clampSwapTime(subSheet.atMs, periodMs), format)
+    : null;
+  const forId = subSheet ? (subSheet.longest ? longestId : subSheet.offId) : null;
+
+  const saveSub = () => {
+    if (!subSheet || forId === null) return;
+    const draft = { onId: subSheet.onId, offId: forId, atMs: clampSwapTime(subSheet.atMs, periodMs) };
+    if (subSheet.swapIndex === -1) {
+      const added = addSwap(plan, periodIndex, periodMs);
+      change(updateSwap(added, periodIndex, added.periods[periodIndex].subs.length - 1, draft));
+    } else {
+      change(updateSwap(plan, periodIndex, subSheet.swapIndex, draft));
+    }
+    setSubSheet(null);
+  };
+
+  const flaggedPeriods = plan.periods
+    .map((_, i) => i)
+    .filter((i) => !(live && i < live.fromPeriod) && projection.problems.some((p) => p.periodIndex === i));
 
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
-        <Text style={screen.title} numberOfLines={1}>
-          Plan
-        </Text>
+        {/* #264: the way out top left; ✓ Saved right-justified on the top bar (Dee: the plan saves as one). */}
+        <TopBar
+          back={<BackLink label="Done" accessibilityLabel="Done" onPress={onBack} />}
+          title="Plan"
+          right={<SavedTick visible={tick.visible} />}
+        />
         <Text style={screen.caption} numberOfLines={1}>
           {squadName} v {opponentLabel(match)}
         </Text>
 
-        <ChipRow>
-          {plan.periods.map((_, i) => {
-            const flagged = projection.problems.some((p) => p.periodIndex === i);
-            return (
-              <Chip
-                key={i}
-                label={`${noun} ${i + 1}`}
-                detail={
-                  live && i < live.fromPeriod ? 'played' : flagged ? 'needs a look' : 'ok'
-                }
-                selected={i === periodIndex}
-                onPress={() => choosePeriod(i)}
-              />
-            );
-          })}
-        </ChipRow>
+        {/* Dee: the period row is a choice, so a segmented control. */}
+        <Segmented
+          name="Period"
+          options={plan.periods.map((_, i) => ({
+            value: i,
+            label: periodCount === 4 ? `Q${i + 1}` : `${noun} ${i + 1}`,
+            accessibilityLabel: `${noun} ${i + 1}${live && i < live.fromPeriod ? ', played' : flaggedPeriods.includes(i) ? ', needs a look' : ''}`,
+          }))}
+          value={periodIndex}
+          onChange={(i) => i !== null && choosePeriod(i)}
+        />
+        {flaggedPeriods.length > 0 && (
+          <Text style={local.flagged}>
+            Needs a look: {flaggedPeriods.map((i) => `${noun} ${i + 1}`).join(', ')}
+          </Text>
+        )}
 
         {live && periodIndex < live.fromPeriod ? (
           <Text style={screen.hint}>
@@ -284,11 +301,7 @@ export function PlanScreen({
           <>
         {periodIndex > 0 &&
           (sameAs ? (
-            <Pressable style={screen.linkHit} onPress={() => change(sameAs)}>
-              <Text style={screen.link}>
-                Same as {noun.toLowerCase()} {periodIndex}
-              </Text>
-            </Pressable>
+            <Action label={`Same as ${noun.toLowerCase()} ${periodIndex}`} onPress={() => change(sameAs)} />
           ) : (
             <Text style={screen.hint}>
               {noun} {periodIndex} has no lineup to copy yet.
@@ -318,82 +331,25 @@ export function PlanScreen({
         {names && (
           <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
         )}
-        {names && hasRenamedPositions(format) && (
-          <Pressable style={screen.linkHit} onPress={names.onReset}>
-            <Text style={screen.link}>Reset position names</Text>
-          </Pressable>
-        )}
+        {names && hasRenamedPositions(format) && <Action label="Reset position names" onPress={names.onReset} />}
 
         <Text style={screen.fieldLabel}>Subs this {noun.toLowerCase()}</Text>
-        {period.subs.length === 0 && (
-          <Text style={local.note}>None planned.</Text>
-        )}
-        {period.subs.map((swap, swapIndex) => {
-          const openOn = picking?.kind === 'on' && picking.swapIndex === swapIndex;
-          const openOff = picking?.kind === 'off' && picking.swapIndex === swapIndex;
-          return (
-            <View key={swapIndex} style={local.swap}>
-              <View style={local.swapTime}>
-                <Pressable
-                  style={local.nudge}
-                  onPress={() => change(nudgeSwap(plan, periodIndex, swapIndex, -1, periodMs))}
-                  accessibilityLabel="15 seconds earlier"
-                >
-                  <Text style={local.nudgeLabel}>-</Text>
-                </Pressable>
-                <Text style={local.time}>{formatClock(swap.atMs)}</Text>
-                <Pressable
-                  style={local.nudge}
-                  onPress={() => change(nudgeSwap(plan, periodIndex, swapIndex, 1, periodMs))}
-                  accessibilityLabel="15 seconds later"
-                >
-                  <Text style={local.nudgeLabel}>+</Text>
-                </Pressable>
-                <Pressable
-                  style={local.removeHit}
-                  onPress={() => {
-                    setPicking(null);
-                    change(removeSwap(plan, periodIndex, swapIndex));
-                  }}
-                >
-                  <Text style={local.remove}>Remove</Text>
-                </Pressable>
-              </View>
-              <Pressable
-                style={screen.playerRow}
-                onPress={() => setPicking(openOn ? null : { kind: 'on', swapIndex })}
-              >
-                <Text style={local.slotLabel}>On</Text>
-                <Text
-                  style={[screen.playerName, swap.onId === null && local.unset]}
-                  numberOfLines={1}
-                >
-                  {name(swap.onId)}
-                </Text>
-              </Pressable>
-              {openOn && picker}
-              <Pressable
-                style={screen.playerRow}
-                onPress={() => setPicking(openOff ? null : { kind: 'off', swapIndex })}
-              >
-                <Text style={local.slotLabel}>Off</Text>
-                <Text
-                  style={[screen.playerName, swap.offId === null && local.unset]}
-                  numberOfLines={1}
-                >
-                  {name(swap.offId)}
-                </Text>
-              </Pressable>
-              {openOff && picker}
-            </View>
-          );
-        })}
-        <Pressable
-          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-          onPress={() => change(addSwap(plan, periodIndex, periodMs))}
-        >
-          <Text style={screen.buttonLabel}>Add a sub</Text>
-        </Pressable>
+        <Text style={local.note}>{subsPlannedSummary(period.subs.length)}</Text>
+        {/* #264 V20 to V22: each sub is a Row ›, the plan in light text by the name. */}
+        {period.subs.map((swap, swapIndex) => (
+          <RowNav
+            key={swapIndex}
+            first={swapIndex === 0}
+            label={name(swap.onId)}
+            detail={
+              swap.offId === null
+                ? `on at ${formatSubTime(swap.atMs)}, nobody picked to come off`
+                : plannedSubText(swap.atMs, name(swap.offId))
+            }
+            onPress={() => openSub(swapIndex, swap.onId)}
+          />
+        ))}
+        <RowNav label="Add a sub" first={period.subs.length === 0} onPress={() => openSub(-1, null)} />
 
         {problemsHere.map((p, i) => (
           <Text key={i} style={local.problem}>
@@ -404,54 +360,49 @@ export function PlanScreen({
           </>
         )}
 
-        <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-          onPress={askShare}
-          disabled={shareLayout !== null}
-        >
-          <Text style={screen.buttonLabel}>Share plan</Text>
-        </Pressable>
-        <Text style={screen.hint}>
-          {shareNote ??
-            'One picture of every ' +
-              noun.toLowerCase() +
-              ' and its subs, for parents. No minutes, and nobody marked absent.'}
-        </Text>
-
         <Text style={screen.fieldLabel}>
           {live ? 'Minutes so far, plus the plan' : 'Minutes if played to plan'}
         </Text>
-        <Text style={local.summary}>
-          Fair share {formatClock(projection.fairShareMs)} · spread{' '}
-          {formatClock(projection.spreadMs)}
-        </Text>
+        <View style={local.shareRow}>
+          <Text style={[local.summary, local.shareText]}>
+            Fair share {formatClock(projection.fairShareMs)} · spread{' '}
+            {formatClock(projection.spreadMs)}
+          </Text>
+          {/* #261 AC15. */}
+          <InfoTap figure="planShare" />
+        </View>
         {/* #101 / ADR-015: the share and the +/- are goal plus outfield. */}
         <Text style={screen.hint}>Fair share counts time in goal and outfield together.</Text>
         {projection.rows.map((row) => (
           <View key={row.playerId} style={screen.playerRow}>
             <Text style={screen.playerName} numberOfLines={1}>
-              {row.firstName}
+              {row.name}
             </Text>
             <Text style={local.minutes} numberOfLines={1}>
               {formatClock(row.outfieldMs)}
               {row.goalkeeperMs > 0 ? ` · GK ${formatClock(row.goalkeeperMs)}` : ''}
             </Text>
-            <Text style={[local.delta, row.deltaMs < 0 && local.owed]} numberOfLines={1}>
-              {formatDelta(row.deltaMs)}
+            {/* #261 AC7: a shortfall is neutral text, never the warning colour. */}
+            <Text style={[local.delta, row.deltaMs === null && local.faint]} numberOfLines={1}>
+              {row.deltaMs === null ? NOT_IN_SHARE_SHORT[row.notInShare ?? 'absent'] : formatDelta(row.deltaMs)}
             </Text>
           </View>
         ))}
         <Text style={screen.hint}>
           A plan, not a record. Minutes played always come from the match itself.
         </Text>
-
-        <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-          onPress={onBack}
-        >
-          <Text style={screen.buttonLabel}>Done</Text>
-        </Pressable>
       </ScrollView>
+
+      {/* #264 V26: Share plan is the screen's one job, pinned at the bottom (label kept: SHARE_PLAN). */}
+      <MainFoot>
+        <MainButton label="Share plan" onPress={askShare} disabled={shareLayout !== null} />
+        <Text style={screen.hint}>
+          {shareNote ??
+            'One picture of every ' +
+              noun.toLowerCase() +
+              ' and its subs, for parents. No minutes, and nobody marked absent.'}
+        </Text>
+      </MainFoot>
 
       {/* The image being shared (#165): laid out off-screen, captured, gone. */}
       {shareLayout && (
@@ -480,151 +431,102 @@ export function PlanScreen({
         />
       )}
 
-      {/* The bench player's menu (#120): plan their sub without Add a sub. */}
-      <ActionSheet
-        visible={benchMenu !== null}
-        title={benchMenu ? name(benchMenu.playerId) : ''}
-        onClose={() => setBenchMenu(null)}
+      {/* #264 V20, V21: "name comes on": At on the 15 s stepper (Q2), For as a list with a tick. */}
+      <FormSheet
+        visible={subSheet !== null}
+        title={subSheet?.onId ? `${name(subSheet.onId)} comes on` : 'A sub'}
+        onCancel={() => setSubSheet(null)}
+        onSave={saveSub}
+        // Save waits for who comes on and For (QA on #260, D12).
+        saveDisabled={subSheet === null || subSheet.onId === null || forId === null}
       >
-        {benchMenu && !benchMenu.editing && menuSub && (
+        {subSheet && (
           <>
-            <Text style={local.menuLine} numberOfLines={1}>
-              On at {formatClock(menuSub.atMs)}
-              {menuSub.offId === null ? ', nobody picked to come off' : ` for ${name(menuSub.offId)}`}
-            </Text>
-            <SheetButton
-              label="Change"
-              strong
-              onPress={() =>
-                setBenchMenu({
-                  ...benchMenu,
-                  atMs: menuSub.atMs,
-                  editing: true,
-                })
-              }
-            />
-            <SheetButton
-              label="Remove"
-              against
-              onPress={() => {
-                change(removeSwap(plan, periodIndex, menuSubIndex));
-                setBenchMenu(null);
-              }}
-            />
-          </>
-        )}
-        {benchMenu && benchMenu.editing && (
-          <>
-            <View style={local.swapTime}>
-              <Pressable
-                style={local.nudge}
-                onPress={() => nudgeMenu(-1)}
-                accessibilityLabel="15 seconds earlier"
-              >
-                <Text style={local.nudgeLabel}>-</Text>
-              </Pressable>
-              <Text style={local.menuTime} numberOfLines={1}>
-                Bring on at {formatClock(benchMenu.atMs)}
+            {(subSheet.swapIndex !== -1 || subSheet.onId === null) && (
+              <>
+                <Text style={screen.fieldLabel}>Who comes on</Text>
+                {sheetChoices.on.map((p) => (
+                  <CheckLine
+                    key={p.id}
+                    label={displayName(p)}
+                    checked={subSheet.onId === p.id}
+                    onPress={() => setSubSheet({ ...subSheet, onId: p.id })}
+                  />
+                ))}
+              </>
+            )}
+            <View style={local.atRow}>
+              <Text style={local.atLabel}>At</Text>
+              <Text style={local.atValue} numberOfLines={1}>
+                {formatSubTime(subSheet.atMs)}
               </Text>
-              <Pressable
-                style={local.nudge}
-                onPress={() => nudgeMenu(1)}
-                accessibilityLabel="15 seconds later"
-              >
-                <Text style={local.nudgeLabel}>+</Text>
-              </Pressable>
+              <Stepper
+                minusLabel="15 seconds earlier"
+                plusLabel="15 seconds later"
+                onMinus={() =>
+                  setSubSheet({ ...subSheet, atMs: clampSwapTime(subSheet.atMs - SUB_STEP_MS, periodMs) })
+                }
+                onPlus={() =>
+                  setSubSheet({ ...subSheet, atMs: clampSwapTime(subSheet.atMs + SUB_STEP_MS, periodMs) })
+                }
+              />
             </View>
-            <Text style={local.menuLine}>Who comes off?</Text>
-            {offChoices.length === 0 ? (
+            <Text style={screen.fieldLabel}>For</Text>
+            {sheetChoices.off.length === 0 ? (
               <Text style={local.note}>
                 Nobody is on the pitch yet this {noun.toLowerCase()}. Pick the starters first.
               </Text>
             ) : (
-              <View style={local.picker}>
-                <ChipRow>
-                  {offChoices.map((p) => (
-                    <Chip
-                      key={p.id}
-                      label={p.firstName}
-                      selected={false}
-                      onPress={() => {
-                        change(
-                          planBenchSub(plan, periodIndex, benchMenu.playerId, p.id, benchMenu.atMs, periodMs)
-                        );
-                        setBenchMenu(null);
-                      }}
-                    />
-                  ))}
-                </ChipRow>
-              </View>
+              <>
+                {/* First, as on the lineup's planned-sub sheet (#264 V20). */}
+                <CheckLine
+                  label="Whoever is on longest"
+                  detail={longestId !== null ? name(longestId) : undefined}
+                  checked={subSheet.longest}
+                  onPress={() => setSubSheet({ ...subSheet, longest: true, offId: null })}
+                />
+                {sheetChoices.off.map((p) => (
+                  <CheckLine
+                    key={p.id}
+                    label={displayName(p)}
+                    checked={!subSheet.longest && subSheet.offId === p.id}
+                    onPress={() => setSubSheet({ ...subSheet, longest: false, offId: p.id })}
+                  />
+                ))}
+              </>
+            )}
+            {subSheet.swapIndex !== -1 && (
+              <Action
+                label="Remove this sub"
+                onPress={() => {
+                  change(removeSwap(plan, periodIndex, subSheet.swapIndex));
+                  setSubSheet(null);
+                }}
+              />
+            )}
+            {subSheet.onId !== null && benchIds.includes(subSheet.onId) && (
+              <Action
+                label="Put in the starting lineup…"
+                onPress={() => {
+                  setPitchPick(subSheet.onId);
+                  setSubSheet(null);
+                }}
+              />
             )}
           </>
         )}
-        {benchMenu && (
-          <SheetButton
-            label="Put in the starting lineup…"
-            onPress={() => {
-              setPitchPick(benchMenu.playerId);
-              setBenchMenu(null);
-            }}
-          />
-        )}
-      </ActionSheet>
+      </FormSheet>
     </View>
   );
 }
 
 const local = StyleSheet.create({
+  shareRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  shareText: { flex: 1 },
   // Far off to the left: laid out and drawn for the capture, never seen.
   offscreen: { position: 'absolute', left: -10000, top: 0 },
-  slotLabel: {
-    color: colours.inkMuted,
-    fontSize: 15,
-    includeFontPadding: false,
-    width: 56,
-    flexShrink: 0,
-  },
-  // Colour only: a weight change re-measures and clips (theme.ts).
-  unset: { color: colours.inkFaint },
-  note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false },
-  picker: { paddingVertical: 8 },
-  swap: {
-    alignSelf: 'stretch',
-    borderColor: colours.line,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-  },
-  swapTime: { flexDirection: 'row', alignItems: 'center' },
-  nudge: {
-    width: TOUCH_TARGET,
-    height: TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nudgeLabel: {
-    color: colours.ink,
-    fontSize: 22,
-    includeFontPadding: false,
-    alignSelf: 'stretch',
-    textAlign: 'center',
-  },
-  time: {
-    color: colours.ink,
-    fontSize: 20,
-    includeFontPadding: false,
-    width: 72,
-    flexShrink: 0,
-    textAlign: 'center',
-  },
-  removeHit: {
-    marginLeft: 'auto',
-    minHeight: TOUCH_TARGET,
-    justifyContent: 'center',
-    paddingLeft: 12,
-  },
-  remove: { color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
+  note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false, marginBottom: 4 },
+  flagged: { alignSelf: 'stretch', color: colours.warn, fontSize: 13, includeFontPadding: false, marginTop: 2 },
   problem: {
     alignSelf: 'stretch',
     color: colours.warn,
@@ -655,19 +557,23 @@ const local = StyleSheet.create({
     width: 64,
     textAlign: 'right',
   },
-  owed: { color: colours.warn },
-  menuLine: {
-    alignSelf: 'stretch',
-    color: colours.inkMuted,
-    fontSize: 15,
-    includeFontPadding: false,
-    marginVertical: 8,
+  faint: { color: colours.inkFaint },
+  atRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: TOUCH_TARGET,
+    borderBottomWidth: 1,
+    borderBottomColor: colours.hair,
   },
-  menuTime: {
-    flex: 1,
+  atLabel: { flex: 1, color: colours.ink, fontSize: 16, includeFontPadding: false },
+  // A fixed width: "6:15" and "12:30" share the slot (theme.ts).
+  atValue: {
+    width: 68,
+    flexShrink: 0,
+    textAlign: 'right',
+    paddingRight: 8,
     color: colours.ink,
-    fontSize: 20,
+    fontSize: 16,
     includeFontPadding: false,
-    textAlign: 'center',
   },
 });

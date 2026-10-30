@@ -9,10 +9,20 @@ Exits non-zero on failure, so it can gate CI.
 
 Checks:
   1. Every internal markdown link resolves to a real file.
-  2. Every ADR has the required sections and a valid status.
-  3. Every spec declares a status.
+  2. Every ADR has the required sections and a valid status, and its
+     status line starts with what the ADR index says (#259).
+  3. Every spec declares a status: feature-specs.md, domain-models.md and
+     system-architecture.md. Checking none is a failure, not a pass: this
+     check once read a removed folder and passed on "0 specs" (#259).
   4. Specs left in Draft beyond MAX_DRAFT_DAYS are reported (process check:
      catches specs written, never approved, and quietly implemented anyway).
+  5. Every row of feature-specs.md has a Status from the vocabulary (#259):
+     a Built row names, in Code, a file that exists, and every `src/` path a
+     Built row cites exists; a Built–differs row says how; a Ready, Proposed
+     or Idea row names its issue (#NNN); no issue waits twice.
+
+Offline by design (ADR-005): whether an issue is open, or carries the
+target: label its heading says, is not checked here.
 """
 
 import re
@@ -26,6 +36,16 @@ MAX_DRAFT_DAYS = 30
 LINK_RE = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
 ADR_SECTIONS = ("## Context", "## Decision", "## Consequences", "## Alternatives considered")
 ADR_STATUSES = ("Proposed", "Accepted", "Superseded", "Rejected")
+
+REPO = DOCS.parent
+SPEC_FILES = ("feature-specs.md", "domain-models.md", "system-architecture.md")
+FEATURE_SPECS = DOCS / "feature-specs.md"
+ROW_STATUSES = ("Built", "Ready", "Proposed", "Idea")
+DIFFERS_RE = re.compile(r"^Built[–-]differs:\s*\S")
+SUPERSEDED_RE = re.compile(r"^Superseded\b.*\S")
+ISSUE_RE = re.compile(r"#(\d+)")
+SRC_PATH_RE = re.compile(r"`((?:src/|App\.tsx)[^`\s]*)`")
+CODE_PATH_RE = re.compile(r"`([^`\s]+\.[A-Za-z]+)`")
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -68,18 +88,18 @@ def check_adrs() -> int:
 
 
 def check_specs() -> int:
-    spec_dir = DOCS / "specs"
-    if not spec_dir.is_dir():
-        return 0
     count = 0
     now = datetime.now(timezone.utc)
-    for f in sorted(spec_dir.glob("*.md")):
+    for name in SPEC_FILES:
+        f = DOCS / name
+        if not f.is_file():
+            errors.append(f"{name}: spec file missing")
+            continue
         count += 1
         text = f.read_text(encoding="utf-8")
-        rel = f.relative_to(DOCS)
         m = re.search(r"^Status:\s*(.+)$", text, re.MULTILINE)
         if not m:
-            errors.append(f"{rel}: missing 'Status:' line")
+            errors.append(f"{name}: missing 'Status:' line")
             continue
         status = m.group(1)
         if "Draft" in status:
@@ -89,18 +109,113 @@ def check_specs() -> int:
                 age = (now - updated).days
                 if age > MAX_DRAFT_DAYS:
                     warnings.append(
-                        f"{rel}: in Draft for {age} days "
+                        f"{name}: in Draft for {age} days "
                         f"(>{MAX_DRAFT_DAYS}) — approve it or close it"
                     )
+    if count == 0:
+        errors.append("no spec checked: a check that checks nothing must not pass")
     return count
+
+
+def cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def check_rows(path: Path = FEATURE_SPECS) -> dict[str, int]:
+    """Check 5: each feature-spec row's Status, and what that status needs."""
+    counts: dict[str, int] = {}
+    if not path.is_file():
+        return counts
+    rel = path.relative_to(DOCS) if path.is_relative_to(DOCS) else path.name
+    lines = path.read_text(encoding="utf-8").splitlines()
+    waiting: dict[str, int] = {}
+    in_waiting = False
+    header: list[str] | None = None
+    for n, line in enumerate(lines, 1):
+        if line.startswith("## "):
+            in_waiting = line.strip() == "## Waiting to build"
+        if not line.startswith("|"):
+            header = None
+            continue
+        row = cells(line)
+        if header is None:
+            header = row
+            # A spec table names a Feature or an Issue, and must have a Status.
+            if ("Feature" in row or "Issue" in row) and "Status" not in row:
+                errors.append(f"{rel}:{n}: table has no Status column")
+            continue
+        if set(line.replace("|", "").strip()) <= set("-: "):
+            continue
+        if "Status" not in header or not ("Feature" in header or "Issue" in header):
+            continue
+        status = row[header.index("Status")] if len(row) == len(header) else ""
+        where = f"{rel}:{n} ({row[0]})"
+        if status in ROW_STATUSES:
+            kind = status
+        elif DIFFERS_RE.match(status):
+            kind = "Built–differs"
+        elif SUPERSEDED_RE.match(status) and status != "Superseded":
+            kind = "Superseded"
+        else:
+            errors.append(f"{where}: status '{status}' is not one of Built, "
+                          "Built–differs: <how>, Ready, Proposed, Idea, Superseded by <what>")
+            continue
+        counts[kind] = counts.get(kind, 0) + 1
+        if kind in ("Built", "Built–differs"):
+            code = row[header.index("Code")] if "Code" in header else ""
+            named = CODE_PATH_RE.findall(code)
+            if not named:
+                errors.append(f"{where}: a {kind} row names no file in Code")
+            for p in set(named) | set(SRC_PATH_RE.findall(line)):
+                if not (REPO / p).is_file():
+                    errors.append(f"{where}: cites `{p}`, which does not exist")
+        if kind in ("Ready", "Proposed", "Idea"):
+            issues = ISSUE_RE.findall(line)
+            if not issues:
+                errors.append(f"{where}: a {kind} row names no issue #NNN")
+            elif in_waiting:
+                first = issues[0]
+                if first in waiting:
+                    errors.append(f"{where}: #{first} already waits at line {waiting[first]}")
+                waiting[first] = n
+    if not counts:
+        errors.append(f"{rel}: no feature rows found: a check that checks nothing must not pass")
+    return counts
+
+
+def check_adr_index() -> None:
+    """Each ADR file's status line starts with its row in the index (#259)."""
+    adr_dir = DOCS / "decisions"
+    index = adr_dir / "README.md"
+    if not index.is_file():
+        return
+    row_re = re.compile(r"^\| \[(\d{3})\]\(\./([^)]+)\) \|[^|]*\| (.+?) \| [^|]*\|$")
+    for line in index.read_text(encoding="utf-8").splitlines():
+        m = row_re.match(line)
+        if not m:
+            continue
+        f = adr_dir / m.group(2)
+        if not f.is_file():
+            continue  # a broken link is reported by check_links
+        s = re.search(r"^\*\*Status:\*\*\s*(.+)$", f.read_text(encoding="utf-8"), re.MULTILINE)
+        if s and not s.group(1).strip().startswith(m.group(3).strip()):
+            errors.append(
+                f"decisions/{m.group(2)}: status '{s.group(1).strip()}' does not match "
+                f"the index's '{m.group(3).strip()}'"
+            )
 
 
 def main() -> int:
     links = check_links()
     adrs = check_adrs()
+    check_adr_index()
     specs = check_specs()
+    rows = check_rows()
 
-    print(f"Checked {links} internal links, {adrs} ADRs, {specs} specs.")
+    print(f"Checked {links} internal links, {adrs} ADRs, {specs} specs, "
+          f"{sum(rows.values())} feature-spec rows.")
+    if rows:
+        print("  " + ", ".join(f"{k} {v}" for k, v in sorted(rows.items())))
 
     if warnings:
         print(f"\n{len(warnings)} warning(s):")

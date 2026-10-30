@@ -99,7 +99,7 @@ function matchDay4(): { plan: MatchPlan; format: Format; players: Player[] } {
 describe('AC4 — the match-day-4 worked example', () => {
   const { plan, format, players } = matchDay4();
   const projection = projectPlan(plan, format, 50, 2, players);
-  const row = (name: string) => projection.rows.find((r) => r.firstName === name)!;
+  const row = (name: string) => projection.rows.find((r) => r.name === name)!;
 
   it('projects every player to the figures on the issue', () => {
     expect(row('P1').outfieldMs).toBe(0);
@@ -128,14 +128,14 @@ describe('AC4 — the match-day-4 worked example', () => {
   // no delta; now their 50:00 in goal is time played, and it reads as ahead.
   it('puts the full-match keeper in the fair share, on their time in goal', () => {
     expect(row('P1').pitchMs).toBe(50 * MIN);
-    expect(formatDelta(row('P1').deltaMs)).toBe('+15:00');
-    expect(projection.rows[projection.rows.length - 1].firstName).toBe('P1');
+    expect(formatDelta(row('P1').deltaMs!)).toBe('+15:00');
+    expect(projection.rows[projection.rows.length - 1].name).toBe('P1');
   });
 
   it('lists the most owed first', () => {
-    expect(projection.rows.slice(0, 3).map((r) => r.firstName)).toEqual(['P8', 'P9', 'P10']);
-    expect(formatDelta(row('P8').deltaMs)).toBe('-05:00');
-    expect(formatDelta(row('P2').deltaMs)).toBe('+02:30');
+    expect(projection.rows.slice(0, 3).map((r) => r.name)).toEqual(['P8', 'P9', 'P10']);
+    expect(formatDelta(row('P8').deltaMs!)).toBe('-05:00');
+    expect(formatDelta(row('P2').deltaMs!)).toBe('+02:30');
   });
 
   it('catches the slip the hand sum made: subs at 7:30 on a 15:00 bench', () => {
@@ -148,7 +148,7 @@ describe('AC4 — the match-day-4 worked example', () => {
       2,
       players
     );
-    expect(half1.rows.find((r) => r.firstName === 'P8')!.outfieldMs).toBe(17.5 * MIN);
+    expect(half1.rows.find((r) => r.name === 'P8')!.outfieldMs).toBe(17.5 * MIN);
   });
 });
 
@@ -514,5 +514,28 @@ describe('tap a bench player to plan their sub (#120)', () => {
     expect(plan.periods[0].subs[0].atMs).toBe(12.25 * MIN);
     expect(plan.periods.slice(1)).toEqual(startingPeriod().periods.slice(1));
     expect(planBenchSub(plan, 9, P8, P7, MIN, QUARTER)).toBe(plan);
+  });
+});
+
+describe('the Plan’s fair share uses the one rule (#262; #261 item 1, Rob 1b)', () => {
+  const { plan, format, players } = matchDay4();
+  const row = (p: ReturnType<typeof projectPlan>, name: string) => p.rows.find((r) => r.name === name)!;
+
+  it('an absent child is out of the share and shows no gap (#262)', () => {
+    const p10 = players.find((p) => p.firstName === 'P10')!;
+    const p = projectPlan(plan, format, 50, 2, players, null, new Set([p10.id]));
+    // The nine available: 350 − P10's 30 = 320 ÷ 9.
+    expect(p.fairShareMs).toBeCloseTo((320 * MIN) / 9);
+    expect(row(p, 'P10').deltaMs).toBeNull();
+    expect(row(p, 'P10').notInShare).toBe('absent');
+    expect(p.rows[p.rows.length - 1].name).toBe('P10');
+  });
+
+  it('a Main keeper is out of the share; the others share what is left', () => {
+    const withKeeper = players.map((p) => (p.firstName === 'P1' ? { ...p, keeper: 'main' as const } : p));
+    const p = projectPlan(plan, format, 50, 2, withKeeper);
+    expect(p.fairShareMs).toBeCloseTo((300 * MIN) / 9);
+    expect(row(p, 'P1').notInShare).toBe('main-keeper');
+    expect(row(p, 'P1').deltaMs).toBeNull();
   });
 });

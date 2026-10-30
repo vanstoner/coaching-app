@@ -15,7 +15,7 @@
  *
  * Charts are boxes drawn with Views (ADR-016), from `./Charts`.
  *
- * First names only (invariant 4).
+ * First names by default (invariant 4, #54).
  */
 
 import { useRef, useState, type ReactNode } from 'react';
@@ -45,6 +45,9 @@ import { SortHeading, useTableSort } from './TableSort';
 import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitColours } from './Charts';
 import { VIEW_NOTHING_YET } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
+import { BackLink, RowNav, TopBar } from './controls';
+import { InfoTap } from './FiguresHelp';
+import { WhySheet } from './WhySheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 // ============================================================================
@@ -53,35 +56,27 @@ import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadTiles({ views, onOpen }: { views: SquadViews; onOpen: (view: SquadView) => void }) {
   const tiles = squadTiles(views);
-  const pairs = [tiles.slice(0, 2), tiles.slice(2, 4)];
+  // #264: each view is a Row › (it opens a screen); its answer is the light
+  // line under the title, and the accessible name keeps "Title: answer".
   return (
     <View style={local.tilesBlock}>
       <Text style={screen.fieldLabel}>Squad views</Text>
-      {pairs.map((pair, k) => (
-        <View key={k} style={local.tileRow}>
-          {pair.map((t) => (
-            <Pressable
-              key={t.view}
-              onPress={() => onOpen(t.view)}
-              style={({ pressed }) => [local.tile, pressed && screen.buttonPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`${t.title}: ${t.answer}`}
-            >
-              <View style={local.tileHead}>
-                <Text style={local.tileTitle}>{t.title}</Text>
-                <Text style={local.chevron}>›</Text>
-              </View>
-              <Text style={local.tileAnswer}>{t.answer}</Text>
-            </Pressable>
-          ))}
-        </View>
+      {tiles.map((t, i) => (
+        <RowNav
+          key={t.view}
+          first={i === 0}
+          label={t.title}
+          detail={t.answer}
+          accessibilityLabel={`${t.title}: ${t.answer}`}
+          onPress={() => onOpen(t.view)}
+        />
       ))}
     </View>
   );
 }
 
 // ============================================================================
-// The frame every view shares: a way back at the top and at the foot
+// The frame every view shares: one way back, top left (#264 V31)
 // ============================================================================
 
 interface ViewProps {
@@ -111,15 +106,10 @@ function ViewFrame({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
-        <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>Back to Squad</Text>
-        </Pressable>
+        <TopBar back={<BackLink label="Squad" onPress={onBack} />} />
         <Text style={screen.title}>{VIEW_TITLE[view]}</Text>
         {note !== null && <Text style={screen.caption}>{note}.</Text>}
         {children}
-        <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={onBack}>
-          <Text style={screen.buttonLabel}>Back to Squad</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );
@@ -307,6 +297,8 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
 
 export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
+  // #261 AC10: a row opens "Why the difference"; the child's page is a row in it.
+  const [why, setWhy] = useState<UUID | null>(null);
   const { sort, onSort } = useTableSort('squadFairness');
   const f = views.fairness;
   if (f === null) {
@@ -338,6 +330,13 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
         </Text>
         <Text style={local.heroLine}>min a game</Text>
         <Text style={local.heroLine}>of the squad average, {f.average}</Text>
+      </View>
+      {/* #261 AC15: how each is worked out. */}
+      <View style={local.infoLine}>
+        <Text style={local.infoLabel}>The gap</Text>
+        <InfoTap figure="gap" />
+        <Text style={local.infoLabel}>The squad average</Text>
+        <InfoTap figure="squadAverage" />
       </View>
       <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average." />
 
@@ -374,7 +373,8 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
         return (
           <Pressable
             key={r.playerId}
-            onPress={() => onChild(r.playerId)}
+            onPress={() => setWhy(r.playerId)}
+            accessibilityHint="Opens why the difference"
             style={local.drow}
             accessibilityRole="button"
             accessibilityLabel={`${r.name}, ${r.perGame} min a game, ${words}`}
@@ -408,6 +408,15 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
       <ColumnChart columns={columns} max={top} step={5} onSelect={(j) => setPicked(columns[j].label)} />
       <Picked text={picked} onClear={() => setPicked(null)} />
       <Text style={[screen.hint, local.left]}>The first matches swing most: there are only one or two games to average.</Text>
+      <WhySheet
+        views={views}
+        playerId={why}
+        onClose={() => setWhy(null)}
+        onChildPage={(id) => {
+          setWhy(null);
+          onChild(id);
+        }}
+      />
     </ViewFrame>
   );
 }
@@ -418,6 +427,8 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
 
 export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadSaturday');
+  // #261 AC10: a row opens "Why the difference"; the child's page is a row in it.
+  const [why, setWhy] = useState<UUID | null>(null);
   const f = views.fairness;
   if (f === null) {
     return (
@@ -425,7 +436,7 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
         <Nothing
           view="saturday"
           firstTime={firstTime}
-          before={'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}
+          before={'Nobody is under the average yet.\nAfter your first match, this shows who is next in line for more time.'}
         />
       </ViewFrame>
     );
@@ -438,29 +449,34 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
       <View style={local.owedBox}>
         {named.length > 0 ? (
           <>
-            <Text style={local.owedHead}>Owed {OWED_MIN} min or more this season</Text>
+            <Text style={local.owedHead}>
+              Next in line for more time: {OWED_MIN} min or more under the average this season
+            </Text>
             <Text style={local.owedNames}>{named.map((r) => `${r.name} ${r.owed}`).join(' · ')}</Text>
           </>
         ) : (
-          <Text style={local.owedHead}>Nobody is owed {OWED_MIN} min or more this season.</Text>
+          <Text style={local.owedHead}>Nobody is {OWED_MIN} min or more under the average this season.</Text>
         )}
       </View>
-      <Text style={[screen.hint, local.left]}>
-        Owed: the squad average for each game they played, minus the minutes they had. A missed match is never
-        owed time.
-      </Text>
+      <View style={local.hintRow}>
+        <Text style={[screen.hint, local.left, local.hintText]}>
+          Under the average: for each game they played, the squad average minus their minutes, added up. A missed
+          match never counts.
+        </Text>
+        <InfoTap figure="underOver" />
+      </View>
 
       <Text style={screen.fieldLabel}>Everyone</Text>
       <View style={local.oHead}>
         <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.oNameHead} />
-        <SortHeading label="Owed" column="owed" sort={sort} onSort={onSort} align="left" style={local.oTextHead} />
+        <SortHeading label="vs average" column="owed" sort={sort} onSort={onSort} align="left" style={local.oTextHead} />
         <SortHeading label="a game" column="perGame" sort={sort} onSort={onSort} style={local.oMetaHead} />
         <SortHeading label="played" column="played" sort={sort} onSort={onSort} style={local.oMetaHead} />
       </View>
       <View style={local.oKey}>
-        <Text style={local.oKeyText}>← Owed</Text>
+        <Text style={local.oKeyText}>← Under</Text>
         <Text style={local.oKeyText}>Level</Text>
-        <Text style={local.oKeyText}>Had more →</Text>
+        <Text style={local.oKeyText}>Over →</Text>
       </View>
       {sortOwed(views.owed, sort).map((r) => {
         if (r.perGame === null) {
@@ -479,7 +495,8 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
           return (
             <Pressable
               key={r.playerId}
-              onPress={() => onChild(r.playerId)}
+              onPress={() => setWhy(r.playerId)}
+              accessibilityHint="Opens why the difference"
               style={local.orow}
               accessibilityRole="button"
               accessibilityLabel={`${r.name}, ${r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}`}
@@ -497,7 +514,8 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
         return (
           <Pressable
             key={r.playerId}
-            onPress={() => onChild(r.playerId)}
+            onPress={() => setWhy(r.playerId)}
+            accessibilityHint="Opens why the difference"
             style={local.orow}
             accessibilityRole="button"
             accessibilityLabel={`${r.name}, ${text.toLowerCase()} this season, ${r.perGame} min a game, played ${r.played}`}
@@ -506,10 +524,9 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
               <Text style={local.oName} numberOfLines={1}>
                 {r.name}
               </Text>
-              {/* Colour only marks the named: a weight change re-measures and clips (theme.ts). */}
-              <Text style={[local.oText, r.named && local.oNamed]} numberOfLines={1}>
-                {text}
-              </Text>
+              {/* Colour only marks the named: a weight change re-measures and clips (theme.ts).
+                  It wraps: "16 min under the average" is wider than the column at 360 dp (QA D2). */}
+              <Text style={[local.oText, r.named && local.oNamed]}>{text}</Text>
               <Text style={local.oMeta} numberOfLines={1}>
                 {r.perGame} a game · played {r.played}
               </Text>
@@ -518,7 +535,16 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
           </Pressable>
         );
       })}
-      <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average and never shown as owed." />
+      <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average and never shown as under or over." />
+      <WhySheet
+        views={views}
+        playerId={why}
+        onClose={() => setWhy(null)}
+        onChildPage={(id) => {
+          setWhy(null);
+          onChild(id);
+        }}
+      />
     </ViewFrame>
   );
 }
@@ -772,6 +798,10 @@ const local = StyleSheet.create({
   dAxis: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
 
   // --- going into Saturday
+  infoLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', marginTop: 4 },
+  infoLabel: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
+  hintRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  hintText: { flex: 1 },
   owedBox: {
     alignSelf: 'stretch',
     marginTop: 12,
@@ -808,7 +838,7 @@ const local = StyleSheet.create({
   // The two halves of the 136 under "50 a game · played 9".
   oMetaHead: { width: 68 },
   oName: { width: 72, color: colours.ink, fontSize: 17, includeFontPadding: false, marginRight: 6 },
-  oText: { flex: 1, color: colours.inkMuted, fontSize: 15, includeFontPadding: false },
+  oText: { flex: 1, color: colours.inkMuted, fontSize: 15, includeFontPadding: false, paddingRight: 4 },
   oNamed: { color: colours.ink },
   oNote: { flex: 1, color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
   oMeta: {

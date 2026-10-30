@@ -29,6 +29,7 @@ import {
   type Result,
   type Structure,
 } from './matchRecord';
+import { displayName } from './squad';
 import { matchTalliesWithGoals, type TallyLine } from './tallies';
 
 export interface RecordOnlyMatch {
@@ -44,6 +45,9 @@ export interface RecordOnlyMatch {
   leftOut: string | null;
   /** Archived by the coach on the phone that played it (#76), carried by its `fixture` record (#195). */
   archived: boolean;
+  /** #254: the pitch, as its `fixture` record holds it (read-only here; never a referee). */
+  surface: string | null;
+  condition: string | null;
 }
 
 function scoreOf(m: LedgerMatch): RecordOnlyMatch['score'] {
@@ -65,6 +69,7 @@ const kickoffTime = (m: { kickoffAt: string | null }): number | null => {
 export function recordOnlyMatches(ledger: Ledger | null, fixtureIds: ReadonlySet<UUID>): RecordOnlyMatch[] {
   if (!ledger) return [];
   const archived = new Set((ledger.fixtures ?? []).filter((f) => f.archived).map((f) => f.id));
+  const fixtureOf = new Map((ledger.fixtures ?? []).map((f) => [f.id, f]));
   return ledger.matches
     .filter((m) => m.status === 'completed' && !fixtureIds.has(m.id))
     .map((m) => ({
@@ -77,6 +82,8 @@ export function recordOnlyMatches(ledger: Ledger | null, fixtureIds: ReadonlySet
       score: scoreOf(m),
       leftOut: isExcluded(m) ? (m.excluded?.note ?? '') : null,
       archived: archived.has(m.id),
+      surface: fixtureOf.get(m.id)?.surface ?? null,
+      condition: fixtureOf.get(m.id)?.condition ?? null,
     }))
     .sort((a, b) => {
       const ta = kickoffTime(a);
@@ -137,7 +144,7 @@ export interface RecordMatchPage {
 export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMatchPage | null {
   const m = ledger?.matches.find((x) => x.id === matchId);
   if (!ledger || !m) return null;
-  const nameOf = new Map(ledger.players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(ledger.players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID | null) => (id ? (nameOf.get(id) ?? 'Unknown') : 'Unknown');
   const at = new Map(ledger.players.map((p, i) => [p.id, i]));
   const squadAt = (id: UUID) => at.get(id) ?? ledger.players.length;

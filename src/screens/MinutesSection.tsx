@@ -17,11 +17,7 @@
  */
 
 import { useState } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { formatClock } from '../app/matchClock';
@@ -32,8 +28,10 @@ import { seasonOutfieldShares, shareLabel } from '../app/outfieldTarget';
 import type { Player, UUID } from '../types/index';
 import { SQUAD_OPTIONS, type SquadMatching, type SquadOption } from '../app/squadMatch';
 import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../app/attendance';
+import { Action, BackLink, CheckLine, RowNav } from './controls';
 import { colours, screen } from './theme';
 import { SortHeading, useTableSort } from './TableSort';
+import { AboutFiguresRow, InfoTap } from './FiguresHelp';
 
 export function MinutesSection({
   ledger,
@@ -80,17 +78,25 @@ export function MinutesSection({
 
   return (
     <View style={local.section}>
-      <Text style={screen.fieldLabel}>Player minutes</Text>
-      <Text style={screen.hint}>
-        Kept separately from everything else, so it survives updates.{' '}
-        {matches === 0
-          ? 'Nothing played yet.'
-          : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
-        {leftOut > 0 ? ` ${leftOut} left out of the figures.` : ''}
-        {inferred > 0
-          ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
-          : ''}
-      </Text>
+      {/* In Settings the section heading names it (#263); a past season's page has none. */}
+      {readOnly && <Text style={screen.fieldLabel}>Player minutes</Text>}
+      {/* #261 AC13, Rob's Q2: the help is the first row of Player minutes. */}
+      <AboutFiguresRow backLabel={readOnly ? 'Back' : 'Settings'} />
+      <View style={local.hintRow}>
+        <Text style={[screen.hint, local.hintText]}>
+          Kept separately from everything else, so it survives updates. These totals add up every match not left
+          out, including matches not yet ended and matches in another format, so they can be higher than the Squad
+          tab&apos;s.{' '}
+          {matches === 0
+            ? 'Nothing played yet.'
+            : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
+          {leftOut > 0 ? ` ${leftOut} left out of the figures.` : ''}
+          {inferred > 0
+            ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
+            : ''}
+        </Text>
+        <InfoTap figure="playerMinutes" />
+      </View>
 
       {rows.length > 0 && (
         <View style={local.head}>
@@ -147,32 +153,13 @@ export function MinutesSection({
 
       {!readOnly && (
       <>
-      <Pressable
-        disabled={busy || matches === 0}
-        onPress={onExport}
-        style={({ pressed }) => [
-          screen.buttonQuiet,
-          (busy || matches === 0) && screen.buttonDisabled,
-          pressed && screen.buttonPressed,
-        ]}
-      >
-        <Text style={screen.buttonLabel}>Export minutes file</Text>
-      </Pressable>
+      {/* #264: Export acts at once; Import opens the file picker (a Row ›). */}
+      <Action label="Export minutes file" onPress={onExport} disabled={busy || matches === 0} />
       <Text style={[screen.hint, screen.overtime]}>
         The file contains the children's first names. Keep it somewhere private.
       </Text>
 
-      <Pressable
-        disabled={busy || matching !== null}
-        onPress={onImport}
-        style={({ pressed }) => [
-          screen.buttonQuiet,
-          (busy || matching !== null) && screen.buttonDisabled,
-          pressed && screen.buttonPressed,
-        ]}
-      >
-        <Text style={screen.buttonLabel}>Import minutes file</Text>
-      </Pressable>
+      <RowNav label="Import minutes file" onPress={onImport} disabled={busy || matching !== null} />
       <Text style={screen.hint}>
         Adds matches recorded after this phone's. A file from a phone that
         recorded its own matches is refused. Nothing here is ever overwritten
@@ -257,32 +244,19 @@ function MatchStep({
         </>
       )}
 
-      {SQUAD_OPTIONS.map((o) => {
-        const selected = option === o.option;
-        return (
-          <Pressable
-            key={o.option}
-            onPress={() => setOption(o.option)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected }}
-            style={({ pressed }) => [local.option, selected && local.optionOn, pressed && screen.buttonPressed]}
-          >
-            {/* Colour only between states: a weight change re-measures and clips (theme.ts). */}
-            <Text style={[local.optionLabel, selected && local.optionLabelOn]}>{o.label}</Text>
-            <Text style={[local.optionHint, selected && local.optionLabelOn]}>{o.hint}</Text>
-          </Pressable>
-        );
-      })}
+      {/* #264: a list with a tick, then Import (an Action) or Cancel (a way out). */}
+      {SQUAD_OPTIONS.map((o) => (
+        <CheckLine
+          key={o.option}
+          label={o.label}
+          detail={o.hint}
+          checked={option === o.option}
+          onPress={() => setOption(o.option)}
+        />
+      ))}
 
-      <Pressable
-        onPress={() => onChoose(option)}
-        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Import</Text>
-      </Pressable>
-      <Pressable onPress={onCancel} style={screen.linkHit} accessibilityRole="button">
-        <Text style={screen.link}>Cancel</Text>
-      </Pressable>
+      <Action label="Import" onPress={() => onChoose(option)} />
+      <BackLink label="Cancel" chevron={false} onPress={onCancel} />
     </View>
   );
 }
@@ -294,7 +268,9 @@ function attendanceLine(a: SeasonAttendance | undefined): string {
 }
 
 const local = StyleSheet.create({
-  section: { alignSelf: 'stretch', marginTop: 8 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  hintText: { flex: 1 },
+  section: { alignSelf: 'stretch' },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -337,18 +313,6 @@ const local = StyleSheet.create({
   },
   stepHead: { color: colours.ink, fontSize: 15, includeFontPadding: false, marginTop: 8 },
   stepLine: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginTop: 2 },
-  option: {
-    alignSelf: 'stretch',
-    marginTop: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colours.line,
-    borderRadius: 10,
-  },
-  optionOn: { backgroundColor: colours.accent, borderColor: colours.accent },
-  optionLabel: { color: colours.inkMuted, fontSize: 15, fontWeight: '600', includeFontPadding: false },
-  optionLabelOn: { color: colours.ink },
-  optionHint: { color: colours.inkFaint, fontSize: 12, includeFontPadding: false, marginTop: 2 },
   message: {
     alignSelf: 'stretch',
     color: colours.warn,

@@ -102,8 +102,9 @@ describe('fix 3: the match report', () => {
     expect(src).not.toMatch(/Not closed yet\. Read it through/);
     expect(src).not.toMatch(/Includes goals added in the record with time unknown/);
     expect(src).not.toMatch(/In the record: how it was played/);
-    const link = src.indexOf('In the record ›');
+    // #264: the record link is a Row › (its chevron an icon, not "›" text), still at the foot, before Match analysis.
+    const link = src.indexOf('<RowNav label="In the record"');
     expect(link).toBeGreaterThan(src.indexOf('<Text style={screen.fieldLabel}>Minutes on the pitch</Text>'));
-    expect(link).toBeLessThan(src.indexOf('<Text style={screen.buttonLabel}>Match analysis</Text>'));
+    expect(link).toBeLessThan(src.indexOf('<RowNav label="Match analysis"'));
   });
 });

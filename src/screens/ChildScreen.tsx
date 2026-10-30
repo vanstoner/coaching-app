@@ -18,11 +18,19 @@
  * Every figure arrives folded from the ledger by `src/app/childSeason.ts`
  * and `src/app/squadViews.ts`; nothing here is stored (invariant 1).
  *
- * First names only (invariant 4).
+ * #264: one way back, top left. Name is a Row › opening a Cancel/Save sheet.
+ * Playing time never folds (ADR-015: the figures and the outfield-share
+ * target stay beside each other); Match by match and Positions tried are
+ * closed Sections; Preferences is a Section of Segmented rows that save on
+ * the tap with ✓ Saved, a second tap still clearing; Fairness is a Section
+ * whose change is a Row › to a note sheet. Which sections are open is view
+ * state, never stored.
+ *
+ * First names by default (invariant 4, #54).
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Player } from '../types/index';
@@ -35,14 +43,21 @@ import {
   KEEPER_LABEL,
   UNIT_PREF_LABEL,
   displayName,
+  sameNameAs,
   setKeeperPreference,
+  splitName,
+  validateName,
   setUnitPreference,
 } from '../app/squad';
 import { OUTFIELD_TARGET_CHOICES, setOutfieldTarget } from '../app/outfieldTarget';
-import { Chip, ChipRow } from './Chip';
+import { Action, BackLink, FieldRow, FormSheet, RowNav, Section, SegmentedRow, TopBar, useSavedTick } from './controls';
 import { AverageBar, ColumnChart, KeyItem, UnitStack, chartColours, type Column } from './Charts';
 import { Picked, UnitKey } from './SquadViews';
+import { InfoTap } from './FiguresHelp';
+import { WhySheet } from './WhySheet';
+import { whyDifference } from '../app/whyDifference';
 import { colours, screen } from './theme';
+import { MoreThanFirstName, guard } from './NameWarning';
 
 export function ChildScreen({
   player,
@@ -70,28 +85,91 @@ export function ChildScreen({
 }) {
   const name = displayName(player);
   const s = views.season.children.find((c) => c.playerId === player.id);
-  const card = (lens: LensCard): ReactNode => {
+  const [open, setOpen] = useState<Record<string, boolean>>({ preference: true });
+  const tick = useSavedTick();
+  const flip = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const positions = views.positions.find((p) => p.playerId === player.id);
+  // #261 AC10: the Playing time figures open "Why the difference".
+  const [why, setWhy] = useState(false);
+  const whyLine = whyDifference(views, player.id)?.headline ?? null;
+  const section = (lens: LensCard): ReactNode => {
     switch (lens) {
       case 'playing':
+        // ADR-015: the headline figures never fold away.
         return (
-          <PlayingTime
-            name={name}
-            s={s}
-            squadAverageMs={views.season.squadAverageMs}
-            scaleMs={views.season.scaleMs}
-            formatNote={views.season.formatNote}
-          />
+          <Card key={lens} title={LENS_TITLE[lens]}>
+            <PlayingTime
+              name={name}
+              s={s}
+              squadAverageMs={views.season.squadAverageMs}
+              scaleMs={views.season.scaleMs}
+              formatNote={views.season.formatNote}
+              whyLine={whyLine}
+              onWhy={() => setWhy(true)}
+            />
+            <WhySheet views={views} playerId={why ? player.id : null} onClose={() => setWhy(false)} />
+          </Card>
         );
       case 'matches':
-        return s ? <MatchByMatch views={views} player={player} s={s} /> : null;
+        return s ? (
+          <Section
+            key={lens}
+            title={LENS_TITLE[lens]}
+            summary={`Played ${s.played} of ${s.of}${s.missed > 0 ? ` · missed ${s.missed}` : ''}`}
+            open={open.matches === true}
+            onToggle={() => flip('matches')}
+          >
+            <MatchByMatch views={views} player={player} s={s} />
+          </Section>
+        ) : null;
       case 'positions':
-        return <PositionsCard views={views} player={player} name={name} roleLine={roleLine} />;
+        return (
+          <Section
+            key={lens}
+            title={LENS_TITLE[lens]}
+            summary={positions ? positionsLine(positions) : 'No time on the pitch yet'}
+            open={open.positions === true}
+            onToggle={() => flip('positions')}
+          >
+            <PositionsCard views={views} player={player} name={name} roleLine={roleLine} />
+          </Section>
+        );
       case 'preference':
         return (
-          <>
-            <Preferences player={player} everyone={everyone} onPlayers={onPlayers} />
-            <FairnessMark name={name} fairness={fairness} />
-          </>
+          <View key={lens}>
+            <Section
+              title="Preferences"
+              summary={
+                [
+                  player.keeper ? KEEPER_LABEL[player.keeper] : null,
+                  player.prefers ? UNIT_PREF_LABEL[player.prefers] : null,
+                  player.outfieldTargetPct != null ? `${player.outfieldTargetPct}%` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || 'None set'
+              }
+              open={open.preference === true}
+              onToggle={() => flip('preference')}
+              saved={tick.visible}
+            >
+              <Preferences
+                player={player}
+                everyone={everyone}
+                onPlayers={(p) => {
+                  onPlayers(p);
+                  tick.mark();
+                }}
+              />
+            </Section>
+            <Section
+              title="Fairness"
+              summary={fairness.counted ? 'Counted in squad figures' : 'A fill-in'}
+              open={open.fairness === true}
+              onToggle={() => flip('fairness')}
+            >
+              <FairnessMark name={name} fairness={fairness} />
+            </Section>
+          </View>
         );
     }
   };
@@ -99,27 +177,20 @@ export function ChildScreen({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
-        <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>{backLabel}</Text>
-        </Pressable>
+        {/* #264 V31: one way back, top left; it keeps the "Back to …" name the store selectors match. */}
+        <TopBar
+          back={
+            <BackLink label={backLabel.replace(/^Back to /, '')} accessibilityLabel={backLabel} onPress={onBack} />
+          }
+        />
         <Text style={screen.title} numberOfLines={1}>
           {name}
         </Text>
         {player.keeper === 'main' && <Text style={screen.caption}>{KEEPER_LABEL.main}</Text>}
+        <Rename player={player} everyone={everyone} onPlayers={onPlayers} />
 
         {/* AC6: Playing time first and always; the order is `lensCards`. */}
-        {lensCards(s).map((lens) => (
-          <Card key={lens} title={LENS_TITLE[lens]}>
-            {card(lens)}
-          </Card>
-        ))}
-
-        <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-          onPress={onBack}
-        >
-          <Text style={screen.buttonLabel}>{backLabel}</Text>
-        </Pressable>
+        {lensCards(s).map((lens) => section(lens))}
       </ScrollView>
     </View>
   );
@@ -145,6 +216,8 @@ function PlayingTime({
   squadAverageMs,
   scaleMs,
   formatNote,
+  whyLine,
+  onWhy,
 }: {
   name: string;
   s: ChildSeason | undefined;
@@ -152,6 +225,9 @@ function PlayingTime({
   scaleMs: number;
   /** ADR-015 §6a (#223): the matches left out for their format, and why; null when none is. */
   formatNote: string | null;
+  /** The season line on the Why sheet (#261 AC11); null when the child is not in the views. */
+  whyLine: string | null;
+  onWhy: () => void;
 }) {
   // §6a: the squad average and this child's figures use the dominating format's matches only.
   const note = formatNote !== null ? <Text style={screen.hint}>{formatNote}.</Text> : null;
@@ -176,14 +252,28 @@ function PlayingTime({
   const showKeeper = (s.goalMsPerGame ?? 0) > 0 || target !== null;
   return (
     <>
-      <Text style={local.big} numberOfLines={1}>
-        {wholeMinutes(s.averageMs)}
-      </Text>
-      <Text style={screen.caption}>min a game</Text>
-      <Text style={local.sub}>
-        Played {s.played} of {s.of}
-        {s.missed > 0 ? ` · missed ${s.missed}` : ''}
-      </Text>
+      {/* The info tap sits in the corner, outside the figures' own button (#261 AC15). */}
+      <View style={local.figuresWrap}>
+        <Pressable
+          onPress={onWhy}
+          accessibilityRole="button"
+          accessibilityLabel={`${wholeMinutes(s.averageMs)} min a game, played ${s.played} of ${s.of}`}
+          accessibilityHint="Opens why the difference"
+          style={({ pressed }) => [local.figures, pressed && local.pressed]}
+        >
+          <Text style={local.big} numberOfLines={1}>
+            {wholeMinutes(s.averageMs)}
+          </Text>
+          <Text style={screen.caption}>min a game</Text>
+          <Text style={local.sub}>
+            Played {s.played} of {s.of}
+            {s.missed > 0 ? ` · missed ${s.missed}` : ''}
+          </Text>
+        </Pressable>
+        <View style={local.infoCorner}>
+          <InfoTap figure="perGame" />
+        </View>
+      </View>
       <AverageBar value={s.averageMs} line={line} scale={scaleMs} wide />
       <View style={local.scale}>
         <Text style={local.scaleText}>0</Text>
@@ -200,6 +290,7 @@ function PlayingTime({
       </View>
       <Text style={screen.hint}>Minutes a game counts only the matches {name} played.</Text>
       {note}
+      {whyLine !== null && <RowNav first label="Why the difference" detail={whyLine} onPress={onWhy} />}
 
       <Text style={screen.fieldLabel}>By competition</Text>
       {s.competitions.map((c) => (
@@ -312,45 +403,34 @@ function Preferences({
   everyone: Player[];
   onPlayers: (p: Player[]) => void;
 }) {
+  // #264 V13: tapping the chosen segment still clears it.
   return (
     <>
-      <Text style={[screen.hint, local.first]}>In goal</Text>
-      <ChipRow>
-        {(['main', 'backup', 'never'] as const).map((k) => (
-          <Chip
-            key={k}
-            label={KEEPER_LABEL[k]}
-            selected={player.keeper === k}
-            // Tapping the chosen one clears it.
-            onPress={() => onPlayers(setKeeperPreference(everyone, player.id, player.keeper === k ? null : k))}
-          />
-        ))}
-      </ChipRow>
-      <Text style={screen.hint}>Prefers, outfield</Text>
-      <ChipRow>
-        {(['DEF', 'MID', 'ATT'] as const).map((u) => (
-          <Chip
-            key={u}
-            label={UNIT_PREF_LABEL[u]}
-            selected={player.prefers === u}
-            onPress={() => onPlayers(setUnitPreference(everyone, player.id, player.prefers === u ? null : u))}
-            narrow
-          />
-        ))}
-      </ChipRow>
+      <SegmentedRow
+        label="In goal"
+        stacked
+        allowClear
+        options={(['main', 'backup', 'never'] as const).map((k) => ({ value: k, label: KEEPER_LABEL[k] }))}
+        value={player.keeper ?? null}
+        onChange={(k) => onPlayers(setKeeperPreference(everyone, player.id, k))}
+      />
+      <SegmentedRow
+        label="Prefers, outfield"
+        stacked
+        allowClear
+        options={(['DEF', 'MID', 'ATT'] as const).map((u) => ({ value: u, label: UNIT_PREF_LABEL[u] }))}
+        value={player.prefers ?? null}
+        onChange={(u) => onPlayers(setUnitPreference(everyone, player.id, u))}
+      />
       {/* #101 AC2: shown beside their figures; never a fairness input. */}
-      <Text style={screen.hint}>Outfield share target</Text>
-      <ChipRow>
-        {OUTFIELD_TARGET_CHOICES.map((t) => (
-          <Chip
-            key={t}
-            label={`${t}%`}
-            selected={player.outfieldTargetPct === t}
-            onPress={() => onPlayers(setOutfieldTarget(everyone, player.id, player.outfieldTargetPct === t ? null : t))}
-            narrow
-          />
-        ))}
-      </ChipRow>
+      <SegmentedRow
+        label="Outfield share target"
+        stacked
+        allowClear
+        options={OUTFIELD_TARGET_CHOICES.map((t) => ({ value: t as number, label: `${t}%` }))}
+        value={player.outfieldTargetPct ?? null}
+        onChange={(t) => onPlayers(setOutfieldTarget(everyone, player.id, t))}
+      />
       <Text style={screen.hint}>Only decides who is suggested where. Minutes and fairness are not affected.</Text>
     </>
   );
@@ -364,7 +444,7 @@ export interface ChildFairness {
 
 /**
  * #190: a fill-in from another team is recorded like anyone, and left out of
- * the squad average, the fairness figures and "who's owed time" for the
+ * the squad average, the fairness figures and the season difference for the
  * season. Changing it needs a note (invariant 5); every change is listed.
  */
 function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairness }) {
@@ -383,7 +463,6 @@ function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairnes
   };
   return (
     <>
-      <Text style={screen.hint}>Fairness</Text>
       <Text style={[local.line, local.left]}>
         {fairness.counted ? 'Counted in the squad’s fairness figures' : FILL_IN_NOTE}
       </Text>
@@ -392,39 +471,43 @@ function FairnessMark({ name, fairness }: { name: string; fairness: ChildFairnes
           {`${whenOf(h.at)}: ${h.counted ? 'counted again' : 'marked a fill-in'}${h.note ? ` — ${h.note}` : ''}`}
         </Text>
       ))}
-      {editing ? (
-        <>
-          <TextInput
-            style={screen.input}
-            value={note}
-            onChangeText={(t) => {
-              setNote(t);
-              if (error) setError('');
-            }}
-            placeholder="Why? (needed)"
-            placeholderTextColor={colours.inkFaint}
-          />
-          {error !== '' && <Text style={screen.error}>{error}</Text>}
-          <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={save}>
-            <Text style={screen.buttonLabel}>{fairness.counted ? 'Mark as a fill-in' : 'Count them again'}</Text>
-          </Pressable>
-          <Pressable onPress={() => setEditing(false)} style={screen.linkHit}>
-            <Text style={screen.link}>Cancel</Text>
-          </Pressable>
-        </>
-      ) : (
-        <Pressable onPress={() => setEditing(true)} style={screen.linkHit}>
-          <Text style={screen.link}>
-            {fairness.counted ? `${name} is a fill-in: don’t count them in fairness` : 'Count them in fairness again'}
-          </Text>
-        </Pressable>
-      )}
+      <RowNav
+        label={fairness.counted ? `${name} is a fill-in: don’t count them in fairness` : 'Count them in fairness again'}
+        value="needs a note"
+        onPress={() => setEditing(true)}
+      />
+      {/* #264: a note form, so a sheet: Save is off until the note has text (C4). */}
+      <FormSheet
+        visible={editing}
+        title={fairness.counted ? 'Mark as a fill-in' : 'Count them again'}
+        onCancel={() => {
+          setEditing(false);
+          setError('');
+        }}
+        onSave={save}
+        saveDisabled={note.trim() === ''}
+        dirty={note !== ''}
+        thing="note"
+      >
+        <FieldRow
+          label="Why"
+          value={note}
+          onChangeText={(t) => {
+            setNote(t);
+            if (error) setError('');
+          }}
+          placeholder="Needed"
+          autoFocus
+        />
+        {error !== '' && <Text style={screen.error}>{error}</Text>}
+      </FormSheet>
       <Text style={screen.hint}>Their minutes are always recorded. On the day they still get a fair share.</Text>
     </>
   );
 }
 
 const local = StyleSheet.create({
+  rename: { alignSelf: 'stretch', marginTop: 8 },
   card: {
     alignSelf: 'stretch',
     marginTop: 14,
@@ -447,6 +530,10 @@ const local = StyleSheet.create({
   empty: { marginTop: 8, marginBottom: 4 },
   first: { marginTop: 0 },
   left: { textAlign: 'left' },
+  figures: { alignSelf: 'stretch', alignItems: 'center' },
+  figuresWrap: { alignSelf: 'stretch' },
+  infoCorner: { position: 'absolute', top: 4, right: 0 },
+  pressed: { opacity: 0.6 },
   // One weight in every state, sized to the slot not the glyphs (theme.ts).
   big: {
     alignSelf: 'stretch',
@@ -479,3 +566,93 @@ const local = StyleSheet.create({
   key: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', alignSelf: 'stretch' },
   unitText: { alignSelf: 'stretch', color: colours.ink, fontSize: 15, includeFontPadding: false, marginTop: 8 },
 });
+
+/**
+ * #54 AC6, AC8: rename a child. The same check and warning as Squad › Add;
+ * the id, minutes and history never change, and the save writes a new
+ * `player` record (latest wins, the earlier one stays in the chain).
+ */
+function Rename({
+  player,
+  everyone,
+  onPlayers,
+}: {
+  player: Player;
+  everyone: Player[];
+  onPlayers: (p: Player[]) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [more, setMore] = useState<string | null>(null);
+  const [same, setSame] = useState<{ name: string; other: string } | null>(null);
+  const close = () => {
+    setDraft(null);
+    setError('');
+    setMore(null);
+    setSame(null);
+  };
+  const commit = (name: string) => {
+    const { firstName, displaySuffix } = splitName(name);
+    onPlayers(everyone.map((p) => (p.id === player.id ? { ...p, firstName, displaySuffix } : p)));
+    close();
+  };
+  const settle = (name: string) => {
+    setMore(null);
+    const other = sameNameAs(everyone, name, player.id);
+    if (other) setSame({ name, other: displayName(other) });
+    else commit(name);
+  };
+  const save = () => {
+    const check = validateName(draft ?? '');
+    if (check.reason === 'more-than-one-word') return setMore(check.cleaned);
+    if (!check.ok) return setError(check.message);
+    settle(check.cleaned);
+  };
+  // #264: Name is a Row › opening a sheet (Cancel, Save), the keyboard on First name.
+  return (
+    <View style={local.rename}>
+      <RowNav label="Name" value={displayName(player)} onPress={() => setDraft(displayName(player))} first />
+      <FormSheet
+        visible={draft !== null}
+        title="Name"
+        onCancel={close}
+        onSave={more === null && same === null ? save : undefined}
+        saveDisabled={(draft ?? '').trim() === ''}
+        dirty={draft !== null && draft !== displayName(player)}
+        thing="name"
+      >
+      <FieldRow
+        label="First name"
+        value={draft ?? ''}
+        onChangeText={(t) => {
+          setDraft(t);
+          setError('');
+          setMore(null);
+          setSame(null);
+        }}
+        autoFocus
+        autoCapitalize="words"
+        autoCorrect={false}
+        returnKeyType="done"
+        onSubmitEditing={save}
+      />
+      <Text style={screen.hint}>Every match shows the new name. Minutes don&apos;t change.</Text>
+      {error !== '' && <Text style={screen.error}>{error}</Text>}
+      {more !== null && <MoreThanFirstName cleaned={more} onUse={settle} onChange={() => setMore(null)} />}
+      {same !== null && (
+        <View style={guard.box}>
+          <Text style={guard.text}>You already have {same.other}. Add an initial so you can tell them apart.</Text>
+          <Action
+            label="Add an initial"
+            onPress={() => {
+              setDraft(`${same.name} `);
+              setSame(null);
+            }}
+          />
+          <Action label={`Use “${same.name}” anyway`} onPress={() => commit(same.name)} />
+        </View>
+      )}
+      </FormSheet>
+    </View>
+  );
+}

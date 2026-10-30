@@ -35,6 +35,7 @@
  * Synthetic first names only in tests (invariant 4).
  */
 
+import { matchFairShare, type NotInShare } from './fairShare';
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
 import type {
   AvailabilityStatus,
@@ -183,8 +184,10 @@ export interface ReportPlayer {
   totalMs: number;
   goalMs: number;
   outfieldMs: number;
-  /** totalMs minus the match's fair share. */
-  deltaMs: number;
+  /** totalMs minus the match's fair share; null when the child is not in the share (#261 AC2). */
+  deltaMs: number | null;
+  /** Why the child is out of the share, when they are (#261 Q1 b). */
+  notInShare?: NotInShare;
 }
 
 export interface ReportSub {
@@ -227,8 +230,8 @@ export interface MatchReport {
   /** Everyone available at kick-off, in squad order: the tie order the table's sort keeps (#208). */
   players: ReportPlayer[];
   /**
-   * Total pitch time this match ÷ the players who attended it: what each
-   * would have had if it had been shared equally (ADR-015 §1).
+   * The pitch time of the children in the share ÷ how many they are
+   * (`matchFairShare`, #261 item 1): the attended, a Main keeper left out.
    */
   fairShareMs: number;
   subs: ReportSub[];
@@ -264,8 +267,18 @@ export function matchReport(
   const name = (id: UUID) => nameOf(players, [], id);
   const attended = attendedIn(state);
   const minutes = foldPlayerMinutes(engine, state, players).filter((m) => attended.has(m.playerId));
-  const totalPitch = minutes.reduce((sum, m) => sum + m.outfieldMs + m.goalkeeperMs, 0);
-  const fairShareMs = minutes.length === 0 ? 0 : Math.round(totalPitch / minutes.length);
+  // #261 item 1 (Rob 1b): one rule with the Plan. A Main keeper is out of the
+  // share; a fill-in is in on the day; only those who attended are listed.
+  const keeperOf = new Map(players.map((p) => [p.id, p.keeper === 'main']));
+  const share = matchFairShare(
+    minutes.map((m) => ({
+      playerId: m.playerId,
+      pitchMs: m.outfieldMs + m.goalkeeperMs,
+      present: true,
+      mainKeeper: keeperOf.get(m.playerId) === true,
+    }))
+  );
+  const fairShareMs = share.shareMs === null ? 0 : Math.round(share.shareMs);
 
   // Squad order: the screen sorts by the figures (#208), keeping it for ties.
   const rows: ReportPlayer[] = inSquadOrder(minutes, players)
@@ -277,7 +290,8 @@ export function matchReport(
         totalMs,
         goalMs: m.goalkeeperMs,
         outfieldMs: m.outfieldMs,
-        deltaMs: totalMs - fairShareMs,
+        deltaMs: share.out.has(m.playerId) || share.shareMs === null ? null : totalMs - fairShareMs,
+        ...(share.out.has(m.playerId) ? { notInShare: share.out.get(m.playerId) } : {}),
       };
     });
 

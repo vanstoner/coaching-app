@@ -12,9 +12,10 @@ never receives any information about you or your players.
 
 Only what the coach types in or records during a match:
 
-- **Players' first names**, sometimes with a short suffix to tell two
-  children with the same name apart. The app refuses surnames. It has no
-  place for dates of birth, contact details or photos.
+- **Players' first names**, sometimes with an initial or a second word to
+  tell two children with the same name apart. The app asks for first names
+  and warns before saving anything longer, recommending an initial. It has
+  no place for surnames, dates of birth, contact details or photos.
 - **Match records:** who played, when, and in which position; time in goal
   and outfield; goals, assists, shots on target, saves and goals conceded;
   tackles, corners and free kicks won; who was available for each match.

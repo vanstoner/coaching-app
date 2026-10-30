@@ -10,14 +10,18 @@
  *
  * Drawn on the report when End match asks for awards (Q5) and, from the
  * clock, at a break between periods.
+ *
+ * #264: a winner's tick is an icon, not "✓" text (V2); giving or taking back
+ * opens a sheet (Cancel, Save) with its note, so a tap outside gives nothing.
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import type { UUID } from '../types/index';
 import type { AwardRow } from '../app/matchAwards';
 import { Chip, ChipRow } from './Chip';
+import { FieldRow, FormSheet, SheetNote } from './controls';
 import { Text } from './Text';
 import { colours, screen } from './theme';
 
@@ -67,8 +71,8 @@ export function AwardCard({
               {childrenInMatch.map((c) => (
                 <Chip
                   key={c.playerId}
-                  label={has.has(c.playerId) ? `${c.name} ✓` : c.name}
-                  narrow
+                  label={c.name}
+                  tick={has.has(c.playerId)}
                   selected={has.has(c.playerId) || open?.playerId === c.playerId}
                   onPress={() =>
                     setPending({
@@ -82,31 +86,34 @@ export function AwardCard({
                 />
               ))}
             </ChipRow>
-            {open && (
-              <View style={local.panel}>
-                <Text style={screen.hint}>
-                  {open.mode === 'take'
-                    ? `Take ${row.name} back from ${nameOf(open.playerId)}? The record keeps the earlier one.`
-                    : row.winners.length > 0
-                      ? `Already given: this adds ${nameOf(open.playerId)} as a joint winner.`
-                      : `${row.name} for ${nameOf(open.playerId)}.`}
-                </Text>
-                <TextInput
-                  style={screen.input}
-                  value={open.note}
-                  onChangeText={(note) => setPending({ ...open, note, error: '' })}
-                  placeholder={open.mode === 'take' ? 'Why? (needed after the day of the match)' : 'A note (optional)'}
-                  placeholderTextColor={colours.inkFaint}
-                />
-                {open.error !== '' && <Text style={screen.error}>{open.error}</Text>}
-                <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={submit}>
-                  <Text style={screen.buttonLabel}>{open.mode === 'take' ? 'Take it back' : 'Give the award'}</Text>
-                </Pressable>
-                <Pressable onPress={() => setPending(null)} style={screen.linkHit}>
-                  <Text style={screen.link}>Cancel</Text>
-                </Pressable>
-              </View>
-            )}
+            <FormSheet
+              visible={open !== null}
+              title={row.name}
+              saveLabel={open?.mode === 'take' ? 'Take it back' : 'Give'}
+              onCancel={() => setPending(null)}
+              onSave={submit}
+              dirty={open !== null && open.note !== ''}
+              thing="note"
+            >
+              {open && (
+                <>
+                  <SheetNote>
+                    {open.mode === 'take'
+                      ? `Take ${row.name} back from ${nameOf(open.playerId)}? The record keeps the earlier one.`
+                      : row.winners.length > 0
+                        ? `Already given: this adds ${nameOf(open.playerId)} as a joint winner.`
+                        : `${row.name} for ${nameOf(open.playerId)}.`}
+                  </SheetNote>
+                  <FieldRow
+                    label="Note"
+                    value={open.note}
+                    onChangeText={(note) => setPending({ ...open, note, error: '' })}
+                    placeholder={open.mode === 'take' ? 'Needed after match day' : 'Optional'}
+                  />
+                  {open.error !== '' && <Text style={screen.error}>{open.error}</Text>}
+                </>
+              )}
+            </FormSheet>
           </View>
         );
       })}
@@ -127,5 +134,4 @@ const local = StyleSheet.create({
   heading: { color: colours.ink, fontSize: 18, fontWeight: '700', includeFontPadding: false },
   row: { marginTop: 10 },
   type: { color: colours.inkMuted, fontSize: 15, marginBottom: 4, includeFontPadding: false },
-  panel: { marginTop: 6 },
 });

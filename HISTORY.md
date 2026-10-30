@@ -447,3 +447,48 @@ analysis, iOS". Entries are added as each release ships.
   kick-off, still has no date (the record keeps no clock time for a period)
   and stays last. Release 2.0.0 is frozen as a fixture, in the team layout
   2.0.0 phones use (#167).
+- **2.1.0 (in progress) — first names by default (#54).** Rob, 26 Oct: relax
+  the one-name rule to a warning. One word is still added at once; a longer
+  name stops at a warning that says why first names are the default and
+  recommends an initial ("Alex S"), with Keep and Change it beside it. A
+  second child shown by the same name is offered an initial first, and a
+  child can be renamed from their page. Every screen, and the plan picture
+  shared with parents, shows the name as confirmed, so "Alex S" and
+  "Alex T" read apart (Rob, 30 Oct). Invariant 4 now reads "first names
+  by default", with still no field for a surname, date of birth, contact or
+  photo. Release 2.0.1 is frozen as a fixture (#167).
+  The score is now a big band on the pitch, and stays in view between
+  quarters and at full time (#252). A fixture can carry its pitch surface
+  (3G, 4G, Grass), its condition and the referee, changeable at any time;
+  the referee never leaves the phone except in the coach's own backup
+  (#254).
+  **One look for every control (#264), and Settings in sections (#263).**
+  Rob, 29 Oct: *"I like pills, I like to know if they expand into
+  something more, I like to know that things need saving."* Every screen
+  now draws from one set of controls: a row with › goes somewhere; a
+  heading with › on the left opens in place; short choices are segments
+  with a tick; long ones open a list. Settings save on the tap and say
+  ✓ Saved once the save is done; a form, or a note or rename sheet, says
+  Not saved yet and asks before you leave it changed, and Save names what
+  was saved. A new fixture can still be saved untouched (Rob, 30 Oct). Planned
+  subs on the lineup are set in a sheet: the time, then who for. Goalkeeper
+  and Here today are one row each. Targets are 48 dp, and ticks and
+  chevrons are icons. The Pitch and referee sheet now saves only on Save:
+  a tap outside used to save it. Settings opens in ten sections, Season
+  and Team open, each closed one with a summary; the Danger zone is last
+  and always closed, and the Backup heading says when this phone last made
+  a backup.
+  **Fairness explained (#261 items 1 and 2, #262).** Rob, 29 Oct: *"using
+  terms like "Owed" is a little bit triggering - there at least should be
+  some callable information as to why there's a discrepancy."* One rule now
+  decides a match's fair share, on the report and the Plan alike: the
+  children there, a Main keeper left out, fill-ins in (Rob, 1b). The Plan
+  no longer counts absent children (#262). "Owed" is gone: a child is
+  "6 min under the average" or "9 min over", and the Saturday tile names
+  who is "Next in line for more time". Colour never marks a shortfall.
+  Tapping a child on Fairness or Going into Saturday, or the figures on
+  their page, opens "Why the difference": the sum, match by match, and what
+  was not counted. Settings › Player minutes starts with About the figures,
+  the ten steps behind every figure, and an info tap beside each figure
+  opens its step. The spec holds the same words, and a test keeps them
+  equal.

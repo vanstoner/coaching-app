@@ -1,7 +1,7 @@
 # System architecture
 
-Status: **Draft**, retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-27 (2.0.0 truth pass, #248; earlier #239)
+Status: **Current** (checked against the code of 2.1.0 at `b5174a8`, 30 Oct 2026, the release check; before that `64d145f`, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
+Last updated: 2026-10-30 (2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -16,22 +16,38 @@ One page. Where it and the code disagree, the code wins. Fix this page.
 | Storage | `@react-native-async-storage/async-storage` 3.1.1 | Behind `KeyValueStore` |
 | Safe areas | `react-native-safe-area-context` ~5.7.0 | The shell pads once; bottom sheets add the bottom inset (#174) |
 | Signing (#193) | `@noble/ed25519` 3.2, `@noble/hashes` 2.4 (pure TS); `expo-secure-store`, `expo-crypto` ~57.0.4 | Key made from `expo-crypto` bytes, kept in the Keystore/Keychain; the biometric permissions the store brings are blocked in `app.json` |
-| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot` | Minutes file and app backup export/import, Share plan image |
+| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot`, `expo-status-bar`, `@expo/vector-icons` | Minutes file and app backup export/import, Share plan image, the Barlow font, icons on the event buttons, Getting started and every control (▾ ▴ ✓ › drawn as icons, never text: Barlow has no ▾ ▴ ✓, #264 V2) |
 
-No navigation library, no state library, no network client. See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
+No navigation library, no state library, no network client. The one React Context is `TableSortProvider` (`src/screens/TableSort.tsx`), which remembers each table's sort: a view choice, not app state (ADR-019). See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
 
 ## Layout
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,000 lines
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,250 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it
 src/app/storage/    the storage modules: teams, session, ledger store, backup, forget, device key
 src/screens/        React components; take props, hold only view state
+src/screens/controls/  the one control vocabulary every screen draws from (#264): Row ›, Section
+                    heading (the twisty), Segmented, list sheets, Stepper, Action, Main button,
+                    Field row, ✓ Saved / Not saved yet, Back, Cancel/Save sheets, Danger
 .github/            CI, APK/IPA builds, releases, store listing
 ```
+
+Screens take their controls from `src/screens/controls/` (#264); the pure
+rules behind them are in `src/app/saveState.ts` (✓ Saved, a form's state, a
+sheet that writes only on Save), `src/app/plannedSubSheet.ts` (the planned-sub
+stepper and its words) and `src/app/settingsSections.ts` (#263).
+The fairness explanations (#261 items 1–2) are pure too: `src/app/fairShare.ts`
+(`matchFairShare`, the one rule for a match's fair share, used by the match
+report, the Plan and the Why sheet), `src/app/whyDifference.ts` (the "Why the
+difference" sheet's lines, from the same rows as `owedTime`) and
+`src/app/aboutFigures.ts` (the ten steps of "How the figures are worked out",
+the same words as `docs/feature-specs.md`, held so by `aboutFigures.test.ts`).
+`src/screens/controlsGuard.test.ts` names each screen still allowed its own
+controls, and why.
 
 Rule: `src/engine` and `src/app` import no React and no platform module, with
 four exceptions in `src/app`: `storage/storage.ts` (AsyncStorage), `ledgerFile.ts`,
@@ -64,18 +80,20 @@ sequenceDiagram
 - **All durable state lives in `App.tsx`** `useState`s: the shell (`App`) holds
   the team list and its sheets; `TeamApp` holds one team's state and is
   remounted on a switch, so no team's state reaches another. Screens receive
-  values and callbacks.
+  values and callbacks. Screens take the raw `Ledger`: ADR-017's gate
+  (`ledgerGate.ts`, `LedgerView`) is not built.
 - **The live match** is `{ engine, state, format }`. The engine mutates
   `state` in place; the shell then calls `persist()` (and `repaint()` where no
   other state changes).
 - **Time** is never counted. `getQuarterElapsedMs` = `accumulatedMs + now −
   runningSinceWallClock`. `ClockScreen` reschedules a `setTimeout` to the next
-  displayed second, only to repaint. `appNow()` (`src/app/appClock.ts`) is the
+  displayed second, and `MatchAnalysisScreen` runs a 1 s `setInterval`, both
+  only to repaint. `appNow()` (`src/app/appClock.ts`) is the
   single clock. A beta phone's stored offset is kept, but the Test kit no
   longer speeds it (#228); a test match keeps its own ×1/×5/×10 (#194).
 - **Saves are fire-and-forget.** A failed write keeps the match running in
   memory. The session's and the ledger's writes both run one at a time per
-  store (`inTurn`, `src/app/persistence.ts`; `src/app/storage/sessionStore.ts`).
+  store (`inTurn`, in `src/app/storage/sessionStore.ts` and `src/app/storage/ledgerStore.ts`).
 
 ## Storage
 
@@ -86,7 +104,10 @@ rewrites the keys, so each module keeps its constants; work queues on the
 device store beneath it. Per install, at the root: the team index
 `coaching-app/teams/v1` (`{ version, current, teams: [{ id, createdAt,
 removedAt }], migration? }`), `before-teams/…` (the keys as they were before
-2.0.0, set aside by the move), the test clock and the signing key.
+2.0.0, set aside by the move), the test clock, the signing key, and two view
+notes about the phone (#263): which Settings sections are open and when this
+phone last made a backup. A team's store passes these phone keys through to
+the root, and the move into teams leaves them alone (`PHONE_KEYS`).
 
 | Key (per team unless marked) | Contents | Writer | Versioning |
 |---|---|---|---|
@@ -98,6 +119,8 @@ removedAt }], migration? }`), `before-teams/…` (the keys as they were before
 | `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
 | `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | Removed by Forget everything (#207) |
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
+| `coaching-app/settings-sections/v1` (root) | `{"open":[…]}`: which Settings sections are open, a view choice on this phone (#263 AC5); Danger zone is never stored | `SettingsScreen` | Never in the record; removed by Forget everything |
+| `coaching-app/last-backup/v1` (root) | When Back up this app last made its file and handed it on, in ms, for the Backup heading (#263 AC10) | `App.tsx` (`backUpApp`) | Never in the record or a backup file, untouched by a restore; removed by Forget everything |
 | `coaching-app/season-prompt/v1` | When "Not yet" on the new-season prompt quiets it until (#243 Q2), a view choice | `App.tsx` | Never in the record; removed by Forget everything |
 | `coaching-app/teams/v1` (root) | The team index (ADR-022 D2) | `storage/teams.ts` | `version` 1; a damaged index is rebuilt from the teams' keys |
 | `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3). A key found at the root later goes under `before-teams/later/<iso>/…`, never over them | `openTeams` | Removed by Forget everything |
@@ -178,11 +201,17 @@ test match (#194) shows a banner on each with its own clock speed, and its
 exits lead back to Settings, where it was started and is listed.
 
 `effectiveStep` collapses any Saturday step without a held match to
-`fixtures`. The Android hardware back button is not handled: it backgrounds
-the app from every screen (#175).
+`fixtures`. The Android hardware back button is handled only where a draft
+could be lost (#264 V30, V32): an open sheet closes as Cancel, writing
+nothing, and a full-screen form (new fixture, new season, add a team) asks
+"Leave without saving?" when changed (`useBackLeaves`). Everywhere else it
+still backgrounds the app (#175).
 
 ## Builds
 
 `APP_VARIANT=beta` (pull requests) gives Heart FC Beta Coach its own app id,
 icon and empty storage. `main` builds Heart FC Coach. Version from `app.json`,
-build numbers from CI run numbers (`app.config.js`).
+build numbers from CI run numbers (`app.config.js`). Before bundling, CI
+writes two modules the app reads: `generated-build-label.ts` (the build
+label, #52) and `generated-distribution.ts` (`app`, `beta`, `demo` or
+`store`, read by `src/app/distribution.ts`; anything else reads as `app`).

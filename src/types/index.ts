@@ -119,6 +119,14 @@ export interface Match {
    * it is made and never re-derived. Absent: the team's first season.
    */
   seasonId?: UUID;
+  /** #254: the pitch, set or changed any time; absent when not set. Goes on the `fixture` record. */
+  surface?: '3g' | '4g' | 'grass';
+  condition?: 'excellent' | 'good' | 'poor';
+  /**
+   * #254 Q2: the referee's name, on this phone's match and the coach's own
+   * backup only. Never written to the minutes record, a shared image or an export.
+   */
+  referee?: string;
 }
 
 /** What makes a match a test match (#194): its own clock, real time plus an offset. */
@@ -152,7 +160,7 @@ export interface Player {
   id: UUID;
   squadId: UUID;
   firstName: string; // First name only
-  displaySuffix: string | null; // Max 2 chars, for disambiguation
+  displaySuffix: string | null; // The rest of a confirmed name of more than one word (#54); the whole name is at most 16 characters
   squadNumber: number | null;
   active: boolean;
   createdAt: string;

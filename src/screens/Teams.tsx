@@ -15,11 +15,16 @@
  *
  * Text is never sized to itself and never changes weight between states
  * (the clipped-glyph trap); every Modal pads itself (#174).
+ *
+ * #264: the switcher and Remove are the shared sheet (Cancel top-left; a tap
+ * outside is Cancel), not hand-built copies. Add a team is a Row ›, Bring
+ * back an Action. Add a team's screen is a form: Cancel top-left, which asks
+ * once anything is typed; Not saved yet; Add and open pinned at the bottom.
+ * The chip's caret and the fairness tick are icons.
  */
 
-import { useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useReducer, useState, type ReactNode } from 'react';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { AGE_GROUPS } from '../app/ledger';
@@ -27,7 +32,23 @@ import { MAX_TEAM_NAME_LENGTH } from '../app/settings';
 import { TEAM_FORMATS, formatForAge, sameTeamName, teamNameProblem } from '../app/teamRows';
 import type { TeamSummary } from '../app/storage/teams';
 import type { ShapeCode } from '../app/shapes';
-import { Chip, ChipRow } from './Chip';
+import { formReducer, leaveNeedsAsking } from '../app/saveState';
+import {
+  Action,
+  BackLink,
+  FieldRow,
+  FormSheet,
+  FormStatus,
+  Icon,
+  LeaveAsk,
+  ListSheet,
+  MainButton,
+  MainFoot,
+  RowNav,
+  SegmentedRow,
+  TopBar,
+  useBackLeaves,
+} from './controls';
 import { CONTENT_MAX_WIDTH, colours, screen } from './theme';
 
 /** Six badge colours, given in turn (T5). The name is always beside the badge, so colour is never the only cue. */
@@ -68,7 +89,8 @@ export function TeamChip({
         <Text style={local.chipName} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={local.caret}>▾</Text>
+        {/* #264: it opens a sheet, so a › on the right that never turns; an icon, not ▾ text. */}
+        <Icon name="chevron-right" size={22} color={colours.back} style={local.caret} />
       </Pressable>
       <Text style={local.seasonLine} numberOfLines={1}>
         {season}
@@ -95,70 +117,49 @@ export function TeamSwitcher({
   onBringBack: (id: TeamSummary['id']) => void;
   onClose: () => void;
 }) {
-  const insets = useSafeAreaInsets();
   const listed = teams.filter((t) => !t.removed);
   const aside = teams.filter((t) => t.removed);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={local.scrim} onPress={onClose}>
-        <Pressable style={[local.sheet, { paddingBottom: 20 + insets.bottom }]} onPress={() => {}}>
-          <ScrollView contentContainerStyle={local.sheetScroll}>
-            <Text style={local.sheetTitle}>Teams</Text>
-            <Text style={[screen.hint, local.left]}>
-              Each team has its own squad, fixtures and minutes. Nothing is shared.
-            </Text>
-            {listed.map((t) => {
-              const open = t.id === currentId;
-              return (
-                <Pressable
-                  key={t.id}
-                  onPress={() => onOpen(t.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: open }}
-                  accessibilityLabel={`${t.name}, ${t.season}${t.live ? ', match on' : ''}${open ? ', open' : ''}`}
-                  style={({ pressed }) => [local.row, open && local.rowOpen, pressed && screen.buttonPressed]}
-                >
-                  <TeamBadge name={t.name} badge={t.badge} />
-                  <View style={local.rowText}>
-                    <Text style={local.rowName} numberOfLines={1}>
-                      {t.name}
-                    </Text>
-                    <Text style={local.rowSeason} numberOfLines={1}>
-                      {t.season}
-                    </Text>
-                  </View>
-                  {t.live && (
-                    <View style={[local.tag, local.tagLive]}>
-                      <Text style={local.tagLiveText}>Match on</Text>
-                    </View>
-                  )}
-                  {open && (
-                    <View style={[local.tag, local.tagOpen]}>
-                      <Text style={local.tagOpenText}>Open</Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-            <Pressable
-              onPress={onAdd}
-              accessibilityRole="button"
-              style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-            >
-              <Text style={screen.buttonLabel}>+ Add a team</Text>
-            </Pressable>
-            {aside.map((t) => (
-              <Pressable key={t.id} onPress={() => onBringBack(t.id)} style={screen.linkHit} accessibilityRole="button">
-                <Text style={screen.link}>Set aside: {t.name} · Bring back</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={onClose} style={screen.linkHit} accessibilityRole="button">
-              <Text style={screen.link}>Close</Text>
-            </Pressable>
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <FormSheet visible={visible} title="Teams" onCancel={onClose}>
+      <Text style={[screen.hint, local.left]}>Each team has its own squad, fixtures and minutes. Nothing is shared.</Text>
+      {listed.map((t) => {
+        const open = t.id === currentId;
+        return (
+          <Pressable
+            key={t.id}
+            onPress={() => onOpen(t.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: open }}
+            accessibilityLabel={`${t.name}, ${t.season}${t.live ? ', match on' : ''}${open ? ', open' : ''}`}
+            style={({ pressed }) => [local.row, open && local.rowOpen, pressed && screen.buttonPressed]}
+          >
+            <TeamBadge name={t.name} badge={t.badge} />
+            <View style={local.rowText}>
+              <Text style={local.rowName} numberOfLines={1}>
+                {t.name}
+              </Text>
+              <Text style={local.rowSeason} numberOfLines={1}>
+                {t.season}
+              </Text>
+            </View>
+            {t.live && (
+              <View style={[local.tag, local.tagLive]}>
+                <Text style={local.tagLiveText}>Match on</Text>
+              </View>
+            )}
+            {open && (
+              <View style={[local.tag, local.tagOpen]}>
+                <Text style={local.tagOpenText}>Open</Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+      <RowNav label="+ Add a team" accessibilityLabel="Add a team" onPress={onAdd} first />
+      {aside.map((t) => (
+        <Action key={t.id} label={`Set aside: ${t.name} · Bring back`} onPress={() => onBringBack(t.id)} />
+      ))}
+    </FormSheet>
   );
 }
 
@@ -174,7 +175,6 @@ export function RemoveTeamSheet({
   onRemove: () => void;
   onClose: () => void;
 }) {
-  const insets = useSafeAreaInsets();
   const [typed, setTyped] = useState('');
   const ok = sameTeamName(typed, name);
   const close = () => {
@@ -182,47 +182,34 @@ export function RemoveTeamSheet({
     onClose();
   };
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <KeyboardAvoidingView style={screen.flex} behavior="padding">
-        <Pressable style={local.scrim} onPress={close}>
-          <Pressable style={[local.sheet, { paddingBottom: 20 + insets.bottom }]} onPress={() => {}}>
-            <Text style={local.sheetTitle} numberOfLines={2}>
-              Remove {name}?
-            </Text>
-            <Text style={[local.body, local.left]}>
-              Its squad, fixtures and minutes record leave the team list. They are set aside on this phone, not
-              deleted, and you can bring them back from the team list until you Forget everything.
-            </Text>
-            <Text style={screen.fieldLabel}>Type the team&apos;s name to remove it</Text>
-            <TextInput
-              style={screen.input}
-              value={typed}
-              onChangeText={setTyped}
-              placeholder={name}
-              placeholderTextColor={colours.inkFaint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              accessibilityLabel="Team name, to confirm"
-            />
-            <Pressable
-              disabled={!ok}
-              onPress={() => {
-                setTyped('');
-                onRemove();
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !ok }}
-              style={({ pressed }) => [local.danger, !ok && screen.buttonDisabled, pressed && screen.buttonPressed]}
-            >
-              <Text style={local.dangerText}>Remove team</Text>
-            </Pressable>
-            <Pressable onPress={close} style={screen.linkHit} accessibilityRole="button">
-              <Text style={screen.link}>Keep it</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+    <FormSheet
+      visible={visible}
+      title={`Remove ${name}?`}
+      onCancel={close}
+      saveLabel="Remove team"
+      saveDanger
+      saveDisabled={!ok}
+      onSave={() => {
+        setTyped('');
+        onRemove();
+      }}
+    >
+      <Text style={[local.body, local.left]}>
+        Its squad, fixtures and minutes record leave the team list. They are set aside on this phone, not deleted, and
+        you can bring them back from the team list until you Forget everything.
+      </Text>
+      <Text style={screen.fieldLabel}>Type the team&apos;s name to remove it</Text>
+      <FieldRow
+        label="Name"
+        value={typed}
+        onChangeText={setTyped}
+        placeholder={name}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel="Team name, to confirm"
+        autoFocus
+      />
+    </FormSheet>
   );
 }
 
@@ -249,90 +236,91 @@ export function AddTeamScreen({
   onCancel: () => void;
   cancelLabel: string;
 }) {
-  const [name, setName] = useState('');
-  const [seasonName, setSeasonName] = useState(defaultSeasonName);
-  const [ageGroup, setAgeGroup] = useState('U10');
-  const [level, setLevel] = useState<NewTeam['level']>('development');
-  const [shape, setShape] = useState<ShapeCode>('2-3-1');
+  const [name, setNameRaw] = useState('');
+  const [seasonName, setSeasonNameRaw] = useState(defaultSeasonName);
+  const [ageGroup, setAgeGroupRaw] = useState('U10');
+  const [level, setLevelRaw] = useState<NewTeam['level']>('development');
+  const [shape, setShapeRaw] = useState<ShapeCode>('2-3-1');
+  const [phase, dispatch] = useReducer(formReducer, 'pristine');
+  const [sheet, setSheet] = useState<'age' | 'format' | null>(null);
+  const [asking, setAsking] = useState(false);
+  const changed =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      dispatch({ type: 'change' });
+    };
+  const setName = changed(setNameRaw);
+  const setSeasonName = changed(setSeasonNameRaw);
+  const setLevel = changed(setLevelRaw);
+  const setShape = changed(setShapeRaw);
+  const setAgeGroup = changed((a: string) => {
+    setAgeGroupRaw(a);
+    setShapeRaw((s) => formatForAge(a, s));
+  });
+  const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // Android Back asks too (V30; QA on #260, D6).
+  useBackLeaves(leave);
   const problem = teamNameProblem(name, otherNames);
   const shownProblem = name.trim() === '' ? null : problem;
   const lighter = Number(ageGroup.slice(1)) >= 12 || level === 'competitive';
   const ready = problem === null && seasonName.trim() !== '';
   const side = TEAM_FORMATS.find((f) => f.shape === shape)?.side ?? 7;
+  const format = TEAM_FORMATS.find((f) => f.shape === shape);
 
   return (
     <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-        <Pressable onPress={onCancel} style={[screen.linkHit, local.backHit]} accessibilityRole="button">
-          <Text style={screen.link}>‹ {cancelLabel}</Text>
-        </Pressable>
+        {/* #264 V31: the way out, top left; it asks first once anything is typed (V30). */}
+        <TopBar back={<BackLink label={cancelLabel} onPress={leave} />} />
         <Text style={screen.title}>Add a team</Text>
         <Text style={screen.caption}>It opens as a fresh team with its own Getting started.</Text>
 
-        <Text style={screen.fieldLabel}>Team name</Text>
-        <TextInput
-          style={screen.input}
+        <FieldRow
+          first
+          label="Team name"
           value={name}
           onChangeText={setName}
           placeholder="e.g. Unicorns U10"
-          placeholderTextColor={colours.inkFaint}
           maxLength={MAX_TEAM_NAME_LENGTH}
           autoCorrect={false}
-          accessibilityLabel="Team name"
+          blurOnSubmit
         />
         <Text style={[screen.hint, local.left]}>A team&apos;s name, never a child&apos;s.</Text>
         {shownProblem && <Text style={screen.error}>{shownProblem}</Text>}
 
-        <Text style={screen.fieldLabel}>First season</Text>
-        <TextInput
-          style={screen.input}
+        <FieldRow
+          label="First season"
           value={seasonName}
           onChangeText={setSeasonName}
           maxLength={16}
           autoCorrect={false}
           accessibilityLabel="Season name"
         />
-
-        <Text style={screen.fieldLabel}>Age group</Text>
-        <ChipRow>
-          {AGE_GROUPS.map((a) => (
-            <Chip
-              key={a}
-              label={a}
-              compact
-              selected={ageGroup === a}
-              onPress={() => {
-                setAgeGroup(a);
-                setShape((s) => formatForAge(a, s));
-              }}
-            />
-          ))}
-        </ChipRow>
-
-        <Text style={screen.fieldLabel}>Competition level</Text>
-        <ChipRow>
-          <Chip label="Development" selected={level === 'development'} onPress={() => setLevel('development')} />
-          <Chip label="Competitive" selected={level === 'competitive'} onPress={() => setLevel('competitive')} />
-        </ChipRow>
-
-        <Text style={screen.fieldLabel}>Main format</Text>
-        <ChipRow>
-          {TEAM_FORMATS.map((f) => (
-            <Chip
-              key={f.shape}
-              label={f.label}
-              detail={f.detail}
-              wide
-              selected={shape === f.shape}
-              onPress={() => setShape(f.shape)}
-            />
-          ))}
-        </ChipRow>
+        <RowNav label="Age group" value={ageGroup} onPress={() => setSheet('age')} />
+        <SegmentedRow
+          label="Level"
+          options={[
+            { value: 'development' as const, label: 'Development' },
+            { value: 'competitive' as const, label: 'Competitive' },
+          ]}
+          value={level}
+          onChange={(l) => l !== null && setLevel(l)}
+        />
+        <RowNav
+          label="Main format"
+          value={format ? `${format.label} · ${format.detail}` : ''}
+          onPress={() => setSheet('format')}
+        />
         <Text style={[screen.hint, local.left]}>New matches start in this format. You can still change one match.</Text>
 
         <Text style={screen.fieldLabel}>Fairness</Text>
         <View style={local.lens}>
-          <Text style={local.lensName}>✓ Full equal time</Text>
+          <View style={local.lensHead}>
+            {/* #264 V2: the tick is an icon; Barlow has no ✓. */}
+            <Icon name="check-bold" size={16} color={colours.ink} />
+            <Text style={[local.lensName, local.lensNameText]}>Full equal time</Text>
+          </View>
           <Text style={local.lensText}>
             Every child towards the same total time on the pitch, goal plus outfield.
           </Text>
@@ -342,20 +330,38 @@ export function AddTeamScreen({
             ? `${ageGroup} ${level} teams will be offered a lighter setting in a later version. In 2.0.0 every team uses Full equal time.`
             : `The setting for ${ageGroup} development football. It is the only one in 2.0.0.`}
         </Text>
-
-        <Pressable
+      </ScrollView>
+      <MainFoot>
+        <FormStatus phase={phase} />
+        <MainButton
+          label="Add and open"
           disabled={!ready}
           onPress={() => onAdd({ name: name.trim(), seasonName: seasonName.trim(), ageGroup, level, shape, side })}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !ready }}
-          style={({ pressed }) => [screen.button, !ready && screen.buttonDisabled, pressed && screen.buttonPressed]}
-        >
-          <Text style={screen.buttonLabel}>Add and open</Text>
-        </Pressable>
-        <Pressable onPress={onCancel} style={screen.linkHit} accessibilityRole="button">
-          <Text style={screen.link}>Cancel</Text>
-        </Pressable>
-      </ScrollView>
+        />
+      </MainFoot>
+      <ListSheet
+        visible={sheet === 'age'}
+        title="Age group"
+        items={AGE_GROUPS.map((a) => ({ value: a, label: a }))}
+        value={ageGroup}
+        onPick={(a) => {
+          setAgeGroup(a);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'format'}
+        title="Main format"
+        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: f.label, detail: f.detail }))}
+        value={shape}
+        onPick={(s) => {
+          setShape(s);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <LeaveAsk visible={asking} thing="team" onKeep={() => setAsking(false)} onLeave={onCancel} />
     </KeyboardAvoidingView>
   );
 }
@@ -387,18 +393,11 @@ export function NoTeamsScreen({
           squad.
         </Text>
       </View>
-      <Pressable
-        onPress={onAdd}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Add your team</Text>
-      </Pressable>
+      {/* #264: the screen's one job is the Main button (label kept: ADD_YOUR_TEAM). */}
+      <MainButton label="Add your team" onPress={onAdd} />
       {restore}
       {aside.map((t) => (
-        <Pressable key={t.id} onPress={() => onBringBack(t.id)} style={screen.linkHit} accessibilityRole="button">
-          <Text style={screen.link}>Bring back {t.name}</Text>
-        </Pressable>
+        <Action key={t.id} label={`Bring back ${t.name}`} onPress={() => onBringBack(t.id)} align="center" />
       ))}
     </ScrollView>
   );
@@ -435,7 +434,7 @@ const local = StyleSheet.create({
     fontWeight: '700',
     includeFontPadding: false,
   },
-  caret: { flexShrink: 0, marginLeft: 8, color: colours.inkMuted, fontSize: 16, includeFontPadding: false },
+  caret: { flexShrink: 0, marginLeft: 6 },
   seasonLine: {
     alignSelf: 'stretch',
     textAlign: 'center',
@@ -501,6 +500,8 @@ const local = StyleSheet.create({
     backgroundColor: colours.pitchRaised,
   },
   lensName: { color: colours.ink, fontSize: 17, fontWeight: '700', includeFontPadding: false },
+  lensHead: { flexDirection: 'row', alignItems: 'center' },
+  lensNameText: { marginLeft: 6, flex: 1 },
   lensText: { color: colours.inkMuted, fontSize: 14, marginTop: 4, includeFontPadding: false },
   welcome: { flexGrow: 1, justifyContent: 'center' },
   empty: {

@@ -17,15 +17,31 @@
  * Text is never sized to itself and never changes weight between states.
  */
 
-import { useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useReducer, useState, type ReactNode } from 'react';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
 import { AGE_GROUPS, MAIN_SIDES, SEASON_NAME_MAX, type LedgerSeason } from '../app/ledger';
 import { seasonLine, seasonName } from '../app/seasons';
 import { TEAM_FORMATS } from '../app/teamRows';
 import type { ShapeCode } from '../app/shapes';
-import { Chip, ChipRow } from './Chip';
+import { formReducer, leaveNeedsAsking } from '../app/saveState';
+import {
+  Action,
+  BackLink,
+  FieldRow,
+  FormStatus,
+  Icon,
+  LeaveAsk,
+  FormSheet,
+  ListSheet,
+  MainButton,
+  MainFoot,
+  RowNav,
+  SegmentedRow,
+  TopBar,
+  useBackLeaves,
+} from './controls';
 import { colours, screen } from './theme';
 
 type Level = 'development' | 'competitive';
@@ -72,7 +88,6 @@ export function SeasonSection({
   const unconfirmed = season.ageGroup === null && season.level === null;
   return (
     <View style={local.block}>
-      <Text style={screen.fieldLabel}>Season</Text>
       {unconfirmed ? (
         <ConfirmFirst season={season} firstName={firstName} onConfirm={onConfirmFirst} />
       ) : (
@@ -89,35 +104,20 @@ export function SeasonSection({
         </View>
       )}
       {season.mainSide === null && <MainFormat sides={sides} onSet={onSetMainSide} />}
-      <Pressable
-        onPress={onStart}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Start a new season</Text>
-      </Pressable>
+      {/* #264: each opens another screen, so each is a Row ›. */}
+      <RowNav label="Start a new season" onPress={onStart} />
       {past.length > 0 && (
         <>
           <Text style={screen.fieldLabel}>Past seasons</Text>
           {past.map((p) => (
-            <Pressable
+            <RowNav
               key={p.season.id}
+              label={seasonName(p.season)}
+              detail={[seasonLine({ ...p.season, name: null }).replace(/^This season · ?/, ''), `${p.matches} matches`]
+                .filter(Boolean)
+                .join(' · ')}
               onPress={() => onOpenPast(p.season.id)}
-              accessibilityRole="button"
-              style={({ pressed }) => [local.pastRow, pressed && screen.buttonPressed]}
-            >
-              <View style={local.grow}>
-                <Text style={local.pastName} numberOfLines={1}>
-                  {seasonName(p.season)}
-                </Text>
-                <Text style={local.cardHint} numberOfLines={1}>
-                  {[seasonLine({ ...p.season, name: null }).replace(/^This season · ?/, ''), `${p.matches} matches`]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-              </View>
-              <Text style={local.chev}>›</Text>
-            </Pressable>
+            />
           ))}
           <Text style={[screen.hint, local.left]}>Past seasons open read-only, with their own figures.</Text>
         </>
@@ -140,6 +140,7 @@ function ConfirmFirst({
   const [age, setAge] = useState('U10');
   const [level, setLevel] = useState<Level>('development');
   const [error, setError] = useState('');
+  const [ageSheet, setAgeSheet] = useState(false);
   return (
     <View style={local.card}>
       <Text style={local.cardTitle} numberOfLines={1}>
@@ -148,40 +149,21 @@ function ConfirmFirst({
       <View style={local.warnPill}>
         <Text style={local.warnPillText}>Age group not set</Text>
       </View>
-      <Text style={screen.fieldLabel}>Season name</Text>
-      <TextInput
-        style={screen.input}
+      <FieldRow
+        label="Season name"
         value={name}
         onChangeText={setName}
         maxLength={SEASON_NAME_MAX}
         autoCorrect={false}
-        accessibilityLabel="Season name"
       />
-      <Text style={screen.fieldLabel}>Age group</Text>
-      <ChipRow>
-        {AGE_GROUPS.map((a) => (
-          <Chip key={a} label={a} compact selected={age === a} onPress={() => setAge(a)} />
-        ))}
-      </ChipRow>
-      <Text style={screen.fieldLabel}>Level</Text>
-      <ChipRow>
-        {(['development', 'competitive'] as const).map((l) => (
-          <Chip key={l} label={LEVEL_LABEL[l]} selected={level === l} onPress={() => setLevel(l)} />
-        ))}
-      </ChipRow>
+      <RowNav label="Age group" value={age} onPress={() => setAgeSheet(true)} />
+      <LevelRow level={level} onLevel={setLevel} />
       <Text style={[screen.hint, local.left]}>
         Suggested: U10 Development. Not saved until you confirm. Fairness is Full equal time either way.
       </Text>
       {error !== '' && <Text style={screen.error}>{error}</Text>}
-      <Pressable
-        onPress={() => setError(onConfirm(name, age, level) ?? '')}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>
-          Confirm {age} · {LEVEL_LABEL[level]}
-        </Text>
-      </Pressable>
+      <Action label={`Confirm ${age} · ${LEVEL_LABEL[level]}`} onPress={() => setError(onConfirm(name, age, level) ?? '')} />
+      <AgeSheet visible={ageSheet} age={age} onPick={(a) => { setAge(a); setAgeSheet(false); }} onCancel={() => setAgeSheet(false)} />
     </View>
   );
 }
@@ -203,11 +185,12 @@ function MainFormat({ sides, onSet }: { sides: ReadonlyMap<number, number>; onSe
           ? `Until you set it, the season's figures use the format you've played most: ${sideName(most[0])} so far (${most[1]} of ${total} matches).`
           : "Until you set it, the season's figures use the format you play most."}
       </Text>
-      <ChipRow>
-        {MAIN_SIDES.map((s) => (
-          <Chip key={s} label={sideName(s)} selected={choice === s} onPress={() => setChoice(s)} />
-        ))}
-      </ChipRow>
+      <SegmentedRow
+        label="Main format"
+        options={MAIN_SIDES.map((s) => ({ value: s, label: sideName(s) }))}
+        value={choice}
+        onChange={(s) => s !== null && setChoice(s)}
+      />
       {choice !== null && (
         <>
           <Text style={[screen.hint, local.left]}>
@@ -216,13 +199,7 @@ function MainFormat({ sides, onSet }: { sides: ReadonlyMap<number, number>; onSe
               : `Setting ${sideName(choice)} leaves ${others} ${others === 1 ? 'match' : 'matches'} in another format out of the figures unless you count them.`}
           </Text>
           {error !== '' && <Text style={screen.error}>{error}</Text>}
-          <Pressable
-            onPress={() => setError(onSet(choice) ?? '')}
-            accessibilityRole="button"
-            style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-          >
-            <Text style={screen.buttonLabel}>Set {sideName(choice)}</Text>
-          </Pressable>
+          <Action label={`Set ${sideName(choice)}`} onPress={() => setError(onSet(choice) ?? '')} />
         </>
       )}
     </View>
@@ -260,11 +237,30 @@ export function StartSeasonScreen({
   onStart: (s: NewSeason) => string | null;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(defaultName);
-  const [age, setAge] = useState(defaultAge);
-  const [level, setLevel] = useState<Level>(from.level ?? 'development');
-  const [shape, setShape] = useState<ShapeCode>(defaultShape);
+  const [name, setNameRaw] = useState(defaultName);
+  const [age, setAgeRaw] = useState(defaultAge);
+  const [level, setLevelRaw] = useState<Level>(from.level ?? 'development');
+  const [shape, setShapeRaw] = useState<ShapeCode>(defaultShape);
   const [error, setError] = useState('');
+  // #264 V29, V30: a form. It starts from a suggestion that is already valid,
+  // so Start is offered at once; any change shows "Not saved yet", and
+  // leaving after one asks first.
+  const [phase, dispatch] = useReducer(formReducer, 'pristine');
+  const [sheet, setSheet] = useState<'age' | 'format' | null>(null);
+  const [asking, setAsking] = useState(false);
+  const changed =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      dispatch({ type: 'change' });
+    };
+  const setName = changed(setNameRaw);
+  const setAge = changed(setAgeRaw);
+  const setLevel = changed(setLevelRaw);
+  const setShape = changed(setShapeRaw);
+  const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // Android Back asks too (V30; QA on #260, D6).
+  useBackLeaves(leave);
   const shown = name.trim() || 'the new season';
   const ready = name.trim() !== '';
   const ageHint =
@@ -276,54 +272,40 @@ export function StartSeasonScreen({
   return (
     <KeyboardAvoidingView style={screen.flex} behavior="padding">
       <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-        <Pressable onPress={onCancel} style={[screen.linkHit, local.back]} accessibilityRole="button">
-          <Text style={screen.link}>‹ Back to Settings</Text>
-        </Pressable>
+        <TopBar back={<BackLink label="Cancel" chevron={false} onPress={leave} />} />
         <Text style={screen.title}>Start a new season</Text>
         <Text style={screen.caption}>
           Copied from {seasonName(from)}. Check the age group: teams move up a year.
         </Text>
-        <Text style={screen.fieldLabel}>Season name</Text>
-        <TextInput
-          style={screen.input}
+        <FieldRow
+          label="Season name"
           value={name}
           onChangeText={setName}
           maxLength={SEASON_NAME_MAX}
           autoCorrect={false}
-          accessibilityLabel="Season name"
+          first
         />
-        <Text style={screen.fieldLabel}>Age group</Text>
-        <ChipRow>
-          {AGE_GROUPS.map((a) => (
-            <Chip key={a} label={a} compact selected={age === a} onPress={() => setAge(a)} />
-          ))}
-        </ChipRow>
+        <RowNav label="Age group" value={age} onPress={() => setSheet('age')} />
         <Text style={[screen.hint, local.left]}>{ageHint}</Text>
-        <Text style={screen.fieldLabel}>Main format</Text>
-        <ChipRow>
-          {TEAM_FORMATS.map((f) => (
-            <Chip
-              key={f.shape}
-              label={f.label}
-              detail={f.detail}
-              wide
-              selected={shape === f.shape}
-              onPress={() => setShape(f.shape)}
-            />
-          ))}
-        </ChipRow>
+        <RowNav
+          label="Main format"
+          value={(() => {
+            const f = TEAM_FORMATS.find((x) => x.shape === shape);
+            return f ? `${f.label} · ${f.detail}` : '';
+          })()}
+          onPress={() => setSheet('format')}
+        />
         <Text style={[screen.hint, local.left]}>
           New fixtures start in this format. A match in another format is kept but left out of the season&apos;s
           figures unless you count it.
         </Text>
-        <Text style={screen.fieldLabel}>Level</Text>
-        <ChipRow>
-          {(['development', 'competitive'] as const).map((l) => (
-            <Chip key={l} label={LEVEL_LABEL[l]} selected={level === l} onPress={() => setLevel(l)} />
-          ))}
-        </ChipRow>
+        <LevelRow level={level} onLevel={setLevel} />
         <Text style={screen.fieldLabel}>Fairness</Text>
-        <Text style={[local.cardText, local.left]}>✓ Full equal time. Other ways come in a later version.</Text>
+        {/* #264 V2: the tick is an icon; Barlow has no ✓. */}
+        <View style={local.tickLine}>
+          <Icon name="check-bold" size={16} color={colours.inkMuted} />
+          <Text style={[local.cardText, local.tickText]}>Full equal time. Other ways come in a later version.</Text>
+        </View>
         <View style={local.card}>
           <Text style={local.cardTitle}>What happens</Text>
           <Fact>
@@ -343,29 +325,76 @@ export function StartSeasonScreen({
           <Fact>Everyone&apos;s minutes start at zero for {shown}.</Fact>
         </View>
         {error !== '' && <Text style={screen.error}>{error}</Text>}
-        <Pressable
+      </ScrollView>
+      <MainFoot>
+        <FormStatus phase={phase} />
+        <MainButton
+          label={`Start ${shown} as ${age}`}
           disabled={!ready}
           onPress={() => {
             const side = TEAM_FORMATS.find((f) => f.shape === shape)?.side ?? 7;
             setError(onStart({ name: name.trim(), ageGroup: age, level, shape, side }) ?? '');
           }}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !ready }}
-          style={({ pressed }) => [screen.button, !ready && screen.buttonDisabled, pressed && screen.buttonPressed]}
-        >
-          <Text style={screen.buttonLabel}>
-            Start {shown} as {age}
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={onCancel}
-          accessibilityRole="button"
-          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-        >
-          <Text style={screen.buttonLabel}>Cancel</Text>
-        </Pressable>
-      </ScrollView>
+        />
+      </MainFoot>
+      <AgeSheet
+        visible={sheet === 'age'}
+        age={age}
+        onPick={(a) => {
+          setAge(a);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'format'}
+        title="Main format"
+        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: f.label, detail: f.detail }))}
+        value={shape}
+        onPick={(v) => {
+          setShape(v);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <LeaveAsk visible={asking} thing="season" onKeep={() => setAsking(false)} onLeave={onCancel} />
     </KeyboardAvoidingView>
+  );
+}
+
+/** Level: two short options, so a segmented row (#264 V12). */
+function LevelRow({ level, onLevel }: { level: Level; onLevel: (l: Level) => void }) {
+  return (
+    <SegmentedRow
+      label="Level"
+      options={(['development', 'competitive'] as const).map((l) => ({ value: l, label: LEVEL_LABEL[l] }))}
+      value={level}
+      onChange={(l) => l !== null && onLevel(l)}
+    />
+  );
+}
+
+/** Age group: twelve options, so a list sheet with a tick (#264 V14). */
+function AgeSheet({
+  visible,
+  age,
+  onPick,
+  onCancel,
+}: {
+  visible: boolean;
+  age: string;
+  onPick: (age: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <ListSheet
+      visible={visible}
+      title="Age group"
+      items={AGE_GROUPS.map((a) => ({ value: a, label: a }))}
+      value={age}
+      onPick={onPick}
+      onCancel={onCancel}
+    />
   );
 }
 
@@ -400,9 +429,7 @@ export function PastSeasonScreen({
   const line = seasonLine({ ...season, name: null }).replace(/^This season · ?/, '');
   return (
     <ScrollView contentContainerStyle={screen.scroll}>
-      <Pressable onPress={onBack} style={[screen.linkHit, local.back]} accessibilityRole="button">
-        <Text style={screen.link}>‹ Back to Settings</Text>
-      </Pressable>
+      <TopBar back={<BackLink label="Settings" onPress={onBack} />} />
       <Text style={screen.title} numberOfLines={1}>
         {seasonName(season)}
       </Text>
@@ -449,16 +476,9 @@ export function NewSeasonPrompt({
       <Text style={local.cardText}>
         Start a new season when you&apos;re ready. Nothing from this season is deleted, and the squad comes with you.
       </Text>
-      <Pressable
-        onPress={onStart}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Start a new season</Text>
-      </Pressable>
-      <Pressable onPress={onNotYet} style={screen.linkHit} accessibilityRole="button">
-        <Text style={screen.link}>Not yet</Text>
-      </Pressable>
+      {/* #264: Start opens a screen (a Row ›); Not yet only quiets the prompt (an Action). */}
+      <RowNav label="Start a new season" onPress={onStart} first />
+      <Action label="Not yet" onPress={onNotYet} />
     </View>
   );
 }
@@ -486,6 +506,7 @@ export function OffFormatCard({
     if (refused === null) setNote(null);
     else setError(refused);
   };
+  // #264: the note form is a sheet (Cancel, Save); only Save writes.
   return (
     <View style={[local.card, !counted && local.prompt]}>
       <Text style={[local.cardTitle, !counted && local.warnText]}>
@@ -494,47 +515,37 @@ export function OffFormatCard({
       <Text style={local.cardText}>
         {counted
           ? `Played ${sideName(ownSide)} in a ${sideName(seasonSide)} season, and counted${countedNote ? `: “${countedNote}”` : '.'}`
-          : `${name} is a ${sideName(seasonSide)} season. This ${sideName(ownSide)} match is kept and shown here, but it isn't in anyone's minutes a game or owed time.`}
+          : `${name} is a ${sideName(seasonSide)} season. This ${sideName(ownSide)} match is kept and shown here, but it isn't in anyone's minutes a game or the squad average.`}
       </Text>
-      {note === null ? (
-        <Pressable onPress={() => setNote('')} style={screen.linkHit} accessibilityRole="button">
-          <Text style={screen.link}>{counted ? 'Leave it out again' : 'Count it'}</Text>
-        </Pressable>
-      ) : (
-        <>
-          <Text style={screen.fieldLabel}>{counted ? 'Why leave it out? (needed)' : 'Why count it? (needed)'}</Text>
-          <TextInput
-            style={screen.input}
-            value={note}
-            onChangeText={(t) => {
-              setNote(t);
-              setError('');
-            }}
-            placeholder={counted ? '' : 'e.g. Short of players, but it was a full league game'}
-            placeholderTextColor={colours.inkFaint}
-            maxLength={120}
-            autoFocus
-            accessibilityLabel="Why"
-          />
-          {error !== '' && <Text style={screen.error}>{error}</Text>}
-          <Pressable
-            disabled={note.trim() === ''}
-            onPress={save}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: note.trim() === '' }}
-            style={({ pressed }) => [
-              screen.button,
-              note.trim() === '' && screen.buttonDisabled,
-              pressed && screen.buttonPressed,
-            ]}
-          >
-            <Text style={screen.buttonLabel}>{counted ? 'Leave it out' : `Count it in ${name}`}</Text>
-          </Pressable>
-          <Pressable onPress={() => setNote(null)} style={screen.linkHit} accessibilityRole="button">
-            <Text style={screen.link}>Cancel</Text>
-          </Pressable>
-        </>
-      )}
+      <RowNav label={counted ? 'Leave it out again' : 'Count it'} onPress={() => setNote('')} first />
+      <FormSheet
+        visible={note !== null}
+        title={counted ? 'Leave it out' : `Count it in ${name}`}
+        onCancel={() => {
+          setNote(null);
+          setError('');
+        }}
+        onSave={save}
+        saveDisabled={(note ?? '').trim() === ''}
+        dirty={(note ?? '') !== ''}
+        thing="note"
+      >
+        <Text style={screen.fieldLabel}>{counted ? 'Why leave it out? (needed)' : 'Why count it? (needed)'}</Text>
+        <TextInput
+          style={screen.input}
+          value={note ?? ''}
+          onChangeText={(t) => {
+            setNote(t);
+            setError('');
+          }}
+          placeholder={counted ? '' : 'e.g. Short of players, but it was a full league game'}
+          placeholderTextColor={colours.inkFaint}
+          maxLength={120}
+          autoFocus
+          accessibilityLabel="Why"
+        />
+        {error !== '' && <Text style={screen.error}>{error}</Text>}
+      </FormSheet>
     </View>
   );
 }
@@ -566,6 +577,8 @@ const local = StyleSheet.create({
   },
   warnPillText: { color: colours.amber, fontSize: 13, includeFontPadding: false },
   left: { alignSelf: 'stretch', textAlign: 'left' },
+  tickLine: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  tickText: { flex: 1, marginLeft: 6 },
   back: { alignSelf: 'flex-start' },
   grow: { flex: 1, minWidth: 0 },
   pastRow: {
@@ -578,7 +591,6 @@ const local = StyleSheet.create({
     borderBottomColor: colours.line,
   },
   pastName: { color: colours.ink, fontSize: 17, includeFontPadding: false },
-  chev: { flexShrink: 0, color: colours.inkFaint, fontSize: 22, marginLeft: 8, includeFontPadding: false },
   score: { flexShrink: 0, width: 56, textAlign: 'right', color: colours.ink, fontSize: 17, includeFontPadding: false },
   tagText: { color: colours.amber, fontSize: 12, marginTop: 4, includeFontPadding: false },
   banner: {

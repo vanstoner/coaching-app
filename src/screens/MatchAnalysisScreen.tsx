@@ -12,8 +12,9 @@
  * repaint recomputes from the anchors (invariant 2).
  */
 
-import { useEffect, useReducer } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useReducer, type ReactNode } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { BackLink, TopBar } from './controls';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
@@ -26,6 +27,7 @@ import { MatchBars } from './Charts';
 import { screen } from './theme';
 
 export function MatchAnalysisScreen({
+  pitch = null,
   engine,
   state,
   format,
@@ -44,6 +46,8 @@ export function MatchAnalysisScreen({
   kickoffs: ReadonlyMap<UUID, string>;
   backLabel: string;
   onBack: () => void;
+  /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
+  pitch?: ReactNode;
 }) {
   const running = state.quarters.some((q) => q.status === 'running');
   const [, repaint] = useReducer((n: number) => n + 1, 0);
@@ -60,6 +64,10 @@ export function MatchAnalysisScreen({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
+        {/* #264 V31: one way back, top left; the back link and the back button at the foot went. */}
+        <TopBar
+          back={<BackLink label={backLabel.replace(/^Back to /, '')} accessibilityLabel={backLabel} onPress={onBack} />}
+        />
         <Text style={screen.title} numberOfLines={1}>
           Playing time
         </Text>
@@ -67,10 +75,7 @@ export function MatchAnalysisScreen({
           {opponentLabel(state.match)}
           {running ? ' · live, the clock keeps running' : ''}
         </Text>
-
-        <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>{backLabel}</Text>
-        </Pressable>
+        {pitch}
 
         <Text style={screen.fieldLabel}>This match, minutes</Text>
         <Text style={screen.hint}>
@@ -80,12 +85,6 @@ export function MatchAnalysisScreen({
 
         <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 
-        <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-          onPress={onBack}
-        >
-          <Text style={screen.buttonLabel}>{backLabel}</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );

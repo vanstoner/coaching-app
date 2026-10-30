@@ -133,7 +133,7 @@ describe('everything that counts players follows the shape, never a fixed 7 (#22
     const five = makeFormat('1-2-1').onFieldCount;
     const steps = (activePlayers: number) =>
       startSteps({ activePlayers, onFieldCount: five, matches: [], ledgerMatches: 0 });
-    expect(steps(3)[0]).toMatchObject({ detail: 'First names only · 3 of 5 added', done: false });
+    expect(steps(3)[0]).toMatchObject({ detail: 'First names · 3 of 5 added', done: false });
     expect(steps(5)[0]).toMatchObject({ detail: '5 players', done: true });
     expect(emptySquadSentence(five)).toBe("Type each child's first name and press Add. Five makes a team; anyone more is a sub.");
   });

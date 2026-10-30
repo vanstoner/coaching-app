@@ -119,7 +119,7 @@ export const PlanImageView = forwardRef<View, {
                       minimumFontScale={0.6}
                       style={[local.stretch, t(s.name, INK, '700')]}
                     >
-                      {slot.firstName ?? '–'}
+                      {slot.name ?? '–'}
                     </Text>
                   </View>
                 </View>

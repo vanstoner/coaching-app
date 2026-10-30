@@ -35,9 +35,11 @@ import {
   listedFixtures,
   matchIsUnderway,
   openDestination,
+  opponentLabel,
   whenLabel,
   competitionLabel,
 } from './src/app/fixtures';
+import { savedToast } from './src/app/saveState';
 import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
 import { currentQuarter, periodNounPlural } from './src/app/matchClock';
 import {
@@ -51,7 +53,10 @@ import {
   activePlayers,
   makePlayer,
   playedPlayerIds,
+  displayName,
   playersForMatch,
+  renamedIn,
+  splitName,
   squadReadiness,
 } from './src/app/squad';
 import { lineupAtPeriodEnd, toTeamSheet, type LiveMove, type Sheet } from './src/app/teamSheet';
@@ -176,10 +181,23 @@ import {
   stillToPlay,
   setFormatCounted,
   FIRST_SEASON_ID,
+  seasonRows,
   type ImportChoice,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
+import {
+  LAST_BACKUP_KEY,
+  awardsSummary,
+  backupSummary,
+  minutesSummary,
+  parseLastBackup,
+  seasonSummary,
+  serialiseLastBackup,
+  talliesSummary,
+  testMatchesSummary,
+} from './src/app/settingsSections';
+import { BUILT_IN_TALLIES } from './src/app/tallies';
 import { ledgerWriter, openStoredLedger } from './src/app/storage/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
 import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
@@ -224,6 +242,8 @@ import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, children
 import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
+import { PitchAndReferee, type PitchValue } from './src/screens/PitchFields';
+import { withPitch } from './src/app/pitch';
 import { FixturesScreen } from './src/screens/FixturesScreen';
 import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
@@ -521,6 +541,25 @@ function TeamApp({
   // #192: back up this app, and restore it.
   const [backupMessage, setBackupMessage] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
+  /**
+   * #263 AC10: when this phone last made a backup file and handed it on, for
+   * the Backup heading. A view note on the phone (`LAST_BACKUP_KEY` passes
+   * through the team's store to the root): never in the record, never in a
+   * backup file, untouched by a restore. Forget everything removes it.
+   */
+  const [lastBackup, setLastBackup] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    store
+      .getItem(LAST_BACKUP_KEY)
+      .then((raw) => {
+        if (!cancelled) setLastBackup(parseLastBackup(raw));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
   const [pendingBackup, setPendingBackup] = useState<ReadTeamsBackup | null>(null);
   /** Bumped after a restore, to run the launch again over what was restored. */
   const [launchKey, setLaunchKey] = useState(0);
@@ -783,6 +822,17 @@ function TeamApp({
     [store, sessionInput, squadName, players, match, matches, commitLedger]
   );
 
+  /**
+   * A setting's own save (V28; QA on #260, D8): the session with this one
+   * value changed, written now, true once it is on disk. The save on the
+   * next render writes the same; this one is what ✓ Saved waits for.
+   */
+  const saveSetting = useCallback(
+    (overrides: Partial<SessionInput>): Promise<boolean> =>
+      saveSessionIfWritable(store, sessionWritableRef.current, sessionInput(overrides)),
+    [store, sessionInput]
+  );
+
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
   const exportMinutes = useCallback(async () => {
     const written = ledgerRef.current;
@@ -1040,6 +1090,9 @@ function TeamApp({
           kickoffAt: draft.kickoffAt,
           seasonId: newSeasonId,
           excludeFromStats: draft.excludeFromStats,
+          surface: draft.pitch.surface ?? undefined,
+          condition: draft.pitch.condition ?? undefined,
+          referee: draft.pitch.referee,
         },
         appNow
       );
@@ -1056,8 +1109,9 @@ function TeamApp({
       // instead of their game.
       persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
+      showToast(savedToast(`fixture v ${opponentLabel(stored.match)}`));
     },
-    [squadId, format, matches, persist, match, squad, newSeasonId]
+    [squadId, format, matches, persist, match, squad, newSeasonId, showToast]
   );
 
   /**
@@ -1332,6 +1386,12 @@ function TeamApp({
       );
     const outcome = await exportBackupFile(text, appNow());
     setBackupBusy(false);
+    if (outcome.ok) {
+      // AC10: made and handed to the share sheet without an error.
+      const at = appNow().getTime();
+      setLastBackup(at);
+      void store.setItem(LAST_BACKUP_KEY, serialiseLastBackup(at)).catch(() => undefined);
+    }
     setBackupMessage(
       !outcome.ok
         ? outcome.reason
@@ -1339,7 +1399,7 @@ function TeamApp({
           ? `${all.skipped} ${all.skipped === 1 ? 'team' : 'teams'} could not be read and ${all.skipped === 1 ? 'is' : 'are'} not in the file.`
           : ''
     );
-  }, [sessionInput, team]);
+  }, [sessionInput, team, store]);
 
   /** #192 AC2, AC5: read and check a backup; nothing changes until the coach confirms. */
   const pickBackup = useCallback(async () => {
@@ -1414,12 +1474,15 @@ function TeamApp({
     (next: Player[]) => {
       const kept = new Set(next.map((p) => p.id));
       const gone = players.filter((p) => !kept.has(p.id)).map((p) => p.id);
+      const renamed = renamedIn(players, next);
       setPlayers(next);
+      // V29 (QA on #260, D7): a rename's Save names what was saved.
+      if (renamed !== null) showToast(savedToast(`the name ${renamed}`));
       if (gone.length > 0 && ledgerRef.current && !ledgerBlockedRef.current) {
         commitLedger(recordRemovedPlayers(ledgerRef.current, gone, appNow()));
       }
     },
-    [players, commitLedger]
+    [players, commitLedger, showToast]
   );
 
   /** #190: mark a child not counted in fairness, or counted again, with a note. */
@@ -1434,10 +1497,11 @@ function TeamApp({
         const r = setPlayerFairness(current, playerId, counted, note, appNow());
         if (!r.ok) return r.reason;
         commitLedger(r.ledger);
+        showToast(savedToast(counted ? 'counted in fairness again' : 'marked a fill-in'));
         return null;
       },
     }),
-    [persist, commitLedger]
+    [persist, commitLedger, showToast]
   );
 
   /**
@@ -1447,9 +1511,11 @@ function TeamApp({
    */
   const recordActions = useCallback(
     (matchId: UUID) => {
-      const apply = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
+      // V29 (QA on #260, D7): each correction's Save names what was saved.
+      const apply = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }, what: string): string | null => {
         if (!r.ok) return r.reason;
         commitLedger(r.ledger);
+        showToast(savedToast(what));
         return null;
       };
       const current = () => (ledgerBlockedRef.current ? null : ledgerRef.current);
@@ -1457,27 +1523,31 @@ function TeamApp({
       return {
         addEvent: (kind: 'goal' | 'conceded', playerId: UUID | null, note: string) => {
           const l = current();
-          return l ? apply(addUnknownTimeEvent(l, matchId, kind, playerId, note, appNow())) : refused;
+          return l
+            ? apply(addUnknownTimeEvent(l, matchId, kind, playerId, note, appNow()), kind === 'goal' ? 'goal added' : 'goal against added')
+            : refused;
         },
         withdraw: (eventId: UUID, note: string) => {
           const l = current();
-          return l ? apply(withdrawRecordEvent(l, matchId, eventId, note, appNow())) : refused;
+          return l ? apply(withdrawRecordEvent(l, matchId, eventId, note, appNow()), 'goal taken back') : refused;
         },
         correctStructure: (periodMs: number[], note: string) => {
           const l = current();
-          return l ? apply(correctStructure(l, matchId, periodMs, note, appNow())) : refused;
+          return l ? apply(correctStructure(l, matchId, periodMs, note, appNow()), 'how it was played') : refused;
         },
         giveAward: (awardTypeId: UUID, playerId: UUID, note: string) => {
           const l = current();
-          return l ? apply(giveAward(l, matchId, awardTypeId, playerId, note, appNow())) : refused;
+          return l ? apply(giveAward(l, matchId, awardTypeId, playerId, note, appNow()), 'award given') : refused;
         },
         changeAward: (awardTypeId: UUID, from: UUID, to: UUID | null, note: string) => {
           const l = current();
-          return l ? apply(changeAward(l, matchId, awardTypeId, from, to, note, appNow())) : refused;
+          return l
+            ? apply(changeAward(l, matchId, awardTypeId, from, to, note, appNow()), to === null ? 'award taken back' : 'award changed')
+            : refused;
         },
       };
     },
-    [commitLedger]
+    [commitLedger, showToast]
   );
 
   /**
@@ -1490,7 +1560,10 @@ function TeamApp({
     const l = ledgerBlockedRef.current ? null : ledger;
     if (!match || !l || !awardsOffered(l, match.state)) return null;
     const id = match.state.match.id;
-    const nameOfChild = (pid: UUID) => players.find((p) => p.id === pid)?.firstName ?? 'Unknown';
+    const nameOfChild = (pid: UUID) => {
+      const child = players.find((p) => p.id === pid);
+      return child ? displayName(child) : 'Unknown';
+    };
     const act = (run: (cur: Ledger) => { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
       if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
       // Bea: a real match enters the record with the first save after kick-off.
@@ -1753,6 +1826,30 @@ function TeamApp({
   );
 
   /**
+   * #254 AC12: set or change a match's pitch and referee, before, during or
+   * after it. Surface and condition reach the record through the next save
+   * (a new `fixture` record, latest wins); the referee stays in the session.
+   */
+  const setPitch = useCallback(
+    (matchId: UUID, v: PitchValue) => {
+      const value = { surface: v.surface, condition: v.condition, referee: v.referee };
+      const live = match && match.state.match.id === matchId ? match : null;
+      if (live) {
+        const next = withPitch(live.state.match, value);
+        delete live.state.match.surface;
+        delete live.state.match.condition;
+        delete live.state.match.referee;
+        Object.assign(live.state.match, next);
+        repaint();
+      }
+      const nextMatches = matches.map((m) => (m.match.id === matchId ? { ...m, match: withPitch(m.match, value) } : m));
+      setMatches(nextMatches);
+      persist({ matches: nextMatches });
+    },
+    [match, matches, persist]
+  );
+
+  /**
    * A child marked absent has just come on: they arrived late (ruling F). An
    * explicit, noted correction in the ledger — before the save that follows,
    * so the save builds on it.
@@ -1799,9 +1896,10 @@ function TeamApp({
       commitLedger(result.ledger);
       repaint();
       persist();
+      showToast(savedToast('attendance correction'));
       return null;
     },
-    [match, persist, commitLedger]
+    [match, persist, commitLedger, showToast]
   );
 
   /**
@@ -1820,9 +1918,10 @@ function TeamApp({
       commitLedger(result.ledger);
       repaint();
       persist();
+      showToast(savedToast(excluded ? 'match left out of the figures' : 'match counted again'));
       return null;
     },
-    [match, persist, commitLedger]
+    [match, persist, commitLedger, showToast]
   );
 
   const startQuarter = useCallback(
@@ -2139,7 +2238,9 @@ function TeamApp({
         setSubPlan([]);
       }
       if (out.ledger && out.ledger !== ledgerRef.current) commitLedger(out.ledger);
-      const nextPlayers = [...out.players, makePlayer(squadId, firstName)];
+      // #54: a confirmed name of more than one word keeps its second part as the suffix.
+      const named = splitName(firstName);
+      const nextPlayers = [...out.players, makePlayer(squadId, named.firstName, named.displaySuffix)];
       setPlayers(nextPlayers);
       setMatches(out.matches);
       persist({
@@ -2190,7 +2291,11 @@ function TeamApp({
         ownSide={own}
         counted={m.formatCount?.counted === true}
         countedNote={m.formatCount?.note ?? null}
-        onCount={(counted, note) => applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()))}
+        onCount={(counted, note) => {
+          const refused = applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()));
+          if (refused === null) showToast(savedToast(counted ? `counted in ${seasonName(its)}` : 'left out of the season'));
+          return refused;
+        }}
       />
     );
   };
@@ -2220,6 +2325,7 @@ function TeamApp({
             periodCount,
             shape: shapeOfFormat(format) ?? DEFAULT_SHAPE,
             excludeFromStats: false,
+            pitch: { surface: null, condition: null, referee: '' },
           }}
           onSave={saveFixture}
           onCancel={() => setStep('fixtures')}
@@ -2326,6 +2432,8 @@ function TeamApp({
       const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
       return (
         <RecordMatchScreen
+          // AC14: read-only, surface and condition only; the record never holds a referee.
+          pitch={<PitchAndReferee match={viewLedger?.fixtures.find((f) => f.id === recordPage.match.id) ?? {}} onChange={null} />}
           page={recordPage}
           now={appNow()}
           onBack={() => setStep(back)}
@@ -2339,6 +2447,7 @@ function TeamApp({
     if (effectiveStep === 'summary' && match) {
       return (
         <MatchSummaryScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}
@@ -2382,6 +2491,7 @@ function TeamApp({
     if (effectiveStep === 'analysis' && match) {
       return (
         <MatchAnalysisScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}
@@ -2398,9 +2508,18 @@ function TeamApp({
     if (effectiveStep === 'settings') {
       return (
         <SettingsScreen
+          store={store}
           squadName={squadName}
           season={
-            ledger && !ledgerBlockedRef.current ? (
+            ledger && !ledgerBlockedRef.current ? {
+              // #263 AC9: counted on every draw from what the section shows.
+              summary: seasonSummary({
+                confirmed: !(season.ageGroup === null && season.level === null),
+                name: seasonName(season),
+                ageGroup: season.ageGroup,
+                matches: playedIn(seasonView ?? { matches: [] }).length,
+              }),
+              node: (
               <SeasonSection
                 season={season}
                 began={seasonBegan(season, seasonView ?? { matches: [] })}
@@ -2424,7 +2543,8 @@ function TeamApp({
                   setStep('seasonPast');
                 }}
               />
-            ) : null
+              ),
+            } : null
           }
           team={
             team
@@ -2444,17 +2564,35 @@ function TeamApp({
                 }
               : null
           }
-          onSquadName={setSquadName}
+          // V28 (QA on #260, D8): each resolves once the write is done, so
+          // ✓ Saved shows only for a save that succeeded.
+          onSquadName={(name) => {
+            setSquadName(name);
+            return saveSetting({ squadName: name });
+          }}
           totalMinutes={totalMinutes}
           periodCount={periodCount}
           shape={shapeOfFormat(format)}
-          onTotalMinutes={setTotalMinutes}
-          onPeriodCount={setPeriodCount}
-          onShape={setDefaultShape}
+          onTotalMinutes={(n) => {
+            setTotalMinutes(n);
+            return saveSetting({ totalMinutes: n });
+          }}
+          onPeriodCount={(n) => {
+            setPeriodCount(n);
+            return saveSetting({ periodCount: n });
+          }}
+          onShape={(code) => {
+            setDefaultShape(code);
+            return saveSetting({ format: formatForShape(code, format) });
+          }}
           buzzWhenSubDue={buzzWhenSubDue}
-          onBuzzWhenSubDue={setBuzzWhenSubDue}
-          minutes={
-            <>
+          onBuzzWhenSubDue={(on) => {
+            setBuzzWhenSubDue(on);
+            return saveSetting({ buzzWhenSubDue: on });
+          }}
+          minutes={{
+            summary: minutesSummary(seasonView?.matches.length ?? 0, seasonView ? seasonRows(seasonView).length : 0),
+            node: (
               <MinutesSection
                 ledger={seasonView}
                 players={players}
@@ -2467,25 +2605,41 @@ function TeamApp({
                 onChoose={chooseImport}
                 onCancelImport={() => setPendingImport(null)}
               />
-              {/* #197: drawn in this slot so Settings itself is unchanged. */}
-              {ledger && !ledgerBlockedRef.current && (
-                <AwardsSection
-                  types={ledger.awardTypes}
-                  onAdd={(name) => applyToLedger((l) => addAwardType(l, name, appNow()))}
-                  onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
-                />
-              )}
-              {/* #198 */}
-              {ledger && !ledgerBlockedRef.current && (
-                <TalliesSection
-                  types={ledger.eventTypes}
-                  onAdd={(label, credited) => applyToLedger((l) => addEventType(l, label, credited, appNow()))}
-                  onActive={(id, active) => applyToLedger((l) => setEventTypeActive(l, id, active, appNow()))}
-                />
-              )}
-            </>
+            ),
+          }}
+          awards={
+            // #197; #263: its own section.
+            ledger && !ledgerBlockedRef.current
+              ? {
+                  summary: awardsSummary(ledger.awardTypes.filter((t) => t.active).map((t) => t.name)),
+                  node: (
+                    <AwardsSection
+                      types={ledger.awardTypes}
+                      onAdd={(name) => applyToLedger((l) => addAwardType(l, name, appNow()))}
+                      onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
+                    />
+                  ),
+                }
+              : null
           }
-          testMatches={
+          tallies={
+            // #198; #263: its own section.
+            ledger && !ledgerBlockedRef.current
+              ? {
+                  summary: talliesSummary(BUILT_IN_TALLIES.length, ledger.eventTypes.filter((t) => t.active).length),
+                  node: (
+                    <TalliesSection
+                      types={ledger.eventTypes}
+                      onAdd={(label, credited) => applyToLedger((l) => addEventType(l, label, credited, appNow()))}
+                      onActive={(id, active) => applyToLedger((l) => setEventTypeActive(l, id, active, appNow()))}
+                    />
+                  ),
+                }
+              : null
+          }
+          testMatches={{
+            summary: testMatchesSummary(testMatchesOnPhone(matches, match).length),
+            node: (
             <TestMatchesSection
               start={{
                 onStart: startTestMatch,
@@ -2513,8 +2667,11 @@ function TeamApp({
               onHideAll={hideTestMatches}
               onShow={showMatchAgain}
             />
-          }
-          backup={
+            ),
+          }}
+          backup={{
+            summary: backupSummary(lastBackup),
+            node: (
             <BackupSection
               message={backupMessage}
               busy={backupBusy}
@@ -2524,7 +2681,8 @@ function TeamApp({
               onConfirm={() => void restoreBackup()}
               onCancel={() => setPendingBackup(null)}
             />
-          }
+            ),
+          }}
           testKit={
             testKitOn ? (
               <TestKitSection
@@ -2611,6 +2769,7 @@ function TeamApp({
     if (effectiveStep === 'lineup' && match) {
       return (
         <LineupScreen
+          pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
           format={match.format}

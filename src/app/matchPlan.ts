@@ -29,7 +29,9 @@
  * share, deltas and spread are all on the total.
  */
 
+import { matchFairShare, type NotInShare } from './fairShare';
 import type { Format, Player, Position, UUID } from '../types/index';
+import { displayName } from './squad';
 import { formatClock, periodNoun } from './matchClock';
 import { NO_SUB_PLANNED, type PlannedSub } from './subPlan';
 import type { Sheet } from './teamSheet';
@@ -194,6 +196,39 @@ export function swapChoices(
   };
 }
 
+/**
+ * "Whoever is on longest" for a planned sub (#264 V20; QA on #260, D12):
+ * the outfield player on the pitch at `atMs` who has been on longest
+ * without a break, by the plan's own starters and earlier subs, as the
+ * clock's suggestion (`offPicks`) is outfield only. Ties go to the earlier
+ * position in the shape. Null when nobody outfield is on.
+ *
+ * The plan holds a named player for every sub, so the Plan resolves the
+ * choice when it is saved, from the plan as it stands.
+ */
+export function longestOnAt(period: PlannedPeriod, swapIndex: number, atMs: number, format: Format): UUID | null {
+  const kindOf = new Map(format.positions.map((p) => [p.id, p.kind]));
+  const order = new Map(sortedPositions(format).map((p, i) => [p.id, i]));
+  // Who holds each position, and since when.
+  const holder = new Map<UUID, { who: UUID; since: number }>();
+  for (const [positionId, who] of Object.entries(period.slots)) if (who !== null) holder.set(positionId as UUID, { who, since: 0 });
+  const earlier = period.subs
+    .map((swap, i) => ({ swap, i }))
+    // A new sub (swapIndex -1) comes after every sub already planned at its time (QA D16).
+    .filter(({ swap, i }) => i !== swapIndex && (swap.atMs < atMs || (swap.atMs === atMs && (swapIndex < 0 || i < swapIndex))))
+    .sort((a, b) => a.swap.atMs - b.swap.atMs || a.i - b.i);
+  for (const { swap } of earlier) {
+    if (swap.onId === null || swap.offId === null) continue;
+    const at = [...holder].find(([, h]) => h.who === swap.offId);
+    if (!at || [...holder.values()].some((h) => h.who === swap.onId)) continue;
+    holder.set(at[0], { who: swap.onId, since: swap.atMs });
+  }
+  const candidates = [...holder]
+    .filter(([positionId]) => kindOf.get(positionId) !== 'goalkeeper')
+    .sort(([a, ha], [b, hb]) => ha.since - hb.since || (order.get(a) ?? 0) - (order.get(b) ?? 0));
+  return candidates.length === 0 ? null : candidates[0][1].who;
+}
+
 export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: number): MatchPlan {
   return withPeriod(plan, periodIndex, (period) => ({
     ...period,
@@ -335,16 +370,18 @@ export interface PlanProblem {
 
 export interface ProjectedRow {
   playerId: UUID;
-  firstName: string;
+  /** `displayName`: "Alex S" and "Alex T" read apart (#54 AC7). */
+  name: string;
   outfieldMs: number;
   goalkeeperMs: number;
   /** Goal plus outfield: the fairness figure (ADR-015). */
   pitchMs: number;
   /**
-   * Difference from the fair share, on pitch time. A full-match keeper is in
-   * the share like everyone else (#101 supersedes the old "in goal" null).
+   * Difference from the fair share, on pitch time; null when the child is not
+   * in the share: absent (#262) or the Main keeper (#261 Q1 b).
    */
-  deltaMs: number;
+  deltaMs: number | null;
+  notInShare?: NotInShare;
 }
 
 export interface Projection {
@@ -352,7 +389,7 @@ export interface Projection {
   rows: ProjectedRow[];
   /** Goal plus outfield, summed over the squad. */
   totalPitchMs: number;
-  /** Total pitch time ÷ squad players. */
+  /** The pitch time of the children in the share ÷ how many (`matchFairShare`, #261 item 1). */
   fairShareMs: number;
   /** Most minus least pitch time across the squad. */
   spreadMs: number;
@@ -386,11 +423,13 @@ export function projectPlan(
   live: {
     fromPeriod: number;
     baseline: Map<UUID, { outfieldMs: number; goalkeeperMs: number }>;
-  } | null = null
+  } | null = null,
+  /** Not available for this match (#262): out of the share, no gap. */
+  absent: ReadonlySet<UUID> = new Set()
 ): Projection {
   const periodMs = periodLengthMs(totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID) => nameOf.get(id) ?? 'A removed player';
   const positions = sortedPositions(format);
 
@@ -464,30 +503,41 @@ export function projectPlan(
     credit(at, periodMs);
   });
 
-  // Invariant 3 (ADR-015, #101): the fairness figure is goal plus outfield,
-  // and every squad player is in the share. A full-match keeper used to be
-  // left out of it, which made a dedicated keeper look unplayed.
+  // Invariant 3 (ADR-015, #101): the fairness figure is goal plus outfield.
+  // Who is in the share is the one rule the match report uses too (#261
+  // item 1, Rob 1b): the available, a Main keeper left out, fill-ins in (#262).
   const pitch = (id: UUID) => (outfield.get(id) ?? 0) + (keeping.get(id) ?? 0);
-  const shares = players.map((p) => pitch(p.id));
-  const totalPitchMs = shares.reduce((a, b) => a + b, 0);
-  const fairShareMs = players.length === 0 ? 0 : totalPitchMs / players.length;
-  const spreadMs = shares.length === 0 ? 0 : Math.max(...shares) - Math.min(...shares);
+  const share = matchFairShare(
+    players.map((p) => ({ playerId: p.id, pitchMs: pitch(p.id), present: !absent.has(p.id), mainKeeper: p.keeper === 'main' }))
+  );
+  const inShare = players.filter((p) => !share.out.has(p.id)).map((p) => pitch(p.id));
+  const totalPitchMs = inShare.reduce((a, b) => a + b, 0);
+  const fairShareMs = share.shareMs ?? 0;
+  const spreadMs = inShare.length === 0 ? 0 : Math.max(...inShare) - Math.min(...inShare);
 
   const rows: ProjectedRow[] = players.map((p) => {
     const pitchMs = pitch(p.id);
+    const out = share.out.get(p.id);
     return {
       playerId: p.id,
-      firstName: p.firstName,
+      name: displayName(p),
       outfieldMs: outfield.get(p.id) ?? 0,
       goalkeeperMs: keeping.get(p.id) ?? 0,
       pitchMs,
-      deltaMs: Math.round(pitchMs - fairShareMs),
+      deltaMs: out || share.shareMs === null ? null : Math.round(pitchMs - fairShareMs),
+      ...(out ? { notInShare: out } : {}),
     };
   });
-  // Most owed first, as the live fairness table does; ties in squad order.
+  // Furthest under the share first; then those out of it but available (the
+  // Main keeper); the absent after every available child (#262 AC3); ties in
+  // squad order. A rank, not +∞ for both: ∞ − ∞ is NaN and lost the order.
   const order = new Map(players.map((p, i) => [p.id, i]));
+  const rank = (r: ProjectedRow) => (r.notInShare === 'absent' ? 2 : r.deltaMs === null ? 1 : 0);
   rows.sort(
-    (a, b) => a.deltaMs - b.deltaMs || order.get(a.playerId)! - order.get(b.playerId)!
+    (a, b) =>
+      rank(a) - rank(b) ||
+      (rank(a) === 0 ? a.deltaMs! - b.deltaMs! : 0) ||
+      order.get(a.playerId)! - order.get(b.playerId)!
   );
 
   return { rows, totalPitchMs, fairShareMs, spreadMs, problems };

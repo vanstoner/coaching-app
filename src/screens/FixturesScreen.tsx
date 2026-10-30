@@ -10,7 +10,7 @@
  * the match they are about to play without scrolling or thinking.
  */
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -22,6 +22,8 @@ import { Text } from './Text';
 import type { Match, UUID } from '../types/index';
 import type { Score } from '../app/matchEvents';
 import { scoreLabel, type RecordOnlyMatch } from '../app/recordOnly';
+import { pitchTags } from '../app/pitch';
+import { PitchTags } from './PitchFields';
 import { resultOf } from '../app/matchRecord';
 import { provenanceTag, type Provenance } from '../app/provenance';
 import {
@@ -42,6 +44,7 @@ import {
 import { NO_MATCHES_YET, NOTHING_PLAYED_YET } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { Action, Danger, MainButton, RowNav, SegmentedRow } from './controls';
 
 export function FixturesScreen({
   squadName,
@@ -145,35 +148,15 @@ export function FixturesScreen({
             start one come next, so they never scroll away as Played grows. */}
         <Section title="Now" rows={current} {...cardProps} />
 
-        {/* #228 (Dee's clutter fix 2): Play now and + Fixture side by side; the hint went. */}
+        {/* #228 (Dee's clutter fix 2): Play now and + Fixture together; the hint went.
+            #264: Play now is the Main button; + Fixture opens a form, so a Row ›. */}
         <View style={local.startRow}>
           {onPlayNow && (
-            <Pressable
-              style={({ pressed }) => [
-                screen.button,
-                local.startButton,
-                local.startGap,
-                highlightPlayNow && local.playNowHighlight,
-                pressed && screen.buttonPressed,
-              ]}
-              onPress={onPlayNow}
-              accessibilityRole="button"
-            >
-              <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
-                Play now
-              </Text>
-            </Pressable>
+            <View style={[local.playNow, highlightPlayNow && local.playNowHighlight]}>
+              <MainButton label="Play now" onPress={onPlayNow} />
+            </View>
           )}
-          <Pressable
-            style={({ pressed }) => [screen.buttonQuiet, local.startButton, pressed && screen.buttonPressed]}
-            onPress={onAdd}
-            accessibilityRole="button"
-            accessibilityLabel="Add a fixture"
-          >
-            <Text style={[screen.buttonLabel, local.startLabel]} numberOfLines={1}>
-              + Fixture
-            </Text>
-          </Pressable>
+          <RowNav label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
         </View>
 
         {rows.length === 0 && recordOnly.length === 0 ? (
@@ -204,14 +187,19 @@ export function FixturesScreen({
           </>
         )}
 
+        {/* #264: showing or hiding the archived is a choice, so Segmented (Hide / Show). */}
         {(housekeeping.archivedCount > 0 || housekeeping.showingArchived) && (
-          <Pressable onPress={housekeeping.onToggleArchived} style={screen.linkHit}>
-            <Text style={screen.link}>
-              {housekeeping.showingArchived
-                ? 'Hide archived'
-                : `Show archived (${housekeeping.archivedCount})`}
-            </Text>
-          </Pressable>
+          <SegmentedRow
+            label="Archived"
+            options={[
+              { value: false, label: 'Hide' },
+              { value: true, label: `Show (${housekeeping.archivedCount})` },
+            ]}
+            value={housekeeping.showingArchived}
+            onChange={(show) => {
+              if (show !== null && show !== housekeeping.showingArchived) housekeeping.onToggleArchived();
+            }}
+          />
         )}
       </ScrollView>
 
@@ -333,6 +321,7 @@ function RecordCard({
         {whenLabel(match.kickoffAt ? new Date(match.kickoffAt) : null, now)}
         {competition === '' ? '' : ` · ${competition}`}
       </Text>
+      <PitchTags surface={match.surface} condition={match.condition} />
       <Text style={match.score ? local.score : local.meta} numberOfLines={1}>
         {scoreLabel(match.score)}
       </Text>
@@ -371,9 +360,8 @@ function FixtureCard({
   const canArchive = housekeeping.archivable.has(match.id);
   const isArchived = housekeeping.archived.has(match.id);
   const competition = competitionLabel(match.competition);
-  // Two taps, in place, no dialog module. A fixture is cheap to re-add, but
-  // deleting one the coach meant to keep is not cheap to undo.
-  const [confirming, setConfirming] = useState(false);
+  // Two taps, in place, no dialog module (Danger keeps that). A fixture is
+  // cheap to re-add, but deleting one the coach meant to keep is not cheap to undo.
   const opponent = opponentLabel(match);
   const when = `${kickoffLabel(match, now, periods.get(match.id))}${competition === '' ? '' : ` · ${competition}`}`;
   const length = lengthLabel(match);
@@ -404,7 +392,17 @@ function FixtureCard({
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={fixtureOpenLabel([opponent, when, length, scoreLine, tag, inProgress, notClosedLine, archivedLine])}
+        accessibilityLabel={fixtureOpenLabel([
+          opponent,
+          when,
+          length,
+          pitchTags(match.surface, match.condition).join(', '),
+          scoreLine,
+          tag,
+          inProgress,
+          notClosedLine,
+          archivedLine,
+        ])}
         accessibilityActions={[{ name: 'activate' }]}
         onAccessibilityAction={(e) => {
           if (e.nativeEvent.actionName === 'activate') onOpen(match.id);
@@ -420,6 +418,7 @@ function FixtureCard({
         <Text style={local.meta} numberOfLines={1}>
           {length}
         </Text>
+        <PitchTags surface={match.surface} condition={match.condition} />
         {scoreLine && (
           <Text style={local.score} numberOfLines={1}>
             {scoreLine}
@@ -440,51 +439,31 @@ function FixtureCard({
       </View>
 
       {/* Only before kick-off: once a match is played its plan is history. */}
+      {/* #264: the plan opens a screen (a Row ›, labels kept: EDIT_PLAN). */}
       {match.status === 'planned' && (
-        <Pressable onPress={() => onPlan(match.id)} style={local.confirmHit} accessibilityRole="button">
-          <Text style={local.plan}>{planned ? 'Edit the plan' : 'Plan this match'}</Text>
-        </Pressable>
+        <RowNav label={planned ? 'Edit the plan' : 'Plan this match'} onPress={() => onPlan(match.id)} first />
       )}
 
+      {/* Archive can be undone, so it is an Action, not Danger. */}
       {canArchive && (
-        <Pressable
-          onPress={() => housekeeping.onArchive(match.id, !isArchived)}
-          style={local.confirmHit}
-          accessibilityRole="button"
-        >
-          <Text style={local.remove}>{isArchived ? 'Unarchive' : 'Archive'}</Text>
-        </Pressable>
+        <Action label={isArchived ? 'Unarchive' : 'Archive'} onPress={() => housekeeping.onArchive(match.id, !isArchived)} />
       )}
 
-      {canDelete &&
-        (confirming ? (
-          <View style={local.confirmRow}>
-            <Pressable onPress={() => onDelete(match.id)} style={local.confirmHit} accessibilityRole="button">
-              <Text style={local.deleteConfirm}>Delete this fixture</Text>
-            </Pressable>
-            <Pressable onPress={() => setConfirming(false)} style={local.confirmHit} accessibilityRole="button">
-              <Text style={local.keep}>Keep</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Pressable onPress={() => setConfirming(true)} style={local.confirmHit} accessibilityRole="button">
-            <Text style={local.remove}>Remove</Text>
-          </Pressable>
-        ))}
+      {/* Rob, Q1(a): deleting a fixture cannot be undone, so it keeps the Danger look where it is. */}
+      {canDelete && (
+        <Danger label="Remove" confirmLabel="Delete this fixture" keepLabel="Keep" onConfirm={() => onDelete(match.id)} />
+      )}
     </Pressable>
   );
 }
 
 const local = StyleSheet.create({
-  startRow: { flexDirection: 'row', alignSelf: 'stretch', alignItems: 'stretch', marginTop: 14 },
-  startButton: { flex: 1, alignSelf: 'auto', marginTop: 0 },
-  startGap: { marginRight: 10 },
-  startLabel: { alignSelf: 'stretch', textAlign: 'center', flexShrink: 0 },
+  startRow: { alignSelf: 'stretch', marginTop: 14 },
+  playNow: { alignSelf: 'stretch', marginBottom: 6, borderRadius: 14, borderWidth: 3, borderColor: 'transparent' },
   section: { alignSelf: 'stretch' },
   emptyUnderLabel: { marginTop: 4 },
-  // The same outer size as the plain button: the border takes 3 of the 15
-  // padding, so nothing below it moves while it shows.
-  playNowHighlight: { borderWidth: 3, borderColor: colours.warn, paddingVertical: 12 },
+  // The border is always there, transparent until it shows, so nothing moves.
+  playNowHighlight: { borderColor: colours.warn },
   card: {
     alignSelf: 'stretch',
     backgroundColor: colours.pitchRaised,

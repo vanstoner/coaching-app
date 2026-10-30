@@ -123,6 +123,22 @@ export interface SeasonMatch {
   offFormat: number | null;
   /** How far it can be trusted (#199), derived from the record. */
   provenance: Provenance;
+  /**
+   * Marked here after kick-off: a noted attendance change to available
+   * (ruling F; #261 AC11). Absent on a match built without a ledger.
+   */
+  late?: ReadonlySet<UUID>;
+}
+
+/** A match in the record that End match has not closed: in no figure (§6). */
+export interface UnclosedMatch {
+  matchId: UUID;
+  /** "Sat 8 Aug", or "Date TBC". */
+  date: string;
+  opponent: string;
+  abandoned: boolean;
+  /** Who played in it or was marked here for it. */
+  players: ReadonlySet<UUID>;
 }
 
 const blankUnits = (): Record<PositionUnit, number> => ({ GK: 0, DEF: 0, MID: 0, ATT: 0 });
@@ -199,8 +215,38 @@ export function seasonMatches(
       counted,
       offFormat,
       provenance: trust.get(m.id)?.state ?? 'reconstructed',
+      late: lateArrivals(m.attendance ?? []),
     };
   });
+}
+
+function lateArrivals(attendance: readonly { playerId: UUID; status: string; note: string | null }[]): Set<UUID> {
+  return new Set(attendance.filter((a) => a.status === 'available' && a.note != null).map((a) => a.playerId));
+}
+
+/**
+ * The matches kicked off but not closed with End match, oldest first: in no
+ * figure (ADR-015 §6), and listed on a child's Why sheet as not counted.
+ */
+export function unclosedMatches(ledger: Ledger | null, options: Pick<SeasonOptions, 'kickoffs'> = {}): UnclosedMatch[] {
+  if (!ledger) return [];
+  const times = matchTimes(ledger, options.kickoffs);
+  const known = (t: number) => (Number.isFinite(t) ? t : Infinity);
+  return ledger.matches
+    .filter((m) => m.status === 'in_progress' || m.status === 'abandoned')
+    .map((m, index) => ({ m, index, t: times.get(m.id) ?? NaN }))
+    .sort((a, b) => known(a.t) - known(b.t) || a.index - b.index)
+    .map(({ m, t }) => {
+      const players = new Set<UUID>(m.intervals.map((i) => i.playerId));
+      for (const a of m.attendance ?? []) if (a.status === 'available') players.add(a.playerId);
+      return {
+        matchId: m.id,
+        date: Number.isFinite(t) ? dayLabel(new Date(t)) : 'Date TBC',
+        opponent: (m.opponent ?? '').trim() || 'Opponent TBC',
+        abandoned: m.status === 'abandoned',
+        players,
+      };
+    });
 }
 
 /** Under each column: the day of the month, and the month under the first match of each month. */
@@ -441,13 +487,16 @@ export interface OwedRow {
 }
 
 /**
- * (squad average − their average) × matches played, rounded once at the end
- * from unrounded averages, as the approved prototype's compute() does it.
- * The averages are refolded here from the matches, not taken from `season`,
- * whose figures are already rounded to the millisecond: rounding twice can
- * cross a .5 boundary (QA D1 on #143). Squad order, everyone listed.
+ * Each child's unrounded minutes a game over the counted matches they were
+ * at, and the unrounded squad average. Refolded here from the matches, not
+ * taken from `season`, whose figures are already rounded to the
+ * millisecond: rounding twice can cross a .5 boundary (QA D1 on #143).
+ * `owedTime` and the Why sheet both start from it, so they cannot disagree.
  */
-export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): OwedRow[] {
+export function exactAverages(
+  season: SquadSeason,
+  matches: readonly SeasonMatch[]
+): { exact: ReadonlyMap<UUID, number>; avg: number | null } {
   const exact = new Map<UUID, number>();
   for (const c of season.children) {
     let ms = 0;
@@ -467,6 +516,16 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
     .map((c) => exact.get(c.playerId))
     .filter((ms): ms is number => ms !== undefined);
   const avg = counted.length === 0 ? null : counted.reduce((sum, ms) => sum + ms, 0) / counted.length;
+  return { exact, avg };
+}
+
+/**
+ * (squad average − their average) × matches played, rounded once at the end
+ * from unrounded averages, as the approved prototype's compute() does it.
+ * Squad order, everyone listed.
+ */
+export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): OwedRow[] {
+  const { exact, avg } = exactAverages(season, matches);
   return season.children.map((c) => {
     const own = exact.get(c.playerId);
     const owed =
@@ -486,10 +545,10 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
   });
 }
 
-/** "Owed 6 min", "Had 9 min more", "Level". */
+/** "6 min under the average", "9 min over the average", "Level" (#261 AC6). */
 export function owedText(owed: number): string {
-  if (owed > 0) return `Owed ${owed} min`;
-  if (owed < 0) return `Had ${-owed} min more`;
+  if (owed > 0) return `${owed} min under the average`;
+  if (owed < 0) return `${-owed} min over the average`;
   return 'Level';
 }
 
@@ -584,7 +643,7 @@ export function fairnessTile(f: Fairness | null): string {
   return f === null ? AFTER_FIRST_MATCH : `Everyone within ${f.gap} min a game`;
 }
 
-/** "Owed time: Jo, Dee, Gus": most owed first, ties in squad order (#208). */
+/** "Next in line for more time: Jo, Dee, Gus": furthest under first, ties in squad order (#208, #261 AC6). */
 export function saturdayTile(rows: readonly OwedRow[], f: Fairness | null): string {
   if (f === null) return AFTER_FIRST_MATCH;
   const named = rows
@@ -592,7 +651,9 @@ export function saturdayTile(rows: readonly OwedRow[], f: Fairness | null): stri
     .map((r, i) => ({ r, i }))
     .sort((a, b) => (b.r.owed ?? 0) - (a.r.owed ?? 0) || a.i - b.i)
     .map(({ r }) => r.name);
-  return named.length > 0 ? `Owed time: ${named.join(', ')}` : `Nobody owed ${OWED_MIN} min or more`;
+  return named.length > 0
+    ? `Next in line for more time: ${named.join(', ')}`
+    : `Nobody is ${OWED_MIN} min or more under the average`;
 }
 
 export function positionsTile(matches: readonly SeasonMatch[]): string {
@@ -619,6 +680,8 @@ export interface SquadViews {
   trend: TrendPoint[];
   owed: OwedRow[];
   positions: PositionsRow[];
+  /** Kicked off, not closed: in no figure; the Why sheet lists them (#261 AC11). */
+  unclosed: UnclosedMatch[];
 }
 
 /**
@@ -641,6 +704,7 @@ export function squadViews(
     trend: fairnessTrend(matches, season.children),
     owed: owedTime(season, matches),
     positions: positionsTried(matches, season.children, players),
+    unclosed: unclosedMatches(ledger, options),
   };
 }
 
