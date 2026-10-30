@@ -65,6 +65,9 @@ DOCS_ONLY = [
     ".github/workflows/store-media.yml",
     ".github/workflows/testflight.yml",
     ".github/workflows/version-impact.yml",
+    # #232 criterion 16: the Play upload adds no build to any PR.
+    ".github/workflows/google-play.yml",
+    ".github/scripts/play_api.py",
 ]
 
 # #230 criterion 7: builds Android but not iOS.
@@ -198,6 +201,9 @@ def self_test():
         (["metro.config.js"], True, True, False),
         (["plugins/withThing.js"], True, True, False),
         (["docs/decisions/ADR-007.md"], False, False, False),
+        ([".github/workflows/google-play.yml"], False, False, False),
+        ([".github/scripts/play_api.py"], False, False, False),
+        ([".github/scripts/play_bundle.py"], True, False, False),
         (["HISTORY.md"], False, False, False),
         (["README.md"], False, False, False),
         ([".github/ISSUE_TEMPLATE/bug.yml"], False, False, False),

@@ -50,6 +50,11 @@ its `testflight.yml` run, uploads the build to TestFlight, sends the listing
 text and What's New, and submits that version for review set to release
 automatically when Apple approves it ([#226](https://github.com/vanstoner/coaching-app/issues/226)).
 
+On Android, the same merge, once Rob approves its `google-play.yml` run, puts
+the signed bundle already on the release on Google Play's closed track with
+the same `whats_new.txt` as release notes, which must then be at most 500
+characters ([#232](https://github.com/vanstoner/coaching-app/issues/232)).
+
 The screenshots in `store/app-store/screenshots/` (iPhone 6.9" and iPad 13")
 are made by `store-media.yml`, run by hand (on a PR branch too), from a build
 that opens with made-up data, then framed and captioned in CI

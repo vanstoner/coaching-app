@@ -179,7 +179,7 @@ and are rows above.
 
 | Issue | Status | What | Next step |
 |---|---|---|---|
-| [#232](https://github.com/vanstoner/coaching-app/issues/232) | Proposed | Google Play: release on approval, and a store listing | Rob approves the form once; then Pip |
+| [#232](https://github.com/vanstoner/coaching-app/issues/232) | Ready | Google Play: release on approval, and a store listing | Approved split (30 Oct): Part 1, the closed track (P0–P7, 1–5, 9–16), in Pip's draft PR; Part 2, the listing (6–8), after it |
 | [#152](https://github.com/vanstoner/coaching-app/issues/152) | Proposed | Type scale, child page and Squad tiles (criteria from 6 Oct, before 2.0) | Bea re-checks against 2.0, then Rob |
 | [#250](https://github.com/vanstoner/coaching-app/issues/250) | Idea | Dark launch: features on in the beta only | Deferred with #249; Bea's criteria |
 | [#241](https://github.com/vanstoner/coaching-app/issues/241) | Idea | Fairness lenses by age group and level | Quotes, then an ADR amending ADR-015 |
