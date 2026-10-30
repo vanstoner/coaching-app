@@ -252,23 +252,28 @@ function PlayingTime({
   const showKeeper = (s.goalMsPerGame ?? 0) > 0 || target !== null;
   return (
     <>
-      <Pressable
-        onPress={onWhy}
-        accessibilityRole="button"
-        accessibilityLabel={`${wholeMinutes(s.averageMs)} min a game, played ${s.played} of ${s.of}`}
-        accessibilityHint="Opens why the difference"
-        style={({ pressed }) => [local.figures, pressed && local.pressed]}
-      >
-        <Text style={local.big} numberOfLines={1}>
-          {wholeMinutes(s.averageMs)}
-        </Text>
-        <Text style={screen.caption}>min a game</Text>
-        <Text style={local.sub}>
-          Played {s.played} of {s.of}
-          {s.missed > 0 ? ` · missed ${s.missed}` : ''}
-        </Text>
-      </Pressable>
-      <InfoTap figure="perGame" />
+      {/* The info tap sits in the corner, outside the figures' own button (#261 AC15). */}
+      <View style={local.figuresWrap}>
+        <Pressable
+          onPress={onWhy}
+          accessibilityRole="button"
+          accessibilityLabel={`${wholeMinutes(s.averageMs)} min a game, played ${s.played} of ${s.of}`}
+          accessibilityHint="Opens why the difference"
+          style={({ pressed }) => [local.figures, pressed && local.pressed]}
+        >
+          <Text style={local.big} numberOfLines={1}>
+            {wholeMinutes(s.averageMs)}
+          </Text>
+          <Text style={screen.caption}>min a game</Text>
+          <Text style={local.sub}>
+            Played {s.played} of {s.of}
+            {s.missed > 0 ? ` · missed ${s.missed}` : ''}
+          </Text>
+        </Pressable>
+        <View style={local.infoCorner}>
+          <InfoTap figure="perGame" />
+        </View>
+      </View>
       <AverageBar value={s.averageMs} line={line} scale={scaleMs} wide />
       <View style={local.scale}>
         <Text style={local.scaleText}>0</Text>
@@ -526,6 +531,8 @@ const local = StyleSheet.create({
   first: { marginTop: 0 },
   left: { textAlign: 'left' },
   figures: { alignSelf: 'stretch', alignItems: 'center' },
+  figuresWrap: { alignSelf: 'stretch' },
+  infoCorner: { position: 'absolute', top: 4, right: 0 },
   pressed: { opacity: 0.6 },
   // One weight in every state, sized to the slot not the glyphs (theme.ts).
   big: {
