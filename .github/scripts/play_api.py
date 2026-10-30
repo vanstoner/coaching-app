@@ -775,16 +775,23 @@ def wait_release(sha, repo, fetch, sleep=time.sleep, attempts=80, interval=30, o
         if found:
             n, url = found
             tag = url.rsplit("/", 1)[-1]
-            rel = fetch(f"repos/{repo}/releases/tags/{tag}")
-            if any(a.get("name", "").endswith(".aab") for a in rel.get("assets", [])):
+            try:
+                rel = fetch(f"repos/{repo}/releases/tags/{tag}")
+            except Exception as ex:  # noqa: BLE001 — a 502 on the release page is "not yet" too (QA-7)
+                out(f"attempt {i}: {tag} could not be read ({scrub(ex)}); waiting {interval}s")
+                rel = None
+            if rel is None:
+                pass
+            elif any(a.get("name", "").endswith(".aab") for a in rel.get("assets", [])):
                 out(f"{tag}: build {n}, with its signed .aab")
                 return 0, {"BUILD": str(n), "TAG": tag}
-            if re.search(r"^No Play bundle:", rel.get("body") or "", re.M):
+            elif re.search(r"^No Play bundle:", rel.get("body") or "", re.M):
                 why_block("wait for the release", f"{tag} has no signed bundle: the play job found no upload-key "
                           "secrets (#211, P0)", "nothing sent",
                           "set them in the play-store environment, then dispatch android-apk.yml on main")
                 return 1, None
-            out(f"attempt {i}: {tag} has no .aab yet; waiting {interval}s")
+            else:
+                out(f"attempt {i}: {tag} has no .aab yet; waiting {interval}s")
         else:
             out(f"attempt {i}: no release for {sha[:7]} yet; waiting {interval}s")
         if i < attempts:
@@ -1348,6 +1355,19 @@ def self_test():
                                    out=lines.append)
     expect("wait-release: no .aab within the bound: refused, WHY THIS JOB FAILED, 'within 2 minutes'",
            code == 1 and "WHY THIS JOB FAILED" in s.getvalue() and "within 2 minutes" in s.getvalue())
+    flaky = releases(["aab"])
+    hiccups = {"left": 1}
+
+    def flaky_fetch(path):
+        if "/releases/tags/" in path and hiccups["left"]:
+            hiccups["left"] -= 1
+            raise OSError("HTTP 502 Bad Gateway")
+        return flaky(path)
+    lines = []
+    code, found = wait_release(sha40, REPO, flaky_fetch, sleep=sleeps.append, out=lines.append)
+    expect("QA-7 wait-release: a 502 on the release page is 'not yet', then the .aab is found",
+           code == 0 and found == {"BUILD": "310", "TAG": "v2.2.0-build.310"}
+           and any("could not be read" in x for x in lines))
     s = io.StringIO()
     with contextlib.redirect_stdout(s):
         code, found = wait_release(sha40, REPO, releases(["absent"]), sleep=sleeps.append, out=lines.append)
