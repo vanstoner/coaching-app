@@ -78,7 +78,8 @@ export function RefereeField({
         label="Referee"
         value={value.referee}
         onChangeText={(referee) => onChange({ ...value, referee })}
-        placeholder="Optional"
+        // #254 AC5 (QA on #260, D15).
+        placeholder="Referee's name (stays on this phone)"
         autoCapitalize="words"
         autoCorrect={false}
         maxLength={REFEREE_MAX_LENGTH}

@@ -196,6 +196,38 @@ export function swapChoices(
   };
 }
 
+/**
+ * "Whoever is on longest" for a planned sub (#264 V20; QA on #260, D12):
+ * the outfield player on the pitch at `atMs` who has been on longest
+ * without a break, by the plan's own starters and earlier subs, as the
+ * clock's suggestion (`offPicks`) is outfield only. Ties go to the earlier
+ * position in the shape. Null when nobody outfield is on.
+ *
+ * The plan holds a named player for every sub, so the Plan resolves the
+ * choice when it is saved, from the plan as it stands.
+ */
+export function longestOnAt(period: PlannedPeriod, swapIndex: number, atMs: number, format: Format): UUID | null {
+  const kindOf = new Map(format.positions.map((p) => [p.id, p.kind]));
+  const order = new Map(sortedPositions(format).map((p, i) => [p.id, i]));
+  // Who holds each position, and since when.
+  const holder = new Map<UUID, { who: UUID; since: number }>();
+  for (const [positionId, who] of Object.entries(period.slots)) if (who !== null) holder.set(positionId as UUID, { who, since: 0 });
+  const earlier = period.subs
+    .map((swap, i) => ({ swap, i }))
+    .filter(({ swap, i }) => i !== swapIndex && (swap.atMs < atMs || (swap.atMs === atMs && i < swapIndex)))
+    .sort((a, b) => a.swap.atMs - b.swap.atMs || a.i - b.i);
+  for (const { swap } of earlier) {
+    if (swap.onId === null || swap.offId === null) continue;
+    const at = [...holder].find(([, h]) => h.who === swap.offId);
+    if (!at || [...holder.values()].some((h) => h.who === swap.onId)) continue;
+    holder.set(at[0], { who: swap.onId, since: swap.atMs });
+  }
+  const candidates = [...holder]
+    .filter(([positionId]) => kindOf.get(positionId) !== 'goalkeeper')
+    .sort(([a, ha], [b, hb]) => ha.since - hb.since || (order.get(a) ?? 0) - (order.get(b) ?? 0));
+  return candidates.length === 0 ? null : candidates[0][1].who;
+}
+
 export function removeSwap(plan: MatchPlan, periodIndex: number, swapIndex: number): MatchPlan {
   return withPeriod(plan, periodIndex, (period) => ({
     ...period,

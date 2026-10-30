@@ -25,3 +25,26 @@ describe('"Excellent" fits its Condition segment (#254 AC1, #264 V12, D3)', () =
     expect(fields).toMatch(/label="Condition"\s+stacked/);
   });
 });
+
+describe('the name warning: Keep is the quieter third button (#54 AC2, D13)', () => {
+  it('Use, then Change it, then Keep, which is quiet', () => {
+    const warning = src('NameWarning.tsx');
+    const use = warning.indexOf('<Action label={`Use');
+    const change = warning.indexOf('<BackLink label="Change it"');
+    const keep = warning.indexOf('<Action label={`Keep');
+    expect(use).toBeGreaterThan(-1);
+    expect(use).toBeLessThan(change);
+    expect(change).toBeLessThan(keep);
+    expect(warning).toMatch(/<Action label=\{`Keep “\$\{cleaned\}”`\} quiet /);
+  });
+
+  it('quiet is a colour only, never a weight or a size (theme.ts rule)', () => {
+    expect(src('controls/Rows.tsx')).toMatch(/actionQuiet: \{ color: colours\.back \},/);
+  });
+});
+
+describe('the referee placeholder (#254 AC5, D15)', () => {
+  it('says whose name and where it stays', () => {
+    expect(src('PitchFields.tsx')).toContain(`placeholder="Referee's name (stays on this phone)"`);
+  });
+});

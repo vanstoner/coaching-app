@@ -13,6 +13,7 @@ import {
   canSaveForm,
   formReducer,
   formStatusText,
+  initialFormPhase,
   leaveNeedsAsking,
   leaveQuestion,
   savedTickRemainingMs,
@@ -177,5 +178,23 @@ describe('✓ Saved only after the save succeeded (V28; QA on #260, D8)', () => 
     const waited = settings.match(/tickWhenSaved\([^;]*ticks\.mark\(/g) ?? [];
     expect(marks.length).toBe(5);
     expect(waited.length).toBe(marks.length);
+  });
+});
+
+describe('a new fixture can be saved untouched (Rob, 30 Oct; V29 as ruled)', () => {
+  it('a form that creates starts Not saved yet with Save on; one that edits starts with nothing to save', () => {
+    expect(formStatusText(initialFormPhase(true))).toBe('Not saved yet');
+    expect(canSaveForm(initialFormPhase(true), true)).toBe(true);
+    expect(formStatusText(initialFormPhase(false))).toBe('Nothing to save yet');
+    expect(canSaveForm(initialFormPhase(false), true)).toBe(false);
+  });
+
+  it('the New fixture form starts that way, and an untouched one leaves without asking', () => {
+    const form = readFileSync(join(__dirname, '..', 'screens', 'FixtureFormScreen.tsx'), 'utf-8');
+    expect(form).toMatch(/useReducer\(formReducer, creates, initialFormPhase\)/);
+    expect(form).toMatch(/creates = true,/);
+    expect(form).toMatch(/touched && leaveNeedsAsking\(phase\) \? setAsking\(true\) : onCancel\(\)/);
+    const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf-8');
+    expect(app).not.toMatch(/creates=\{false\}/);
   });
 });

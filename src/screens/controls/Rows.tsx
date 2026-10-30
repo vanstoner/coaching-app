@@ -80,12 +80,15 @@ export function Action({
   disabled = false,
   align = 'left',
   accessibilityLabel,
+  quiet = false,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   align?: 'left' | 'center' | 'right';
   accessibilityLabel?: string;
+  /** A choice offered but not recommended (#54 AC2's Keep): muted, the same size and weight. */
+  quiet?: boolean;
 }) {
   return (
     <Pressable
@@ -101,7 +104,7 @@ export function Action({
         pressed && rows.pressed,
       ]}
     >
-      <Text style={[rows.actionText, disabled && rows.actionDisabled]} numberOfLines={1}>
+      <Text style={[rows.actionText, quiet && rows.actionQuiet, disabled && rows.actionDisabled]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -255,6 +258,7 @@ export const rows = StyleSheet.create({
   alignCenter: { alignSelf: 'center' },
   alignRight: { alignSelf: 'flex-end' },
   actionText: { color: colours.action, fontSize: 16, fontWeight: '600', includeFontPadding: false },
+  actionQuiet: { color: colours.back },
   actionDisabled: { color: colours.inkFaint },
   actionRow: {
     flexDirection: 'row',

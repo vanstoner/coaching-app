@@ -3,6 +3,8 @@
  * AC9; #261 AC18), and its names (#54 AC7). QA on PR #260, D9 and D11.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
@@ -15,7 +17,7 @@ import { emptyLedger, recordMatches, type Ledger } from './ledger';
 import { matchReport } from './analysis';
 import { recordLateArrival } from './matchClosing';
 import { formatClock } from './matchClock';
-import { projectPlan, type MatchPlan } from './matchPlan';
+import { longestOnAt, projectPlan, type MatchPlan } from './matchPlan';
 
 const MIN = 60_000;
 const NOW = new Date('2026-10-04T12:00:00Z');
@@ -184,5 +186,36 @@ describe('the Plan names children with displayName (#54 AC7, D1)', () => {
     ];
     const p = projectPlan(plan, format, 50, 2, players);
     expect(p.rows.map((r) => r.name).filter((n) => n.startsWith('Alex')).sort()).toEqual(['Alex S', 'Alex T']);
+  });
+});
+
+describe('"Whoever is on longest" on the Plan (#264 V20; QA on #260, D12)', () => {
+  it('the outfield child on since earliest at that time; never the keeper, never one just on', () => {
+    const { format, plan, ids } = adasExample();
+    const first = plan.periods[0];
+    // Bo, Cy, Di, Ed all on since 0; ties go to the shape's order (D first).
+    expect(longestOnAt(first, -1, 10 * MIN, format)).toBe(ids.bo);
+    // Flo on for Bo at 5:00: at 10:00 Cy, Di and Ed have been on longer.
+    const subbed = { ...first, subs: [{ onId: ids.flo, offId: ids.bo, atMs: 5 * MIN }] };
+    expect(longestOnAt(subbed, -1, 10 * MIN, format)).toBe(ids.cy);
+    // Before that sub, it is still Bo; the sub being edited is not counted.
+    expect(longestOnAt(subbed, -1, 4 * MIN, format)).toBe(ids.bo);
+    expect(longestOnAt(subbed, 0, 10 * MIN, format)).toBe(ids.bo);
+    // Ada, the keeper, on since 0 too, is never it.
+    expect(longestOnAt(first, -1, 10 * MIN, format)).not.toBe(ids.ada);
+  });
+
+  it('nobody outfield on: null, so Save stays off', () => {
+    const { format, ids } = adasExample();
+    const keeperOnly = { slots: { [format.positions.find((p) => p.kind === 'goalkeeper')!.id]: ids.ada }, subs: [] };
+    expect(longestOnAt(keeperOnly, -1, MIN, format)).toBeNull();
+  });
+
+  it('the Plan’s For list offers it first, and Save waits for For', () => {
+    const screen = readFileSync(join(__dirname, '..', 'screens', 'PlanScreen.tsx'), 'utf-8');
+    const forList = screen.slice(screen.indexOf('<Text style={screen.fieldLabel}>For</Text>'));
+    expect(forList.indexOf('label="Whoever is on longest"')).toBeGreaterThan(-1);
+    expect(forList.indexOf('label="Whoever is on longest"')).toBeLessThan(forList.indexOf('sheetChoices.off.map'));
+    expect(screen).toMatch(/saveDisabled=\{subSheet === null \|\| subSheet\.onId === null \|\| forId === null\}/);
   });
 });

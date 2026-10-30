@@ -41,7 +41,7 @@ import {
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
 import { pitchAndRefereeLine } from '../app/pitch';
-import { canSaveForm, formReducer, leaveNeedsAsking } from '../app/saveState';
+import { canSaveForm, formReducer, initialFormPhase, leaveNeedsAsking } from '../app/saveState';
 import {
   BackLink,
   FieldRow,
@@ -88,10 +88,13 @@ export function FixtureFormScreen({
   initial,
   onSave,
   onCancel,
+  creates = true,
 }: {
   initial: FixtureDraft;
   onSave: (draft: FixtureDraft) => void;
   onCancel: () => void;
+  /** A new fixture (Rob, 30 Oct): Not saved yet from the start, Save on. False when editing one. */
+  creates?: boolean;
 }) {
   const [opponent, setOpponent] = useState(initial.opponent);
   const [competition, setCompetition] = useState<Competition | null>(initial.competition);
@@ -103,7 +106,9 @@ export function FixtureFormScreen({
   const [pitch, setPitch] = useState<PitchValue>(initial.pitch);
   // #264 V29, V30: a form. "Nothing to save yet" until the first change,
   // then "Not saved yet"; Save writes once; leaving a changed form asks.
-  const [phase, dispatch] = useReducer(formReducer, 'pristine');
+  // Rob, 30 Oct: a NEW fixture is "Not saved yet" from the start, Save on.
+  const [phase, dispatch] = useReducer(formReducer, creates, initialFormPhase);
+  const [touched, setTouched] = useState(false);
   const [asking, setAsking] = useState(false);
   const [sheet, setSheet] = useState<'shape' | 'competition' | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -111,9 +116,11 @@ export function FixtureFormScreen({
     <T,>(set: (v: T) => void) =>
     (v: T) => {
       set(v);
+      setTouched(true);
       dispatch({ type: 'change' });
     };
-  const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // An untouched form leaves at once (V30), even a new one that could be saved.
+  const leave = () => (touched && leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
   // Android Back is a way out too, and asks the same question (V30).
   const leaveRef = useRef(leave);
   leaveRef.current = leave;

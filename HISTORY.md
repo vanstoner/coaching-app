@@ -452,7 +452,9 @@ analysis, iOS". Entries are added as each release ships.
   name stops at a warning that says why first names are the default and
   recommends an initial ("Alex S"), with Keep and Change it beside it. A
   second child shown by the same name is offered an initial first, and a
-  child can be renamed from their page. Invariant 4 now reads "first names
+  child can be renamed from their page. Every screen, and the plan picture
+  shared with parents, shows the name as confirmed, so "Alex S" and
+  "Alex T" read apart (Rob, 30 Oct). Invariant 4 now reads "first names
   by default", with still no field for a surname, date of birth, contact or
   photo. Release 2.0.1 is frozen as a fixture (#167).
   The score is now a big band on the pitch, and stays in view between
@@ -466,7 +468,9 @@ analysis, iOS". Entries are added as each release ships.
   now draws from one set of controls: a row with › goes somewhere; a
   heading with › on the left opens in place; short choices are segments
   with a tick; long ones open a list. Settings save on the tap and say
-  ✓ Saved; a form says Not saved yet and asks before you leave it. Planned
+  ✓ Saved once the save is done; a form, or a note or rename sheet, says
+  Not saved yet and asks before you leave it changed, and Save names what
+  was saved. A new fixture can still be saved untouched (Rob, 30 Oct). Planned
   subs on the lineup are set in a sheet: the time, then who for. Goalkeeper
   and Here today are one row each. Targets are 48 dp, and ticks and
   chevrons are icons. The Pitch and referee sheet now saves only on Save:

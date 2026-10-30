@@ -49,6 +49,7 @@ import {
   swapChoices,
   setPeriodSlots,
   updateSwap,
+  longestOnAt,
   type MatchPlan,
 } from '../app/matchPlan';
 import { opponentLabel } from '../app/fixtures';
@@ -82,6 +83,8 @@ interface SubDraft {
   swapIndex: number;
   onId: UUID | null;
   offId: UUID | null;
+  /** "Whoever is on longest" ticked: resolved to a name on Save (`longestOnAt`). */
+  longest: boolean;
   atMs: number;
 }
 
@@ -211,6 +214,7 @@ export function PlanScreen({
       swapIndex,
       onId: swap ? swap.onId : onId,
       offId: swap ? swap.offId : null,
+      longest: false,
       atMs: swap ? swap.atMs : newSubTimeMs(periodMs),
     });
   };
@@ -236,9 +240,15 @@ export function PlanScreen({
     return { on: c.on, off: c.off.filter((p) => p.id !== subSheet.onId) };
   })();
 
+  // QA on #260 (D12): who "whoever is on longest" is at the sheet's time, by the plan.
+  const longestId = subSheet
+    ? longestOnAt(period, subSheet.swapIndex, clampSwapTime(subSheet.atMs, periodMs), format)
+    : null;
+  const forId = subSheet ? (subSheet.longest ? longestId : subSheet.offId) : null;
+
   const saveSub = () => {
-    if (!subSheet) return;
-    const draft = { onId: subSheet.onId, offId: subSheet.offId, atMs: clampSwapTime(subSheet.atMs, periodMs) };
+    if (!subSheet || forId === null) return;
+    const draft = { onId: subSheet.onId, offId: forId, atMs: clampSwapTime(subSheet.atMs, periodMs) };
     if (subSheet.swapIndex === -1) {
       const added = addSwap(plan, periodIndex, periodMs);
       change(updateSwap(added, periodIndex, added.periods[periodIndex].subs.length - 1, draft));
@@ -427,7 +437,8 @@ export function PlanScreen({
         title={subSheet?.onId ? `${name(subSheet.onId)} comes on` : 'A sub'}
         onCancel={() => setSubSheet(null)}
         onSave={saveSub}
-        saveDisabled={subSheet === null || subSheet.onId === null}
+        // Save waits for who comes on and For (QA on #260, D12).
+        saveDisabled={subSheet === null || subSheet.onId === null || forId === null}
       >
         {subSheet && (
           <>
@@ -466,14 +477,23 @@ export function PlanScreen({
                 Nobody is on the pitch yet this {noun.toLowerCase()}. Pick the starters first.
               </Text>
             ) : (
-              sheetChoices.off.map((p) => (
+              <>
+                {/* First, as on the lineup's planned-sub sheet (#264 V20). */}
                 <CheckLine
-                  key={p.id}
-                  label={displayName(p)}
-                  checked={subSheet.offId === p.id}
-                  onPress={() => setSubSheet({ ...subSheet, offId: p.id })}
+                  label="Whoever is on longest"
+                  detail={longestId !== null ? name(longestId) : undefined}
+                  checked={subSheet.longest}
+                  onPress={() => setSubSheet({ ...subSheet, longest: true, offId: null })}
                 />
-              ))
+                {sheetChoices.off.map((p) => (
+                  <CheckLine
+                    key={p.id}
+                    label={displayName(p)}
+                    checked={!subSheet.longest && subSheet.offId === p.id}
+                    onPress={() => setSubSheet({ ...subSheet, longest: false, offId: p.id })}
+                  />
+                ))}
+              </>
             )}
             {subSheet.swapIndex !== -1 && (
               <Action

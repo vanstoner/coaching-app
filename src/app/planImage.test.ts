@@ -89,8 +89,8 @@ describe('the plan image (#165): healthy case', () => {
     const q1 = img.periods[0];
     expect(q1.slots).toHaveLength(7);
     const slot = (label: string) => q1.slots.find((s) => s.label === label)!;
-    expect(slot('ST').firstName).toBe('Gus');
-    expect(slot('GK').firstName).toBe('Ava');
+    expect(slot('ST').name).toBe('Gus');
+    expect(slot('GK').name).toBe('Ava');
     expect(slot('GK').keeper).toBe(true);
     expect(slot('ST').keeper).toBe(false);
     expect(q1.subLines).toEqual(['Hal on for Eli – 6:15']);
@@ -201,7 +201,7 @@ describe('the plan image: a period with no subs', () => {
     const { format, players } = setup();
     const img = planImage({ match: match(), squadName: 'H', format, plan: undefined, players });
     expect(img.periods).toHaveLength(4);
-    expect(img.periods[0].slots.every((s) => s.firstName === null)).toBe(true);
+    expect(img.periods[0].slots.every((s) => s.name === null)).toBe(true);
     expect(img.periods[0].bench).toBe(`Bench: ${NAMES.join(', ')}`);
   });
 });
@@ -216,7 +216,7 @@ describe('the plan image: renamed positions (#166)', () => {
       .periods[0].slots;
     const cm = after.find((s) => s.positionId === at('CM'))!;
     expect(cm.label).toBe('Holding mid');
-    expect(cm.firstName).toBe('Dee');
+    expect(cm.name).toBe('Dee');
     expect(after.map((s) => s.label)).not.toContain('CM');
     expect(after.map((s) => [s.positionId, s.x, s.y])).toEqual(before.map((s) => [s.positionId, s.x, s.y]));
   });
@@ -248,7 +248,7 @@ describe('the plan image: what it never shows', () => {
       img.title,
       img.footer,
       ...img.periods.flatMap((p) => [p.title, p.bench, p.noSubs ?? '']),
-      ...img.periods.flatMap((p) => p.slots.map((s) => `${s.label} ${s.firstName ?? ''}`)),
+      ...img.periods.flatMap((p) => p.slots.map((s) => `${s.label} ${s.name ?? ''}`)),
     ].join('\n');
     expect(text).not.toMatch(ALL_FIGURES);
     // A sub line carries its planned time (#205 AC3) and nothing else that
@@ -258,15 +258,28 @@ describe('the plan image: what it never shows', () => {
     }
   });
 
-  it('first names only: no suffix, no surname, nothing but the stored first name', () => {
+  // Rob, 30 Oct (#54): the picture shows the same name as the app, so
+  // "Alex S" and "Alex T" read apart for parents too. This replaces the
+  // 2.0 test that it showed the stored first name only.
+  it('names each child as the app does: displayName, suffix included', () => {
     const { format, players, plan } = setup();
-    // A suffix is how the app tells two children apart; it is not a surname,
-    // and it is not part of the first name the image shows.
     const withSuffix: Player[] = players.map((p) => (p.firstName === 'Gus' ? { ...p, displaySuffix: 'T' } : p));
     const img = planImage({ match: match(), squadName: 'H', format, plan, players: withSuffix });
-    const shown = img.periods.flatMap((p) => p.slots.map((s) => s.firstName).filter((n) => n !== null));
-    for (const n of shown) expect(NAMES).toContain(n);
-    expect(JSON.stringify(img)).not.toContain('Gus T');
+    const shown = img.periods.flatMap((p) => p.slots.map((s) => s.name).filter((n) => n !== null));
+    expect(shown).toContain('Gus T');
+    expect(shown).not.toContain('Gus');
+    for (const n of shown) expect([...NAMES, 'Gus T']).toContain(n);
+  });
+
+  it('a suffix reaches the bench and the sub lines too', () => {
+    const { format, players, plan } = setup();
+    const suffixed: Player[] = players.map((p) => ({ ...p, displaySuffix: 'Z' }));
+    const img = planImage({ match: match(), squadName: 'H', format, plan, players: suffixed });
+    for (const p of img.periods) {
+      for (const line of p.subLines) expect(line).toMatch(/^\S+ Z on for \S+ Z – \d{1,2}:\d{2}$/);
+      const bench = p.bench.replace(/^Bench: /, '');
+      if (bench !== 'nobody') for (const n of bench.split(', ')) expect(n).toMatch(/^\S+ Z$/);
+    }
   });
 
   it('keeps absent children off the bench, and never names them as absent', () => {
@@ -294,7 +307,7 @@ describe('the plan image: what it never shows', () => {
       players: players.filter((p) => p.id !== gone),
     });
     const st = img.periods[0].slots.find((s) => s.label === 'ST')!;
-    expect(st.firstName).toBeNull();
+    expect(st.name).toBeNull();
     expect(JSON.stringify(img)).not.toContain('Gus');
   });
 
@@ -302,7 +315,7 @@ describe('the plan image: what it never shows', () => {
     const { format, players, plan, id, at } = setup();
     plan.periods[0].slots[at('RW')] = id('Gus');
     const slots = planImage({ match: match(), squadName: 'H', format, plan, players }).periods[0].slots;
-    expect(slots.filter((s) => s.firstName === 'Gus')).toHaveLength(1);
+    expect(slots.filter((s) => s.name === 'Gus')).toHaveLength(1);
   });
 });
 

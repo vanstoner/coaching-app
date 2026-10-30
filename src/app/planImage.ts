@@ -11,7 +11,9 @@
  *
  * What it carries, by Rob's rulings on #165:
  * - every period's starting pitch, with this match's own position names
- *   (#166 renames included) and each child's first name as stored;
+ *   (#166 renames included) and each child's name as the app shows it
+ *   (`displayName`: "Alex S" when the coach confirmed a second word; Rob,
+ *   30 Oct, #54);
  * - under each pitch, that period's planned subs, "Hal on for Eli – 6:15",
  *   the exact planned time counted from the start of that period (#205 AC3,
  *   which replaced the earlier rounding to whole minutes), or "No subs this
@@ -20,8 +22,9 @@
  *   footer that says it is a plan, not a promise.
  *
  * What it never carries (Q1, Q3, ADR-017 §3): minutes figures, who is
- * unavailable, anything from another match, surnames. A child marked absent
- * is left off the bench line rather than listed as absent.
+ * unavailable, anything from another match. A second word reaches it only
+ * as the coach confirmed it under #54's warning. A child marked absent is
+ * left off the bench line rather than listed as absent.
  *
  * Nothing here is stored. The image is built when the coach shares and
  * thrown away after.
@@ -33,6 +36,7 @@ import { opponentLabel } from './fixtures';
 import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
 import { slotSpots } from './pitchLayout';
+import { displayName } from './squad';
 
 /** 2×2 is the default: it reads better on a phone (Rob, #165). */
 export type PlanImageLayout = 'grid' | 'row';
@@ -62,8 +66,8 @@ export interface PlanImageSlot {
   label: string;
   unit: PositionUnit | null;
   keeper: boolean;
-  /** The child's first name as stored; null when nobody is planned there. */
-  firstName: string | null;
+  /** The child's `displayName`, as every screen shows it (#54); null when nobody is planned there. */
+  name: string | null;
   /** Centre, as fractions of the pitch's width and height. */
   x: number;
   y: number;
@@ -161,7 +165,7 @@ export function planImage(input: {
   const absent = input.absent ?? new Set<UUID>();
   const periodCount = match.quarterCount;
   const noun = periodNoun(periodCount);
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const kindOf = new Map(format.positions.map((p) => [p.id, p.kind]));
   const spots = slotSpots(format);
   // Draw order: top of the pitch first, then left to right.
@@ -178,7 +182,7 @@ export function planImage(input: {
         label: s.label,
         unit: s.unit,
         keeper: kindOf.get(s.positionId) === 'goalkeeper',
-        firstName: known ? nameOf.get(who)! : null,
+        name: known ? nameOf.get(who)! : null,
         x: s.x,
         y: s.y,
       };
@@ -195,7 +199,7 @@ export function planImage(input: {
 
     const bench = players
       .filter((p) => !placed.has(p.id) && !absent.has(p.id))
-      .map((p) => p.firstName);
+      .map((p) => displayName(p));
 
     return {
       title: `${noun} ${i + 1}`,

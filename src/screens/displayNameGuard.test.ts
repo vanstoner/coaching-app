@@ -4,8 +4,8 @@
  * `firstName` alone. A source guard, in the manner of figuresHelpGuard: it
  * reads the files, it draws nothing.
  *
- * Exempt: `PlanImageView.tsx`, which draws `planImage.ts`'s picture shared
- * with parents. Whether that shows a confirmed second word is Rob's call.
+ * The picture shared with parents (`planImage.ts`) shows displayName too
+ * (Rob, 30 Oct).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -27,8 +27,8 @@ const files = [
   'src/app/matchEvents.ts',
   'src/app/matchAwards.ts',
   'src/app/childSeason.ts',
+  'src/app/planImage.ts',
 ];
-const EXEMPT = new Set([join('src', 'screens', 'PlanImageView.tsx')]);
 
 /** A `.firstName` read that does not also build the full name from `displaySuffix`. */
 function bareFirstNames(file: string): string[] {
@@ -45,7 +45,7 @@ describe('names on screen come from displayName (#54 AC7)', () => {
     expect(screenFiles).toContain(join('src', 'screens', 'LineupScreen.tsx'));
   });
 
-  it.each(files.filter((f) => !EXEMPT.has(f)))('%s builds no visible name from firstName alone', (file) => {
+  it.each(files)('%s builds no visible name from firstName alone', (file) => {
     expect(bareFirstNames(file)).toEqual([]);
   });
 

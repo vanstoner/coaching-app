@@ -127,3 +127,14 @@ export function savedToast(what: string): string {
 export async function tickWhenSaved(save: Promise<boolean>, mark: () => void): Promise<void> {
   if (await save.catch(() => false)) mark();
 }
+
+/**
+ * Where a form starts (Rob, 30 Oct, on QA's question on #260): a form that
+ * creates something (New fixture) is not saved yet from the start, so its
+ * Save is on untouched and a fixture of defaults saves in one tap, as in
+ * 2.0.1. A form that edits something starts with nothing to save.
+ * Leaving still asks only once the coach has changed something (V30).
+ */
+export function initialFormPhase(creates: boolean): FormPhase {
+  return creates ? 'dirty' : 'pristine';
+}

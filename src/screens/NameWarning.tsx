@@ -33,10 +33,11 @@ export function MoreThanFirstName({
         First names are the default because these are children&apos;s details. A surname typed in once is kept in this
         phone&apos;s record and in every backup.{isInitial ? '' : ' An initial tells two children apart just as well.'}
       </Text>
-      {/* #264: each choice acts at once (an Action); Change it goes back to the field. */}
+      {/* #264: each choice acts at once (an Action); Change it goes back to the field.
+          #54 AC2 (QA on #260, D13): Keep is the quieter third button. */}
       <Action label={`Use “${isInitial ? cleaned : initial}”`} onPress={() => onUse(isInitial ? cleaned : initial)} />
-      {!isInitial && <Action label={`Keep “${cleaned}”`} onPress={() => onUse(cleaned)} />}
       <BackLink label="Change it" chevron={false} onPress={onChange} />
+      {!isInitial && <Action label={`Keep “${cleaned}”`} quiet onPress={() => onUse(cleaned)} />}
     </View>
   );
 }
