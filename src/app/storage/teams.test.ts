@@ -29,6 +29,7 @@ import {
   readOnlyStore,
   teamKey,
   teamStore,
+  teamsForBackup,
 } from './teams';
 
 const NOW = new Date('2026-10-26T12:00:00Z');
@@ -123,6 +124,12 @@ describe('teamStore (ADR-022 D2)', () => {
     const again = await openTeams(root, NOW, ids(T2));
     expect(again).toMatchObject({ kind: 'team', teamId: T1, moved: false });
     expect(await root.getItem(SETTINGS_SECTIONS_KEY)).toBe('{"open":["backup"]}');
+    // AC10: never in a backup file, so a restore cannot bring one back or change it.
+    const opened = await openTeams(root, NOW, ids(T2));
+    if (opened.kind !== 'team') throw new Error('no team');
+    const { parts } = await teamsForBackup(root, opened.index);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(parts)).not.toMatch(/last-backup|settings-sections/);
     await forgetEveryTeam(root, null, NOW);
     expect(await root.getItem(SETTINGS_SECTIONS_KEY)).toBeNull();
     expect(await root.getItem(LAST_BACKUP_KEY)).toBeNull();
