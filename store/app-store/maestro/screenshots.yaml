@@ -122,14 +122,19 @@ env:
 - extendedWaitUntil:
     visible: ${HOME_OR_RESUME}
     timeout: 30000
-- runFlow:
-    when:
-      visible: ${RESUME_TO_HOME}
+# Run 41031067106 (iPhone): the when-check ran before Resume had drawn, so it
+# was skipped and Squad never came. Check again until Squad shows.
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn: ${RESUME_TO_HOME}
-- extendedWaitUntil:
-    visible: ${TAB_SQUAD}
-    timeout: 20000
+      - runFlow:
+          when:
+            visible: ${RESUME_TO_HOME}
+          commands:
+            - tapOn: ${RESUME_TO_HOME}
+      - extendedWaitUntil:
+          visible: ${TAB_SQUAD}
+          timeout: 8000
 
 # 05-squad, 02-fairness, 06-child: the made-up season (all three taken on
 # the iPad in run 40001608860).
@@ -214,10 +219,13 @@ env:
     element: ${FORGET}
     centerElement: true
 - tapOn: ${FORGET}
-# Run 41025915210: "Yes" counted as visible half under the tab bar; centre it too.
+# Run 41025915210 (iPhone): "Yes" sat clipped at the scroll view's bottom edge,
+# which Maestro counts as visible, so the tap missed. Run 41031067106 (iPad):
+# it was the last row, so it could not be centred. One swipe lifts it clear on
+# the iPhone and changes nothing on the iPad.
+- scroll
 - scrollUntilVisible:
     element: ${FORGET_YES}
-    centerElement: true
 - tapOn: ${FORGET_YES}
 # Run 40907567399, iPad: since 2.0.0 (#224 AC6) a phone with no team opens on
 # "No teams on this phone yet", with no tabs. Name a made-up team, then Squad.
@@ -277,6 +285,10 @@ env:
     point: "50%,9%"
 - takeScreenshot: diag-08f-keyboard-down
 - tapOn: ${TAB_HOME}
+# Run 41031067106 (iPad): Getting started was not found on Home, and the retry
+# wiped the evidence. Capture Home first (the compositor ignores diag-*).
+- waitForAnimationToEnd
+- takeScreenshot: diag-08g-home
 - extendedWaitUntil:
     visible: ${GETTING_STARTED}
     timeout: 10000
