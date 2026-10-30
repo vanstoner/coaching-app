@@ -7,7 +7,7 @@
 02-fairness: FAIR SHARES | Everyone within five minutes a game
 03-plan: SHARE THE PLAN | Parents see every sub time
 04-report: MATCH REPORT | Every result, every minute
-05-squad: FIRST NAMES BY DEFAULT | See who’s owed time
+05-squad: FIRST NAMES BY DEFAULT | Next in line for more time
 06-child: EVERY CHILD | A whole season, match by match
 07-five: NEW: 5-A-SIDE | Your format, your match length
 08-start: GETTING STARTED | Ready for Saturday in three steps

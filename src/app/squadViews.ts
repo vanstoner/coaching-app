@@ -486,10 +486,10 @@ export function owedTime(season: SquadSeason, matches: readonly SeasonMatch[]): 
   });
 }
 
-/** "Owed 6 min", "Had 9 min more", "Level". */
+/** "6 min under the average", "9 min over the average", "Level" (#261 AC6). */
 export function owedText(owed: number): string {
-  if (owed > 0) return `Owed ${owed} min`;
-  if (owed < 0) return `Had ${-owed} min more`;
+  if (owed > 0) return `${owed} min under the average`;
+  if (owed < 0) return `${-owed} min over the average`;
   return 'Level';
 }
 
@@ -584,7 +584,7 @@ export function fairnessTile(f: Fairness | null): string {
   return f === null ? AFTER_FIRST_MATCH : `Everyone within ${f.gap} min a game`;
 }
 
-/** "Owed time: Jo, Dee, Gus": most owed first, ties in squad order (#208). */
+/** "Next in line for more time: Jo, Dee, Gus": furthest under first, ties in squad order (#208, #261 AC6). */
 export function saturdayTile(rows: readonly OwedRow[], f: Fairness | null): string {
   if (f === null) return AFTER_FIRST_MATCH;
   const named = rows
@@ -592,7 +592,9 @@ export function saturdayTile(rows: readonly OwedRow[], f: Fairness | null): stri
     .map((r, i) => ({ r, i }))
     .sort((a, b) => (b.r.owed ?? 0) - (a.r.owed ?? 0) || a.i - b.i)
     .map(({ r }) => r.name);
-  return named.length > 0 ? `Owed time: ${named.join(', ')}` : `Nobody owed ${OWED_MIN} min or more`;
+  return named.length > 0
+    ? `Next in line for more time: ${named.join(', ')}`
+    : `Nobody is ${OWED_MIN} min or more under the average`;
 }
 
 export function positionsTile(matches: readonly SeasonMatch[]): string {

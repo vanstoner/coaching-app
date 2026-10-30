@@ -425,7 +425,7 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
         <Nothing
           view="saturday"
           firstTime={firstTime}
-          before={'Nobody is owed time yet.\nAfter the first match, this shows who is owed minutes.'}
+          before={'Nobody is under the average yet.\nAfter your first match, this shows who is next in line for more time.'}
         />
       </ViewFrame>
     );
@@ -438,29 +438,31 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
       <View style={local.owedBox}>
         {named.length > 0 ? (
           <>
-            <Text style={local.owedHead}>Owed {OWED_MIN} min or more this season</Text>
+            <Text style={local.owedHead}>
+              Next in line for more time: {OWED_MIN} min or more under the average this season
+            </Text>
             <Text style={local.owedNames}>{named.map((r) => `${r.name} ${r.owed}`).join(' · ')}</Text>
           </>
         ) : (
-          <Text style={local.owedHead}>Nobody is owed {OWED_MIN} min or more this season.</Text>
+          <Text style={local.owedHead}>Nobody is {OWED_MIN} min or more under the average this season.</Text>
         )}
       </View>
       <Text style={[screen.hint, local.left]}>
-        Owed: the squad average for each game they played, minus the minutes they had. A missed match is never
-        owed time.
+        Under the average: for each game they played, the squad average minus their minutes, added up. A missed
+        match never counts.
       </Text>
 
       <Text style={screen.fieldLabel}>Everyone</Text>
       <View style={local.oHead}>
         <SortHeading label="Child" column={NAME} sort={sort} onSort={onSort} align="left" style={local.oNameHead} />
-        <SortHeading label="Owed" column="owed" sort={sort} onSort={onSort} align="left" style={local.oTextHead} />
+        <SortHeading label="vs average" column="owed" sort={sort} onSort={onSort} align="left" style={local.oTextHead} />
         <SortHeading label="a game" column="perGame" sort={sort} onSort={onSort} style={local.oMetaHead} />
         <SortHeading label="played" column="played" sort={sort} onSort={onSort} style={local.oMetaHead} />
       </View>
       <View style={local.oKey}>
-        <Text style={local.oKeyText}>← Owed</Text>
+        <Text style={local.oKeyText}>← Under</Text>
         <Text style={local.oKeyText}>Level</Text>
-        <Text style={local.oKeyText}>Had more →</Text>
+        <Text style={local.oKeyText}>Over →</Text>
       </View>
       {sortOwed(views.owed, sort).map((r) => {
         if (r.perGame === null) {
@@ -518,7 +520,7 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
           </Pressable>
         );
       })}
-      <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average and never shown as owed." />
+      <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average and never shown as under or over." />
     </ViewFrame>
   );
 }

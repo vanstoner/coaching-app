@@ -494,7 +494,7 @@ export function OffFormatCard({
       <Text style={local.cardText}>
         {counted
           ? `Played ${sideName(ownSide)} in a ${sideName(seasonSide)} season, and counted${countedNote ? `: “${countedNote}”` : '.'}`
-          : `${name} is a ${sideName(seasonSide)} season. This ${sideName(ownSide)} match is kept and shown here, but it isn't in anyone's minutes a game or owed time.`}
+          : `${name} is a ${sideName(seasonSide)} season. This ${sideName(ownSide)} match is kept and shown here, but it isn't in anyone's minutes a game or the squad average.`}
       </Text>
       {note === null ? (
         <Pressable onPress={() => setNote('')} style={screen.linkHit} accessibilityRole="button">

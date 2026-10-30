@@ -270,7 +270,7 @@ interface Ledger {                          // key coaching-app/ledger/v2
   never stored. `seasonSide` takes the season's `mainSide` once the coach has
   set it; until then the dominating format, the on-field count
   (`structure.onField`) with the most counted matches, latest known on a tie; `inFairness` leaves a match in
-  another format out of every average, owed time and the trend, and keeps its
+  another format out of every average, the season difference (under or over the average) and the trend, and keeps its
   minutes in totals. A match with no recorded format never votes and is never
   left out. A `format-count` record with `counted: true` (#243 AC8) brings an
   off-format match back in; latest wins, always with a note.
@@ -303,8 +303,8 @@ interface Ledger {                          // key coaching-app/ledger/v2
   The released build carries all three untouched (tested against a frozen
   1.2.0 reader).
 - **Not counted in fairness** (#190): `profile.fairness = 'not-counted'`,
-  for the whole season. Out of the squad average, fairness figures and owed
-  time; never out of the record, a match's totals or the planner's fair share
+  for the whole season. Out of the squad average, fairness figures and the
+  season difference; never out of the record, a match's totals or the planner's fair share
   on the day.
 - **The core match record** (#196): the **result** is folded from goal and
   conceded events, never stored. A goal or goal against with **time unknown**

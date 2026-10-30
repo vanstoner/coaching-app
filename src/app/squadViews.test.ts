@@ -153,7 +153,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     const named = v.owed.filter((r) => r.named).map((r) => `${r.name} ${r.owed}`);
     expect(named).toEqual(['Dee 6', 'Gus 9', 'Ivy 20', 'Jo 14']);
     // #208 (overturning PO ruling Q1's squad order): the tile names the most owed first.
-    expect(saturdayTile(v.owed, v.fairness)).toBe('Owed time: Ivy, Jo, Gus, Dee');
+    expect(saturdayTile(v.owed, v.fairness)).toBe('Next in line for more time: Ivy, Jo, Gus, Dee');
     expect(row(v.owed, 'Ava')).toMatchObject({ mainKeeper: true, owed: null, named: false });
     // Folded in squad order, everyone listed: the tie order the table's sort keeps (#208 AC4).
     expect(v.owed.map((r) => r.name)).toEqual(players.map((p) => p.firstName));
@@ -191,7 +191,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(squadTiles(v)).toEqual([
       { view: 'grid', title: 'Season grid', answer: '9 matches, 8 Aug to 3 Oct' },
       { view: 'fairness', title: 'Fairness', answer: 'Everyone within 5 min a game' },
-      { view: 'saturday', title: 'Going into Saturday', answer: 'Owed time: Ivy, Jo, Gus, Dee' },
+      { view: 'saturday', title: 'Going into Saturday', answer: 'Next in line for more time: Ivy, Jo, Gus, Dee' },
       { view: 'positions', title: 'Positions tried', answer: 'Time in GK, DEF, MID, FWD' },
     ]);
     expect(VIEW_TITLE.fairness).toBe('Fairness at a glance');
@@ -245,7 +245,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     // The prototype's compute() gives -42.4999…; rounding the averages to the ms first gave -43.
     const back = squadViews(ledger, withKeeper(players, 'Ava', 'backup'));
     expect(row(back.owed, 'Hal').owed).toBe(-42);
-    expect(owedText(-42)).toBe('Had 42 min more');
+    expect(owedText(-42)).toBe('42 min over the average');
   });
 
   it('ruling 24: exactly 5 min owed is named (5 or more, not more than 5)', () => {
@@ -264,7 +264,7 @@ describe('the approved design, from the Test kit season (#138 prototype, #143)',
     expect(r.owed.map((x) => x.name)).toEqual(order);
     expect(r.owed.filter((x) => x.named).map((x) => x.name)).toEqual(['Jo', 'Ivy', 'Gus', 'Dee']);
     // The squad's order no longer decides the tile: Ivy 20, Jo 14, Gus 9, Dee 6.
-    expect(saturdayTile(r.owed, r.fairness)).toBe('Owed time: Ivy, Jo, Gus, Dee');
+    expect(saturdayTile(r.owed, r.fairness)).toBe('Next in line for more time: Ivy, Jo, Gus, Dee');
   });
 
   it('a retired child never enters the trend or the headline (T3)', () => {
@@ -388,8 +388,8 @@ describe('a squad with no Main keeper: shared gloves, everyone counts (AC7, AC8,
     expect(row(v.owed, 'Ava').owed).toBe(-6);
     expect(row(v.owed, 'Gus')).toMatchObject({ owed: 20, named: true });
     expect(row(v.owed, 'Hal')).toMatchObject({ owed: 18, named: true });
-    expect(owedText(-6)).toBe('Had 6 min more');
-    expect(owedText(20)).toBe('Owed 20 min');
+    expect(owedText(-6)).toBe('6 min over the average');
+    expect(owedText(20)).toBe('20 min under the average');
     expect(owedText(0)).toBe('Level');
   });
 
@@ -536,5 +536,13 @@ describe('which match is oldest', () => {
     const undated = { ...one.matches[0], at: null, day: 'Date TBC', date: 'Date TBC' };
     expect(gridTile([undated, undated])).toBe('2 matches');
     expect(axisLabels([undated])).toEqual([{ day: '–', month: '' }]);
+  });
+});
+
+describe('the words for a season difference (#261 AC6)', () => {
+  it('under, over and level, singular and zero', () => {
+    expect(owedText(1)).toBe('1 min under the average');
+    expect(owedText(-1)).toBe('1 min over the average');
+    expect(owedText(0)).toBe('Level');
   });
 });

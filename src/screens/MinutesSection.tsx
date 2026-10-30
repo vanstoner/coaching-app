@@ -82,7 +82,9 @@ export function MinutesSection({
     <View style={local.section}>
       <Text style={screen.fieldLabel}>Player minutes</Text>
       <Text style={screen.hint}>
-        Kept separately from everything else, so it survives updates.{' '}
+        Kept separately from everything else, so it survives updates. These totals add up every match not left
+        out, including matches not yet ended and matches in another format, so they can be higher than the Squad
+        tab&apos;s.{' '}
         {matches === 0
           ? 'Nothing played yet.'
           : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}

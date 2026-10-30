@@ -213,7 +213,7 @@ export function emptySquadSentence(onFieldCount: number): string {
 export const VIEW_NOTHING_YET = {
   grid: "Nothing played yet. Each match you play becomes a column here, with every child's minutes in it.",
   fairness: 'Nothing played yet. After your first match, this shows how evenly the minutes are shared.',
-  saturday: 'Nobody is owed time yet. After your first match, this shows who to give more minutes to.',
+  saturday: 'Nobody is under the average yet. After your first match, this shows who is next in line for more time.',
   positions:
     'Nobody has played yet. After your first match, this shows the time each child spent in goal, defence, midfield and up front.',
 } as const;
