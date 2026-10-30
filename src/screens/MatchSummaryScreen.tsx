@@ -170,10 +170,10 @@ export function MatchSummaryScreen({
   const [moreStats, setMoreStats] = useState(false);
   const score = report.score;
   const chart = matchChart(report, ledger, players, { kickoffs });
-  const nameOf = (id: string | null) =>
-    (id && report.players.find((p) => p.playerId === id)?.name) ||
-    (id && players.find((p) => p.id === id)?.firstName) ||
-    'someone';
+  const nameOf = (id: string | null) => {
+    const child = id ? players.find((p) => p.id === id) : undefined;
+    return (id && report.players.find((p) => p.playerId === id)?.name) || (child ? displayName(child) : 'someone');
+  };
   const tallies = matchTalliesWithGoals(events, ledger?.eventTypes ?? [], (id) => nameOf(id));
 
   const competition = competitionLabel(report.competition);

@@ -31,6 +31,7 @@
 
 import { matchFairShare, type NotInShare } from './fairShare';
 import type { Format, Player, Position, UUID } from '../types/index';
+import { displayName } from './squad';
 import { formatClock, periodNoun } from './matchClock';
 import { NO_SUB_PLANNED, type PlannedSub } from './subPlan';
 import type { Sheet } from './teamSheet';
@@ -336,7 +337,8 @@ export interface PlanProblem {
 
 export interface ProjectedRow {
   playerId: UUID;
-  firstName: string;
+  /** `displayName`: "Alex S" and "Alex T" read apart (#54 AC7). */
+  name: string;
   outfieldMs: number;
   goalkeeperMs: number;
   /** Goal plus outfield: the fairness figure (ADR-015). */
@@ -394,7 +396,7 @@ export function projectPlan(
 ): Projection {
   const periodMs = periodLengthMs(totalMinutes, periodCount);
   const noun = periodNoun(periodCount);
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID) => nameOf.get(id) ?? 'A removed player';
   const positions = sortedPositions(format);
 
@@ -485,7 +487,7 @@ export function projectPlan(
     const out = share.out.get(p.id);
     return {
       playerId: p.id,
-      firstName: p.firstName,
+      name: displayName(p),
       outfieldMs: outfield.get(p.id) ?? 0,
       goalkeeperMs: keeping.get(p.id) ?? 0,
       pitchMs,
@@ -493,10 +495,17 @@ export function projectPlan(
       ...(out ? { notInShare: out } : {}),
     };
   });
-  // Furthest under the share first; those not in it last; ties in squad order.
+  // Furthest under the share first; then those out of it but available (the
+  // Main keeper); the absent after every available child (#262 AC3); ties in
+  // squad order. A rank, not +∞ for both: ∞ − ∞ is NaN and lost the order.
   const order = new Map(players.map((p, i) => [p.id, i]));
-  const key = (r: ProjectedRow) => (r.deltaMs === null ? Number.POSITIVE_INFINITY : r.deltaMs);
-  rows.sort((a, b) => key(a) - key(b) || order.get(a.playerId)! - order.get(b.playerId)!);
+  const rank = (r: ProjectedRow) => (r.notInShare === 'absent' ? 2 : r.deltaMs === null ? 1 : 0);
+  rows.sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      (rank(a) === 0 ? a.deltaMs! - b.deltaMs! : 0) ||
+      order.get(a.playerId)! - order.get(b.playerId)!
+  );
 
   return { rows, totalPitchMs, fairShareMs, spreadMs, problems };
 }

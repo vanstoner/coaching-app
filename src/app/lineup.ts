@@ -36,6 +36,7 @@ import type {
   UUID,
 } from '../types/index';
 import type { PlayerMinutes } from './playerMinutes';
+import { displayName } from './squad';
 
 /** Who is on the pitch for one quarter. `plan[quarterIndex]` is 1-based. */
 export type QuarterPlan = Record<string, UUID[]>;
@@ -170,7 +171,10 @@ function describe(
   onPitch: UUID[],
   bench: UUID[]
 ): string {
-  const name = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? 'someone';
+  const name = (id: UUID) => {
+    const p = players.find((x) => x.id === id);
+    return p ? displayName(p) : 'someone';
+  };
   if (onPitch.length === 0) return 'Nobody is available.';
   if (bench.length === 0) return 'Everyone plays — nobody on the bench.';
 

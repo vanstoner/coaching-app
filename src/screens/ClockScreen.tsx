@@ -57,6 +57,7 @@ import {
 import { appClockSetting, appNow } from '../app/appClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
+import { displayName } from '../app/squad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
 import { checkBuzz, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
 import {
@@ -252,7 +253,10 @@ export function ClockScreen({
   const minutesOf = new Map(minutes.map((m) => [m.playerId, m]));
   const onPitch = minutes.filter((m) => m.onPitchNow);
   const noun = periodNoun(state.match.quarterCount).toLowerCase();
-  const nameOf = (id: UUID) => players.find((p) => p.id === id)?.firstName ?? '—';
+  const nameOf = (id: UUID) => {
+    const p = players.find((x) => x.id === id);
+    return p ? displayName(p) : '—';
+  };
   // #252: folded from the events on every paint, as the strip's score was (invariant 1).
   const band = scoreBand(state.events, squadName || PLACEHOLDER_SQUAD_NAME, opponentLabel(state.match));
 

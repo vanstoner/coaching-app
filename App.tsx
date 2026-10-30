@@ -51,6 +51,7 @@ import {
   activePlayers,
   makePlayer,
   playedPlayerIds,
+  displayName,
   playersForMatch,
   splitName,
   squadReadiness,
@@ -1534,7 +1535,10 @@ function TeamApp({
     const l = ledgerBlockedRef.current ? null : ledger;
     if (!match || !l || !awardsOffered(l, match.state)) return null;
     const id = match.state.match.id;
-    const nameOfChild = (pid: UUID) => players.find((p) => p.id === pid)?.firstName ?? 'Unknown';
+    const nameOfChild = (pid: UUID) => {
+      const child = players.find((p) => p.id === pid);
+      return child ? displayName(child) : 'Unknown';
+    };
     const act = (run: (cur: Ledger) => { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
       if (ledgerBlockedRef.current) return 'Player minutes cannot be written on this phone.';
       // Bea: a real match enters the record with the first save after kick-off.

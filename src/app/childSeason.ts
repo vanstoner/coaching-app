@@ -25,6 +25,7 @@
  */
 
 import type { Player, UUID } from '../types/index';
+import { displayName } from './squad';
 import { notCountedIds, type Ledger } from './ledger';
 import { countedAttendance, firstSeen, type SquadTimeline } from './attendance';
 import {
@@ -233,7 +234,7 @@ export function squadSeason(
     const o = outMs.get(p.id) ?? 0;
     return {
       playerId: p.id,
-      name: s?.name ?? p.firstName,
+      name: s?.name ?? displayName(p),
       played,
       missed,
       of,

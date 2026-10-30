@@ -63,6 +63,7 @@ import type { Format, Player, UUID } from '../types/index';
 import { currentQuarter, formatClock, periodNoun } from '../app/matchClock';
 import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
+import { displayName } from '../app/squad';
 import { foldPlayerMinutes, type PlayerMinutes } from '../app/playerMinutes';
 import { suggestLineup } from '../app/lineup';
 import { lineupFromPlan, periodHasContent, type PlannedPeriod } from '../app/matchPlan';
@@ -247,7 +248,7 @@ export function LineupScreen({
   const noun = periodNoun(state.match.quarterCount);
   const shape = shapeOfFormat(format);
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
 
   /** Outfield players on now: who a sub can replace. */
   const outfieldOn = positions
@@ -368,7 +369,7 @@ export function LineupScreen({
                 return (
                   <RowNav
                     key={p.id}
-                    label={p.firstName}
+                    label={displayName(p)}
                     detail={text}
                     value={`${formatClock(m?.totalMs ?? 0)} played`}
                     onPress={() => setSubSheet({ playerId: p.id, draft: draftFor(plan, p.id) })}
@@ -501,7 +502,7 @@ export function LineupScreen({
         <MultiListSheet
           visible={hereSheet}
           title={attendance.arrivalsOnly ? 'Arrived late?' : 'Here today'}
-          items={(attendance.arrivalsOnly ? absent : attendance.squad).map((p) => ({ value: p.id, label: p.firstName }))}
+          items={(attendance.arrivalsOnly ? absent : attendance.squad).map((p) => ({ value: p.id, label: displayName(p) }))}
           chosen={new Set(attendance.arrivalsOnly ? [] : attendance.squad.filter((p) => !attendance.isAbsent(p.id)).map((p) => p.id))}
           onCancel={() => setHereSheet(false)}
           onSave={(here) => {

@@ -31,6 +31,7 @@ import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-nati
 import { Text } from './Text';
 
 import type { Format, Match, Player, UUID } from '../types/index';
+import { displayName } from '../app/squad';
 import { formatClock, formatSubTime, periodNoun } from '../app/matchClock';
 import { plannedSubText, subsPlannedSummary } from '../app/plannedSubSheet';
 import {
@@ -177,7 +178,7 @@ export function PlanScreen({
   };
 
   const period = plan.periods[periodIndex];
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID | null) =>
     id === null ? 'Pick' : (nameOf.get(id) ?? 'Removed player');
   const problemsHere = projection.problems.filter((p) => p.periodIndex === periodIndex);
@@ -365,7 +366,7 @@ export function PlanScreen({
         {projection.rows.map((row) => (
           <View key={row.playerId} style={screen.playerRow}>
             <Text style={screen.playerName} numberOfLines={1}>
-              {row.firstName}
+              {row.name}
             </Text>
             <Text style={local.minutes} numberOfLines={1}>
               {formatClock(row.outfieldMs)}
@@ -436,7 +437,7 @@ export function PlanScreen({
                 {sheetChoices.on.map((p) => (
                   <CheckLine
                     key={p.id}
-                    label={p.firstName}
+                    label={displayName(p)}
                     checked={subSheet.onId === p.id}
                     onPress={() => setSubSheet({ ...subSheet, onId: p.id })}
                   />
@@ -468,7 +469,7 @@ export function PlanScreen({
               sheetChoices.off.map((p) => (
                 <CheckLine
                   key={p.id}
-                  label={p.firstName}
+                  label={displayName(p)}
                   checked={subSheet.offId === p.id}
                   onPress={() => setSubSheet({ ...subSheet, offId: p.id })}
                 />

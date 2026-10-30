@@ -17,6 +17,7 @@
  */
 
 import type { UUID } from '../types/index';
+import { displayName } from './squad';
 import { matchProgress, type QuarterLike } from './fixtures';
 import { canEndMatch } from './matchClosing';
 import { isWritable, type Ledger } from './ledger';
@@ -89,9 +90,9 @@ export function awardCardAtFullTime(ledger: Ledger | null, state: LiveMatchLike)
 
 /** The children an award can go to: everyone who took part in this match, in squad order. */
 export function childrenInMatch(
-  players: readonly { id: UUID; firstName: string }[],
+  players: readonly { id: UUID; firstName: string; displaySuffix?: string | null }[],
   appearances: readonly { playerId: UUID }[]
 ): { playerId: UUID; name: string }[] {
   const here = new Set(appearances.map((a) => a.playerId));
-  return players.filter((p) => here.has(p.id)).map((p) => ({ playerId: p.id, name: p.firstName }));
+  return players.filter((p) => here.has(p.id)).map((p) => ({ playerId: p.id, name: displayName(p) }));
 }

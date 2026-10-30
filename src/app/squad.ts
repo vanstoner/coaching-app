@@ -150,7 +150,7 @@ export function makePlayer(
  * What to call a player on screen: the first name, plus a suffix only when it
  * is needed to tell two of them apart.
  */
-export function displayName(player: Player): string {
+export function displayName(player: { firstName: string; displaySuffix?: string | null }): string {
   return player.displaySuffix ? `${player.firstName} ${player.displaySuffix}` : player.firstName;
 }
 
