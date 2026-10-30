@@ -25,8 +25,8 @@
 import { NOT_IN_SHARE_TEXT } from '../app/fairShare';
 import { AwardCard } from './AwardCard';
 import type { AwardRow } from '../app/matchAwards';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
@@ -42,7 +42,20 @@ import { TrustRow } from './RecordMatchScreen';
 import { formatClock } from '../app/matchClock';
 import { competitionLabel, kickoffLabel, opponentLabel } from '../app/fixtures';
 import { displayName } from '../app/squad';
-import { Chip, ChipRow } from './Chip';
+import {
+  Action,
+  BackLink,
+  CheckLine,
+  FieldRow,
+  FormSheet,
+  MainButton,
+  MainFoot,
+  RowNav,
+  Section,
+  SegmentedRow,
+  SheetNote,
+  TopBar,
+} from './controls';
 import { MatchBars } from './Charts';
 import { NAME, sortReportMinutes } from '../app/tableSort';
 import { SortHeading, useTableSort } from './TableSort';
@@ -138,30 +151,14 @@ export function MatchSummaryScreen({
   const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
   const [voiding, setVoiding] = useState<{ note: string; error: string } | null>(null);
-  const scroller = useRef<ScrollView>(null);
-  // Where the note box sits in the scrolled content, to bring it into view.
-  const panelY = useRef(0);
   const [correcting, setCorrecting] = useState<{
     playerId: UUID | null;
     status: 'available' | 'absent';
     note: string;
     error: string;
   } | null>(null);
-  // The keyboard covers the lower half of the screen (Android draws edge to
-  // edge and the window does not resize for it, #174), so while a note is
-  // being typed, bring its box to the top of what is left. Without this the
-  // coach types blind.
-  const typing = correcting !== null || marking !== null || voiding !== null;
-  useEffect(() => {
-    if (!typing) return;
-    const toBox = () => scroller.current?.scrollTo({ y: Math.max(0, panelY.current - 12), animated: true });
-    const later = setTimeout(toBox, 60);
-    const shown = Keyboard.addListener('keyboardDidShow', toBox);
-    return () => {
-      clearTimeout(later);
-      shown.remove();
-    };
-  }, [typing]);
+  // #264: each note form is a sheet (Cancel, Save), which pads for the
+  // keyboard itself, so the screen no longer scrolls a note box into view.
   const closed = state.match.status === 'completed';
   // Only a match the ledger holds can be left out or counted (ADR-020).
   const inLedger = ledger?.matches.find((m) => m.id === state.match.id);
@@ -193,7 +190,11 @@ export function MatchSummaryScreen({
         // #174: padding on both platforms, as the fixture form does.
         behavior="padding"
       >
-      <ScrollView ref={scroller} contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
+        {/* #264 V31: one way back, top left (the foot's back button went). */}
+        <TopBar
+          back={<BackLink label={backLabel.replace(/^Back to /, '')} accessibilityLabel={backLabel} onPress={onBack} />}
+        />
         {/* #228 (Dee's clutter fix 3): opponent and score on one line, details, one status pill. */}
         <View style={local.reportHead}>
           <Text style={local.headName} numberOfLines={1}>
@@ -267,27 +268,24 @@ export function MatchSummaryScreen({
           ))}
 
         {/* #198 AC3: the coach's tallies, collapsed, never mixed into the core. */}
+        {/* #264: More stats is a Section heading, the one twisty. */}
         {tallies.length > 0 && (
-          <>
-            <Pressable onPress={() => setMoreStats((v) => !v)} style={screen.linkHit} accessibilityRole="button">
-              <Text style={screen.link}>
-                {moreStats ? 'Hide more stats' : `More stats (${tallies.length})`}
+          <Section
+            title="More stats"
+            summary={`${tallies.length}`}
+            open={moreStats}
+            onToggle={() => setMoreStats((v) => !v)}
+          >
+            <Text style={local.lineFaint}>{TALLY_CAPTION}.</Text>
+            {tallies.map((t) => (
+              <Text key={t.kind} style={local.line} numberOfLines={3}>
+                {tallyLineText(t)}
               </Text>
-            </Pressable>
-            {moreStats && (
-              <>
-                <Text style={local.lineFaint}>{TALLY_CAPTION}.</Text>
-                {tallies.map((t) => (
-                  <Text key={t.kind} style={local.line} numberOfLines={3}>
-                    {tallyLineText(t)}
-                  </Text>
-                ))}
-                <Text style={local.lineFaint} numberOfLines={1}>
-                  Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
-                </Text>
-              </>
-            )}
-          </>
+            ))}
+            <Text style={local.lineFaint} numberOfLines={1}>
+              Their shots on target: {report.theirShotsOnTarget} (saves and goals against)
+            </Text>
+          </Section>
         )}
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
@@ -361,62 +359,59 @@ export function MatchSummaryScreen({
           ))
         )}
 
-        {onCorrectAttendance &&
-          (correcting === null ? (
-            <Pressable
+        {/* #264: each correction is a Row › to a note sheet; Save is off until the note has text (C4). */}
+        {onCorrectAttendance && (
+          <>
+            <RowNav
+              label="Correct attendance"
               onPress={() => setCorrecting({ playerId: null, status: 'available', note: '', error: '' })}
-              style={screen.linkHit}
+            />
+            <FormSheet
+              visible={correcting !== null}
+              title="Correct attendance"
+              onCancel={() => setCorrecting(null)}
+              saveLabel="Save"
+              saveDisabled={correcting === null || correcting.playerId === null || correcting.note.trim() === ''}
+              onSave={() => {
+                if (correcting === null || correcting.playerId === null) return;
+                const refused = onCorrectAttendance(correcting.playerId, correcting.status, correcting.note);
+                if (refused === null) setCorrecting(null);
+                else setCorrecting({ ...correcting, error: refused });
+              }}
             >
-              <Text style={screen.link}>Correct attendance</Text>
-            </Pressable>
-          ) : (
-            <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
-              <Text style={screen.fieldLabel}>Correct attendance</Text>
-              <Text style={screen.hint}>Who, here or not, and why. The record keeps both.</Text>
-              <ChipRow>
-                {players.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={displayName(p)}
-                    selected={correcting.playerId === p.id}
-                    onPress={() => setCorrecting({ ...correcting, playerId: p.id, error: '' })}
+              {correcting !== null && (
+                <>
+                  <SheetNote>Who, here or not, and why. The record keeps both.</SheetNote>
+                  {players.map((p) => (
+                    <CheckLine
+                      key={p.id}
+                      label={displayName(p)}
+                      checked={correcting.playerId === p.id}
+                      onPress={() => setCorrecting({ ...correcting, playerId: p.id, error: '' })}
+                    />
+                  ))}
+                  <SegmentedRow
+                    label="They"
+                    options={[
+                      { value: 'available' as const, label: 'Was here' },
+                      { value: 'absent' as const, label: 'Absent' },
+                    ]}
+                    value={correcting.status}
+                    onChange={(status) => status && setCorrecting({ ...correcting, status, error: '' })}
                   />
-                ))}
-              </ChipRow>
-              <ChipRow>
-                <Chip
-                  label="Was here"
-                  selected={correcting.status === 'available'}
-                  onPress={() => setCorrecting({ ...correcting, status: 'available', error: '' })}
-                />
-                <Chip
-                  label="Absent"
-                  selected={correcting.status === 'absent'}
-                  onPress={() => setCorrecting({ ...correcting, status: 'absent', error: '' })}
-                />
-              </ChipRow>
-              <TextInput
-                style={screen.input}
-                value={correcting.note}
-                onChangeText={(note) => setCorrecting({ ...correcting, note, error: '' })}
-                placeholder="Why? (needed)"
-                placeholderTextColor={colours.inkFaint}
-                maxLength={120}
-              />
-              {correcting.error !== '' && <Text style={screen.error}>{correcting.error}</Text>}
-              <NoteActions
-                saveLabel="Save correction"
-                disabled={correcting.playerId === null || correcting.note.trim() === ''}
-                onSave={() => {
-                  if (correcting.playerId === null) return;
-                  const refused = onCorrectAttendance(correcting.playerId, correcting.status, correcting.note);
-                  if (refused === null) setCorrecting(null);
-                  else setCorrecting({ ...correcting, error: refused });
-                }}
-                onCancel={() => setCorrecting(null)}
-              />
-            </View>
-          ))}
+                  <FieldRow
+                    label="Why"
+                    value={correcting.note}
+                    onChangeText={(note) => setCorrecting({ ...correcting, note, error: '' })}
+                    placeholder="Needed"
+                    maxLength={120}
+                  />
+                  {correcting.error !== '' && <Text style={screen.error}>{correcting.error}</Text>}
+                </>
+              )}
+            </FormSheet>
+          </>
+        )}
 
         {inLedger && (
           <>
@@ -431,93 +426,53 @@ export function MatchSummaryScreen({
                 {`Why: ${inLedger.excluded.note}`}
               </Text>
             )}
-            {onSetExcluded &&
-              voiding === null &&
-              (marking === null ? (
-                <Pressable onPress={() => setMarking({ note: '', error: '' })} style={screen.linkHit}>
-                  <Text style={screen.link}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
-                </Pressable>
-              ) : (
-                <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
-                  <Text style={screen.fieldLabel}>{excluded ? 'Count this match' : 'Leave this match out'}</Text>
-                  <Text style={screen.hint}>
-                    Its minutes stay on record either way. The record keeps this change and why.
-                  </Text>
-                  <TextInput
-                    style={screen.input}
-                    value={marking.note}
-                    onChangeText={(note) => setMarking({ note, error: '' })}
-                    placeholder="Why? (needed)"
-                    placeholderTextColor={colours.inkFaint}
-                    maxLength={120}
-                    autoFocus
-                  />
-                  {marking.error !== '' && <Text style={screen.error}>{marking.error}</Text>}
-                  <NoteActions
-                    saveLabel="Save"
-                    disabled={marking.note.trim() === ''}
-                    onSave={() => {
-                      const refused = onSetExcluded(!excluded, marking.note);
-                      if (refused === null) setMarking(null);
-                      else setMarking({ ...marking, error: refused });
-                    }}
-                    onCancel={() => setMarking(null)}
-                  />
-                </View>
-              ))}
+            {onSetExcluded && (
+              <>
+                <RowNav
+                  label={excluded ? 'Count this match' : 'Leave this match out'}
+                  onPress={() => setMarking({ note: '', error: '' })}
+                />
+                <NoteSheet
+                  visible={marking !== null}
+                  title={excluded ? 'Count this match' : 'Leave this match out'}
+                  hint="Its minutes stay on record either way. The record keeps this change and why."
+                  value={marking}
+                  onChange={setMarking}
+                  onSave={() => {
+                    if (marking === null) return;
+                    const refused = onSetExcluded(!excluded, marking.note);
+                    if (refused === null) setMarking(null);
+                    else setMarking({ ...marking, error: refused });
+                  }}
+                />
+              </>
+            )}
             {/* #194: a played match is never deleted. Voiding hides it and keeps it. */}
-            {onVoid &&
-              marking === null &&
-              (voiding === null ? (
-                <Pressable onPress={() => setVoiding({ note: '', error: '' })} style={screen.linkHit}>
-                  <Text style={screen.link}>Void, with a note</Text>
-                </Pressable>
-              ) : (
-                <View style={local.panel} onLayout={(e) => (panelY.current = e.nativeEvent.layout.y)}>
-                  <Text style={screen.fieldLabel}>Void this match</Text>
-                  <Text style={screen.hint}>
-                    It goes from every screen and every figure. The record keeps it and why, and Settings › Test
-                    matches can show it again.
-                  </Text>
-                  <TextInput
-                    style={screen.input}
-                    value={voiding.note}
-                    onChangeText={(note) => setVoiding({ note, error: '' })}
-                    placeholder="Why? (needed)"
-                    placeholderTextColor={colours.inkFaint}
-                    maxLength={120}
-                    autoFocus
-                  />
-                  {voiding.error !== '' && <Text style={screen.error}>{voiding.error}</Text>}
-                  <NoteActions
-                    saveLabel="Void"
-                    disabled={voiding.note.trim() === ''}
-                    onSave={() => {
-                      const refused = onVoid(voiding.note);
-                      if (refused === null) setVoiding(null);
-                      else setVoiding({ ...voiding, error: refused });
-                    }}
-                    onCancel={() => setVoiding(null)}
-                  />
-                </View>
-              ))}
+            {onVoid && (
+              <>
+                <RowNav label="Void, with a note" onPress={() => setVoiding({ note: '', error: '' })} />
+                <NoteSheet
+                  visible={voiding !== null}
+                  title="Void this match"
+                  saveLabel="Void"
+                  hint="It goes from every screen and every figure. The record keeps it and why, and Settings › Test matches can show it again."
+                  value={voiding}
+                  onChange={setVoiding}
+                  onSave={() => {
+                    if (voiding === null) return;
+                    const refused = onVoid(voiding.note);
+                    if (refused === null) setVoiding(null);
+                    else setVoiding({ ...voiding, error: refused });
+                  }}
+                />
+              </>
+            )}
           </>
         )}
 
         {/* #228: the record's link moved to the foot, shortened. */}
-        {inLedger && onOpenRecord && (
-          <Pressable onPress={onOpenRecord} style={screen.linkHit} accessibilityRole="link">
-            <Text style={screen.link}>In the record ›</Text>
-          </Pressable>
-        )}
-        {onAnalysis && (
-          <Pressable
-            style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-            onPress={onAnalysis}
-          >
-            <Text style={screen.buttonLabel}>Match analysis</Text>
-          </Pressable>
-        )}
+        {inLedger && onOpenRecord && <RowNav label="In the record" onPress={onOpenRecord} first />}
+        {onAnalysis && <RowNav label="Match analysis" onPress={onAnalysis} first={!(inLedger && onOpenRecord)} />}
         {/* #228 AC24: awards already given, from the record. */}
         {(inLedger?.awards ?? []).length > 0 && !(askingAwards && awards) && (
           <>
@@ -539,85 +494,62 @@ export function MatchSummaryScreen({
             onTakeBack={awards.onTakeBack}
             footer={
               <>
-                <Pressable
-                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-                  onPress={onEndMatch}
-                  accessibilityRole="button"
-                >
-                  <Text style={screen.buttonLabel}>End match</Text>
-                </Pressable>
-                <Pressable onPress={onEndMatch} style={screen.linkHit} accessibilityRole="button">
-                  <Text style={screen.link}>Give them later</Text>
-                </Pressable>
+                <MainButton label="End match" onPress={onEndMatch} />
+                {/* #264: it ends the match, so it is an Action, not a way out. */}
+                <Action label="Give them later" onPress={onEndMatch} align="center" />
               </>
             }
           />
         )}
-        {onEndMatch && !(askingAwards && awards) && (
-          <Pressable
-            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-            onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())}
-            accessibilityRole="button"
-          >
-            <Text style={screen.buttonLabel}>End match</Text>
-          </Pressable>
-        )}
-        <Pressable
-          style={({ pressed }) => [
-            onEndMatch ? screen.buttonQuiet : screen.button,
-            pressed && screen.buttonPressed,
-          ]}
-          onPress={onBack}
-        >
-          <Text style={screen.buttonLabel}>{backLabel}</Text>
-        </Pressable>
       </ScrollView>
+      {onEndMatch && !(askingAwards && awards) && (
+        <MainFoot>
+          <MainButton label="End match" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
+        </MainFoot>
+      )}
       </KeyboardAvoidingView>
     </View>
   );
 }
 
-/**
- * Save and Cancel for a note box: two buttons of one height, side by side,
- * each half the width. (Save used to be the full-width button style dropped
- * into a centred row beside a text link: it shrank to its label and sat lower
- * than Cancel.)
- */
-function NoteActions({
-  saveLabel,
-  disabled,
+/** A note form as a sheet (#264): Cancel, Save off until the note has text (C4). */
+function NoteSheet({
+  visible,
+  title,
+  hint,
+  saveLabel = 'Save',
+  value,
+  onChange,
   onSave,
-  onCancel,
 }: {
-  saveLabel: string;
-  disabled: boolean;
+  visible: boolean;
+  title: string;
+  hint: string;
+  saveLabel?: string;
+  value: { note: string; error: string } | null;
+  onChange: (v: { note: string; error: string } | null) => void;
   onSave: () => void;
-  onCancel: () => void;
 }) {
   return (
-    <View style={local.noteActions}>
-      <Pressable
-        onPress={onCancel}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.buttonQuiet, local.noteButton, local.noteGap, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Cancel</Text>
-      </Pressable>
-      <Pressable
-        disabled={disabled}
-        onPress={onSave}
-        accessibilityRole="button"
-        accessibilityState={{ disabled }}
-        style={({ pressed }) => [
-          screen.button,
-          local.noteButton,
-          disabled && screen.buttonDisabled,
-          pressed && screen.buttonPressed,
-        ]}
-      >
-        <Text style={screen.buttonLabel}>{saveLabel}</Text>
-      </Pressable>
-    </View>
+    <FormSheet
+      visible={visible}
+      title={title}
+      saveLabel={saveLabel}
+      onCancel={() => onChange(null)}
+      onSave={onSave}
+      saveDisabled={value === null || value.note.trim() === ''}
+    >
+      <SheetNote>{hint}</SheetNote>
+      <FieldRow
+        label="Why"
+        value={value?.note ?? ''}
+        onChangeText={(note) => onChange({ note, error: '' })}
+        placeholder="Needed"
+        maxLength={120}
+        autoFocus
+      />
+      {value !== null && value.error !== '' && <Text style={screen.error}>{value.error}</Text>}
+    </FormSheet>
   );
 }
 
@@ -663,11 +595,6 @@ const local = StyleSheet.create({
   pillOpenText: { color: colours.warn, fontSize: 13, includeFontPadding: false },
   pillClosed: { borderWidth: 1, borderColor: colours.line },
   pillClosedText: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
-  panel: { alignSelf: 'stretch', marginTop: 8 },
-  noteActions: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 12 },
-  // Same margin and height on both, so they line up; the gap is on Cancel.
-  noteButton: { flex: 1, marginTop: 0 },
-  noteGap: { marginRight: 10 },
   pointer: { marginTop: 14 },
 });
 
