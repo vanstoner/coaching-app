@@ -58,8 +58,8 @@ export function Danger({
 }: {
   label: string;
   confirmLabel: string;
-  /** What goes, in plain words. */
-  warning: string;
+  /** What goes, in plain words; absent where the confirm says it already. */
+  warning?: string;
   onConfirm: () => void;
   keepLabel?: string;
   /** Told when the confirm opens or closes, for a caller that must know. */
@@ -87,7 +87,7 @@ export function Danger({
   }
   return (
     <View>
-      <Text style={danger.warning}>{warning}</Text>
+      {warning ? <Text style={danger.warning}>{warning}</Text> : null}
       <Pressable
         onPress={onConfirm}
         accessibilityRole="button"

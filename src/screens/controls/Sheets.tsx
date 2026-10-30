@@ -33,6 +33,7 @@ export function FormSheet({
   onSave,
   saveLabel = 'Save',
   saveDisabled = false,
+  saveDanger = false,
   children,
 }: {
   visible: boolean;
@@ -43,6 +44,8 @@ export function FormSheet({
   onSave?: () => void;
   saveLabel?: string;
   saveDisabled?: boolean;
+  /** Save does what cannot be undone (Remove a team): the danger colour (#264 V33). */
+  saveDanger?: boolean;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -80,7 +83,9 @@ export function FormSheet({
                         accessibilityState={{ disabled: saveDisabled }}
                         style={({ pressed }) => [sheet.headHit, sheet.headHitRight, pressed && sheet.pressed]}
                       >
-                        <Text style={[sheet.save, saveDisabled && sheet.saveOff]}>{saveLabel}</Text>
+                        <Text style={[sheet.save, saveDanger && sheet.saveDanger, saveDisabled && sheet.saveOff]}>
+                          {saveLabel}
+                        </Text>
                       </Pressable>
                     )}
                   </View>
@@ -294,6 +299,7 @@ const sheet = StyleSheet.create({
   cancel: { color: colours.back, fontSize: 16, includeFontPadding: false },
   save: { color: colours.action, fontSize: 16, fontWeight: '600', includeFontPadding: false },
   saveOff: { color: colours.inkFaint },
+  saveDanger: { color: colours.danger },
   body: { flexGrow: 0 },
   line: {
     flexDirection: 'row',
