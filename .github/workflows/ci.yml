@@ -107,6 +107,27 @@ jobs:
           # #234: the TestFlight group name and beta description, on every PR.
           python3 .github/scripts/asc_api.py beta-check store/testflight
 
+      # #232: google-play.yml's client (its read-only guard and every failure
+      # mode, healthy cases first), P7 (no analytics or crash SDK), and the
+      # Play release notes (D3: whats_new.txt, at most 500 characters).
+      # Over 500 is a warning on an ordinary PR and fails a version bump
+      # (criterion 5), so an approved run never meets that refusal.
+      - name: Self-test the Google Play client and check its notes
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/play_api.py --self-test
+          python3 .github/scripts/play_api.py sdk-check package-lock.json
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          version() { python3 -c 'import json,sys; print(json.load(sys.stdin)["expo"]["version"])'; }
+          OLD="$(git show "$BASE:app.json" | version)"; NEW="$(version < app.json)"
+          REQUIRE=""
+          if [ "$OLD" != "$NEW" ]; then REQUIRE="--require"; echo "version bump $OLD -> $NEW: the notes must fit Play"; fi
+          python3 .github/scripts/play_api.py notes-check $REQUIRE store/app-store/en-GB/whats_new.txt
+
       # #108 D2: the App Store listing files stay within Apple's limits and
       # claim nothing v1 lacks. Self-test first, then the real files.
       - name: Check the App Store listing

@@ -1,0 +1,316 @@
+name: Google Play
+
+# #232 Part 1 (PO "approve 232 split", 30 Oct): the signed bundle already on
+# a main release goes to Google Play's closed track, with en-GB release
+# notes, after Rob's approval. The Play twin of testflight.yml.
+#
+# Rob's approvals are the same two as iOS (criterion 2): the merge, and this
+# workflow's `google-play` environment, whose required reviewer is Rob and
+# whose branch rule is main only (D1). Only that environment holds
+# PLAY_SERVICE_ACCOUNT_JSON. No pull_request trigger, ever. Only a push to
+# main that changes app.json (the version bump that marks a store release)
+# queues a run, which waits for Rob. By hand:
+#
+#   gh workflow run google-play.yml --ref main -f check=true
+#       # P1-P7, read-only: opens an edit, reads the default language, every
+#       # track and its releases and the bundles, deletes the edit. Writes nothing.
+#   gh workflow run google-play.yml --ref main -f dry_run=true [-f track=NAME]
+#       # this commit's release: checks the bundle, reads Play, prints the
+#       # plan, writes nothing. A dry run alone may name a track to plan against.
+#   gh workflow run google-play.yml --ref main -f play_for=SHA
+#       # criterion 10: only the Play steps, for the release made from SHA (a
+#       # main commit): the way to finish after a refusal, with no new build
+#       # and no bump. Add -f dry_run=true for the plan alone.
+#
+# What a real run does (play_api.py release): one edit; reuse the bundle if
+# Play already holds that version code with the same SHA-256, or upload the
+# .aab from the release (checked first: the play job's file, Heart FC Coach,
+# distribution:app, this version and build, the upload key's fingerprint);
+# put "<version> (build N)" on PLAY_TRACK as completed with the notes from
+# store/app-store/en-GB/whats_new.txt (D3, at most 500 characters); commit
+# once; read the track back in a fresh edit. Already there with the same
+# notes: "nothing to do", green. Anything unexpected: red, WHY THIS JOB
+# FAILED, the edit discarded, so Play Console is unchanged, and the GitHub
+# release untouched. It never halts or reduces a rollout, removes a release,
+# touches a listing, tester, country or price, or sends the beta app
+# (criterion 13; play_api.py's guard refuses those before they are sent).
+# The iOS workflows and this one never wait on each other (criterion 14).
+
+env:
+  # P3: the closed track's id, as the check mode lists it (Google's default
+  # closed track is `alpha`; a track Rob named in the console has that name).
+  # Empty until the check has run: a real run then refuses before any write.
+  PLAY_TRACK: ''
+  # Criterion 12, D2 (Rob's call, like PHASED_RELEASE): 'on' also puts each
+  # version on production at 100%, in a second edit after the closed track,
+  # once Google has granted production access. A PR Rob approves turns it on.
+  PLAY_PRODUCTION: 'off'
+
+on:
+  push:
+    branches: [main]
+    paths: [app.json]
+  workflow_dispatch:
+    inputs:
+      check:
+        description: "Read-only preconditions (P1-P7): read the app, tracks and bundles, write nothing"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Check the bundle and read Play, print the plan, write nothing"
+        type: boolean
+        default: false
+      play_for:
+        description: "Only the Play steps for the release made from this main commit (no build, no bump)"
+        type: string
+        default: ""
+      track:
+        description: "Dry run only: plan against this track instead of PLAY_TRACK"
+        type: string
+        default: ""
+
+# A check or a dry run writes nothing, so it has its own group and a newer one
+# cancels an older one. A real run is NEVER cancelled (an upload or a commit
+# is never stopped part-way); a newer one waits behind it.
+concurrency:
+  group: google-play-${{ (inputs.check || inputs.dry_run) && 'read' || 'write' }}
+  cancel-in-progress: ${{ inputs.check == true || inputs.dry_run == true }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # P1-P7, read-only. In google-play, so it is also the first proof that the
+  # environment is gated: the run waits for Rob's approval before this starts.
+  # ---------------------------------------------------------------------------
+  check:
+    name: Check Google Play (read-only)
+    if: inputs.check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: google-play
+    steps:
+      - name: Refuse anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "WHY THIS JOB FAILED: Google Play is read and written from main only; this run is on $GITHUB_REF."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the Play client
+        run: python3 .github/scripts/play_api.py --self-test
+
+      - name: "P7: no analytics or crash SDK"
+        run: python3 .github/scripts/play_api.py sdk-check package-lock.json
+
+      - name: "P1-P6: the key, the API, the app, its tracks and bundles"
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 .github/scripts/play_api.py check com.vanstoner.coachingapp --summary "$RUNNER_TEMP/play.txt"
+
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo "### Google Play check (read-only)"
+            cat "$RUNNER_TEMP/play.txt" 2>/dev/null || echo "Not reached: see WHY THIS JOB FAILED above."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Which release, and its bundle. Waits (bounded) on Linux, outside the
+  # environment, so Rob's approval is asked only once the bundle is there.
+  # ---------------------------------------------------------------------------
+  number:
+    name: Find this commit's release and bundle
+    if: ${{ !inputs.check }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    outputs:
+      build: ${{ steps.find.outputs.BUILD }}
+      tag: ${{ steps.find.outputs.TAG }}
+      version: ${{ steps.sha.outputs.VERSION }}
+      sha: ${{ steps.sha.outputs.SHA }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLAY_FOR: ${{ inputs.play_for }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Which commit
+        id: sha
+        run: |
+          set -euo pipefail
+          if [ -n "$PLAY_FOR" ]; then
+            SHA="$(git rev-parse --verify "${PLAY_FOR}^{commit}" 2>/dev/null)" \
+              || { echo "WHY THIS JOB FAILED: '$PLAY_FOR' is not a commit here"; exit 1; }
+            git merge-base --is-ancestor "$SHA" "$GITHUB_SHA" \
+              || { echo "WHY THIS JOB FAILED: $SHA is not on main"; exit 1; }
+          else
+            SHA="$GITHUB_SHA"
+          fi
+          VERSION="$(git show "$SHA:app.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expo"]["version"])')"
+          echo "commit $SHA, version $VERSION"
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+          echo "SHA=$SHA" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Criterion 3: bounded, as in testflight.yml's number job. The release
+      # appears first, then the play job attaches the signed .aab to it.
+      - name: Wait for this commit's release and its signed bundle
+        id: find
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 80); do
+            if python3 .github/scripts/testflight_notes.py number "$SHA" > /tmp/found.txt; then
+              TAG="$(sed -n 's/^TAG=//p' /tmp/found.txt)"
+              if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -q '\.aab$'; then
+                cat /tmp/found.txt | tee -a "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              if gh release view "$TAG" --json body --jq .body | grep -q '^No Play bundle:'; then
+                echo "=============================================================="
+                echo "WHY THIS JOB FAILED: release $TAG has no signed bundle: the play job found no upload-key secrets (#211, P0)."
+                echo "Set them in the play-store environment, then dispatch android-apk.yml on main for a new build."
+                echo "=============================================================="
+                exit 1
+              fi
+              echo "attempt $i: $TAG has no .aab yet; waiting 30s"
+            else
+              echo "attempt $i: no release for ${SHA:0:7} yet; waiting 30s"
+            fi
+            sleep 30
+          done
+          echo "=============================================================="
+          echo "WHY THIS JOB FAILED: no release with a signed .aab for ${SHA:0:7} within 40 minutes (criterion 14)."
+          echo "android-apk.yml publishes it on a green build of main, and its play job attaches the .aab; check that run."
+          echo "=============================================================="
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # The closed track. In google-play: Rob approves every run.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Put the bundle on the closed track
+    needs: number
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: google-play
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.number.outputs.tag }}
+      BUILD: ${{ needs.number.outputs.build }}
+      VERSION: ${{ needs.number.outputs.version }}
+      FOR_SHA: ${{ needs.number.outputs.sha }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      TRACK_INPUT: ${{ inputs.track }}
+    steps:
+      # Criterion 2: before any Play call.
+      - name: Refuse anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "WHY THIS JOB FAILED: Google Play is written from main only; this run is on $GITHUB_REF (#232 criterion 2)."
+            exit 1
+          fi
+          if [ -n "$TRACK_INPUT" ] && [ "$DRY_RUN" != true ]; then
+            echo "WHY THIS JOB FAILED: the track input is for a dry run only; a real run uses PLAY_TRACK."
+            exit 1
+          fi
+          TRACK="${TRACK_INPUT:-$PLAY_TRACK}"
+          echo "TRACK=$TRACK" >> "$GITHUB_ENV"
+          echo "$TAG: Heart FC Coach $VERSION (build $BUILD); track: ${TRACK:-not set}; production: $PLAY_PRODUCTION; dry run: $DRY_RUN"
+
+      # main's scripts and main's notes, but only while main is on this version.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Main is still on this version
+        run: |
+          HEAD_VERSION="$(python3 -c 'import json; print(json.load(open("app.json"))["expo"]["version"])')"
+          if [ "$HEAD_VERSION" != "$VERSION" ]; then
+            echo "WHY THIS JOB FAILED: main is on $HEAD_VERSION, so its notes are not $VERSION's. Send $HEAD_VERSION's release instead."
+            exit 1
+          fi
+
+      - name: Self-test the Play client and check the notes
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/play_api.py --self-test
+          python3 .github/scripts/play_bundle.py --self-test > /tmp/bundle-self-test.txt 2>&1 || {
+            cat /tmp/bundle-self-test.txt; echo "WHY THIS JOB FAILED: play_bundle.py failed its own self-test"; exit 1; }
+          python3 .github/scripts/play_api.py notes-check --require store/app-store/en-GB/whats_new.txt
+
+      # Criterion 3: the very file the play job signed, matched by SHA-256,
+      # Heart FC Coach (never the beta) at this version and build, carrying
+      # the released APK's JS and distribution:app, signed by the key whose
+      # fingerprint the play job wrote on the release page. No rebuild.
+      - name: Check the release's bundle
+        run: |
+          set -uo pipefail
+          mkdir -p rel
+          gh release download "$TAG" --dir rel --pattern '*.aab' --pattern '*.aab.sha256' --pattern '*.apk' || {
+            echo "WHY THIS JOB FAILED: could not download the bundle and APK from $TAG"; exit 1; }
+          AAB="$(ls rel/*.aab)"; APK="$(ls rel/*.apk)"
+          (cd rel && sha256sum -c "$(basename "$AAB").sha256") || {
+            echo "WHY THIS JOB FAILED: the downloaded .aab does not match the release's .sha256"; exit 1; }
+          BUNDLETOOL_VERSION=1.18.1
+          BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
+          curl -fsSL --retry 3 -o /tmp/bundletool.jar \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" || {
+            echo "WHY THIS JOB FAILED: could not download bundletool ${BUNDLETOOL_VERSION}"; exit 1; }
+          echo "${BUNDLETOOL_SHA256}  /tmp/bundletool.jar" | sha256sum -c - || {
+            echo "WHY THIS JOB FAILED: bundletool ${BUNDLETOOL_VERSION} is not the file pinned here"; exit 1; }
+          java -jar /tmp/bundletool.jar dump manifest --bundle "$AAB" > /tmp/aab-manifest.xml || {
+            echo "WHY THIS JOB FAILED: bundletool could not read the bundle's manifest"; exit 1; }
+          PACKAGE="$(python3 -c 'import json; print(json.load(open("app.json"))["expo"]["android"]["package"])')"
+          fail=0
+          python3 .github/scripts/play_bundle.py check /tmp/aab-manifest.xml "$APK" "$AAB" "$PACKAGE" "$VERSION" "$BUILD" || fail=1
+          unzip -p "$AAB" base/assets/index.android.bundle > /tmp/bundle.bin
+          python3 .github/scripts/write-distribution.py --assert-bundle /tmp/bundle.bin app || fail=1
+          python3 .github/scripts/play_bundle.py signer "$AAB" > /tmp/signer.txt 2>&1 || fail=1
+          grep -v JAVA_TOOL_OPTIONS /tmp/signer.txt
+          SIGNED="$(sed -n 's/^FINGERPRINT=//p' /tmp/signer.txt)"
+          PAGE="$(gh release view "$TAG" --json body --jq .body | grep -oE '^([0-9A-F]{2}:){31}[0-9A-F]{2}$' | head -1)"
+          if [ -z "$SIGNED" ] || [ "$SIGNED" != "$PAGE" ]; then
+            echo "the signer ($SIGNED) is not the upload key the play job named on $TAG (${PAGE:-none})"
+            fail=1
+          fi
+          if [ "$fail" != 0 ]; then
+            echo "=============================================================="
+            echo "WHY THIS JOB FAILED: $TAG's .aab is not this build of Heart FC Coach, distribution:app, signed by the upload key (lines above)."
+            echo "Nothing was sent to Google Play. Re-run android-apk.yml on main for a new build."
+            echo "=============================================================="
+            exit 1
+          fi
+          echo "AAB=$AAB" >> "$GITHUB_ENV"
+          echo "bundle: $(basename "$AAB"), $PACKAGE $VERSION ($BUILD), distribution:app, upload key $SIGNED"
+
+      - name: Check the key secret
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 .github/scripts/play_api.py key-check
+
+      - name: "Google Play: bundle, closed track, notes, commit, read back"
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -uo pipefail
+          DRY=""
+          [ "$DRY_RUN" = true ] && DRY="--dry-run"
+          python3 .github/scripts/play_api.py release com.vanstoner.coachingapp "$VERSION" "$BUILD" "$AAB" \
+            store/app-store/en-GB/whats_new.txt --track "$TRACK" --production "$PLAY_PRODUCTION" \
+            --summary "$RUNNER_TEMP/play.txt" $DRY
+
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo "### Google Play"
+            [ "$DRY_RUN" = true ] && echo "**Dry run: nothing was written.**"
+            cat "$RUNNER_TEMP/play.txt" 2>/dev/null || echo "Not sent: see WHY THIS JOB FAILED above."
+            echo "Recovery, no build and no bump: \`gh workflow run google-play.yml --ref main -f play_for=${FOR_SHA}\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
