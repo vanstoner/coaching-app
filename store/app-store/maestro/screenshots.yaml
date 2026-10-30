@@ -214,8 +214,10 @@ env:
     element: ${FORGET}
     centerElement: true
 - tapOn: ${FORGET}
+# Run 41025915210: "Yes" counted as visible half under the tab bar; centre it too.
 - scrollUntilVisible:
     element: ${FORGET_YES}
+    centerElement: true
 - tapOn: ${FORGET_YES}
 # Run 40907567399, iPad: since 2.0.0 (#224 AC6) a phone with no team opens on
 # "No teams on this phone yet", with no tabs. Name a made-up team, then Squad.
