@@ -4,10 +4,11 @@
  * picks one of these buttons. Used by Squad › Add and the child page's Rename.
  */
 
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { nameWarning } from '../app/squad';
+import { Action, BackLink } from './controls';
 import { colours, screen } from './theme';
 /**
  * #54 AC2: the warning for a name of more than one word, before anything is
@@ -32,25 +33,10 @@ export function MoreThanFirstName({
         First names are the default because these are children&apos;s details. A surname typed in once is kept in this
         phone&apos;s record and in every backup.{isInitial ? '' : ' An initial tells two children apart just as well.'}
       </Text>
-      <Pressable
-        onPress={() => onUse(isInitial ? cleaned : initial)}
-        accessibilityRole="button"
-        style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-      >
-        <Text style={screen.buttonLabel}>Use “{isInitial ? cleaned : initial}”</Text>
-      </Pressable>
-      {!isInitial && (
-        <Pressable
-          onPress={() => onUse(cleaned)}
-          accessibilityRole="button"
-          style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-        >
-          <Text style={screen.buttonLabel}>Keep “{cleaned}”</Text>
-        </Pressable>
-      )}
-      <Pressable onPress={onChange} accessibilityRole="button" style={screen.linkHit}>
-        <Text style={screen.link}>Change it</Text>
-      </Pressable>
+      {/* #264: each choice acts at once (an Action); Change it goes back to the field. */}
+      <Action label={`Use “${isInitial ? cleaned : initial}”`} onPress={() => onUse(isInitial ? cleaned : initial)} />
+      {!isInitial && <Action label={`Keep “${cleaned}”`} onPress={() => onUse(cleaned)} />}
+      <BackLink label="Change it" chevron={false} onPress={onChange} />
     </View>
   );
 }
