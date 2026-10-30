@@ -80,7 +80,9 @@ env:
   LINEUP: "On the pitch"
   PLAN_STARTING: "Starting"
   SHARE_PLAN: "Share plan"
-  # Settings › Forget everything, confirmed inline
+  # Settings › Danger zone (#263 AC17): its heading, then Forget everything,
+  # confirmed inline. The heading's accessible name is its title and summary.
+  DANGER_ZONE: "Danger zone.*"
   FORGET: "^Forget everything$"
   FORGET_YES: "^Yes, forget everything$"
   ADD_YOUR_TEAM: "^Add your team$"
@@ -196,25 +198,17 @@ env:
     visible: ${TAB_SETTINGS}
     timeout: 20000
 - tapOn: ${TAB_SETTINGS}
-# Run 40907567399, iPhone: 2.0.0's Settings (the season at the top, Remove
-# above Forget) is longer, and the default 20 s ran out on the minutes table.
+# #263 AC17: Settings is in sections, with only Season and Team open, so the
+# Danger zone heading sits near the top and the 90 s scroll for Forget (run
+# 40907567399) and the two blind scrolls that kept "Yes" off the tab bar
+# (runs 40033174404, 40039113281) are gone. Danger zone always starts closed
+# (AC6), so tapping its heading unconditionally opens it, even after a
+# relaunch without clearState.
 - scrollUntilVisible:
-    element: ${FORGET}
-    timeout: 90000
+    element: ${DANGER_ZONE}
+- tapOn: ${DANGER_ZONE}
 - takeScreenshot: diag-08a-forget-found
 - tapOn: ${FORGET}
-# Run 40033174404, iPhone: "Yes, forget everything" opens below "Forget
-# everything", under the tab bar. A tap at its centre landed on the Squad tab
-# ([146,866][293,922], centre x 220). Nothing was forgotten, and the seven
-# names joined the made-up season. Bring it into view first.
-# Run 40039113281, iPhone: scrolled "into view" was not enough. Maestro's
-# visibility is measured against the screen, not the scroll view, so the Yes
-# link counted as on screen while it sat past the scroll view's bottom edge,
-# where the tab bar is; the tap still landed on Squad. Scroll Settings to its
-# end (no pills here, so a centre swipe scrolls), which leaves Yes above the
-# tab bar: only "Keep it" and 28 pt of padding follow it.
-- scroll
-- scroll
 - scrollUntilVisible:
     element: ${FORGET_YES}
 - tapOn: ${FORGET_YES}

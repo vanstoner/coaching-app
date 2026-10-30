@@ -11,15 +11,19 @@
  * note), which hides it from every screen. Hidden matches, and matches voided
  * from their report, are listed here with a way to show each again. Nothing
  * in the record is ever deleted (invariant 5).
+ *
+ * #264: Start and each test match are Rows ›; Delete and Delete all keep the
+ * Danger look where they are (Rob, Q1(a): a delete belongs next to what it
+ * deletes, and it cannot be undone), with the two-tap confirm; Hide and Show
+ * it again are Actions.
  */
 
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import { CLOCK_SPEEDS, type ClockSpeed } from '../app/appClock';
-import { Chip } from './Chip';
-import { colours, screen, TOUCH_TARGET } from './theme';
+import { Action, Danger, RowNav, Segmented } from './controls';
+import { colours, TOUCH_TARGET } from './theme';
 
 export interface TestMatchRow {
   id: string;
@@ -61,71 +65,39 @@ export function TestMatchesSection({
   onHideAll: () => void;
   onShow: (matchId: string) => void;
 }) {
-  const [confirmAll, setConfirmAll] = useState(false);
   const n = candidates.length;
   return (
     <View style={local.section}>
-      <Text style={screen.fieldLabel}>Test matches</Text>
-
-      <Pressable
-        onPress={start.onStart}
-        disabled={start.blocked !== null}
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          screen.buttonQuiet,
-          start.blocked !== null && screen.buttonDisabled,
-          pressed && screen.buttonPressed,
-        ]}
-      >
-        <Text style={screen.buttonLabel}>Start a test match</Text>
-      </Pressable>
-      <Text style={screen.hint}>
+      <RowNav label="Start a test match" onPress={start.onStart} disabled={start.blocked !== null} />
+      <Text style={local.hint}>
         {start.blocked ??
           'Plays the squad on the real screens, at ×1, ×5 or ×10. Never recorded: no minutes, no figures, not on Home.'}
       </Text>
 
       {played.length > 0 && (
         <>
-          <Text style={screen.hint}>
+          <Text style={local.hint}>
             {played.length === 1 ? 'One test match' : `${played.length} test matches`} on this phone, never recorded:
           </Text>
           {played.map((t) => (
-            <View key={t.id} style={local.hiddenRow}>
-              <View style={local.hiddenText}>
-                <Text style={local.row} numberOfLines={1}>
-                  {t.label}
-                </Text>
-              </View>
-              <Pressable onPress={() => onOpen(t.id)} style={local.rowHit}>
-                <Text style={screen.link}>Open</Text>
-              </Pressable>
-              <Pressable onPress={() => onDelete(t.id)} style={local.rowHit}>
-                <Text style={screen.dangerLink}>Delete</Text>
-              </Pressable>
+            <View key={t.id} style={local.played}>
+              <RowNav label={t.label} onPress={() => onOpen(t.id)} accessibilityLabel={`Open ${t.label}`} />
+              <Danger
+                label="Delete"
+                confirmLabel="Yes, delete it"
+                keepLabel="Keep"
+                warning="This test match goes from this phone. It was never in the record."
+                onConfirm={() => onDelete(t.id)}
+              />
             </View>
           ))}
-          {confirmAll ? (
-            <View style={local.confirmRow}>
-              <Pressable
-                onPress={() => {
-                  setConfirmAll(false);
-                  onDeleteAll();
-                }}
-                style={local.rowHit}
-              >
-                <Text style={screen.dangerLink}>
-                  Delete {played.length === 1 ? 'it' : `all ${played.length}`}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setConfirmAll(false)} style={local.rowHit}>
-                <Text style={screen.link}>Keep</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable onPress={() => setConfirmAll(true)} style={screen.linkHit}>
-              <Text style={screen.link}>Delete all test matches</Text>
-            </Pressable>
-          )}
+          <Danger
+            label="Delete all test matches"
+            confirmLabel={`Delete ${played.length === 1 ? 'it' : `all ${played.length}`}`}
+            keepLabel="Keep"
+            warning="Every test match goes from this phone. None was ever in the record."
+            onConfirm={onDeleteAll}
+          />
         </>
       )}
 
@@ -139,23 +111,18 @@ export function TestMatchesSection({
               {c.label}
             </Text>
           ))}
-          <Text style={screen.hint}>
-            No opponent, and left out as a test or over within a period. Hiding takes{' '}
-            {n === 1 ? 'it' : 'them'} off every screen. The record keeps {n === 1 ? 'it' : 'them'}, and{' '}
-            {n === 1 ? 'it' : 'each'} can be shown again here.
+          <Text style={local.hint}>
+            No opponent, and left out as a test or over within a period. Hiding takes {n === 1 ? 'it' : 'them'} off
+            every screen. The record keeps {n === 1 ? 'it' : 'them'}, and {n === 1 ? 'it' : 'each'} can be shown again
+            here.
           </Text>
-          <Pressable
-            onPress={onHideAll}
-            style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-          >
-            <Text style={screen.buttonLabel}>Hide {n === 1 ? 'it' : `them`} everywhere</Text>
-          </Pressable>
+          <Action label={`Hide ${n === 1 ? 'it' : 'them'} everywhere`} onPress={onHideAll} />
         </View>
       )}
 
       {hidden.length > 0 && (
         <>
-          <Text style={screen.hint}>Hidden or voided: off every screen, kept in the record.</Text>
+          <Text style={local.hint}>Hidden or voided: off every screen, kept in the record.</Text>
           {hidden.map((h) => (
             <View key={h.id} style={local.hiddenRow}>
               <View style={local.hiddenText}>
@@ -169,9 +136,7 @@ export function TestMatchesSection({
                   </Text>
                 ) : null}
               </View>
-              <Pressable onPress={() => onShow(h.id)} style={screen.linkHit}>
-                <Text style={screen.link}>Show it again</Text>
-              </Pressable>
+              <Action label="Show it again" onPress={() => onShow(h.id)} />
             </View>
           ))}
         </>
@@ -200,18 +165,24 @@ export function TestMatchBanner({
       <Text style={local.bannerText} numberOfLines={2}>
         Test match · not recorded
       </Text>
-      {onSpeed &&
-        CLOCK_SPEEDS.map((s) => (
-          <View key={s} style={local.bannerChip}>
-            <Chip label={`×${s}`} selected={s === speed} onPress={() => onSpeed(s)} narrow />
-          </View>
-        ))}
+      {onSpeed && (
+        <View style={local.bannerSpeed}>
+          <Segmented
+            name="Clock speed"
+            options={CLOCK_SPEEDS.map((s) => ({ value: s, label: `×${s}` }))}
+            value={speed}
+            onChange={(s) => s !== null && onSpeed(s)}
+          />
+        </View>
+      )}
     </View>
   );
 }
 
 const local = StyleSheet.create({
-  section: { alignSelf: 'stretch', marginTop: 20 },
+  section: { alignSelf: 'stretch' },
+  hint: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginVertical: 4 },
+  played: { alignSelf: 'stretch', marginBottom: 4 },
   offer: {
     alignSelf: 'stretch',
     backgroundColor: colours.pitchRaised,
@@ -228,12 +199,11 @@ const local = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch',
+    minHeight: TOUCH_TARGET,
     borderBottomWidth: 1,
-    borderBottomColor: '#164f3c',
+    borderBottomColor: colours.hair,
   },
   hiddenText: { flex: 1, minWidth: 0 },
-  rowHit: { justifyContent: 'center', minHeight: TOUCH_TARGET, paddingHorizontal: 10, flexShrink: 0 },
-  confirmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center' },
   message: { alignSelf: 'stretch', color: colours.warn, fontSize: 14, includeFontPadding: false, marginTop: 10 },
   banner: {
     flexDirection: 'row',
@@ -244,11 +214,11 @@ const local = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     paddingLeft: 10,
-    paddingTop: 4,
+    paddingRight: 6,
     marginHorizontal: 8,
     marginTop: 4,
   },
   bannerText: { flex: 1, minWidth: 0, color: colours.ink, fontSize: 14, fontWeight: '600', includeFontPadding: false },
-  // The chip carries its own bottom margin; this keeps the row balanced.
-  bannerChip: { flexShrink: 0, marginBottom: -4 },
+  // A fixed width: three segments share it, never sized to their own text.
+  bannerSpeed: { width: 170, flexShrink: 0 },
 });

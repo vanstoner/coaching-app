@@ -5,13 +5,19 @@
  * default, and any they add. Each can be renamed or retired. Retiring stops
  * it being offered; every award already given stays on its match. Each
  * change is a record (`award-type`); nothing is deleted (invariant 5).
+ *
+ * #264: each award is a Row › opening a sheet (Cancel, Save) to rename it,
+ * with Retire or Bring back as an Action inside; Add an award is a Row ›
+ * opening the same kind of sheet. Nothing is written until Save or the
+ * Action.
  */
 
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { UUID } from '../types/index';
+import { Action, FieldRow, FormSheet, RowNav } from './controls';
 import { colours, screen } from './theme';
 
 export interface AwardTypeRow {
@@ -30,82 +36,71 @@ export function AwardsSection({
   onAdd: (name: string) => string | null;
   onUpdate: (id: UUID, change: { name?: string; active?: boolean }) => string | null;
 }) {
+  /** The award open in the sheet, or 'new'. */
+  const [editing, setEditing] = useState<UUID | 'new' | null>(null);
   const [draft, setDraft] = useState('');
-  const [renaming, setRenaming] = useState<{ id: UUID; name: string } | null>(null);
   const [error, setError] = useState('');
-  const done = (refused: string | null, after: () => void) => {
-    if (refused) setError(refused);
-    else {
-      setError('');
-      after();
-    }
+  const open = (id: UUID | 'new', name: string) => {
+    setEditing(id);
+    setDraft(name);
+    setError('');
   };
+  const close = () => {
+    setEditing(null);
+    setError('');
+  };
+  const done = (refused: string | null) => {
+    if (refused) setError(refused);
+    else close();
+  };
+  const current = editing !== null && editing !== 'new' ? types.find((t) => t.id === editing) : undefined;
   return (
     <View style={local.section}>
-      <Text style={screen.fieldLabel}>Awards</Text>
-      <Text style={screen.hint}>
+      <Text style={local.hint}>
         Given during a match (tap a player, or at a break), when you End match, or later on a played match’s
         page. They never count towards minutes or fairness.
       </Text>
-      {types.map((t) =>
-        renaming?.id === t.id ? (
-          <View key={t.id} style={local.row}>
-            <TextInput
-              style={[screen.input, local.input]}
-              value={renaming.name}
-              onChangeText={(name) => setRenaming({ id: t.id, name })}
-              autoFocus
-            />
-            <Pressable
-              onPress={() => done(onUpdate(t.id, { name: renaming.name }), () => setRenaming(null))}
-              style={local.action}
-            >
-              <Text style={screen.link}>Save</Text>
-            </Pressable>
-            <Pressable onPress={() => setRenaming(null)} style={local.action}>
-              <Text style={screen.link}>Cancel</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View key={t.id} style={local.row}>
-            <Text style={[local.name, !t.active && local.retired]} numberOfLines={1}>
-              {t.name}
-              {t.active ? '' : ' (retired)'}
-            </Text>
-            <Pressable onPress={() => setRenaming({ id: t.id, name: t.name })} style={local.action}>
-              <Text style={screen.link}>Rename</Text>
-            </Pressable>
-            <Pressable onPress={() => done(onUpdate(t.id, { active: !t.active }), () => {})} style={local.action}>
-              <Text style={screen.link}>{t.active ? 'Retire' : 'Bring back'}</Text>
-            </Pressable>
-          </View>
-        )
-      )}
-      <View style={local.row}>
-        <TextInput
-          style={[screen.input, local.input]}
+      {types.map((t) => (
+        <RowNav
+          key={t.id}
+          label={`${t.name}${t.active ? '' : ' (retired)'}`}
+          value={t.active ? 'Offered' : 'Retired'}
+          onPress={() => open(t.id, t.name)}
+        />
+      ))}
+      <RowNav label="Add an award" onPress={() => open('new', '')} />
+      <FormSheet
+        visible={editing !== null}
+        title={editing === 'new' ? 'Add an award' : 'Award'}
+        onCancel={close}
+        saveDisabled={draft.trim() === '' || (current !== undefined && draft === current.name)}
+        onSave={() =>
+          done(editing === 'new' ? onAdd(draft) : current ? onUpdate(current.id, { name: draft }) : null)
+        }
+      >
+        <FieldRow
+          label="Name"
           value={draft}
           onChangeText={(t) => {
             setDraft(t);
             if (error) setError('');
           }}
           placeholder="A new award"
-          placeholderTextColor={colours.inkFaint}
+          autoFocus
         />
-        <Pressable onPress={() => done(onAdd(draft), () => setDraft(''))} style={local.action}>
-          <Text style={screen.link}>Add</Text>
-        </Pressable>
-      </View>
-      {error !== '' && <Text style={screen.error}>{error}</Text>}
+        {current && (
+          <Action
+            label={current.active ? 'Retire' : 'Bring back'}
+            onPress={() => done(onUpdate(current.id, { active: !current.active }))}
+          />
+        )}
+        {error !== '' && <Text style={screen.error}>{error}</Text>}
+      </FormSheet>
     </View>
   );
 }
 
 const local = StyleSheet.create({
-  section: { alignSelf: 'stretch', marginTop: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6 },
-  name: { flex: 1, minWidth: 0, color: colours.ink, fontSize: 15, includeFontPadding: false },
-  retired: { color: colours.inkFaint },
-  input: { flex: 1, alignSelf: 'auto' },
-  action: { flexShrink: 0, paddingVertical: 8, paddingLeft: 12 },
+  section: { alignSelf: 'stretch' },
+  hint: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginBottom: 6 },
 });

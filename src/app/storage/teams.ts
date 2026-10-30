@@ -26,6 +26,7 @@
  */
 
 import { TEST_CLOCK_KEY } from '../testKit';
+import { LAST_BACKUP_KEY, SETTINGS_SECTIONS_KEY } from '../settingsSections';
 import { forgetAppData, type Forgotten } from './forget';
 import { STORAGE_KEY, inTurn, type KeyValueStore } from '../persistence';
 import { LEDGER_STORAGE_KEY } from './ledgerStore';
@@ -60,14 +61,22 @@ export interface TeamIndex {
   migration?: { state: 'copying' | 'copied' | 'done'; teamId: UUID };
 }
 
+/**
+ * Keys about the phone, not a team: the test clock, and two view notes from
+ * #263 — which Settings sections are open (one layout per phone, AC5) and
+ * when this phone last made a backup (AC10). A team's store passes them
+ * through to the root, and the move into teams leaves them where they are.
+ */
+const PHONE_KEYS: readonly string[] = [TEST_CLOCK_KEY, SETTINGS_SECTIONS_KEY, LAST_BACKUP_KEY];
+
 /** The keys that live per install, never inside a team. */
 function isRootKey(key: string): boolean {
-  return key === TEST_CLOCK_KEY || key.startsWith(TEAMS_PREFIX) || key.startsWith(BEFORE_TEAMS_PREFIX);
+  return PHONE_KEYS.includes(key) || key.startsWith(TEAMS_PREFIX) || key.startsWith(BEFORE_TEAMS_PREFIX);
 }
 
 /** `coaching-app/session/v1` in team T is `coaching-app/teams/T/session/v1`. */
 export function teamKey(teamId: UUID, key: string): string {
-  if (!key.startsWith(APP) || key === TEST_CLOCK_KEY) return key;
+  if (!key.startsWith(APP) || PHONE_KEYS.includes(key)) return key;
   return `${TEAMS_PREFIX}${teamId}/${key.slice(APP.length)}`;
 }
 
