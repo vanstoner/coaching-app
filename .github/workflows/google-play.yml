@@ -39,8 +39,9 @@ name: Google Play
 env:
   # P3: the closed track's id, as the check mode lists it (Google's default
   # closed track is `alpha`; a track Rob named in the console has that name).
-  # Empty until the check has run: a real run then refuses before any write.
-  PLAY_TRACK: ''
+  # Run 41123654772 (Rob, 30 Oct): the only closed track is `alpha`, holding
+  # build 238 (1.3.0); production has no release.
+  PLAY_TRACK: 'alpha'
   # Criterion 12, D2 (Rob's call, like PHASED_RELEASE): 'on' also puts each
   # version on production at 100%, in a second edit after the closed track,
   # once Google has granted production access. A PR Rob approves turns it on.

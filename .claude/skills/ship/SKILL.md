@@ -79,7 +79,8 @@ every write #232 does not name before it is sent, and any track but
 the closed-track commit reports the build as on that track; read-only (`-f check=true`,
 `-f dry_run=true`) allows opening, reading and deleting its own edit only.
 Token: an RS256 JWT signed with `openssl`, no pip. `-f play_for=SHA` is the
-recovery. `PLAY_TRACK` is empty until the check names the closed track. The
+recovery. `PLAY_TRACK` is `alpha`, the closed track the check named (run
+41123654772). The
 listing, icon, feature graphic and shots are Part 2.
 
 **TestFlight (#108 A).** `testflight.yml` signs and uploads the release
