@@ -1,7 +1,7 @@
 # System architecture
 
-Status: **Current** (checked against the code of 2.1.0 at `64d145f`, 29 Oct 2026, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-30 (the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
+Status: **Current** (checked against the code of 2.1.0 at `b5174a8`, 30 Oct 2026, the release check; before that `64d145f`, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
+Last updated: 2026-10-30 (2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -16,7 +16,7 @@ One page. Where it and the code disagree, the code wins. Fix this page.
 | Storage | `@react-native-async-storage/async-storage` 3.1.1 | Behind `KeyValueStore` |
 | Safe areas | `react-native-safe-area-context` ~5.7.0 | The shell pads once; bottom sheets add the bottom inset (#174) |
 | Signing (#193) | `@noble/ed25519` 3.2, `@noble/hashes` 2.4 (pure TS); `expo-secure-store`, `expo-crypto` ~57.0.4 | Key made from `expo-crypto` bytes, kept in the Keystore/Keychain; the biometric permissions the store brings are blocked in `app.json` |
-| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot`, `expo-status-bar`, `@expo/vector-icons` | Minutes file and app backup export/import, Share plan image, the Barlow font, icons on the event buttons and Getting started |
+| Other native modules | `expo-file-system`, `expo-sharing`, `expo-font`, `react-native-view-shot`, `expo-status-bar`, `@expo/vector-icons` | Minutes file and app backup export/import, Share plan image, the Barlow font, icons on the event buttons, Getting started and every control (▾ ▴ ✓ › drawn as icons, never text: Barlow has no ▾ ▴ ✓, #264 V2) |
 
 No navigation library, no state library, no network client. The one React Context is `TableSortProvider` (`src/screens/TableSort.tsx`), which remembers each table's sort: a view choice, not app state (ADR-019). See [ADR-001](./decisions/001-react-native-expo.md), [ADR-018](./decisions/018-session-and-ledger-in-asyncstorage.md) and [ADR-019](./decisions/019-shell-owns-state-step-machine-routes.md).
 
@@ -24,7 +24,7 @@ No navigation library, no state library, no network client. The one React Contex
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,100 lines
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,250 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it
@@ -40,6 +40,12 @@ Screens take their controls from `src/screens/controls/` (#264); the pure
 rules behind them are in `src/app/saveState.ts` (✓ Saved, a form's state, a
 sheet that writes only on Save), `src/app/plannedSubSheet.ts` (the planned-sub
 stepper and its words) and `src/app/settingsSections.ts` (#263).
+The fairness explanations (#261 items 1–2) are pure too: `src/app/fairShare.ts`
+(`matchFairShare`, the one rule for a match's fair share, used by the match
+report, the Plan and the Why sheet), `src/app/whyDifference.ts` (the "Why the
+difference" sheet's lines, from the same rows as `owedTime`) and
+`src/app/aboutFigures.ts` (the ten steps of "How the figures are worked out",
+the same words as `docs/feature-specs.md`, held so by `aboutFigures.test.ts`).
 `src/screens/controlsGuard.test.ts` names each screen still allowed its own
 controls, and why.
 
@@ -195,8 +201,11 @@ test match (#194) shows a banner on each with its own clock speed, and its
 exits lead back to Settings, where it was started and is listed.
 
 `effectiveStep` collapses any Saturday step without a held match to
-`fixtures`. The Android hardware back button is not handled: it backgrounds
-the app from every screen (#175).
+`fixtures`. The Android hardware back button is handled only where a draft
+could be lost (#264 V30, V32): an open sheet closes as Cancel, writing
+nothing, and a full-screen form (new fixture, new season, add a team) asks
+"Leave without saving?" when changed (`useBackLeaves`). Everywhere else it
+still backgrounds the app (#175).
 
 ## Builds
 

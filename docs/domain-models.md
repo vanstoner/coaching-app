@@ -1,7 +1,7 @@
 # Domain models
 
-Status: **Current** (checked against the code of 2.1.0 at `64d145f`, 29 Oct 2026, #259). First retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-29 (2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
+Status: **Current** (checked against the code of 2.1.0 at `b5174a8`, 30 Oct 2026, the release check; before that `64d145f`, #259). First retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
+Last updated: 2026-10-30 (2.1.0 release check: a fill-in in a match's fair share, #261; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./archive/v1-specs/01-domain-model.md), archived
@@ -304,8 +304,9 @@ interface Ledger {                          // key coaching-app/ledger/v2
   1.2.0 reader).
 - **Not counted in fairness** (#190): `profile.fairness = 'not-counted'`,
   for the whole season. Out of the squad average, fairness figures and the
-  season difference; never out of the record, a match's totals or the planner's fair share
-  on the day.
+  season difference; never out of the record, a match's totals or a match's
+  fair share on the day, the report's and the Plan's alike (`matchFairShare`,
+  #261 ruling 1b, which also leaves Main keepers and absent children out).
 - **The core match record** (#196): the **result** is folded from goal and
   conceded events, never stored. A goal or goal against with **time unknown**
   counts in the score and in no per-period or per-time figure; a goal with
