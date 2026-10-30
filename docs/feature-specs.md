@@ -189,6 +189,7 @@ and are rows above.
 | [#175](https://github.com/vanstoner/coaching-app/issues/175) | Idea | The Android back button | Rob |
 | [#119](https://github.com/vanstoner/coaching-app/issues/119) | Idea | Make clear the outfield-share target is for a keeper | Rob's option |
 | [#236](https://github.com/vanstoner/coaching-app/issues/236) | Idea | A website on its own domain | Rob |
+| [#265](https://github.com/vanstoner/coaching-app/issues/265) | Idea | Use suggestion previews the proposed lineup, highlights who gains time, then asks to confirm | Dee's prototype, then Bea's criteria |
 
 ## How the figures are worked out
 
