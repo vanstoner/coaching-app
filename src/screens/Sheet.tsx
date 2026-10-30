@@ -11,7 +11,7 @@ import { Modal, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 
-import { CONTENT_MAX_WIDTH, colours, screen } from './theme';
+import { CONTENT_MAX_WIDTH, colours, screen, TOUCH_TARGET } from './theme';
 
 export function ActionSheet({
   visible,
@@ -41,8 +41,9 @@ export function ActionSheet({
                 {title}
               </Text>
               {children}
-              <Pressable onPress={onClose} style={screen.linkHit}>
-                <Text style={screen.link}>{closeLabel}</Text>
+              <Pressable onPress={onClose} style={screen.linkHit} accessibilityRole="button">
+                {/* #264 V31: a way out, muted, never underlined. */}
+                <Text style={local.close}>{closeLabel}</Text>
               </Pressable>
             </>
           )}
@@ -93,10 +94,10 @@ const local = StyleSheet.create({
   },
   sheetTitle: { color: colours.ink, fontSize: 22, fontWeight: '700', marginBottom: 8, includeFontPadding: false },
   sheetButton: {
-    minHeight: 52,
+    minHeight: TOUCH_TARGET + 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colours.line,
+    borderColor: colours.edge,
     justifyContent: 'center',
     paddingHorizontal: 16,
     marginBottom: 8,
@@ -105,4 +106,5 @@ const local = StyleSheet.create({
   sheetButtonAgainst: { borderColor: colours.danger },
   sheetButtonText: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
   againstText: { color: colours.danger },
+  close: { color: colours.back, fontSize: 16, includeFontPadding: false },
 });

@@ -86,7 +86,8 @@ const local = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colours.pitchRaised,
-    borderColor: colours.line,
+    // #264 V3, V4: the edge reads at 4.16:1 on this fill (the old line was 1.7:1).
+    borderColor: colours.edge,
     borderWidth: 1,
     borderRadius: 10,
     minHeight: TOUCH_TARGET,
@@ -98,9 +99,10 @@ const local = StyleSheet.create({
   narrow: { width: 66 },
   compact: { width: 56 },
   wide: { width: 164 },
-  selected: { backgroundColor: colours.accent, borderColor: colours.accent },
+  selected: { backgroundColor: colours.accent },
   label: {
-    color: colours.inkMuted,
+    // #264 V3: white whether chosen or not (the muted label was 4.45:1).
+    color: colours.ink,
     fontSize: 15,
     fontWeight: '600',
     includeFontPadding: false,
@@ -109,7 +111,7 @@ const local = StyleSheet.create({
   },
   labelOn: { color: colours.ink },
   detail: {
-    color: colours.inkFaint,
+    color: colours.inkMuted,
     fontSize: 11,
     includeFontPadding: false,
     alignSelf: 'stretch',

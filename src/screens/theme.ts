@@ -26,13 +26,14 @@ import { colours } from './colours';
 export { colours };
 
 /**
- * The smallest a tappable thing may be, in dp — #70.
+ * The smallest a tappable thing may be, in dp — #70, raised to 48 by #264 V1
+ * (Rob, 29 Oct: Material's 48 over iOS's 44, for a cold thumb).
  *
- * 44 is the floor both platform guidelines land on, and it is applied as
+ * It is applied as
  * `minHeight`/`minWidth` on the PRESSABLE rather than as padding on the text,
  * so a short label still has a full target.
  */
-export const TOUCH_TARGET = 44;
+export const TOUCH_TARGET = 48;
 
 /**
  * iPad Level 1 — #143 AC9, ruling 18. On a wide screen the content sits in

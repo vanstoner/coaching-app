@@ -35,4 +35,28 @@ export const colours = {
   late: '#a8322a',
   /** Reconstructed: entered after the event (#195, #199). One tone, used everywhere. */
   taint: '#c9ad6a',
+
+  // --- the control vocabulary (#264, Dee's One system v6, Bea's V3) --------
+  /** A control's edge: segments, steppers, the Main button's outline. 4.97:1 on the pitch. */
+  edge: '#4fb88a',
+  /** An Action: mint text that acts on the tap. */
+  action: '#7fe0b0',
+  /**
+   * Back or out, a row's current value: muted grey-green. v6 drew #8fb3a5,
+   * which is 4.45:1 on `pitchRaised`, under V4's 4.5, where a sheet's Cancel
+   * sits; this is the nearest that passes on both (5.63 and 4.71).
+   */
+  back: '#94b8aa',
+  /**
+   * The Main button's and a chosen segment's fill, under white text (4.64:1).
+   * The fill is 2.63:1 on the pitch, under V4's 3, so both keep an `edge`
+   * outline (4.97:1) to mark their boundary.
+   */
+  main: '#12855a',
+  /** ✓ Saved and "Not saved yet". */
+  saved: '#ffd166',
+  /** A row's divider in a grouped list. Decoration, not a control edge. */
+  hair: '#24694f',
+  /** An Undo toast's light fill, under `pitch` ink. */
+  toast: '#e8f3ee',
 } as const;
