@@ -40,8 +40,10 @@ export interface PitchValue {
 export function PitchChips({ value, onChange }: { value: PitchValue; onChange: (v: PitchValue) => void }) {
   return (
     <>
+      {/* Stacked: the whole row width under the label, so "Excellent" fits at 360 dp (QA D3). */}
       <SegmentedRow
         label="Surface"
+        stacked
         options={SURFACES}
         value={value.surface}
         allowClear
@@ -49,6 +51,7 @@ export function PitchChips({ value, onChange }: { value: PitchValue; onChange: (
       />
       <SegmentedRow
         label="Condition"
+        stacked
         options={CONDITIONS}
         value={value.condition}
         allowClear

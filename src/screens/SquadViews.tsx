@@ -524,10 +524,9 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
               <Text style={local.oName} numberOfLines={1}>
                 {r.name}
               </Text>
-              {/* Colour only marks the named: a weight change re-measures and clips (theme.ts). */}
-              <Text style={[local.oText, r.named && local.oNamed]} numberOfLines={1}>
-                {text}
-              </Text>
+              {/* Colour only marks the named: a weight change re-measures and clips (theme.ts).
+                  It wraps: "16 min under the average" is wider than the column at 360 dp (QA D2). */}
+              <Text style={[local.oText, r.named && local.oNamed]}>{text}</Text>
               <Text style={local.oMeta} numberOfLines={1}>
                 {r.perGame} a game · played {r.played}
               </Text>
@@ -839,7 +838,7 @@ const local = StyleSheet.create({
   // The two halves of the 136 under "50 a game · played 9".
   oMetaHead: { width: 68 },
   oName: { width: 72, color: colours.ink, fontSize: 17, includeFontPadding: false, marginRight: 6 },
-  oText: { flex: 1, color: colours.inkMuted, fontSize: 15, includeFontPadding: false },
+  oText: { flex: 1, color: colours.inkMuted, fontSize: 15, includeFontPadding: false, paddingRight: 4 },
   oNamed: { color: colours.ink },
   oNote: { flex: 1, color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
   oMeta: {

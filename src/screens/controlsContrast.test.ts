@@ -38,6 +38,9 @@ describe('V3 tokens, as Bea listed them', () => {
 describe('text reads at 4.5:1 on both surfaces (V4)', () => {
   const texts = {
     ink: colours.ink,
+    // QA on PR #260 (D4): the body text tokens, not only the controls'.
+    inkMuted: colours.inkMuted,
+    inkFaint: colours.inkFaint,
     action: colours.action,
     back: colours.back,
     saved: colours.saved,

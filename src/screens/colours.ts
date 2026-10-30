@@ -9,8 +9,18 @@ export const colours = {
   pitchRaised: '#0f4a38',
   line: '#1c6349',
   ink: '#ffffff',
-  inkMuted: '#8fb3a5',
-  inkFaint: '#6e9787',
+  /**
+   * #264 V4 (QA on PR #260, D4): every text colour at least 4.5:1 on both
+   * surfaces. Was #8fb3a5 (4.45 on `pitchRaised`, the sheet ground); the same
+   * hue, lighter: 6.26 on the pitch, 5.24 raised.
+   */
+  inkMuted: '#a0c1b4',
+  /**
+   * Was #6e9787 (3.74 on the pitch, 3.13 raised). The same hue, as light as
+   * V4 needs on the raised surface: 5.46 and 4.57. It sits closer to
+   * `inkMuted` than before; size and place now carry the difference.
+   */
+  inkFaint: '#96b4a8',
   accent: '#12855a',
   warn: '#ffd166',
   danger: '#ffb4a2',
