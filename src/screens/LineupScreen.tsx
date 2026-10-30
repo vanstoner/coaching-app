@@ -39,15 +39,22 @@
  * **There is a way out that does not commit.** This screen used to have one
  * exit and it was "Start quarter", so a coach who arrived with the wrong squad
  * was stuck until they started a period they did not mean to start.
+ *
+ * ---------------------------------------------------------------------------
+ * One control vocabulary — #264 (Rob's design, 29 Oct)
+ * ---------------------------------------------------------------------------
+ *
+ * One line per child. Goalkeeper and Here today are each a row › opening a
+ * list with a tick. A bench child is a row ›: tapping it opens "*name* comes
+ * on" with the time on the compact stepper (the first + is the period's
+ * midpoint, as `nudgeSubTime` always did) and, separately, who comes off,
+ * whoever is on longest first. Cancel changes nothing; Save puts the plan in
+ * light text by the name. Use plan and Use suggestion offer Undo. The way
+ * out is top left; Start is the one Main button.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
@@ -59,26 +66,27 @@ import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { foldPlayerMinutes, type PlayerMinutes } from '../app/playerMinutes';
 import { suggestLineup } from '../app/lineup';
 import { lineupFromPlan, periodHasContent, type PlannedPeriod } from '../app/matchPlan';
+import { NO_SUB_PLANNED, planSubs, type PlannedSub } from '../app/subPlan';
 import {
-  NO_SUB_PLANNED,
-  nudgeSubTime,
-  planSubs,
-  setSubFor,
-  type PlannedSub,
-} from '../app/subPlan';
+  LINEUP_SUB_STEP_MS,
+  draftFor,
+  plannedSubText,
+  saveSubDraft,
+  stepLineupSub,
+  subTimeValue,
+  subsPlannedSummary,
+  type SubDraft,
+} from '../app/plannedSubSheet';
 import {
-  addToSheet,
   editSheet,
   keeperOf,
   makeKeeper,
-  placeInSlot,
   playersOn,
   removeFromSheet,
   sheetFromSelection,
   sheetIsComplete,
   type Sheet,
 } from '../app/teamSheet';
-import { Chip, ChipRow } from './Chip';
 import { bandCaption, scoreBand, showsScoreBand } from '../app/scoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { ScoreBand } from './ScoreBand';
@@ -86,6 +94,22 @@ import { PitchView } from './PitchView';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { shapeOfFormat } from '../app/shapes';
+import {
+  Action,
+  ActionRow,
+  BackLink,
+  CheckLine,
+  FormSheet,
+  ListSheet,
+  MainButton,
+  MultiListSheet,
+  RowNav,
+  Section,
+  SheetNote,
+  Stepper,
+  TopBar,
+  UndoToast,
+} from './controls';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function LineupScreen({
@@ -170,10 +194,15 @@ export function LineupScreen({
   const [dragging, setDragging] = useState(false);
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
-  /** Which sub's "comes off" the picker is open for. */
-  const [picking, setPicking] = useState<
-    { kind: 'slot'; positionId: UUID } | { kind: 'off'; playerId: UUID } | null
-  >(null);
+  /** Kept so `apply` reads as before; the old inline pickers are now sheets. */
+  const [, setPicking] = useState<null>(null);
+  /** #264: the open sheets, each a draft until its Save. */
+  const [keeperSheet, setKeeperSheet] = useState(false);
+  const [hereSheet, setHereSheet] = useState(false);
+  const [subSheet, setSubSheet] = useState<{ playerId: UUID; draft: SubDraft } | null>(null);
+  const [benchOpen, setBenchOpen] = useState(true);
+  const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
+  const clearToast = useCallback(() => setToast(null), []);
 
   const apply = (next: { sheet: Sheet; subs: PlannedSub[] }) => {
     setSheet(next.sheet);
@@ -220,22 +249,6 @@ export function LineupScreen({
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
   const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
 
-  const toggle = (id: UUID) => {
-    setPicking(null);
-    setSheet(selected.has(id) ? removeFromSheet(sheet, id) : addToSheet(sheet, format, id, prefersOf(id) ?? null));
-  };
-
-  const pickFor = (playerId: UUID | null) => {
-    if (!picking) return;
-    if (picking.kind === 'slot') {
-      if (playerId !== null) setSheet(placeInSlot(sheet, picking.positionId, playerId));
-      else setSheet({ ...sheet, [picking.positionId]: null });
-    } else {
-      setPlan((c) => setSubFor(c, picking.playerId, playerId));
-    }
-    setPicking(null);
-  };
-
   /** Outfield players on now: who a sub can replace. */
   const outfieldOn = positions
     .filter((p) => p.kind !== 'goalkeeper')
@@ -255,9 +268,35 @@ export function LineupScreen({
   const timeOf = (id: UUID) => plan.find((e) => e.playerId === id)?.atMs ?? 0;
   const forOf = (id: UUID) => plan.find((e) => e.playerId === id)?.forPlayerId ?? null;
 
+  const benchIds = players.map((p) => p.id).filter((id) => !selected.has(id));
+  const subsPlanned = plan.filter((e) => benchIds.includes(e.playerId) && e.atMs !== NO_SUB_PLANNED).length;
+
+  /** Use plan / Use suggestion replace the lineup, so each offers Undo (#264 V25). */
+  const replaceWith = (next: { sheet: Sheet; subs: PlannedSub[] } | { sheet: Sheet }, words: string) => {
+    const before = { sheet, subs: plan };
+    if ('subs' in next) apply(next);
+    else {
+      setPicking(null);
+      setSheet(next.sheet);
+    }
+    setToast({ message: words, undo: () => apply(before) });
+  };
+
+  const subName = subSheet ? (nameOf.get(subSheet.playerId) ?? '') : '';
+  const absent = attendance ? attendance.squad.filter((p) => attendance.isAbsent(p.id)) : [];
+
   return (
     <View style={screen.safe}>
       <View style={screen.pane}>
+        {/* #264 V31: the way out, top left. Between periods too: the match stays exactly as it is. */}
+        <TopBar
+          back={<BackLink label="Home" onPress={onLeave} />}
+          right={
+            <Text style={[local.count, !complete && screen.overtime]} numberOfLines={1}>
+              {onPitch.length} of {format.onFieldCount}
+            </Text>
+          }
+        />
         <Text style={screen.title} numberOfLines={1}>
           {squadName || PLACEHOLDER_SQUAD_NAME}
         </Text>
@@ -288,7 +327,7 @@ export function LineupScreen({
           <PitchView
             format={format}
             sheet={sheet}
-            bench={players.map((p) => p.id).filter((id) => !selected.has(id))}
+            bench={benchIds}
             nameOf={(id) => nameOf.get(id) ?? ''}
             detailOf={(id) => pillDetail(byId.get(id), id === goalkeeper)}
             selected={pitchPick}
@@ -301,223 +340,189 @@ export function LineupScreen({
             <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
           )}
           {names && hasRenamedPositions(format) && (
-            <Pressable style={screen.linkHit} onPress={names.onReset}>
-              <Text style={screen.link}>Reset position names</Text>
-            </Pressable>
+            <Action label="Reset position names" onPress={names.onReset} align="center" />
           )}
 
-          <Text style={screen.fieldLabel}>Who is on?</Text>
-          <Text style={screen.hint}>
-            Tap a name to bring them on or off; tap a position above to put
-            someone there. The time beside a substitute is when you will be
-            reminded to bring them on.
-          </Text>
+          {/* #264: Goalkeeper is one row opening a list with a tick, not a GK square per child. */}
+          <RowNav
+            first
+            label="Goalkeeper"
+            value={goalkeeper ? (nameOf.get(goalkeeper) ?? '') : 'Not chosen'}
+            onPress={() => setKeeperSheet(true)}
+          />
 
-          {ordered.map((p) => {
-            const m = byId.get(p.id);
-            const on = selected.has(p.id);
-            const isKeeper = goalkeeper === p.id;
-            const pickingOff = picking?.kind === 'off' && picking.playerId === p.id;
-            return (
-              <View key={p.id}>
-              <Pressable
-                onPress={() => toggle(p.id)}
-                style={({ pressed }) => [
-                  local.pickRow,
-                  on && local.pickRowOn,
-                  pressed && screen.buttonPressed,
-                ]}
-              >
-                <View style={local.pickMain}>
-                  <Text style={screen.playerName} numberOfLines={1}>
-                    {p.firstName}
-                  </Text>
-                  <Text style={local.pickMinutes} numberOfLines={1}>
-                    {formatClock(m?.outfieldMs ?? 0)} outfield
-                    {(m?.goalkeeperMs ?? 0) > 0
-                      ? ` · ${formatClock(m!.goalkeeperMs)} in goal`
-                      : ''}
-                  </Text>
-                  {/* AC10: who this sub replaces. Only once a time is set. */}
-                  {!on && timeOf(p.id) !== NO_SUB_PLANNED && (
-                    <Pressable
-                      onPress={() =>
-                        setPicking(
-                          picking?.kind === 'off' && picking.playerId === p.id
-                            ? null
-                            : { kind: 'off', playerId: p.id }
-                        )
-                      }
-                      style={local.offHit}
-                    >
-                      <Text style={local.off} numberOfLines={1}>
-                        For:{' '}
-                        {forOf(p.id) === null
-                          ? 'whoever is on longest'
-                          : (nameOf.get(forOf(p.id)!) ?? 'whoever is on longest')}
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-                {on ? (
-                  <Pressable
-                    onPress={() => setSheet(makeKeeper(sheet, format, p.id))}
-                    style={[local.gkChip, isKeeper && local.gkChipOn]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isKeeper }}
-                  >
-                    <Text style={[local.gkLabel, isKeeper && local.gkLabelOn]}>GK</Text>
-                  </Pressable>
-                ) : (
-                  // A bench player carries the time they come on. The PO asked
-                  // for exactly this: "set that time for a sub next to their
-                  // name and that's the anchor for a reminder".
-                  <View style={local.subTimeRow}>
-                    <Pressable
-                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, -30_000, periodMs))}
-                      style={local.stepHit}
-                    >
-                      <Text style={local.step}>−</Text>
-                    </Pressable>
-                    <Text
-                      style={[
-                        local.subTime,
-                        timeOf(p.id) === NO_SUB_PLANNED && local.subTimeOff,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {timeOf(p.id) === NO_SUB_PLANNED ? 'No sub' : formatClock(timeOf(p.id))}
-                    </Text>
-                    <Pressable
-                      onPress={() => setPlan((c) => nudgeSubTime(c, p.id, 30_000, periodMs))}
-                      style={local.stepHit}
-                    >
-                      <Text style={local.step}>+</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </Pressable>
-              {pickingOff && (
-                <View style={local.picker}>
-                  <ChipRow>
-                    {outfieldOn.map((id) => (
-                      <Chip
-                        key={id}
-                        label={nameOf.get(id) ?? ''}
-                        selected={forOf(p.id) === id}
-                        onPress={() => pickFor(id)}
-                      />
-                    ))}
-                    <Chip
-                      label="Longest on"
-                      selected={forOf(p.id) === null}
-                      onPress={() => pickFor(null)}
-                    />
-                  </ChipRow>
-                </View>
-              )}
-              </View>
-            );
-          })}
-
-          {attendance && attendance.arrivalsOnly && (() => {
-            const away = attendance.squad.filter((p) => attendance.isAbsent(p.id));
-            if (away.length === 0) return null;
-            return (
-              <>
-                <Text style={screen.fieldLabel}>Arrived late?</Text>
-                <Text style={screen.hint}>
-                  Tap a name to mark them here. They can then be picked, and the
-                  record notes they arrived after kick-off.
-                </Text>
-                <ChipRow>
-                  {away.map((p) => (
-                    <Chip
-                      key={p.id}
-                      label={p.firstName}
-                      detail="Absent"
-                      selected={false}
-                      onPress={() => attendance.onToggle(p.id, false)}
-                    />
-                  ))}
-                </ChipRow>
-              </>
-            );
-          })()}
+          {/* #264 V20 to V23: each bench child opens "name comes on": the time, then who for. */}
+          <Section
+            title="Bench"
+            summary={subsPlannedSummary(subsPlanned)}
+            open={benchOpen}
+            onToggle={() => setBenchOpen((o) => !o)}
+          >
+            {benchIds.length === 0 && <Text style={screen.hint}>Nobody on the subs bench.</Text>}
+            {ordered
+              .filter((p) => !selected.has(p.id))
+              .map((p) => {
+                const m = byId.get(p.id);
+                const forId = forOf(p.id);
+                const text = plannedSubText(timeOf(p.id), forId === null ? null : (nameOf.get(forId) ?? null));
+                return (
+                  <RowNav
+                    key={p.id}
+                    label={p.firstName}
+                    detail={text}
+                    value={`${formatClock(m?.totalMs ?? 0)} played`}
+                    onPress={() => setSubSheet({ playerId: p.id, draft: draftFor(plan, p.id) })}
+                  />
+                );
+              })}
+          </Section>
 
           {attendance && !attendance.arrivalsOnly && (
             <>
-              <Text style={screen.fieldLabel}>Here today?</Text>
+              <RowNav
+                label="Here today"
+                value={`${attendance.squad.length - absent.length} of ${attendance.squad.length}`}
+                onPress={() => setHereSheet(true)}
+              />
               <Text style={screen.hint}>
-                Everyone is here unless you say so. Tap a name to mark them
-                absent; an absent player can&apos;t be picked. After kick-off
-                this can only be changed as a correction.
+                Everyone is here unless you say so. An absent player can&apos;t be picked. After kick-off this can
+                only be changed as a correction.
               </Text>
-              <ChipRow>
-                {attendance.squad.map((p) => {
-                  const absent = attendance.isAbsent(p.id);
-                  return (
-                    <Chip
-                      key={p.id}
-                      label={p.firstName}
-                      detail={absent ? 'Absent' : 'Here'}
-                      selected={!absent}
-                      onPress={() => {
-                        // Off the sheet first, so an absent player is never left picked.
-                        if (!absent) setSheet((s) => removeFromSheet(s, p.id));
-                        attendance.onToggle(p.id, !absent);
-                      }}
-                    />
-                  );
-                })}
-              </ChipRow>
             </>
           )}
+          {attendance && attendance.arrivalsOnly && absent.length > 0 && (
+            <>
+              <RowNav label="Arrived late?" value={`${absent.length} absent`} onPress={() => setHereSheet(true)} />
+              <Text style={screen.hint}>
+                Mark them here. They can then be picked, and the record notes they arrived after kick-off.
+              </Text>
+            </>
+          )}
+
+          <ActionRow>
+            {hasPlan && <Action label="Use plan" onPress={() => replaceWith(fromPlan(), 'Lineup set from the plan')} />}
+            <Action
+              label="Use suggestion"
+              onPress={() => replaceWith({ sheet: fromSuggestion().sheet }, 'Lineup set from the suggestion')}
+            />
+          </ActionRow>
+          {onPlanRest && <RowNav label="Plan the rest of the match" onPress={onPlanRest} />}
         </ScrollView>
 
         <Text style={[screen.caption, !complete && screen.overtime]}>
           {onPitch.length} of {format.onFieldCount} picked
           {goalkeeper === null ? ' · no goalkeeper chosen' : ''}
         </Text>
-
-        <Pressable
+        <MainButton
+          label={`Start ${noun.toLowerCase()}`}
           disabled={!complete}
-          style={({ pressed }) => [
-            screen.button,
-            !complete && screen.buttonDisabled,
-            pressed && screen.buttonPressed,
-          ]}
           onPress={() => onStart(sheet, plan)}
-        >
-          <Text style={screen.buttonLabel}>Start {noun.toLowerCase()}</Text>
-        </Pressable>
-
-        <View style={screen.actions}>
-          {hasPlan && (
-            <Pressable onPress={() => apply(fromPlan())} style={screen.linkHit}>
-              <Text style={screen.link}>Use plan</Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => {
-              setPicking(null);
-              setSheet(fromSuggestion().sheet);
-            }}
-            style={screen.linkHit}
-          >
-            <Text style={screen.link}>Use suggestion</Text>
-          </Pressable>
-          {onPlanRest && (
-            <Pressable onPress={onPlanRest} style={screen.linkHit}>
-              <Text style={screen.link}>Plan</Text>
-            </Pressable>
-          )}
-          {/* Always. Between periods too: the match stays exactly as it is. */}
-          <Pressable onPress={onLeave} style={screen.linkHit}>
-            <Text style={screen.link}>Leave</Text>
-          </Pressable>
-        </View>
+        />
       </View>
+
+      <ListSheet
+        visible={keeperSheet}
+        title="Goalkeeper"
+        items={onPitch.map((id) => ({ value: id, label: nameOf.get(id) ?? '' }))}
+        value={goalkeeper}
+        onPick={(id) => {
+          setSheet(makeKeeper(sheet, format, id));
+          setKeeperSheet(false);
+        }}
+        onCancel={() => setKeeperSheet(false)}
+        footer={<SheetNote>Only children on the pitch can go in goal.</SheetNote>}
+      />
+
+      <FormSheet
+        visible={subSheet !== null}
+        title={`${subName} comes on`}
+        onCancel={() => setSubSheet(null)}
+        onSave={() => {
+          if (subSheet) setPlan((c) => saveSubDraft(c, subSheet.playerId, subSheet.draft));
+          setSubSheet(null);
+        }}
+      >
+        {subSheet && (
+          <>
+            <View style={local.atRow}>
+              <Text style={local.atLabel}>At</Text>
+              <Text
+                style={[local.atValue, subSheet.draft.atMs === NO_SUB_PLANNED && local.atOff]}
+                numberOfLines={1}
+              >
+                {subTimeValue(subSheet.draft.atMs)}
+              </Text>
+              <Stepper
+                minusLabel="30 seconds earlier"
+                plusLabel="30 seconds later"
+                minusDisabled={subSheet.draft.atMs === NO_SUB_PLANNED}
+                onMinus={() =>
+                  setSubSheet({
+                    ...subSheet,
+                    draft: {
+                      ...subSheet.draft,
+                      atMs: stepLineupSub(subSheet.draft.atMs, -LINEUP_SUB_STEP_MS, periodMs),
+                    },
+                  })
+                }
+                onPlus={() =>
+                  setSubSheet({
+                    ...subSheet,
+                    draft: {
+                      ...subSheet.draft,
+                      atMs: stepLineupSub(subSheet.draft.atMs, LINEUP_SUB_STEP_MS, periodMs),
+                    },
+                  })
+                }
+              />
+            </View>
+            <SheetNote>
+              The first + is halfway through the {noun.toLowerCase()}; − from the earliest time is No sub.
+            </SheetNote>
+            <Text style={screen.fieldLabel}>For</Text>
+            <CheckLine
+              label="Whoever is on longest"
+              checked={subSheet.draft.forPlayerId === null}
+              onPress={() => setSubSheet({ ...subSheet, draft: { ...subSheet.draft, forPlayerId: null } })}
+            />
+            {outfieldOn.map((id) => (
+              <CheckLine
+                key={id}
+                label={nameOf.get(id) ?? ''}
+                checked={subSheet.draft.forPlayerId === id}
+                onPress={() => setSubSheet({ ...subSheet, draft: { ...subSheet.draft, forPlayerId: id } })}
+              />
+            ))}
+          </>
+        )}
+      </FormSheet>
+
+      {attendance && (
+        <MultiListSheet
+          visible={hereSheet}
+          title={attendance.arrivalsOnly ? 'Arrived late?' : 'Here today'}
+          items={(attendance.arrivalsOnly ? absent : attendance.squad).map((p) => ({ value: p.id, label: p.firstName }))}
+          chosen={new Set(attendance.arrivalsOnly ? [] : attendance.squad.filter((p) => !attendance.isAbsent(p.id)).map((p) => p.id))}
+          onCancel={() => setHereSheet(false)}
+          onSave={(here) => {
+            setHereSheet(false);
+            if (attendance.arrivalsOnly) {
+              // Ticked: arrived. A late arrival is a correction; nobody is marked absent here.
+              for (const p of absent) if (here.has(p.id)) attendance.onToggle(p.id, false);
+              return;
+            }
+            for (const p of attendance.squad) {
+              const wasAbsent = attendance.isAbsent(p.id);
+              const nowAbsent = !here.has(p.id);
+              if (wasAbsent === nowAbsent) continue;
+              // Off the sheet first, so an absent player is never left picked.
+              if (nowAbsent) setSheet((s) => removeFromSheet(s, p.id));
+              attendance.onToggle(p.id, nowAbsent);
+            }
+          }}
+        />
+      )}
+
       {names && (
         <PositionNameSheet
           format={format}
@@ -527,32 +532,13 @@ export function LineupScreen({
           onClose={() => setRenaming(null)}
         />
       )}
+      <UndoToast message={toast?.message ?? null} onUndo={toast?.undo} onDone={clearToast} />
       <StatusBar style="light" />
     </View>
   );
 }
 
 const local = StyleSheet.create({
-  slotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#164f3c',
-  },
-  // A FIXED width: the labels are 2-3 characters and a box sized to its own
-  // text is what clipped the last glyph off the clock.
-  slotLabel: {
-    color: colours.warn,
-    fontSize: 14,
-    fontWeight: '600',
-    includeFontPadding: false,
-    flexShrink: 0,
-    width: 48,
-  },
-  slotName: { color: colours.ink, fontSize: 16, flex: 1, includeFontPadding: false },
-  slotEmpty: { color: colours.inkFaint },
-  picker: { paddingVertical: 8 },
   fromPlan: {
     alignSelf: 'stretch',
     color: colours.warn,
@@ -560,71 +546,35 @@ const local = StyleSheet.create({
     includeFontPadding: false,
     marginBottom: 4,
   },
-  offHit: { minHeight: TOUCH_TARGET, justifyContent: 'center' },
-  off: {
-    color: colours.ink,
-    fontSize: 13,
-    textDecorationLine: 'underline',
+  // A fixed width, never sized to its own text: "7 of 7" and "10 of 7" share it.
+  count: {
+    width: 72,
+    textAlign: 'right',
+    color: colours.back,
+    fontSize: 15,
     includeFontPadding: false,
+    flexShrink: 0,
   },
-  pickRow: {
+  atRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: TOUCH_TARGET + 8,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#164f3c',
-  },
-  pickRowOn: { backgroundColor: colours.accent, borderColor: colours.accent },
-  pickMain: { flex: 1 },
-  // Every right-hand character was missing from the per-player times once.
-  // Android measures a Text once; sitting beside a `flex: 1` sibling it gets
-  // squeezed and the tail is cut. `flexShrink: 0` stops the squeeze.
-  pickMinutes: {
-    color: '#cfe3da',
-    fontSize: 12,
-    marginTop: 2,
-    includeFontPadding: false,
-    flexShrink: 0,
-    paddingRight: 4,
-  },
-  subTimeRow: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
-  // Same metrics as subTime — only the colour changes.
-  subTimeOff: { color: colours.inkFaint },
-  stepHit: {
-    alignItems: 'center',
-    justifyContent: 'center',
     minHeight: TOUCH_TARGET,
-    minWidth: TOUCH_TARGET,
+    borderBottomWidth: 1,
+    borderBottomColor: colours.hair,
   },
-  step: { color: colours.ink, fontSize: 22, includeFontPadding: false },
-  subTime: {
-    color: colours.warn,
-    fontSize: 15,
-    fontWeight: '600',
-    includeFontPadding: false,
-    flexShrink: 0,
-    paddingHorizontal: 2,
-    textAlign: 'center',
-    // A FIXED width, not minWidth. "No sub" is wider than "06:15", and a box
-    // that sizes itself to its own text is what clipped the last glyph off
-    // the clock and the choice boxes.
+  atLabel: { flex: 1, color: colours.ink, fontSize: 16, includeFontPadding: false },
+  // A FIXED width, not minWidth. "No sub" is wider than "6:15", and a box
+  // that sizes itself to its own text is what clipped the last glyph off
+  // the clock and the choice boxes.
+  atValue: {
     width: 68,
-  },
-  gkChip: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#cfe3da',
     flexShrink: 0,
-    minHeight: TOUCH_TARGET,
-    minWidth: TOUCH_TARGET,
+    textAlign: 'right',
+    paddingRight: 8,
+    color: colours.ink,
+    fontSize: 16,
+    includeFontPadding: false,
   },
-  gkChipOn: { backgroundColor: colours.warn, borderColor: colours.warn },
-  gkLabel: { color: '#cfe3da', fontSize: 14, fontWeight: '600', includeFontPadding: false },
-  gkLabelOn: { color: '#3a2a00', fontSize: 14, fontWeight: '600', includeFontPadding: false },
+  // Same metrics as atValue — only the colour changes.
+  atOff: { color: colours.back },
 });
