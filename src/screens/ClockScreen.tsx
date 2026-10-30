@@ -93,6 +93,7 @@ import { AwardCard } from './AwardCard';
 import { awardsLine, type AwardRow } from '../app/matchAwards';
 import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { Section } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
 
 /**
@@ -443,26 +444,15 @@ export function ClockScreen({
         {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
         {awards && !running && !view.isMatchOver && (
           <>
-            <Pressable
-              onPress={() => setAwardsOpen((v) => !v)}
-              style={screen.linkHit}
-              accessibilityRole="button"
-            >
-              <Text style={screen.link}>{awardsLine(awards.rows)} ›</Text>
-            </Pressable>
-            {awardsOpen && (
+            {/* #264: the awards line takes the one twisty; closing it is the twisty, so Hide went. */}
+            <Section title={awardsLine(awards.rows)} open={awardsOpen} onToggle={() => setAwardsOpen((v) => !v)}>
               <AwardCard
                 rows={awards.rows}
                 childrenInMatch={awards.childrenInMatch}
                 onGive={awards.onGive}
                 onTakeBack={awards.onTakeBack}
-                footer={
-                  <Pressable onPress={() => setAwardsOpen(false)} style={screen.linkHit}>
-                    <Text style={screen.link}>Hide</Text>
-                  </Pressable>
-                }
               />
-            )}
+            </Section>
           </>
         )}
 
@@ -672,7 +662,8 @@ export function ClockScreen({
             {/* #228 (Dee): during the match, one row at the foot of the tap sheet. */}
             {awards && (
               <SheetButton
-                label={`Give ${nameOf(sheetFor)} an award ›`}
+                label={`Give ${nameOf(sheetFor)} an award`}
+                more
                 onPress={() => {
                   setAwardFor(sheetFor);
                   setSheetFor(null);

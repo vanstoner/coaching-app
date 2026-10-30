@@ -7,11 +7,12 @@
  */
 
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 
 import { CONTENT_MAX_WIDTH, colours, screen, TOUCH_TARGET } from './theme';
+import { Icon } from './controls/Icon';
 
 export function ActionSheet({
   visible,
@@ -58,11 +59,14 @@ export function SheetButton({
   onPress,
   strong,
   against,
+  more,
 }: {
   label: string;
   onPress: () => void;
   strong?: boolean;
   against?: boolean;
+  /** #264 V2, V7: it opens something more: a chevron icon on the right, never "›" text. */
+  more?: boolean;
 }) {
   return (
     <Pressable
@@ -74,7 +78,10 @@ export function SheetButton({
         pressed && screen.buttonPressed,
       ]}
     >
-      <Text style={[local.sheetButtonText, against && local.againstText]}>{label}</Text>
+      <View style={local.sheetButtonRow}>
+        <Text style={[local.sheetButtonText, local.sheetButtonLabel, against && local.againstText]}>{label}</Text>
+        {more && <Icon name="chevron-right" size={22} color={colours.back} />}
+      </View>
     </Pressable>
   );
 }
@@ -106,5 +113,7 @@ const local = StyleSheet.create({
   sheetButtonAgainst: { borderColor: colours.danger },
   sheetButtonText: { color: colours.ink, fontSize: 17, fontWeight: '600', includeFontPadding: false },
   againstText: { color: colours.danger },
+  sheetButtonRow: { flexDirection: 'row', alignItems: 'center' },
+  sheetButtonLabel: { flex: 1 },
   close: { color: colours.back, fontSize: 16, includeFontPadding: false },
 });
