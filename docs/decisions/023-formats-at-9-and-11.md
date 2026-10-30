@@ -1,6 +1,6 @@
 # ADR-023: Formats at 9 and 11
 
-**Status:** Proposed
+**Status:** Accepted (Rob, 30 Oct: "approve 023, U9 fix")
 **Date:** 2026-10-30
 **Decision maker:** Architect, for the Product Owner's ruling (#249)
 
@@ -90,7 +90,7 @@ structure, and Bea's criteria own their detail:
   checks the FA lengths before writing criteria.
 - A new team picking 9 is offered **60 min in halves**; picking 11 is offered
   **70 min in halves**. The coach can change both.
-- The age nudge (`formatForAge`) becomes **U11–U12 → 9, U13 and up → 11**.
+- The age nudge (`formatForAge`) becomes **U9–U10 → 7, U11–U12 → 9, U13 and up → 11** (U9 was 5-a-side; FA guidance is 7v7 from U9, Rob 30 Oct: "U9 fix").
 
 ## Consequences
 
