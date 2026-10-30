@@ -165,32 +165,9 @@ jobs:
       - name: Wait for this commit's release and its signed bundle
         id: find
         run: |
-          set -uo pipefail
-          for i in $(seq 1 80); do
-            if python3 .github/scripts/testflight_notes.py number "$SHA" > /tmp/found.txt; then
-              TAG="$(sed -n 's/^TAG=//p' /tmp/found.txt)"
-              if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -q '\.aab$'; then
-                cat /tmp/found.txt | tee -a "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              if gh release view "$TAG" --json body --jq .body | grep -q '^No Play bundle:'; then
-                echo "=============================================================="
-                echo "WHY THIS JOB FAILED: release $TAG has no signed bundle: the play job found no upload-key secrets (#211, P0)."
-                echo "Set them in the play-store environment, then dispatch android-apk.yml on main for a new build."
-                echo "=============================================================="
-                exit 1
-              fi
-              echo "attempt $i: $TAG has no .aab yet; waiting 30s"
-            else
-              echo "attempt $i: no release for ${SHA:0:7} yet; waiting 30s"
-            fi
-            sleep 30
-          done
-          echo "=============================================================="
-          echo "WHY THIS JOB FAILED: no release with a signed .aab for ${SHA:0:7} within 40 minutes (criterion 14)."
-          echo "android-apk.yml publishes it on a green build of main, and its play job attaches the .aab; check that run."
-          echo "=============================================================="
-          exit 1
+          python3 .github/scripts/play_api.py --self-test > /tmp/self-test.txt || {
+            cat /tmp/self-test.txt; echo "WHY THIS JOB FAILED: play_api.py failed its own self-test"; exit 1; }
+          python3 .github/scripts/play_api.py wait-release "$SHA" --output "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # The closed track. In google-play: Rob approves every run.
@@ -274,11 +251,8 @@ jobs:
           python3 .github/scripts/play_bundle.py signer "$AAB" > /tmp/signer.txt 2>&1 || fail=1
           grep -v JAVA_TOOL_OPTIONS /tmp/signer.txt
           SIGNED="$(sed -n 's/^FINGERPRINT=//p' /tmp/signer.txt)"
-          PAGE="$(gh release view "$TAG" --json body --jq .body | grep -oE '^([0-9A-F]{2}:){31}[0-9A-F]{2}$' | head -1)"
-          if [ -z "$SIGNED" ] || [ "$SIGNED" != "$PAGE" ]; then
-            echo "the signer ($SIGNED) is not the upload key the play job named on $TAG (${PAGE:-none})"
-            fail=1
-          fi
+          gh release view "$TAG" --json body --jq .body > /tmp/release-body.md || fail=1
+          python3 .github/scripts/play_api.py fingerprint-check "$SIGNED" /tmp/release-body.md || fail=1
           if [ "$fail" != 0 ]; then
             echo "=============================================================="
             echo "WHY THIS JOB FAILED: $TAG's .aab is not this build of Heart FC Coach, distribution:app, signed by the upload key (lines above)."

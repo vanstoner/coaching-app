@@ -38,6 +38,14 @@ release already carries on the closed track, with en-GB release notes.
         P7: no analytics or crash-reporting SDK is a dependency, so the Data
         safety form's "no data collected" stays true.
 
+    play_api.py wait-release SHA [--output FILE] [--attempts N] [--interval S]
+        Waits (bounded: 80 x 30 s) for SHA's main release to carry its signed
+        .aab; writes BUILD= and TAG= to FILE. Refuses at once if the release
+        says the play job had no upload-key secrets (P0). Needs `gh`.
+
+    play_api.py fingerprint-check FINGERPRINT RELEASE_BODY_FILE
+        The bundle's signer is the upload key the play job named on the page.
+
     play_api.py key-check
         PLAY_SERVICE_ACCOUNT_JSON is a service-account key: names what is
         wrong, never a value.
@@ -269,8 +277,9 @@ class Play:
     check mode and a dry run) allows opening an edit, reading, and deleting
     the edit it opened; nothing else is ever sent (P1, criterion 9)."""
 
-    def __init__(self, package, read_only=True, production=False, transport=https, token=None):
+    def __init__(self, package, read_only=True, production=False, transport=https, token=None, track=None):
         self.package, self.read_only, self.production = package, read_only, production
+        self.closed_track = track   # the one closed track this run may write (PLAY_TRACK)
         self.transport = transport
         self.token = token
         self.edit = None
@@ -320,8 +329,12 @@ class Play:
         m = re.fullmatch(re.escape(own or "\0") + r"/tracks/([^/]+)", path)
         if method == "PUT" and m:
             track = urllib.parse.unquote(m.group(1))
-            if track == PRODUCTION and not self.production:
-                raise ForbiddenWrite("refused to write the production track: PLAY_PRODUCTION is off")
+            if track == PRODUCTION:
+                if not self.production:
+                    raise ForbiddenWrite("refused to write the production track: PLAY_PRODUCTION is off")
+            elif not (is_closed(track) and track == self.closed_track):
+                raise ForbiddenWrite(f"refused to write track {track}: the only track this run may write is "
+                                     f"the closed track {self.closed_track or '(none named)'}")
             releases = (body or {}).get("releases", [])
             if (body or {}).get("track") != track or len(releases) != 1:
                 raise ForbiddenWrite(f"refused a track update that is not exactly one release on {track}")
@@ -549,8 +562,15 @@ def check(play, out=print):
 # release (criteria 1, 3, 4, 9, 11, 12, 13, 14)
 # ---------------------------------------------------------------------------
 
+def invalidated(err):
+    """Play threw our edit away (a console edit at the same time, or expiry)."""
+    return bool(EDIT_GONE.search(err.message)) or err.status == 409
+
+
 def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
-    """One edit, opened here. Returns ('done' | 'planned' | 'committed', track release body)."""
+    """One edit, opened here. Returns ('done' | 'planned' | 'committed', track release body).
+    Raises EditInvalid when Play threw the edit away at the upload, the track
+    or the commit (criterion 14: the caller retries once with a new edit)."""
     play.open_edit()
     lang = play.details().get("defaultLanguage", "?")
     if lang != LOCALE:
@@ -582,30 +602,40 @@ def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
     if dry_run:
         play.discard()
         return "planned", body
-    if bv == "upload":
+    for step, send in (("upload the bundle", (lambda: play.upload(data)) if bv == "upload" else None),
+                       ("set the track", lambda: play.set_track(track, body)),
+                       ("commit", play.commit)):
+        if send is None:
+            continue
         try:
-            got = play.upload(data)
+            got = send()
         except PlayError as err:
-            raise Refused("upload the bundle", *explain(err, "upload the bundle")) from None
-        if got.get("versionCode") != build or got.get("sha256", sha).lower() != sha.lower():
-            raise Refused("upload the bundle", f"Play read the upload as version code {got.get('versionCode')}, "
-                          f"not {build}", "the release's .aab is not build N: re-run android-apk.yml on main")
-        out(f"uploaded: version code {build}")
-    try:
-        play.set_track(track, body)
-    except PlayError as err:
-        raise Refused("set the track", *explain(err, "set the track", track)) from None
-    try:
-        play.commit()
-    except PlayError as err:
-        if EDIT_GONE.search(err.message) or err.status == 409:
-            raise EditInvalid(err.message) from None
-        raise Refused("commit", *explain(err, "commit", track)) from None
+            if invalidated(err):
+                raise EditInvalid(f"at '{step}': {err.message}") from None
+            raise Refused(step, *explain(err, step, track)) from None
+        if step == "upload the bundle":
+            if got.get("versionCode") != build or got.get("sha256", sha).lower() != sha.lower():
+                raise Refused(step, f"Play read the upload as version code {got.get('versionCode')}, not {build}",
+                              "the release's .aab is not build N: re-run android-apk.yml on main")
+            out(f"uploaded: version code {build}")
     return "committed", body
 
 
 class EditInvalid(Exception):
     pass
+
+
+def with_retry(play, out, fn):
+    """fn() once more with a new edit if Play threw the first one away (criterion 14)."""
+    for attempt in (1, 2):
+        try:
+            return fn()
+        except EditInvalid as ex:
+            play.edit = None
+            if attempt == 2:
+                raise Refused("edit", f"the edit was invalidated twice by a change in Play Console ({ex})",
+                              "wait until nobody is editing in Play Console, then re-run") from None
+            out(f"the edit was invalidated ({ex}); retrying once with a new edit")
 
 
 def read_back(play, track, build, body, out):
@@ -627,15 +657,22 @@ def read_back(play, track, build, body, out):
                       "re-run; it rewrites a release that differs")
 
 
+def is_closed(track):
+    """A closed track id: not Google's internal, open or production, and no form factor (wear:, tv:, ...)."""
+    return bool(track) and track not in (INTERNAL, OPEN, PRODUCTION) and ":" not in track
+
+
 def release(play, version, build, aab, notes, track, production=False, dry_run=False, out=print):
-    """Returns (code, summary line)."""
+    """Returns (code, summary line). Once the closed track is committed, every
+    later refusal says the build IS on it (QA-1): only a refusal before that
+    commit says Play Console is unchanged."""
     build = int(build)
     errors, _ = notes_problems(notes, require=True)
     if errors:
         why_block("check the notes", "; ".join(errors), "nothing sent",
                   "edit store/app-store/en-GB/whats_new.txt (D3: one file for both stores)")
         return 1, "Not sent to Google Play: the release notes (WHY THIS JOB FAILED)."
-    if track in (PRODUCTION, "", None) or track in (INTERNAL, OPEN):
+    if not is_closed(track):
         why_block("choose the track", f"'{track}' is not a closed track", "nothing sent",
                   "set PLAY_TRACK in google-play.yml to the closed track the check mode lists")
         return 1, "Not sent to Google Play: no closed track named (WHY THIS JOB FAILED)."
@@ -643,58 +680,119 @@ def release(play, version, build, aab, notes, track, production=False, dry_run=F
         data = fh.read()
     sha = hashlib.sha256(data).hexdigest()
     head = f"Heart FC Coach {version} (build {build})"
-    got_to = "nothing sent"
+    on_track = False          # True once build N is known to be on the closed track
+    stage = "nothing sent"
+
+    def refused(step, why, fix):
+        play.discard()
+        got_to = f"{head} is on {track}; then '{step}'" if on_track else stage
+        why_block(step, why, got_to, fix)
+        if on_track:
+            return 1, f"{head} is on {track}, but a later step refused (WHY THIS JOB FAILED)."
+        if stage == "nothing sent":
+            out("Play Console is unchanged: the edit was discarded, never committed.")
+        return 1, f"{head}: not on {track} (WHY THIS JOB FAILED)."
+
     try:
-        for attempt in (1, 2):
-            try:
-                state, body = plan_edit(play, version, build, data, sha, notes, track, dry_run, out)
-                break
-            except EditInvalid as ex:
-                play.edit = None
-                if attempt == 2:
-                    raise Refused("commit", f"the edit was invalidated twice by a change in Play Console ({ex})",
-                                  "wait until nobody is editing in Play Console, then re-run") from None
-                out(f"the edit was invalidated ({ex}); retrying once with a new edit")
+        state, body = with_retry(play, out, lambda: plan_edit(play, version, build, data, sha, notes, track,
+                                                               dry_run, out))
         if state == "done":
+            on_track = True
             out(f"{head} already on {track}; nothing to do")
             line = f"{head} already on {track}; nothing to do."
         elif state == "planned":
             line = f"Dry run: {head} would go on {track}; nothing was written."
         else:
-            got_to = f"committed to {track}"
+            on_track = True
             read_back(play, track, build, body, out)
-            line = (f"{head} is on the {track} closed track; Google's review then makes it available to testers.")
+            line = f"{head} is on the {track} closed track; Google's review then makes it available to testers."
         if production:
+            stage = "production"
             line += " " + to_production(play, version, build, data, sha, notes, dry_run, out)
         return 0, line
     except Refused as r:
-        play.discard()
-        why_block(r.step, r.why, got_to, r.fix)
-        if got_to == "nothing sent":
-            out("Play Console is unchanged: the edit was discarded, never committed.")
-        return 1, f"{head}: not on {track} (WHY THIS JOB FAILED)." if got_to == "nothing sent" else \
-            f"{head} is on {track}, but a later step refused (WHY THIS JOB FAILED)."
+        return refused(r.step, r.why, r.fix)
     except PlayError as err:
-        play.discard()
-        why, fix = explain(err, "read", track)
-        why_block("read", why, got_to, fix)
-        return 1, f"{head}: not on {track} (WHY THIS JOB FAILED)."
+        why, fix = explain(err, "production" if stage == "production" else "read",
+                           PRODUCTION if stage == "production" else track)
+        return refused("production" if stage == "production" else "read", why, fix)
     except ForbiddenWrite as ex:
-        play.discard()
-        why_block("the client's guard", f"{ex} (stopped before it was sent)", got_to,
-                  "a bug in play_api.py: this run must never send that; report it on #232")
-        return 1, f"{head}: not on {track} (WHY THIS JOB FAILED)."
+        return refused("the client's guard", f"{ex} (stopped before it was sent)",
+                       "a bug in play_api.py: this run must never send that; report it on #232")
+    except (urllib.error.URLError, OSError) as ex:
+        return refused("network", f"Google Play could not be reached ({scrub(ex)})", "re-run; nothing is duplicated")
 
 
 def to_production(play, version, build, data, sha, notes, dry_run, out):
-    """Criterion 12: a second edit, after the closed track is committed."""
-    state, body = plan_edit(play, version, build, data, sha, notes, PRODUCTION, dry_run, out)
+    """Criterion 12: a second edit, after the closed track is committed. Any
+    refusal here is production's, and the closed track release stands."""
+    def attempt():
+        try:
+            return plan_edit(play, version, build, data, sha, notes, PRODUCTION, dry_run, out)
+        except PlayError as err:
+            if invalidated(err):
+                raise EditInvalid(err.message) from None
+            why, fix = explain(err, "production", PRODUCTION)
+            raise Refused("production", why, fix) from None
+    state, body = with_retry(play, out, attempt)
     if state == "done":
         return "Already on production."
     if state == "planned":
         return "Production: would be sent too."
     read_back(play, PRODUCTION, build, body, out)
     return "Also sent to production; Google's review then publishes it."
+
+
+# ---------------------------------------------------------------------------
+# The release and its bundle (criterion 3; QA-3: the workflow's checks, tested here)
+# ---------------------------------------------------------------------------
+
+FINGERPRINT = re.compile(r"^((?:[0-9A-F]{2}:){31}[0-9A-F]{2})$", re.M)
+
+
+def fingerprint_problems(signed, body):
+    """The bundle's signer must be the upload key the play job named on the release page."""
+    page = FINGERPRINT.findall(body or "")
+    if not signed:
+        return ["the bundle's signer could not be read (play_bundle.py signer)"]
+    if not page:
+        return ["the release page names no upload-key fingerprint (the play job did not sign this bundle)"]
+    if signed != page[0]:
+        return [f"the bundle is signed by {signed}, not the upload key the play job named on the release ({page[0]})"]
+    return []
+
+
+def wait_release(sha, repo, fetch, sleep=time.sleep, attempts=80, interval=30, out=print):
+    """(0, {'BUILD', 'TAG'}) once SHA's main release carries a signed .aab, or
+    (1, None) with WHY THIS JOB FAILED: no bundle will come (P0), or timed out."""
+    from release_notes import main_release_at  # noqa: E402 — only this command needs it
+    for i in range(1, attempts + 1):
+        try:
+            found = main_release_at(sha, repo, fetch)
+        except Exception as ex:  # noqa: BLE001 — a lookup failure is "not yet"
+            out(f"release lookup failed: {scrub(ex)}")
+            found = None
+        if found:
+            n, url = found
+            tag = url.rsplit("/", 1)[-1]
+            rel = fetch(f"repos/{repo}/releases/tags/{tag}")
+            if any(a.get("name", "").endswith(".aab") for a in rel.get("assets", [])):
+                out(f"{tag}: build {n}, with its signed .aab")
+                return 0, {"BUILD": str(n), "TAG": tag}
+            if re.search(r"^No Play bundle:", rel.get("body") or "", re.M):
+                why_block("wait for the release", f"{tag} has no signed bundle: the play job found no upload-key "
+                          "secrets (#211, P0)", "nothing sent",
+                          "set them in the play-store environment, then dispatch android-apk.yml on main")
+                return 1, None
+            out(f"attempt {i}: {tag} has no .aab yet; waiting {interval}s")
+        else:
+            out(f"attempt {i}: no release for {sha[:7]} yet; waiting {interval}s")
+        if i < attempts:
+            sleep(interval)
+    why_block("wait for the release", f"no release with a signed .aab for {sha[:7]} within "
+              f"{attempts * interval // 60} minutes (criterion 14)", "nothing sent",
+              "android-apk.yml publishes it on a green build of main and its play job attaches the .aab; check that run")
+    return 1, None
 
 
 # ---------------------------------------------------------------------------
@@ -727,8 +825,8 @@ def summarise(path, line):
             fh.write(line + "\n")
 
 
-def connect(package, read_only, production=False, factory=None):
-    play = (factory or Play)(package, read_only=read_only, production=production)
+def connect(package, read_only, production=False, factory=None, track=None):
+    play = (factory or Play)(package, read_only=read_only, production=production, track=track)
     try:
         play.authenticate()
     except Refused as r:
@@ -764,7 +862,8 @@ def main(argv, factory=None):
         dry = bool(o["--dry-run"])
         with open(notes_file, encoding="utf-8") as fh:
             notes = fh.read().strip()
-        play = connect(package, read_only=dry, production=production and not dry, factory=factory)
+        play = connect(package, read_only=dry, production=production and not dry, factory=factory,
+                       track=o["--track"] or None)
         if not play:
             summarise(o["--summary"], f"Heart FC Coach {version} (build {build}): not sent (WHY THIS JOB FAILED).")
             return 1
@@ -792,6 +891,27 @@ def main(argv, factory=None):
             print("P7: no analytics or crash-reporting SDK in package-lock.json; Data safety's "
                   "'no data collected' stays true")
         return 1 if found else 0
+    if cmd == "wait-release":
+        pos, o = options(rest, ("--output", "--attempts", "--interval"))
+        if len(pos) != 1:
+            print(__doc__)
+            return 2
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from release_notes import gh_json  # noqa: E402
+        code, found = wait_release(pos[0], os.environ.get("GITHUB_REPOSITORY", ""), gh_json,
+                                   attempts=int(o["--attempts"] or 80), interval=int(o["--interval"] or 30))
+        if found and o["--output"]:
+            with open(o["--output"], "a", encoding="utf-8") as fh:
+                fh.write("".join(f"{k}={v}\n" for k, v in found.items()))
+        return code
+    if cmd == "fingerprint-check" and len(rest) == 2:
+        with open(rest[1], encoding="utf-8") as fh:
+            found = fingerprint_problems(rest[0].strip(), fh.read())
+        for f in found:
+            print(f"PROBLEM: {f}")
+        if not found:
+            print(f"signer {rest[0]} is the upload key named on the release")
+        return 1 if found else 0
     if cmd == "key-check" and not rest:
         problems = key_problems(os.environ.get("PLAY_SERVICE_ACCOUNT_JSON", ""))
         for p in problems:
@@ -814,13 +934,16 @@ class FakePlay:
     """Play's API in memory, enough for every path here. Edits are copies;
     commit applies them. A request the guard lets through lands here."""
 
-    def __init__(self, tracks=None, bundles=None, lang=LOCALE, errors=None, invalidate=0):
+    def __init__(self, tracks=None, bundles=None, lang=LOCALE, errors=None, invalidate=0,
+                 invalidate_put=0, invalidate_upload=0):
         self.tracks = tracks if tracks is not None else {
             INTERNAL: [{"name": "1.3.0 (build 238)", "versionCodes": ["238"], "status": "completed"}],
             DEFAULT_CLOSED: [], "Coaches": [], OPEN: [], PRODUCTION: []}
         self.bundles = bundles if bundles is not None else [{"versionCode": 238, "sha256": "a" * 64}]
         self.lang = lang
-        self.errors = errors or {}     # (method, suffix) -> (status, body)
+        self.errors = errors or {}     # (method, suffix) -> (status, body[, matching calls let through first])
+        self.seen = {}
+        self.invalidate_put, self.invalidate_upload = invalidate_put, invalidate_upload
         self.invalidate = invalidate   # commits to refuse as "edit deleted"
         self.edits = {}
         self.n = 0
@@ -829,9 +952,12 @@ class FakePlay:
     def __call__(self, method, url, headers, data):
         path = url.split("?")[0]
         self.log.append((method, path))
-        for (m, suffix), (status, body) in self.errors.items():
+        for (m, suffix), spec in self.errors.items():
             if m == method and path.endswith(suffix):
-                return status, json.dumps(body).encode() if isinstance(body, dict) else body.encode()
+                status, body, skip = (*spec, 0)[:3]
+                n = self.seen[(m, suffix)] = self.seen.get((m, suffix), 0) + 1
+                if n > skip:
+                    return status, json.dumps(body).encode() if isinstance(body, dict) else body.encode()
         if path.endswith("/token"):
             return 200, b'{"access_token": "ya29.fake", "expires_in": 3599}'
         m = re.search(r"/edits(?:/([^/:]+))?(:commit|/details|/tracks(?:/([^/]+))?|/bundles)?$", path)
@@ -857,6 +983,15 @@ class FakePlay:
             return 200, json.dumps({"track": tname, "releases": ed["tracks"][tname]}).encode()
         if method == "GET" and tail == "/bundles":
             return 200, json.dumps({"bundles": ed["bundles"]}).encode()
+        gone = b'{"error": {"code": 400, "message": "This Edit has been deleted."}}'
+        if method == "POST" and tail == "/bundles" and self.invalidate_upload:
+            self.invalidate_upload -= 1
+            del self.edits[edit]
+            return 400, gone
+        if method == "PUT" and tname and self.invalidate_put:
+            self.invalidate_put -= 1
+            del self.edits[edit]
+            return 400, gone
         if method == "POST" and tail == "/bundles":
             code = int(re.search(rb"versionCode=(\d+)", data).group(1))
             ed["bundles"].append({"versionCode": code, "sha256": hashlib.sha256(data).hexdigest()})
@@ -900,14 +1035,14 @@ def self_test():
         fh.write(b"PK fake bundle versionCode=310")
     SHA = hashlib.sha256(open(aab, "rb").read()).hexdigest()
 
-    def client(fake, read_only=False, production=False):
-        p = Play(PKG, read_only=read_only, production=production, transport=fake)
+    def client(fake, read_only=False, production=False, track="Coaches"):
+        p = Play(PKG, read_only=read_only, production=production, transport=fake, track=track)
         p.authenticate(sa, now=1_700_000_000, sign=fake_sign)
         return p
 
     def run(fake, dry=False, track="Coaches", production=False, notes=NOTES):
         lines = []
-        p = client(fake, read_only=dry, production=production and not dry)
+        p = client(fake, read_only=dry, production=production and not dry, track=track)
         code, line = release(p, "2.2.0", 310, aab, notes, track, production, dry, out=lines.append)
         return code, line, lines, p
 
@@ -1130,6 +1265,100 @@ def self_test():
                            "Coaches": [{"name": "x", "status": "completed", "versionCodes": ["400"]}]}),
           "go backwards")
     fails("the production track is never PLAY_TRACK", FakePlay(), "not a closed track", track=PRODUCTION)
+    # QA-1: once the closed track is committed, a later refusal says the build IS there.
+    on = "is on Coaches, but a later step refused"
+    for name, fake, prod in (
+            ("production on, closed already done, production refused",
+             FakePlay(tracks={INTERNAL: [{"status": "completed", "versionCodes": ["238"]}],
+                              "Coaches": [release_body("2.2.0", 310, NOTES)], PRODUCTION: []},
+                      bundles=[{"versionCode": 310, "sha256": SHA}],
+                      errors={("PUT", "/tracks/production"): err(403, "Production access is not granted.")}), True),
+            ("the read-back fails after the commit",
+             FakePlay(errors={("GET", "/tracks/Coaches"): err(500, "Internal error")}), False),
+            ("the production edit cannot be opened (403)",
+             FakePlay(errors={("POST", "/edits"): (*err(403, "The caller does not have permission"), 2)}), True)):
+        s = io.StringIO()
+        with contextlib.redirect_stdout(s):
+            code, line, lines, p = run(fake, production=prod)
+        printed = s.getvalue() + "\n".join(lines)
+        ok = (code == 1 and on in line and "not on Coaches" not in line and "Play Console is unchanged" not in printed
+              and "WHY THIS JOB FAILED" in printed and fake.tracks["Coaches"] == [release_body("2.2.0", 310, NOTES)])
+        if "production" in name:
+            ok = ok and "production refused" in printed and "View app information" not in printed
+        expect(f"QA-1 {name}: reported as on Coaches, with the right reason", ok)
+        if not ok:
+            print(line, printed, sep="\n")
+
+    # QA-2: the guard writes only the named closed track (and production only when on).
+    w = client(FakePlay(tracks={INTERNAL: [], "Coaches": [], "alpha": [], OPEN: [], PRODUCTION: [],
+                                "wear:production": [], "wear:Coaches": []}))
+    w.open_edit()
+    for t in ("wear:production", "wear:Coaches", INTERNAL, OPEN, "alpha", PRODUCTION):
+        expect(f"QA-2 the guard refuses track {t} (PLAY_TRACK Coaches, PLAY_PRODUCTION off)",
+               refused(lambda t=t: w.set_track(t, release_body("1", 1, "n"))))
+    expect("QA-2 the guard allows the named closed track",
+           not refused(lambda: w.set_track("Coaches", release_body("1", 1, "n"))))
+    w.discard()
+    fails("QA-2 release() refuses a form-factor production track as PLAY_TRACK", FakePlay(), "not a closed track",
+          track="wear:production")
+
+    # QA-6: an edit thrown away at the upload or the track is retried once too.
+    for name, fake in (("upload", FakePlay(invalidate_upload=1)), ("track", FakePlay(invalidate_put=1))):
+        s = io.StringIO()
+        with contextlib.redirect_stdout(s):
+            code, line, lines, p = run(fake)
+        expect(f"QA-6 an edit invalidated at the {name} is retried once, and succeeds",
+               code == 0 and any("retrying once" in x for x in lines)
+               and fake.tracks["Coaches"] == [release_body("2.2.0", 310, NOTES)])
+    fails("QA-6 invalidated at the track twice: refused after one retry", FakePlay(invalidate_put=2),
+          "invalidated twice")
+
+    # QA-3: the release wait and the fingerprint comparison, healthy first.
+    REPO = "vanstoner/coaching-app"
+    FP = ":".join(["AA"] * 32)
+
+    def releases(states):
+        """fetch() over a sequence of release states: None (no release), 'bare', 'aab', 'absent'."""
+        calls = {"list": 0}
+
+        def fetch(path):
+            st = states[min(calls["list"] - (0 if path.endswith("per_page=30") else 1), len(states) - 1)]
+            if path.endswith("per_page=30"):
+                calls["list"] += 1
+                if st is None:
+                    return []
+                return [{"tag_name": "v2.2.0-build.310", "target_commitish": "abc1234" * 5 + "abcde",
+                         "html_url": "https://github.com/x/y/releases/tag/v2.2.0-build.310"}]
+            assets = [{"name": "coaching-app_2.2.0_abc1234.apk"}]
+            if st == "aab":
+                assets.append({"name": "coaching-app_2.2.0_abc1234.aab"})
+            body = "## Google Play\n\nNo Play bundle: secrets not set." if st == "absent" else f"```\n{FP}\n```"
+            return {"assets": assets, "body": body}
+        return fetch
+
+    sha40 = "abc1234" * 5 + "abcde"
+    sleeps = []
+    lines = []
+    code, found = wait_release(sha40, REPO, releases([None, "bare", "aab"]), sleep=sleeps.append, out=lines.append)
+    expect("wait-release: healthy, the .aab appears on the third look: BUILD 310, TAG v2.2.0-build.310",
+           code == 0 and found == {"BUILD": "310", "TAG": "v2.2.0-build.310"} and len(sleeps) == 2)
+    s = io.StringIO()
+    with contextlib.redirect_stdout(s):
+        code, found = wait_release(sha40, REPO, releases(["bare"]), sleep=sleeps.append, attempts=4, interval=30,
+                                   out=lines.append)
+    expect("wait-release: no .aab within the bound: refused, WHY THIS JOB FAILED, 'within 2 minutes'",
+           code == 1 and "WHY THIS JOB FAILED" in s.getvalue() and "within 2 minutes" in s.getvalue())
+    s = io.StringIO()
+    with contextlib.redirect_stdout(s):
+        code, found = wait_release(sha40, REPO, releases(["absent"]), sleep=sleeps.append, out=lines.append)
+    expect("wait-release: 'No Play bundle' on the page: refused at once (P0), no waiting",
+           code == 1 and "P0" in s.getvalue() and "WHY THIS JOB FAILED" in s.getvalue())
+    expect("fingerprint: the signer named on the page passes", fingerprint_problems(FP, f"```\n{FP}\n```") == [])
+    expect("fingerprint: a different signer is refused",
+           fingerprint_problems(":".join(["BB"] * 32), f"```\n{FP}\n```") != [])
+    expect("fingerprint: no fingerprint on the page is refused", fingerprint_problems(FP, "No Play bundle: x") != [])
+    expect("fingerprint: an unreadable signer is refused", fingerprint_problems("", f"{FP}") != [])
+
     # check: the stop conditions
     for name, fake, word in (("no bundle", FakePlay(bundles=[]), "no bundle"),
                              ("draft app", FakePlay(tracks={INTERNAL: [], "alpha": []}), "draft"),

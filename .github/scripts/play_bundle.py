@@ -34,7 +34,9 @@ Passwords reach jarsigner and keytool through environment variables
 """
 
 import base64
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -293,7 +295,9 @@ def self_test():
         # Signing, with throwaway keys made here, exactly as Rob's steps make
         # his: PKCS12 from keytool, base64 of the file, three secrets.
         upload = os.path.join(d, "upload.keystore")
-        make_keystore(upload, "upload", "right-pass", "CN=Heart FC Coach upload, O=Self-test")
+        # #232 QA-5: a made-up person and town, never Rob's, so the test
+        # below can prove a certificate's owner never reaches a log.
+        make_keystore(upload, "upload", "right-pass", "CN=Pat Example, L=Madeup Town, O=Self-test")
         debug = os.path.join(d, "debug.keystore")
         make_keystore(debug, "androiddebugkey", "android", "CN=Android Debug, O=Android, C=US")
         os.environ["DEBUG_PASS"] = "android"
@@ -311,6 +315,14 @@ def self_test():
             problems, fingerprint = sign_with_secrets(debug_signed, out)
             check("healthy: the secrets sign a debug-signed bundle afresh, and it verifies",
                   problems == [] and fingerprint is not None)
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                verify(out)
+                main(["play_bundle.py", "signer", out])
+            shown = shown.getvalue()
+            check("never prints the certificate's owner (criterion 15): no name, no town, fingerprint only",
+                  "Pat Example" not in shown and "Madeup" not in shown and "Owner" not in shown
+                  and f"FINGERPRINT={fingerprint}" in shown)
             check("healthy: the signed bundle keeps every file but the old signature",
                   {i for i in zipfile.ZipFile(aab).namelist()} <=
                   set(zipfile.ZipFile(out).namelist()))

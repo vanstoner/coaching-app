@@ -74,7 +74,9 @@ bundle reused if Play holds it, `<version> (build N)` on `PLAY_TRACK` as
 `completed` with `whats_new.txt` as notes (at most 500 characters, D3;
 `ci.yml` fails a bump over that), one commit, read back. `PLAY_PRODUCTION`
 (`'off'`) adds production in a second edit. The client's `guard()` refuses
-every write #232 does not name before it is sent; read-only (`-f check=true`,
+every write #232 does not name before it is sent, and any track but
+`PLAY_TRACK` (production only when `PLAY_PRODUCTION` is on); a refusal after
+the closed-track commit reports the build as on that track; read-only (`-f check=true`,
 `-f dry_run=true`) allows opening, reading and deleting its own edit only.
 Token: an RS256 JWT signed with `openssl`, no pip. `-f play_for=SHA` is the
 recovery. `PLAY_TRACK` is empty until the check names the closed track. The
