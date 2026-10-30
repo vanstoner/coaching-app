@@ -41,3 +41,4 @@ backups/
 
 # Output of `npm run bundle:check` — the Metro resolution gate.
 .expo-bundle-check/
+.claude/worktrees/
