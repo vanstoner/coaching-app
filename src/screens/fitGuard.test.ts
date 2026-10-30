@@ -41,6 +41,10 @@ describe('the name warning: Keep is the quieter third button (#54 AC2, D13)', ()
   it('quiet is a colour only, never a weight or a size (theme.ts rule)', () => {
     expect(src('controls/Rows.tsx')).toMatch(/actionQuiet: \{ color: colours\.back \},/);
   });
+
+  it('an action that is off is faded, so it never looks like the quiet one (D17)', () => {
+    expect(src('controls/Rows.tsx')).toMatch(/actionDisabled: \{ opacity: 0\.4 \},/);
+  });
 });
 
 describe('the referee placeholder (#254 AC5, D15)', () => {

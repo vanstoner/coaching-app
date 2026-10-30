@@ -259,7 +259,10 @@ export const rows = StyleSheet.create({
   alignRight: { alignSelf: 'flex-end' },
   actionText: { color: colours.action, fontSize: 16, fontWeight: '600', includeFontPadding: false },
   actionQuiet: { color: colours.back },
-  actionDisabled: { color: colours.inkFaint },
+  // Off is the action colour faded, not a grey: once inkFaint was lifted for
+  // contrast it sat 1.03:1 from the quiet `back` colour, so Keep looked off
+  // (QA D17 on #260). Disabled text is exempt from the 4.5:1 rule.
+  actionDisabled: { opacity: 0.4 },
   actionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

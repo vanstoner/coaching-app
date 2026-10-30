@@ -28,6 +28,7 @@ const files = [
   'src/app/matchAwards.ts',
   'src/app/childSeason.ts',
   'src/app/planImage.ts',
+  'src/app/recordOnly.ts',
 ];
 
 /** A `.firstName` read that does not also build the full name from `displaySuffix`. */

@@ -214,7 +214,8 @@ export function longestOnAt(period: PlannedPeriod, swapIndex: number, atMs: numb
   for (const [positionId, who] of Object.entries(period.slots)) if (who !== null) holder.set(positionId as UUID, { who, since: 0 });
   const earlier = period.subs
     .map((swap, i) => ({ swap, i }))
-    .filter(({ swap, i }) => i !== swapIndex && (swap.atMs < atMs || (swap.atMs === atMs && i < swapIndex)))
+    // A new sub (swapIndex -1) comes after every sub already planned at its time (QA D16).
+    .filter(({ swap, i }) => i !== swapIndex && (swap.atMs < atMs || (swap.atMs === atMs && (swapIndex < 0 || i < swapIndex))))
     .sort((a, b) => a.swap.atMs - b.swap.atMs || a.i - b.i);
   for (const { swap } of earlier) {
     if (swap.onId === null || swap.offId === null) continue;

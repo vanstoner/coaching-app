@@ -250,7 +250,7 @@ export function namedSlots(
   players: Player[]
 ): NamedSlot[] {
   const sheet = teamSheetFor(onPitch, goalkeeper, format);
-  const nameOf = new Map(players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   return [...format.positions]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((position) => {

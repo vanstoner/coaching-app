@@ -205,6 +205,15 @@ describe('"Whoever is on longest" on the Plan (#264 V20; QA on #260, D12)', () =
     expect(longestOnAt(first, -1, 10 * MIN, format)).not.toBe(ids.ada);
   });
 
+  it('a new sub at the same time as one already planned comes after it (QA D16)', () => {
+    const { format, plan, ids } = adasExample();
+    // Every new sub starts at the midpoint, so two at one time is the usual case.
+    const one = { ...plan.periods[0], subs: [{ onId: ids.flo, offId: ids.bo, atMs: 10 * MIN }] };
+    expect(longestOnAt(one, -1, 10 * MIN, format)).toBe(ids.cy);
+    // Editing that first sub still leaves itself out.
+    expect(longestOnAt(one, 0, 10 * MIN, format)).toBe(ids.bo);
+  });
+
   it('nobody outfield on: null, so Save stays off', () => {
     const { format, ids } = adasExample();
     const keeperOnly = { slots: { [format.positions.find((p) => p.kind === 'goalkeeper')!.id]: ids.ada }, subs: [] };

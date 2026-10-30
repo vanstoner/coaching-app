@@ -29,6 +29,7 @@ import {
   type Result,
   type Structure,
 } from './matchRecord';
+import { displayName } from './squad';
 import { matchTalliesWithGoals, type TallyLine } from './tallies';
 
 export interface RecordOnlyMatch {
@@ -143,7 +144,7 @@ export interface RecordMatchPage {
 export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMatchPage | null {
   const m = ledger?.matches.find((x) => x.id === matchId);
   if (!ledger || !m) return null;
-  const nameOf = new Map(ledger.players.map((p) => [p.id, p.firstName]));
+  const nameOf = new Map(ledger.players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID | null) => (id ? (nameOf.get(id) ?? 'Unknown') : 'Unknown');
   const at = new Map(ledger.players.map((p, i) => [p.id, i]));
   const squadAt = (id: UUID) => at.get(id) ?? ledger.players.length;
