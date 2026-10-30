@@ -56,6 +56,7 @@ import { makePlayer, squadReadiness } from './squad';
 import {
   TEAM_FORMATS,
   formatForAge,
+  newSeasonShape,
   seasonStartShape,
   sideForAge,
   startingDefaults,
@@ -472,5 +473,17 @@ describe('M55. fairness stays total time on the pitch', () => {
     for (const f of readdirSync(engineDir).filter((x) => x.endsWith('.ts'))) {
       expect(readFileSync(join(engineDir, f), 'utf-8'), f).not.toMatch(/from ['"](react|expo)/);
     }
+  });
+});
+
+describe('E23: Start a new season opens on the moved-up age’s format (QA Q1 on #269)', () => {
+  it('a U10 7-a-side season opens the new season at U11 with 9-a-side suggested', () => {
+    expect(newSeasonShape('2-3-1', 7, 'U10', 'U11')).toBe('3-3-2');
+    expect(newSeasonShape('2-3-1', 7, 'U12', 'U13')).toBe('4-4-2');
+    // Same age as last season, or none set: no nudge.
+    expect(newSeasonShape('2-3-1', 7, 'U18', 'U18')).toBe('2-3-1');
+    expect(newSeasonShape('3-3-2', 9, null, 'U10')).toBe('3-3-2');
+    // A shape already the new age's size is kept.
+    expect(newSeasonShape('3-2-3', 9, 'U11', 'U12')).toBe('3-2-3');
   });
 });

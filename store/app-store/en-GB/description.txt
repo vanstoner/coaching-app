@@ -1,10 +1,13 @@
 Who comes off next, and is everyone getting a fair share? Heart of the Game: Coach answers both at the touchline, for grassroots and junior football played in quarters or halves.
 
+NEW IN 2.2.0
+• 9- and 11-a-side formations, beside 5- and 7-a-side, and matches of 70 and 80 minutes.
+
 NEW IN 1.3.0
 • Sub alerts: 30 seconds before each planned sub, the clock's prompt rises green, turns amber, then red if you're late, and the phone buzzes once. Tap Done and the sub is made.
 • The plan you share with parents shows every sub's exact time.
 • Results from your goals, awards, and your own tallies on each match.
-• 5-, 7-, 9- and 11-a-side formations, and matches from 40 to 90 minutes.
+• 5-a-side formations and 40-minute matches, beside 7-a-side.
 • Back up the whole app to one file and restore it on a new phone.
 
 PLAN BEFORE KICK-OFF

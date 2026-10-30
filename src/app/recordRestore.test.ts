@@ -390,3 +390,26 @@ describe('a formation this build does not know is refused, one item at a time (#
     }
   });
 });
+
+describe('an empty formation code is refused readably (QA Q3 on #269)', () => {
+  it('names it "unnamed", never "formation ."', () => {
+    const r = formatFromRecord('', []);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.shape).toBe('unnamed');
+    expect(r.reason).not.toMatch(/formation \./);
+    expect(r.reason).toBe('This file names a formation with no code, so it could not be read. Check the file came from Heart FC Coach.');
+    const said = unknownShapesMessage({ fixtures: ['unnamed'], settings: null })!;
+    expect(said).toBe(
+      '1 planned fixture uses a formation this version does not know (unnamed), so it was not brought back. A formation with no code means the file was changed outside the app.'
+    );
+    expect(said).not.toContain('()');
+  });
+
+  it('through restoreFromRecord, a fixture with "" is counted as unnamed', () => {
+    const p = phone();
+    const ledger: Ledger = { ...p.ledger, fixtures: p.ledger.fixtures.map((f) => (f.id === p.fixtures[0].match.id ? { ...f, shape: '' } : f)) };
+    const r = restoreFromRecord(ledger, uuid(), makeSevenASideFormat(), LATER);
+    expect(r.unknownShapes.fixtures).toEqual(['unnamed']);
+  });
+});

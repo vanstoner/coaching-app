@@ -88,6 +88,22 @@ export function seasonStartShape(ownShape: ShapeCode | null, mainSide: number | 
 }
 
 /**
+ * The format Start a new season opens on (#249 E23, Rob's Q2; QA Q1 on
+ * #269): `seasonStartShape`, then the age nudge when the suggested age group
+ * differs from last season's, because the age moved up a year is itself a
+ * change of age group. A season with no age group set is not nudged.
+ */
+export function newSeasonShape(
+  ownShape: ShapeCode | null,
+  mainSide: number | null,
+  lastAge: string | null,
+  suggestedAge: string
+): ShapeCode {
+  const shape = seasonStartShape(ownShape, mainSide);
+  return lastAge !== null && suggestedAge !== lastAge ? formatForAge(suggestedAge, shape) : shape;
+}
+
+/**
  * What a new team's matches start at (#249 D14–D16, ruling 4a): 9-a-side 60
  * minutes in halves, 11-a-side 70 minutes in halves (every age, Q6). Null for
  * 5- and 7-a-side, which open with today's defaults. The length follows the

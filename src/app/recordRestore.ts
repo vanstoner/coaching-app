@@ -35,9 +35,18 @@ export const PLANS_NOT_RESTORED = 'Plans for upcoming matches are not in a minut
 /** What `formatFromRecord` gives: the format, or why it was refused. */
 export type FormatFromRecord = { ok: true; format: Format } | { ok: false; shape: string; reason: string };
 
+/**
+ * A refused shape as the coach reads it: the code, or "unnamed" for an empty
+ * one (QA Q3 on #269). No build writes "", so only a damaged or hand-edited
+ * file carries it, and updating will not help.
+ */
+const shownShape = (shape: string): string => (shape.trim() === '' ? 'unnamed' : shape);
+
 /** Why a stored shape was refused (ADR-023 D4). */
 export const unknownShapeReason = (shape: string): string =>
-  `This version does not know the formation ${shape}. Update Heart FC Coach, then import again.`;
+  shape.trim() === ''
+    ? 'This file names a formation with no code, so it could not be read. Check the file came from Heart FC Coach.'
+    : `This version does not know the formation ${shape}. Update Heart FC Coach, then import again.`;
 
 /**
  * The shape and names a record gives, as a format. Fresh ids: a format
@@ -50,7 +59,7 @@ export const unknownShapeReason = (shape: string): string =>
 export function formatFromRecord(shape: string | null, labels: readonly string[], fallback?: Format): FormatFromRecord {
   // Every shape this build knows, the 5-, 9- and 11-a-side ones included.
   const code = readShapeCode(shape);
-  if (shape !== null && code === null) return { ok: false, shape, reason: unknownShapeReason(shape) };
+  if (shape !== null && code === null) return { ok: false, shape: shownShape(shape), reason: unknownShapeReason(shape) };
   const base = code ? makeFormat(code) : (fallback ?? formatForShape(DEFAULT_SHAPE, null));
   if (labels.length !== base.positions.length) return { ok: true, format: base };
   return {
@@ -88,7 +97,15 @@ export function unknownShapesMessage(left: UnknownShapes): string | null {
       `The file's Match defaults use a formation this version does not know (${left.settings}), so this phone kept its own.`
     );
   }
-  return parts.length === 0 ? null : `${parts.join(' ')} Update Heart FC Coach, then import again.`;
+  if (parts.length === 0) return null;
+  // The remedy fits the code: a newer version for a code, a check of the
+  // file for one with no code (QA Q3 on #269).
+  const all = [...left.fixtures, ...(left.settings === null ? [] : [left.settings])];
+  const remedies = [
+    ...(all.some((c) => c !== 'unnamed') ? ['Update Heart FC Coach, then import again.'] : []),
+    ...(all.includes('unnamed') ? ['A formation with no code means the file was changed outside the app.'] : []),
+  ];
+  return `${parts.join(' ')} ${remedies.join(' ')}`;
 }
 
 /** A child from the record, with their profile where one was recorded. */
@@ -183,7 +200,7 @@ function rebuildFixtures(
   for (const f of fixtures) {
     const made = fixtureFromRecord(f, players, squadId, defaults, () => now);
     if (made) rebuilt.push(made);
-    else refused.push(f.shape ?? '');
+    else refused.push(shownShape(f.shape ?? ''));
   }
   return { rebuilt, refused };
 }

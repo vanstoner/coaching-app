@@ -124,7 +124,7 @@ import {
   sideCounts,
   playedIn,
 } from './src/app/seasons';
-import { seasonStartShape, startingDefaults } from './src/app/teamRows';
+import { newSeasonShape, startingDefaults } from './src/app/teamRows';
 import type { SeasonSize } from './src/app/shapeList';
 import {
   NewSeasonPrompt,
@@ -2394,7 +2394,8 @@ function TeamApp({
 
     if (effectiveStep === 'seasonStart' && ledger) {
       // AC4: the last season's format, unless the team's default fits it
-      // better; a named fallback, never a place in a list (#249 B9).
+      // better; a named fallback, never a place in a list (#249 B9); then
+      // the age nudge for the age it suggests (E23).
       return (
         <StartSeasonScreen
           from={season}
@@ -2402,7 +2403,13 @@ function TeamApp({
           players={squad.length}
           defaultName={nextSeasonName(season.name) || seasonNameFor(appNow())}
           defaultAge={nextAgeGroup(season.ageGroup) ?? 'U10'}
-          defaultShape={seasonStartShape(shapeOfFormat(format), season.mainSide)}
+          // #249 E23 (QA Q1): the age moved up a year moves the format too.
+          defaultShape={newSeasonShape(
+            shapeOfFormat(format),
+            season.mainSide,
+            season.ageGroup,
+            nextAgeGroup(season.ageGroup) ?? 'U10'
+          )}
           upcoming={upcomingIds.length}
           onStart={startNewSeason}
           onCancel={() => setStep('settings')}
