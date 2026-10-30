@@ -474,3 +474,17 @@ analysis, iOS". Entries are added as each release ships.
   and Team open, each closed one with a summary; the Danger zone is last
   and always closed, and the Backup heading says when this phone last made
   a backup.
+  **Fairness explained (#261 items 1 and 2, #262).** Rob, 29 Oct: *"using
+  terms like "Owed" is a little bit triggering - there at least should be
+  some callable information as to why there's a discrepancy."* One rule now
+  decides a match's fair share, on the report and the Plan alike: the
+  children there, a Main keeper left out, fill-ins in (Rob, 1b). The Plan
+  no longer counts absent children (#262). "Owed" is gone: a child is
+  "6 min under the average" or "9 min over", and the Saturday tile names
+  who is "Next in line for more time". Colour never marks a shortfall.
+  Tapping a child on Fairness or Going into Saturday, or the figures on
+  their page, opens "Why the difference": the sum, match by match, and what
+  was not counted. Settings › Player minutes starts with About the figures,
+  the ten steps behind every figure, and an info tap beside each figure
+  opens its step. The spec holds the same words, and a test keeps them
+  equal.

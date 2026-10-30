@@ -23,6 +23,7 @@
  */
 
 import { NOT_IN_SHARE_TEXT } from '../app/fairShare';
+import { InfoTap } from './FiguresHelp';
 import { AwardCard } from './AwardCard';
 import type { AwardRow } from '../app/matchAwards';
 import { useState, type ReactNode } from 'react';
@@ -289,12 +290,16 @@ export function MatchSummaryScreen({
         )}
 
         <Text style={screen.fieldLabel}>Minutes on the pitch</Text>
-        <Text style={local.lineFaint}>
-          Fair share {formatClock(report.fairShareMs)} each, goal and outfield together.
-          {report.players.some((r) => r.notInShare === 'main-keeper')
-            ? ` ${report.players.filter((r) => r.notInShare === 'main-keeper').map((r) => r.name).join(', ')}: Main keeper, not in the share.`
-            : ''}
-        </Text>
+        <View style={local.shareRow}>
+          <Text style={[local.lineFaint, local.shareText]}>
+            Fair share {formatClock(report.fairShareMs)} each, goal and outfield together.
+            {report.players.some((r) => r.notInShare === 'main-keeper')
+              ? ` ${report.players.filter((r) => r.notInShare === 'main-keeper').map((r) => r.name).join(', ')}: Main keeper, not in the share.`
+              : ''}
+          </Text>
+          {/* #261 AC15: the fair share and vs share. */}
+          <InfoTap figure="matchShare" />
+        </View>
         <View style={local.head}>
           <SortHeading label="Player" column={NAME} {...minutesSort} align="left" style={local.nameHead} />
           <SortHeading label="Total" column="total" {...minutesSort} style={local.figureHead} />
@@ -554,6 +559,8 @@ function NoteSheet({
 }
 
 const local = StyleSheet.create({
+  shareRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  shareText: { flex: 1 },
   line: { alignSelf: 'stretch', color: colours.ink, fontSize: 16, paddingVertical: 3, includeFontPadding: false },
   lineFaint: {
     alignSelf: 'stretch',

@@ -73,6 +73,7 @@ import { AverageBar, chartColours } from './Charts';
 import { ChildScreen } from './ChildScreen';
 import { MoreThanFirstName } from './NameWarning';
 import { FairnessView, PositionsView, SaturdayView, SeasonGridView, SquadTiles } from './SquadViews';
+import { InfoTap } from './FiguresHelp';
 import { MADE_UP_GUARD, emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
 import { NAME, sortSquadList } from '../app/tableSort';
@@ -376,6 +377,7 @@ export function SquadScreen({
                   <View style={local.keyItem}>
                     <View style={local.keyFill} />
                     <Text style={local.keyText}>Minutes a game, out of {wholeMinutes(season.scaleMs)}</Text>
+                    <InfoTap figure="perGame" />
                   </View>
                   {season.squadAverageMs !== null && (
                     <View style={local.keyItem}>

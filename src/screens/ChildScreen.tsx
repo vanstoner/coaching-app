@@ -30,7 +30,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Player } from '../types/index';
@@ -53,6 +53,9 @@ import { OUTFIELD_TARGET_CHOICES, setOutfieldTarget } from '../app/outfieldTarge
 import { Action, BackLink, FieldRow, FormSheet, RowNav, Section, SegmentedRow, TopBar, useSavedTick } from './controls';
 import { AverageBar, ColumnChart, KeyItem, UnitStack, chartColours, type Column } from './Charts';
 import { Picked, UnitKey } from './SquadViews';
+import { InfoTap } from './FiguresHelp';
+import { WhySheet } from './WhySheet';
+import { whyDifference } from '../app/whyDifference';
 import { colours, screen } from './theme';
 import { MoreThanFirstName, guard } from './NameWarning';
 
@@ -86,6 +89,9 @@ export function ChildScreen({
   const tick = useSavedTick();
   const flip = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const positions = views.positions.find((p) => p.playerId === player.id);
+  // #261 AC10: the Playing time figures open "Why the difference".
+  const [why, setWhy] = useState(false);
+  const whyLine = whyDifference(views, player.id)?.headline ?? null;
   const section = (lens: LensCard): ReactNode => {
     switch (lens) {
       case 'playing':
@@ -98,7 +104,10 @@ export function ChildScreen({
               squadAverageMs={views.season.squadAverageMs}
               scaleMs={views.season.scaleMs}
               formatNote={views.season.formatNote}
+              whyLine={whyLine}
+              onWhy={() => setWhy(true)}
             />
+            <WhySheet views={views} playerId={why ? player.id : null} onClose={() => setWhy(false)} />
           </Card>
         );
       case 'matches':
@@ -207,6 +216,8 @@ function PlayingTime({
   squadAverageMs,
   scaleMs,
   formatNote,
+  whyLine,
+  onWhy,
 }: {
   name: string;
   s: ChildSeason | undefined;
@@ -214,6 +225,9 @@ function PlayingTime({
   scaleMs: number;
   /** ADR-015 §6a (#223): the matches left out for their format, and why; null when none is. */
   formatNote: string | null;
+  /** The season line on the Why sheet (#261 AC11); null when the child is not in the views. */
+  whyLine: string | null;
+  onWhy: () => void;
 }) {
   // §6a: the squad average and this child's figures use the dominating format's matches only.
   const note = formatNote !== null ? <Text style={screen.hint}>{formatNote}.</Text> : null;
@@ -238,14 +252,23 @@ function PlayingTime({
   const showKeeper = (s.goalMsPerGame ?? 0) > 0 || target !== null;
   return (
     <>
-      <Text style={local.big} numberOfLines={1}>
-        {wholeMinutes(s.averageMs)}
-      </Text>
-      <Text style={screen.caption}>min a game</Text>
-      <Text style={local.sub}>
-        Played {s.played} of {s.of}
-        {s.missed > 0 ? ` · missed ${s.missed}` : ''}
-      </Text>
+      <Pressable
+        onPress={onWhy}
+        accessibilityRole="button"
+        accessibilityLabel={`${wholeMinutes(s.averageMs)} min a game, played ${s.played} of ${s.of}`}
+        accessibilityHint="Opens why the difference"
+        style={({ pressed }) => [local.figures, pressed && local.pressed]}
+      >
+        <Text style={local.big} numberOfLines={1}>
+          {wholeMinutes(s.averageMs)}
+        </Text>
+        <Text style={screen.caption}>min a game</Text>
+        <Text style={local.sub}>
+          Played {s.played} of {s.of}
+          {s.missed > 0 ? ` · missed ${s.missed}` : ''}
+        </Text>
+      </Pressable>
+      <InfoTap figure="perGame" />
       <AverageBar value={s.averageMs} line={line} scale={scaleMs} wide />
       <View style={local.scale}>
         <Text style={local.scaleText}>0</Text>
@@ -262,6 +285,7 @@ function PlayingTime({
       </View>
       <Text style={screen.hint}>Minutes a game counts only the matches {name} played.</Text>
       {note}
+      {whyLine !== null && <RowNav first label="Why the difference" detail={whyLine} onPress={onWhy} />}
 
       <Text style={screen.fieldLabel}>By competition</Text>
       {s.competitions.map((c) => (
@@ -499,6 +523,8 @@ const local = StyleSheet.create({
   empty: { marginTop: 8, marginBottom: 4 },
   first: { marginTop: 0 },
   left: { textAlign: 'left' },
+  figures: { alignSelf: 'stretch', alignItems: 'center' },
+  pressed: { opacity: 0.6 },
   // One weight in every state, sized to the slot not the glyphs (theme.ts).
   big: {
     alignSelf: 'stretch',

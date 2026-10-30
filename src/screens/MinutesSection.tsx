@@ -31,6 +31,7 @@ import { inferredMatchCount, seasonAttendance, type SeasonAttendance } from '../
 import { Action, BackLink, CheckLine, RowNav } from './controls';
 import { colours, screen } from './theme';
 import { SortHeading, useTableSort } from './TableSort';
+import { AboutFiguresRow, InfoTap } from './FiguresHelp';
 
 export function MinutesSection({
   ledger,
@@ -79,18 +80,23 @@ export function MinutesSection({
     <View style={local.section}>
       {/* In Settings the section heading names it (#263); a past season's page has none. */}
       {readOnly && <Text style={screen.fieldLabel}>Player minutes</Text>}
-      <Text style={screen.hint}>
-        Kept separately from everything else, so it survives updates. These totals add up every match not left
-        out, including matches not yet ended and matches in another format, so they can be higher than the Squad
-        tab&apos;s.{' '}
-        {matches === 0
-          ? 'Nothing played yet.'
-          : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
-        {leftOut > 0 ? ` ${leftOut} left out of the figures.` : ''}
-        {inferred > 0
-          ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
-          : ''}
-      </Text>
+      {/* #261 AC13, Rob's Q2: the help is the first row of Player minutes. */}
+      <AboutFiguresRow backLabel={readOnly ? 'Back' : 'Settings'} />
+      <View style={local.hintRow}>
+        <Text style={[screen.hint, local.hintText]}>
+          Kept separately from everything else, so it survives updates. These totals add up every match not left
+          out, including matches not yet ended and matches in another format, so they can be higher than the Squad
+          tab&apos;s.{' '}
+          {matches === 0
+            ? 'Nothing played yet.'
+            : `${matches} ${matches === 1 ? 'match' : 'matches'} so far.`}
+          {leftOut > 0 ? ` ${leftOut} left out of the figures.` : ''}
+          {inferred > 0
+            ? ` Attendance for ${inferred} ${inferred === 1 ? 'match was' : 'matches was'} worked out from who played.`
+            : ''}
+        </Text>
+        <InfoTap figure="playerMinutes" />
+      </View>
 
       {rows.length > 0 && (
         <View style={local.head}>
@@ -262,6 +268,8 @@ function attendanceLine(a: SeasonAttendance | undefined): string {
 }
 
 const local = StyleSheet.create({
+  hintRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  hintText: { flex: 1 },
   section: { alignSelf: 'stretch' },
   head: {
     flexDirection: 'row',

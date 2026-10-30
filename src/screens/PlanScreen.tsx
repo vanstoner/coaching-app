@@ -25,6 +25,7 @@
  */
 
 import { NOT_IN_SHARE_SHORT } from '../app/fairShare';
+import { InfoTap } from './FiguresHelp';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Text } from './Text';
@@ -351,10 +352,14 @@ export function PlanScreen({
         <Text style={screen.fieldLabel}>
           {live ? 'Minutes so far, plus the plan' : 'Minutes if played to plan'}
         </Text>
-        <Text style={local.summary}>
-          Fair share {formatClock(projection.fairShareMs)} · spread{' '}
-          {formatClock(projection.spreadMs)}
-        </Text>
+        <View style={local.shareRow}>
+          <Text style={[local.summary, local.shareText]}>
+            Fair share {formatClock(projection.fairShareMs)} · spread{' '}
+            {formatClock(projection.spreadMs)}
+          </Text>
+          {/* #261 AC15. */}
+          <InfoTap figure="planShare" />
+        </View>
         {/* #101 / ADR-015: the share and the +/- are goal plus outfield. */}
         <Text style={screen.hint}>Fair share counts time in goal and outfield together.</Text>
         {projection.rows.map((row) => (
@@ -495,6 +500,8 @@ export function PlanScreen({
 }
 
 const local = StyleSheet.create({
+  shareRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  shareText: { flex: 1 },
   // Far off to the left: laid out and drawn for the capture, never seen.
   offscreen: { position: 'absolute', left: -10000, top: 0 },
   note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false, marginBottom: 4 },

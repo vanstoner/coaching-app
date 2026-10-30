@@ -32,6 +32,7 @@ export function FormSheet({
   onCancel,
   onSave,
   saveLabel = 'Save',
+  cancelLabel = 'Cancel',
   saveDisabled = false,
   saveDanger = false,
   children,
@@ -43,6 +44,8 @@ export function FormSheet({
   /** Absent for a single-choice list, which picks on the tap. */
   onSave?: () => void;
   saveLabel?: string;
+  /** "Close" on a read-only sheet, which has no Save (#261 AC10). */
+  cancelLabel?: string;
   saveDisabled?: boolean;
   /** Save does what cannot be undone (Remove a team): the danger colour (#264 V33). */
   saveDanger?: boolean;
@@ -68,7 +71,7 @@ export function FormSheet({
                       accessibilityRole="button"
                       style={({ pressed }) => [sheet.headHit, pressed && sheet.pressed]}
                     >
-                      <Text style={sheet.cancel}>Cancel</Text>
+                      <Text style={sheet.cancel}>{cancelLabel}</Text>
                     </Pressable>
                   </View>
                   <Text style={sheet.title} numberOfLines={1} accessibilityRole="header">

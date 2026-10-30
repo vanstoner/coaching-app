@@ -46,6 +46,8 @@ import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitCo
 import { VIEW_NOTHING_YET } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
 import { BackLink, RowNav, TopBar } from './controls';
+import { InfoTap } from './FiguresHelp';
+import { WhySheet } from './WhySheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 // ============================================================================
@@ -295,6 +297,8 @@ export function SeasonGridView({ views, onChild, onBack, firstTime }: ViewProps)
 
 export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
+  // #261 AC10: a row opens "Why the difference"; the child's page is a row in it.
+  const [why, setWhy] = useState<UUID | null>(null);
   const { sort, onSort } = useTableSort('squadFairness');
   const f = views.fairness;
   if (f === null) {
@@ -326,6 +330,13 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
         </Text>
         <Text style={local.heroLine}>min a game</Text>
         <Text style={local.heroLine}>of the squad average, {f.average}</Text>
+      </View>
+      {/* #261 AC15: how each is worked out. */}
+      <View style={local.infoLine}>
+        <Text style={local.infoLabel}>The gap</Text>
+        <InfoTap figure="gap" />
+        <Text style={local.infoLabel}>The squad average</Text>
+        <InfoTap figure="squadAverage" />
       </View>
       <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average." />
 
@@ -362,7 +373,8 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
         return (
           <Pressable
             key={r.playerId}
-            onPress={() => onChild(r.playerId)}
+            onPress={() => setWhy(r.playerId)}
+            accessibilityHint="Opens why the difference"
             style={local.drow}
             accessibilityRole="button"
             accessibilityLabel={`${r.name}, ${r.perGame} min a game, ${words}`}
@@ -396,6 +408,15 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
       <ColumnChart columns={columns} max={top} step={5} onSelect={(j) => setPicked(columns[j].label)} />
       <Picked text={picked} onClear={() => setPicked(null)} />
       <Text style={[screen.hint, local.left]}>The first matches swing most: there are only one or two games to average.</Text>
+      <WhySheet
+        views={views}
+        playerId={why}
+        onClose={() => setWhy(null)}
+        onChildPage={(id) => {
+          setWhy(null);
+          onChild(id);
+        }}
+      />
     </ViewFrame>
   );
 }
@@ -406,6 +427,8 @@ export function FairnessView({ views, onChild, onBack, firstTime }: ViewProps) {
 
 export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
   const { sort, onSort } = useTableSort('squadSaturday');
+  // #261 AC10: a row opens "Why the difference"; the child's page is a row in it.
+  const [why, setWhy] = useState<UUID | null>(null);
   const f = views.fairness;
   if (f === null) {
     return (
@@ -435,10 +458,13 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
           <Text style={local.owedHead}>Nobody is {OWED_MIN} min or more under the average this season.</Text>
         )}
       </View>
-      <Text style={[screen.hint, local.left]}>
-        Under the average: for each game they played, the squad average minus their minutes, added up. A missed
-        match never counts.
-      </Text>
+      <View style={local.hintRow}>
+        <Text style={[screen.hint, local.left, local.hintText]}>
+          Under the average: for each game they played, the squad average minus their minutes, added up. A missed
+          match never counts.
+        </Text>
+        <InfoTap figure="underOver" />
+      </View>
 
       <Text style={screen.fieldLabel}>Everyone</Text>
       <View style={local.oHead}>
@@ -469,7 +495,8 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
           return (
             <Pressable
               key={r.playerId}
-              onPress={() => onChild(r.playerId)}
+              onPress={() => setWhy(r.playerId)}
+              accessibilityHint="Opens why the difference"
               style={local.orow}
               accessibilityRole="button"
               accessibilityLabel={`${r.name}, ${r.fillIn ? FILL_IN_NOTE : MAIN_KEEPER_NOTE}`}
@@ -487,7 +514,8 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
         return (
           <Pressable
             key={r.playerId}
-            onPress={() => onChild(r.playerId)}
+            onPress={() => setWhy(r.playerId)}
+            accessibilityHint="Opens why the difference"
             style={local.orow}
             accessibilityRole="button"
             accessibilityLabel={`${r.name}, ${text.toLowerCase()} this season, ${r.perGame} min a game, played ${r.played}`}
@@ -509,6 +537,15 @@ export function SaturdayView({ views, onChild, onBack, firstTime }: ViewProps) {
         );
       })}
       <MainKeeperHint names={f.mainKeepers} tail="so not in the squad average and never shown as under or over." />
+      <WhySheet
+        views={views}
+        playerId={why}
+        onClose={() => setWhy(null)}
+        onChildPage={(id) => {
+          setWhy(null);
+          onChild(id);
+        }}
+      />
     </ViewFrame>
   );
 }
@@ -762,6 +799,10 @@ const local = StyleSheet.create({
   dAxis: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
 
   // --- going into Saturday
+  infoLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', marginTop: 4 },
+  infoLabel: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false },
+  hintRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  hintText: { flex: 1 },
   owedBox: {
     alignSelf: 'stretch',
     marginTop: 12,
