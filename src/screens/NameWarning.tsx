@@ -30,8 +30,9 @@ export function MoreThanFirstName({
     <View style={guard.box}>
       <Text style={guard.text}>“{cleaned}” is more than a first name</Text>
       <Text style={screen.hint}>
+        {/* #54, Rob 30 Oct ("approve … 3"): since ruling 1 the plan picture shows the name too. */}
         First names are the default because these are children&apos;s details. A surname typed in once is kept in this
-        phone&apos;s record and in every backup.{isInitial ? '' : ' An initial tells two children apart just as well.'}
+        phone&apos;s record, in every backup and on the plan picture you share.{isInitial ? '' : ' An initial tells two children apart just as well.'}
       </Text>
       {/* #264: each choice acts at once (an Action); Change it goes back to the field.
           #54 AC2 (QA on #260, D13): Keep is the quieter third button. */}
