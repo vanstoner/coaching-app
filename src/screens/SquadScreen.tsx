@@ -45,14 +45,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Player, UUID } from '../types/index';
@@ -84,6 +77,7 @@ import { MADE_UP_GUARD, emptySquadSentence, TRY_MADE_UP_TEAM } from '../app/gett
 import { EmptyState } from './GettingStarted';
 import { NAME, sortSquadList } from '../app/tableSort';
 import { SortHeading, useTableSort } from './TableSort';
+import { Action, BackLink, Icon, MainButton, SegmentedRow, TopBar, UndoToast } from './controls';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** Where the coach is inside Squad: a view, or a child's page. The list is the empty stack. */
@@ -150,6 +144,11 @@ export function SquadScreen({
   const [draft, setDraft] = useState('');
   // #219: the name box keeps the keyboard between names, so a squad goes in
   // one after another without tapping back into it.
+  // #264 V25: Remove changes what the coach can't see, so it offers Undo (Bring back).
+  const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
+  const clearToast = useCallback(() => setToast(null), []);
+  const latest = useRef(everyone);
+  latest.current = everyone;
   const nameInput = useRef<TextInput>(null);
   /** The views and child pages open (#121, #143); empty shows the list. */
   const [pages, setPages] = useState<Page[]>([]);
@@ -292,6 +291,8 @@ export function SquadScreen({
         behavior="padding"
       >
         <View style={screen.pane}>
+          {/* #264 V31: on the way to a match, the way out is top left. */}
+          {onLeave && <TopBar back={<BackLink label="Home" accessibilityLabel="Leave — go to Home" onPress={onLeave} />} />}
           <Text style={screen.title}>Squad</Text>
           {seasonName !== null && <Text style={screen.caption}>{seasonName}</Text>}
           <Text style={screen.hint}>First names are best. Nothing leaves this phone.</Text>
@@ -299,16 +300,16 @@ export function SquadScreen({
           <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
             {onTab && anyReconstructed && (
-              <Pressable
-                onPress={() => setIncludeReconstructed((v) => !v)}
-                style={screen.linkHit}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: includeReconstructed }}
-              >
-                <Text style={screen.link}>
-                  Include reconstructed matches: {includeReconstructed ? 'on' : 'off'}
-                </Text>
-              </Pressable>
+              <SegmentedRow
+                label="Include reconstructed matches"
+                stacked
+                options={[
+                  { value: true, label: 'On' },
+                  { value: false, label: 'Off' },
+                ]}
+                value={includeReconstructed}
+                onChange={(v) => v !== null && setIncludeReconstructed(v)}
+              />
             )}
             {onTab && <SquadTiles views={views} onOpen={(view) => open({ kind: 'view', view })} />}
 
@@ -335,12 +336,8 @@ export function SquadScreen({
                 submitBehavior="submit"
                 onSubmitEditing={add}
               />
-              <Pressable
-                style={({ pressed }) => [local.addButton, pressed && screen.buttonPressed]}
-                onPress={add}
-              >
-                <Text style={screen.buttonLabel}>Add</Text>
-              </Pressable>
+              {/* #264: an Action; the label "Add" is kept (the store selector ADD_NAME). */}
+              <Action label="Add" onPress={add} />
             </View>
 
             {error !== '' && <Text style={screen.error}>{error}</Text>}
@@ -351,42 +348,21 @@ export function SquadScreen({
                 <Text style={local.guardText}>
                   You already have {naming.other}. Add an initial so you can tell them apart.
                 </Text>
-                <Pressable
+                <Action
+                  label="Add an initial"
                   onPress={() => {
                     setDraft(`${naming.name} `);
                     changeIt();
                   }}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-                >
-                  <Text style={screen.buttonLabel}>Add an initial</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => commit(naming.name)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-                >
-                  <Text style={screen.buttonLabel}>Add as “{naming.name}” anyway</Text>
-                </Pressable>
+                />
+                <Action label={`Add as “${naming.name}” anyway`} onPress={() => commit(naming.name)} />
               </View>
             )}
             {asking !== null && (
               <View style={local.guard}>
                 <Text style={local.guardText}>{MADE_UP_GUARD.question}</Text>
-                <Pressable
-                  onPress={clearAndStart}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-                >
-                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.clear}</Text>
-                </Pressable>
-                <Pressable
-                  onPress={keepExploring}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [screen.buttonQuiet, pressed && screen.buttonPressed]}
-                >
-                  <Text style={screen.buttonLabel}>{MADE_UP_GUARD.keep}</Text>
-                </Pressable>
+                <Action label={MADE_UP_GUARD.clear} onPress={clearAndStart} />
+                <Action label={MADE_UP_GUARD.keep} onPress={keepExploring} />
               </View>
             )}
 
@@ -429,10 +405,11 @@ export function SquadScreen({
                   {/* #121: tap a name for their page. */}
                   <Pressable
                     onPress={() => open({ kind: 'child', id: p.id })}
-                    style={local.nameHit}
+                    style={({ pressed }) => [local.nameRow, pressed && screen.buttonPressed]}
                     accessibilityRole="button"
                     accessibilityLabel={`${displayName(p)}, ${figures}${s?.fillIn ? `, ${FILL_IN_NOTE}` : s?.mainKeeper ? `, ${MAIN_KEEPER_NOTE}` : ''}`}
                   >
+                    <View style={local.nameHit}>
                     <Text style={screen.playerName} numberOfLines={1}>
                       {displayName(p)}
                     </Text>
@@ -465,13 +442,23 @@ export function SquadScreen({
                         {summary}
                       </Text>
                     )}
+                    </View>
+                    {/* #264: a Row ›: it opens the child's page. */}
+                    <Icon name="chevron-right" size={22} color={colours.back} style={local.chevron} />
                   </Pressable>
-                  <Pressable
-                    onPress={() => onPlayers(removePlayer(everyone, p.id, played))}
-                    style={local.removeHit}
-                  >
-                    <Text style={local.remove}>Remove</Text>
-                  </Pressable>
+                  <View style={local.removeHit}>
+                    <Action
+                      label="Remove"
+                      accessibilityLabel={`Remove ${displayName(p)}`}
+                      onPress={() => {
+                        onPlayers(removePlayer(everyone, p.id, played));
+                        setToast({
+                          message: `${displayName(p)} removed`,
+                          undo: () => onPlayers(restorePlayer(latest.current, p.id)),
+                        });
+                      }}
+                    />
+                  </View>
                 </View>
               );
             })}
@@ -492,12 +479,9 @@ export function SquadScreen({
                 {retired.map((p) => (
                   <View key={p.id} style={screen.playerRow}>
                     <Text style={[screen.playerName, local.retired]}>{displayName(p)}</Text>
-                    <Pressable
-                      onPress={() => onPlayers(restorePlayer(everyone, p.id))}
-                      style={local.removeHit}
-                    >
-                      <Text style={local.remove}>Bring back</Text>
-                    </Pressable>
+                    <View style={local.removeHit}>
+                      <Action label="Bring back" onPress={() => onPlayers(restorePlayer(everyone, p.id))} />
+                    </View>
                   </View>
                 ))}
               </>
@@ -511,26 +495,10 @@ export function SquadScreen({
             {readiness.message}
           </Text>
 
-          {onStartMatch && (
-            <Pressable
-              disabled={!readiness.ready}
-              style={({ pressed }) => [
-                screen.button,
-                !readiness.ready && screen.buttonDisabled,
-                pressed && screen.buttonPressed,
-              ]}
-              onPress={onStartMatch}
-            >
-              <Text style={screen.buttonLabel}>Pick the lineup</Text>
-            </Pressable>
-          )}
-          {onLeave && (
-            <Pressable onPress={onLeave} style={screen.linkHit}>
-              <Text style={screen.link}>Leave — go to Home</Text>
-            </Pressable>
-          )}
+          {onStartMatch && <MainButton label="Pick the lineup" disabled={!readiness.ready} onPress={onStartMatch} />}
         </View>
       </KeyboardAvoidingView>
+      <UndoToast message={toast?.message ?? null} onUndo={toast?.undo} onDone={clearToast} />
     </View>
   );
 }
@@ -539,16 +507,9 @@ const local = StyleSheet.create({
   addRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   addRowUnderTiles: { marginTop: 10 },
   nameInput: { flex: 1, alignSelf: 'auto', marginRight: 8 },
-  addButton: {
-    backgroundColor: colours.accent,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: TOUCH_TARGET,
-    minWidth: 72,
-    paddingHorizontal: 18,
-  },
+  nameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: TOUCH_TARGET },
   nameHit: { flex: 1, minHeight: TOUCH_TARGET, justifyContent: 'center', paddingVertical: 8, paddingRight: 8 },
+  chevron: { width: 24, flexShrink: 0 },
   figures: { color: colours.inkMuted, fontSize: 14, marginTop: 3, includeFontPadding: false },
   prefSummary: { color: colours.inkFaint, fontSize: 12, marginTop: 4, includeFontPadding: false },
   key: { flexDirection: 'row', flexWrap: 'wrap', alignSelf: 'stretch', marginTop: 10, marginBottom: 2 },
@@ -580,10 +541,4 @@ const local = StyleSheet.create({
   headings: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginTop: 6 },
   headingName: { flex: 1 },
   headingSpacer: { width: TOUCH_TARGET + 24, flexShrink: 0 },
-  remove: {
-    color: colours.inkMuted,
-    fontSize: 13,
-    includeFontPadding: false,
-    textDecorationLine: 'underline',
-  },
 });

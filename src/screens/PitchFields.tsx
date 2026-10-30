@@ -1,12 +1,17 @@
 /**
  * #254: the pitch surface, condition and referee rows (Dee's prototype). One
  * component for the fixture form and the "Pitch and referee" sheet, so the
- * two cannot drift apart. Tapping the chosen chip clears it, as Competition
- * does.
+ * two cannot drift apart. Tapping the chosen segment clears it, as Competition
+ * does (#264 V13).
+ *
+ * #264 C3, Rob's Q2: the sheet has Cancel and Save, and **only Save writes**.
+ * It used to commit its draft in `onClose`, so Done, a tap outside and Back
+ * all wrote to the match; now a tap outside, Cancel and Android Back write
+ * nothing (`sheetCommit`), as every other sheet.
  */
 
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import {
@@ -21,8 +26,8 @@ import {
   type PitchCondition,
   type PitchSurface,
 } from '../app/pitch';
-import { ActionSheet } from './Sheet';
-import { Chip, ChipRow } from './Chip';
+import { sheetCommit } from '../app/saveState';
+import { FieldRow, FormSheet, RowNav, SegmentedRow } from './controls';
 import { colours, screen } from './theme';
 
 export interface PitchValue {
@@ -35,47 +40,47 @@ export interface PitchValue {
 export function PitchChips({ value, onChange }: { value: PitchValue; onChange: (v: PitchValue) => void }) {
   return (
     <>
-      <Text style={screen.fieldLabel}>Surface</Text>
-      <ChipRow>
-        {SURFACES.map((s) => (
-          <Chip
-            key={s.value}
-            label={s.label}
-            selected={value.surface === s.value}
-            onPress={() => onChange({ ...value, surface: value.surface === s.value ? null : s.value })}
-          />
-        ))}
-      </ChipRow>
-      <Text style={screen.fieldLabel}>Pitch condition</Text>
-      <ChipRow>
-        {CONDITIONS.map((c) => (
-          <Chip
-            key={c.value}
-            label={c.label}
-            selected={value.condition === c.value}
-            onPress={() => onChange({ ...value, condition: value.condition === c.value ? null : c.value })}
-          />
-        ))}
-      </ChipRow>
+      <SegmentedRow
+        label="Surface"
+        options={SURFACES}
+        value={value.surface}
+        allowClear
+        onChange={(surface) => onChange({ ...value, surface })}
+      />
+      <SegmentedRow
+        label="Condition"
+        options={CONDITIONS}
+        value={value.condition}
+        allowClear
+        onChange={(condition) => onChange({ ...value, condition })}
+      />
     </>
   );
 }
 
 /** The referee, which sits after Kick-off: this phone and the coach's backup only (Q2). */
-export function RefereeField({ value, onChange }: { value: PitchValue; onChange: (v: PitchValue) => void }) {
+export function RefereeField({
+  value,
+  onChange,
+  autoFocus = false,
+}: {
+  value: PitchValue;
+  onChange: (v: PitchValue) => void;
+  /** The sheet opens with the keyboard on this field (#264 V32). */
+  autoFocus?: boolean;
+}) {
   return (
     <>
-      <Text style={screen.fieldLabel}>Referee</Text>
-      <TextInput
-        style={screen.input}
+      <FieldRow
+        label="Referee"
         value={value.referee}
         onChangeText={(referee) => onChange({ ...value, referee })}
-        placeholder="Referee's name (stays on this phone)"
-        placeholderTextColor={colours.inkFaint}
+        placeholder="Optional"
         autoCapitalize="words"
         autoCorrect={false}
         maxLength={REFEREE_MAX_LENGTH}
         returnKeyType="done"
+        autoFocus={autoFocus}
       />
       <Text style={screen.hint}>
         Optional. Kept on this phone and in your own backup; never in a shared picture or the minutes file.
@@ -102,8 +107,8 @@ export function PitchTags({ surface, condition }: { surface: unknown; condition:
 /**
  * #254 AC12, AC20: the "Pitch and referee" row on a match's own screens
  * (pre-match, between periods, the summary, the analysis). It shows what is
- * set; a tap opens the same rows as the form, saved on Done, with no note
- * (Q4). `onChange` null: read-only (a match from the record, AC14).
+ * set; a tap opens the same rows as the form in a sheet, saved on Save, with
+ * no note (Q4). `onChange` null: read-only (a match from the record, AC14).
  */
 export function PitchAndReferee({
   match,
@@ -119,25 +124,24 @@ export function PitchAndReferee({
     setDraft({ surface: surfaceOf(match.surface), condition: conditionOf(match.condition), referee: match.referee ?? '' });
   return (
     <>
-      <Pressable onPress={open} style={screen.linkHit} accessibilityRole="button">
-        <Text style={screen.link}>{line ? `${line} ›` : 'Add pitch and referee ›'}</Text>
-      </Pressable>
-      <ActionSheet
+      <RowNav label="Pitch and referee" value={line ?? 'Add'} onPress={open} />
+      <FormSheet
         visible={draft !== null}
         title="Pitch and referee"
-        closeLabel="Done"
-        onClose={() => {
-          if (draft) onChange(keepUnknown(match, draft));
+        onCancel={() => setDraft(null)}
+        onSave={() => {
+          const saved = draft && sheetCommit('save', draft);
+          if (saved) onChange(keepUnknown(match, saved));
           setDraft(null);
         }}
       >
         {draft && (
           <>
             <PitchChips value={draft} onChange={setDraft} />
-            <RefereeField value={draft} onChange={setDraft} />
+            <RefereeField value={draft} onChange={setDraft} autoFocus />
           </>
         )}
-      </ActionSheet>
+      </FormSheet>
     </>
   );
 }

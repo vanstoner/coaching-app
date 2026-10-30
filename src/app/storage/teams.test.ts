@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createMemoryStore, inTurn, type KeyValueStore } from '../persistence';
 import { TEST_CLOCK_KEY } from '../testKit';
+import { LAST_BACKUP_KEY, SETTINGS_SECTIONS_KEY } from '../settingsSections';
 import type { UUID } from '../../types/index';
 import {
   BEFORE_TEAMS_PREFIX,
@@ -28,6 +29,7 @@ import {
   readOnlyStore,
   teamKey,
   teamStore,
+  teamsForBackup,
 } from './teams';
 
 const NOW = new Date('2026-10-26T12:00:00Z');
@@ -109,6 +111,28 @@ describe('teamStore (ADR-022 D2)', () => {
     expect(await root.getItem(TEST_CLOCK_KEY)).toBe('clock');
     expect(await teamStore(root, T2).getItem(TEST_CLOCK_KEY)).toBe('clock');
     expect(teamKey(T1, TEST_CLOCK_KEY)).toBe(TEST_CLOCK_KEY);
+  });
+
+  it('#263 AC5, AC10: the open Settings sections and the last backup are per phone, and never moved into a team', async () => {
+    const root = await phoneWith(BEFORE);
+    await openTeams(root, NOW, ids(T1));
+    await teamStore(root, T1).setItem(SETTINGS_SECTIONS_KEY, '{"open":["backup"]}');
+    await teamStore(root, T1).setItem(LAST_BACKUP_KEY, '1');
+    expect(await root.getItem(SETTINGS_SECTIONS_KEY)).toBe('{"open":["backup"]}');
+    expect(await teamStore(root, T2).getItem(LAST_BACKUP_KEY)).toBe('1');
+    // The everyday launch: nothing at the root looks like a team's to move.
+    const again = await openTeams(root, NOW, ids(T2));
+    expect(again).toMatchObject({ kind: 'team', teamId: T1, moved: false });
+    expect(await root.getItem(SETTINGS_SECTIONS_KEY)).toBe('{"open":["backup"]}');
+    // AC10: never in a backup file, so a restore cannot bring one back or change it.
+    const opened = await openTeams(root, NOW, ids(T2));
+    if (opened.kind !== 'team') throw new Error('no team');
+    const { parts } = await teamsForBackup(root, opened.index);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(parts)).not.toMatch(/last-backup|settings-sections/);
+    await forgetEveryTeam(root, null, NOW);
+    expect(await root.getItem(SETTINGS_SECTIONS_KEY)).toBeNull();
+    expect(await root.getItem(LAST_BACKUP_KEY)).toBeNull();
   });
 
   it('work on a team queues on the device store, so it never overtakes work asked for earlier', async () => {

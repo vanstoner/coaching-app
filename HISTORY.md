@@ -460,3 +460,17 @@ analysis, iOS". Entries are added as each release ships.
   (3G, 4G, Grass), its condition and the referee, changeable at any time;
   the referee never leaves the phone except in the coach's own backup
   (#254).
+  **One look for every control (#264), and Settings in sections (#263).**
+  Rob, 29 Oct: *"I like pills, I like to know if they expand into
+  something more, I like to know that things need saving."* Every screen
+  now draws from one set of controls: a row with › goes somewhere; a
+  heading with › on the left opens in place; short choices are segments
+  with a tick; long ones open a list. Settings save on the tap and say
+  ✓ Saved; a form says Not saved yet and asks before you leave it. Planned
+  subs on the lineup are set in a sheet: the time, then who for. Goalkeeper
+  and Here today are one row each. Targets are 48 dp, and ticks and
+  chevrons are icons. The Pitch and referee sheet now saves only on Save:
+  a tap outside used to save it. Settings opens in ten sections, Season
+  and Team open, each closed one with a summary; the Danger zone is last
+  and always closed, and the Backup heading says when this phone last made
+  a backup.

@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Current** (checked against the code of 2.1.0 at `64d145f`, 29 Oct 2026, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-29 (2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
+Last updated: 2026-10-30 (the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -30,8 +30,18 @@ src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it
 src/app/storage/    the storage modules: teams, session, ledger store, backup, forget, device key
 src/screens/        React components; take props, hold only view state
+src/screens/controls/  the one control vocabulary every screen draws from (#264): Row ›, Section
+                    heading (the twisty), Segmented, list sheets, Stepper, Action, Main button,
+                    Field row, ✓ Saved / Not saved yet, Back, Cancel/Save sheets, Danger
 .github/            CI, APK/IPA builds, releases, store listing
 ```
+
+Screens take their controls from `src/screens/controls/` (#264); the pure
+rules behind them are in `src/app/saveState.ts` (✓ Saved, a form's state, a
+sheet that writes only on Save), `src/app/plannedSubSheet.ts` (the planned-sub
+stepper and its words) and `src/app/settingsSections.ts` (#263).
+`src/screens/controlsGuard.test.ts` names each screen still allowed its own
+controls, and why.
 
 Rule: `src/engine` and `src/app` import no React and no platform module, with
 four exceptions in `src/app`: `storage/storage.ts` (AsyncStorage), `ledgerFile.ts`,
@@ -88,7 +98,10 @@ rewrites the keys, so each module keeps its constants; work queues on the
 device store beneath it. Per install, at the root: the team index
 `coaching-app/teams/v1` (`{ version, current, teams: [{ id, createdAt,
 removedAt }], migration? }`), `before-teams/…` (the keys as they were before
-2.0.0, set aside by the move), the test clock and the signing key.
+2.0.0, set aside by the move), the test clock, the signing key, and two view
+notes about the phone (#263): which Settings sections are open and when this
+phone last made a backup. A team's store passes these phone keys through to
+the root, and the move into teams leaves them alone (`PHONE_KEYS`).
 
 | Key (per team unless marked) | Contents | Writer | Versioning |
 |---|---|---|---|
@@ -100,6 +113,8 @@ removedAt }], migration? }`), `before-teams/…` (the keys as they were before
 | `coaching-app/session/v1/unreadable/<iso>` | A session that would not read, set aside intact (#173, #184) | `openStoredSession` | |
 | `coaching-app/before-restore/<iso>/…` | What was on the phone before a restore (#192) | `restorePhoneBackup` | Removed by Forget everything (#207) |
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
+| `coaching-app/settings-sections/v1` (root) | `{"open":[…]}`: which Settings sections are open, a view choice on this phone (#263 AC5); Danger zone is never stored | `SettingsScreen` | Never in the record; removed by Forget everything |
+| `coaching-app/last-backup/v1` (root) | When Back up this app last made its file and handed it on, in ms, for the Backup heading (#263 AC10) | `App.tsx` (`backUpApp`) | Never in the record or a backup file, untouched by a restore; removed by Forget everything |
 | `coaching-app/season-prompt/v1` | When "Not yet" on the new-season prompt quiets it until (#243 Q2), a view choice | `App.tsx` | Never in the record; removed by Forget everything |
 | `coaching-app/teams/v1` (root) | The team index (ADR-022 D2) | `storage/teams.ts` | `version` 1; a damaged index is rebuilt from the teams' keys |
 | `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3). A key found at the root later goes under `before-teams/later/<iso>/…`, never over them | `openTeams` | Removed by Forget everything |

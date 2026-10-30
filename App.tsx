@@ -177,10 +177,23 @@ import {
   stillToPlay,
   setFormatCounted,
   FIRST_SEASON_ID,
+  seasonRows,
   type ImportChoice,
   type Ledger,
   type MatchRecord,
 } from './src/app/ledger';
+import {
+  LAST_BACKUP_KEY,
+  awardsSummary,
+  backupSummary,
+  minutesSummary,
+  parseLastBackup,
+  seasonSummary,
+  serialiseLastBackup,
+  talliesSummary,
+  testMatchesSummary,
+} from './src/app/settingsSections';
+import { BUILT_IN_TALLIES } from './src/app/tallies';
 import { ledgerWriter, openStoredLedger } from './src/app/storage/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
 import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
@@ -524,6 +537,25 @@ function TeamApp({
   // #192: back up this app, and restore it.
   const [backupMessage, setBackupMessage] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
+  /**
+   * #263 AC10: when this phone last made a backup file and handed it on, for
+   * the Backup heading. A view note on the phone (`LAST_BACKUP_KEY` passes
+   * through the team's store to the root): never in the record, never in a
+   * backup file, untouched by a restore. Forget everything removes it.
+   */
+  const [lastBackup, setLastBackup] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    store
+      .getItem(LAST_BACKUP_KEY)
+      .then((raw) => {
+        if (!cancelled) setLastBackup(parseLastBackup(raw));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
   const [pendingBackup, setPendingBackup] = useState<ReadTeamsBackup | null>(null);
   /** Bumped after a restore, to run the launch again over what was restored. */
   const [launchKey, setLaunchKey] = useState(0);
@@ -1338,6 +1370,12 @@ function TeamApp({
       );
     const outcome = await exportBackupFile(text, appNow());
     setBackupBusy(false);
+    if (outcome.ok) {
+      // AC10: made and handed to the share sheet without an error.
+      const at = appNow().getTime();
+      setLastBackup(at);
+      void store.setItem(LAST_BACKUP_KEY, serialiseLastBackup(at)).catch(() => undefined);
+    }
     setBackupMessage(
       !outcome.ok
         ? outcome.reason
@@ -1345,7 +1383,7 @@ function TeamApp({
           ? `${all.skipped} ${all.skipped === 1 ? 'team' : 'teams'} could not be read and ${all.skipped === 1 ? 'is' : 'are'} not in the file.`
           : ''
     );
-  }, [sessionInput, team]);
+  }, [sessionInput, team, store]);
 
   /** #192 AC2, AC5: read and check a backup; nothing changes until the coach confirms. */
   const pickBackup = useCallback(async () => {
@@ -2435,9 +2473,18 @@ function TeamApp({
     if (effectiveStep === 'settings') {
       return (
         <SettingsScreen
+          store={store}
           squadName={squadName}
           season={
-            ledger && !ledgerBlockedRef.current ? (
+            ledger && !ledgerBlockedRef.current ? {
+              // #263 AC9: counted on every draw from what the section shows.
+              summary: seasonSummary({
+                confirmed: !(season.ageGroup === null && season.level === null),
+                name: seasonName(season),
+                ageGroup: season.ageGroup,
+                matches: playedIn(seasonView ?? { matches: [] }).length,
+              }),
+              node: (
               <SeasonSection
                 season={season}
                 began={seasonBegan(season, seasonView ?? { matches: [] })}
@@ -2461,7 +2508,8 @@ function TeamApp({
                   setStep('seasonPast');
                 }}
               />
-            ) : null
+              ),
+            } : null
           }
           team={
             team
@@ -2490,8 +2538,9 @@ function TeamApp({
           onShape={setDefaultShape}
           buzzWhenSubDue={buzzWhenSubDue}
           onBuzzWhenSubDue={setBuzzWhenSubDue}
-          minutes={
-            <>
+          minutes={{
+            summary: minutesSummary(seasonView?.matches.length ?? 0, seasonView ? seasonRows(seasonView).length : 0),
+            node: (
               <MinutesSection
                 ledger={seasonView}
                 players={players}
@@ -2504,25 +2553,41 @@ function TeamApp({
                 onChoose={chooseImport}
                 onCancelImport={() => setPendingImport(null)}
               />
-              {/* #197: drawn in this slot so Settings itself is unchanged. */}
-              {ledger && !ledgerBlockedRef.current && (
-                <AwardsSection
-                  types={ledger.awardTypes}
-                  onAdd={(name) => applyToLedger((l) => addAwardType(l, name, appNow()))}
-                  onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
-                />
-              )}
-              {/* #198 */}
-              {ledger && !ledgerBlockedRef.current && (
-                <TalliesSection
-                  types={ledger.eventTypes}
-                  onAdd={(label, credited) => applyToLedger((l) => addEventType(l, label, credited, appNow()))}
-                  onActive={(id, active) => applyToLedger((l) => setEventTypeActive(l, id, active, appNow()))}
-                />
-              )}
-            </>
+            ),
+          }}
+          awards={
+            // #197; #263: its own section.
+            ledger && !ledgerBlockedRef.current
+              ? {
+                  summary: awardsSummary(ledger.awardTypes.filter((t) => t.active).map((t) => t.name)),
+                  node: (
+                    <AwardsSection
+                      types={ledger.awardTypes}
+                      onAdd={(name) => applyToLedger((l) => addAwardType(l, name, appNow()))}
+                      onUpdate={(id, change) => applyToLedger((l) => updateAwardType(l, id, change, appNow()))}
+                    />
+                  ),
+                }
+              : null
           }
-          testMatches={
+          tallies={
+            // #198; #263: its own section.
+            ledger && !ledgerBlockedRef.current
+              ? {
+                  summary: talliesSummary(BUILT_IN_TALLIES.length, ledger.eventTypes.filter((t) => t.active).length),
+                  node: (
+                    <TalliesSection
+                      types={ledger.eventTypes}
+                      onAdd={(label, credited) => applyToLedger((l) => addEventType(l, label, credited, appNow()))}
+                      onActive={(id, active) => applyToLedger((l) => setEventTypeActive(l, id, active, appNow()))}
+                    />
+                  ),
+                }
+              : null
+          }
+          testMatches={{
+            summary: testMatchesSummary(testMatchesOnPhone(matches, match).length),
+            node: (
             <TestMatchesSection
               start={{
                 onStart: startTestMatch,
@@ -2550,8 +2615,11 @@ function TeamApp({
               onHideAll={hideTestMatches}
               onShow={showMatchAgain}
             />
-          }
-          backup={
+            ),
+          }}
+          backup={{
+            summary: backupSummary(lastBackup),
+            node: (
             <BackupSection
               message={backupMessage}
               busy={backupBusy}
@@ -2561,7 +2629,8 @@ function TeamApp({
               onConfirm={() => void restoreBackup()}
               onCancel={() => setPendingBackup(null)}
             />
-          }
+            ),
+          }}
           testKit={
             testKitOn ? (
               <TestKitSection

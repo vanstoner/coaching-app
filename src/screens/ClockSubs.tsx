@@ -26,6 +26,7 @@ import { isPlanned, type PlannedSub } from '../app/subPlan';
 import { Chip, ChipRow } from './Chip';
 import { ActionSheet, SheetButton } from './Sheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
+import { Icon } from './controls';
 import { SUB_PROMPT } from './subPromptColours';
 
 /** Each band's panel, and the ink on it (C3: dark ink on the brighter amber; #227: 4.5:1). */
@@ -152,13 +153,24 @@ export function SubPrompts({
                     <Text style={[local.pairText, ink]} numberOfLines={1}>
                       {nameOf(sub.playerId)} for
                     </Text>
+                    {/* The one twisty (control vocabulary, issue 264): › on the left, turning down; an icon, not text. */}
                     <Pressable
                       onPress={() => onExpand(open ? null : sub.playerId)}
                       style={[local.pairChip, { backgroundColor: tone.ink }]}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: open }}
                     >
-                      <Text style={[local.choiceText, { color: tone.onInk }]} numberOfLines={1}>
-                        {chosen ? nameOf(chosen) : 'Pick'} {open ? '▴' : '▾'}
-                      </Text>
+                      <View style={local.pairInner}>
+                        <Icon
+                          name="chevron-right"
+                          size={18}
+                          color={tone.onInk}
+                          style={open ? local.turned : undefined}
+                        />
+                        <Text style={[local.choiceText, local.pairName, { color: tone.onInk }]} numberOfLines={1}>
+                          {chosen ? nameOf(chosen) : 'Pick'}
+                        </Text>
+                      </View>
                     </Pressable>
                     {chosen && (
                       <Pressable
@@ -210,7 +222,9 @@ export function SubPlanList({
       {list.lines.map((line, i) =>
         line.done ? (
           <View key={line.playerId} style={[local.line, local.lineDone, i > 0 && local.lineRule]}>
-            <Text style={local.tick}>✓</Text>
+            <View style={local.tick}>
+              <Icon name="check" size={14} color={colours.inkFaint} />
+            </View>
             <Text style={[local.lineText, local.lineTextDone]} numberOfLines={2}>
               {line.text}
             </Text>
@@ -228,7 +242,7 @@ export function SubPlanList({
             <Text style={[local.status, line.band && { color: STATUS[line.band] }]} numberOfLines={1}>
               {line.status}
             </Text>
-            <Text style={local.chevron}>›</Text>
+            <Icon name="chevron-right" size={20} color={colours.inkMuted} style={local.chevron} />
           </Pressable>
         )
       )}
@@ -250,9 +264,10 @@ export function SubPlanList({
 
 /**
  * The plan collapsed to one line (#228, Dee's clutter fix 1): "Next: Zara on
- * for Isla · 10:00", with "+1 ▾" when more are still to make. A tap on the
- * sub opens its sheet; a tap on "▾" opens the whole list. The prompt panel
- * above is untouched.
+ * for Isla · 10:00", with "+1" when more are still to make. A tap on the
+ * sub opens its sheet; a tap on the twisty at the left opens the whole list
+ * (#264: the one twisty, › turning to point down, an icon not ▾ text). The
+ * prompt panel above is untouched.
  */
 export function SubPlanNext({
   title,
@@ -275,6 +290,15 @@ export function SubPlanNext({
   return (
     <View>
       <View style={[local.line, local.nextLine]}>
+        <Pressable
+          onPress={() => setOpen((v) => !v)}
+          style={local.moreHit}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          accessibilityLabel={open ? `Hide ${title.toLowerCase()}` : `Show ${title.toLowerCase()}`}
+        >
+          <Icon name="chevron-right" size={22} color={colours.inkMuted} style={open ? local.turned : undefined} />
+        </Pressable>
         {line ? (
           <Pressable
             onPress={() => onOpen(line.playerId)}
@@ -296,14 +320,9 @@ export function SubPlanNext({
             {title}
           </Text>
         )}
-        <Pressable
-          onPress={() => setOpen((v) => !v)}
-          style={local.moreHit}
-          accessibilityRole="button"
-          accessibilityLabel={open ? `Hide ${title.toLowerCase()}` : `Show ${title.toLowerCase()}`}
-        >
-          <Text style={local.more}>{open ? '▴' : more > 0 ? `+${more} ▾` : '▾'}</Text>
-        </Pressable>
+        <Text style={local.more} numberOfLines={1}>
+          {more > 0 ? `+${more}` : ''}
+        </Text>
       </View>
       {open && <SubPlanList title={title} list={list} nameOf={nameOf} onOpen={onOpen} />}
     </View>
@@ -491,7 +510,7 @@ const local = StyleSheet.create({
   linePressed: { backgroundColor: '#164f3c' },
   lineDone: { minHeight: 30 },
   dot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0, marginRight: 8 },
-  tick: { width: 18, flexShrink: 0, color: colours.inkFaint, fontSize: 13, includeFontPadding: false },
+  tick: { width: 18, flexShrink: 0 },
   lineText: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
   lineTextDone: { color: colours.inkFaint, fontSize: 14 },
   status: {
@@ -503,13 +522,16 @@ const local = StyleSheet.create({
     fontWeight: '700',
     includeFontPadding: false,
   },
-  chevron: { width: 14, flexShrink: 0, textAlign: 'right', color: colours.inkMuted, fontSize: 18, includeFontPadding: false },
+  chevron: { width: 20, flexShrink: 0 },
+  turned: { transform: [{ rotate: '90deg' }] },
+  pairInner: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', paddingHorizontal: 4 },
+  pairName: { flex: 1, alignSelf: 'auto' },
   nextLine: { paddingLeft: 0, paddingRight: 0, borderBottomWidth: 1, borderBottomColor: '#164f3c', marginTop: 4 },
-  nextHit: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: TOUCH_TARGET, paddingLeft: 12 },
+  nextHit: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: TOUCH_TARGET, paddingLeft: 4 },
   nextNone: { paddingLeft: 12, color: colours.inkMuted },
   // A fixed box, never sized to its text (the clipped-glyph trap).
-  moreHit: { width: 64, minHeight: TOUCH_TARGET, justifyContent: 'center', paddingRight: 8, flexShrink: 0 },
-  more: { alignSelf: 'stretch', textAlign: 'right', color: colours.inkMuted, fontSize: 14, includeFontPadding: false, flexShrink: 0 },
+  moreHit: { width: TOUCH_TARGET, minHeight: TOUCH_TARGET, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  more: { width: 36, textAlign: 'right', paddingRight: 8, color: colours.inkMuted, fontSize: 14, includeFontPadding: false, flexShrink: 0 },
   notPlanned: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', paddingHorizontal: 12 },
   notPlannedLabel: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginRight: 4 },
   notPlannedHit: { minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: 6 },

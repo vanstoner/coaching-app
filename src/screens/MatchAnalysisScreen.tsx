@@ -13,7 +13,8 @@
  */
 
 import { useEffect, useReducer, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { BackLink, TopBar } from './controls';
 import { Text } from './Text';
 
 import type { MatchEngine, MatchState } from '../engine/MatchEngine';
@@ -63,6 +64,10 @@ export function MatchAnalysisScreen({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
+        {/* #264 V31: one way back, top left; the back link and the back button at the foot went. */}
+        <TopBar
+          back={<BackLink label={backLabel.replace(/^Back to /, '')} accessibilityLabel={backLabel} onPress={onBack} />}
+        />
         <Text style={screen.title} numberOfLines={1}>
           Playing time
         </Text>
@@ -72,10 +77,6 @@ export function MatchAnalysisScreen({
         </Text>
         {pitch}
 
-        <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>{backLabel}</Text>
-        </Pressable>
-
         <Text style={screen.fieldLabel}>This match, minutes</Text>
         <Text style={screen.hint}>
           Outline: their average per match attended, from the other matches. Tap a heading to sort by it.
@@ -84,12 +85,6 @@ export function MatchAnalysisScreen({
 
         <Text style={[screen.caption, local.pointer]}>{SEASON_POINTER}</Text>
 
-        <Pressable
-          style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-          onPress={onBack}
-        >
-          <Text style={screen.buttonLabel}>{backLabel}</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );

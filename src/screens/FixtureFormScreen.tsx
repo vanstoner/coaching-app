@@ -13,17 +13,16 @@
  * fixture with only a name is still useful — it is something in the list to
  * fill in later — and refusing to save one would mean a coach who does not yet
  * know the kick-off time cannot record the game at all.
+ *
+ * #264: a form. Opposition is a Field row; minutes and periods are
+ * Segmented; Shape and Competition are Rows › to list sheets; the pitch,
+ * referee and stats sit in a closed Section. Save fixture is the pinned Main
+ * button under "Not saved yet"; Cancel is top left, and leaving a changed
+ * form asks first (V29, V30).
  */
 
-import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { useEffect, useReducer, useRef, useState } from 'react';
+import { BackHandler, KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Competition } from '../types/index';
@@ -33,7 +32,6 @@ import {
   dayLabel,
   daysInMonth,
   kickoffIso,
-  monthLabel,
   sameDay,
   startOfDay,
   toTimeInput,
@@ -42,7 +40,21 @@ import {
 } from '../app/kickoff';
 import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
 import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
-import { Chip, ChipRow } from './Chip';
+import { pitchAndRefereeLine } from '../app/pitch';
+import { canSaveForm, formReducer, leaveNeedsAsking } from '../app/saveState';
+import {
+  BackLink,
+  FieldRow,
+  FormStatus,
+  LeaveAsk,
+  ListSheet,
+  MainButton,
+  MainFoot,
+  RowNav,
+  Section,
+  SegmentedRow,
+  TopBar,
+} from './controls';
 import { PitchChips, RefereeField, type PitchValue } from './PitchFields';
 import { colours, screen } from './theme';
 import { appNow } from '../app/appClock';
@@ -89,6 +101,31 @@ export function FixtureFormScreen({
   const [kickoffAt, setKickoffAt] = useState<string | null>(initial.kickoffAt);
   const [excludeFromStats, setExcludeFromStats] = useState(initial.excludeFromStats);
   const [pitch, setPitch] = useState<PitchValue>(initial.pitch);
+  // #264 V29, V30: a form. "Nothing to save yet" until the first change,
+  // then "Not saved yet"; Save writes once; leaving a changed form asks.
+  const [phase, dispatch] = useReducer(formReducer, 'pristine');
+  const [asking, setAsking] = useState(false);
+  const [sheet, setSheet] = useState<'shape' | 'competition' | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const changed =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      dispatch({ type: 'change' });
+    };
+  const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
+  // Android Back is a way out too, and asks the same question (V30).
+  const leaveRef = useRef(leave);
+  leaveRef.current = leave;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      leaveRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
+
+  const pitchLine = pitchAndRefereeLine(pitch.surface, pitch.condition, pitch.referee);
 
   return (
     <View style={screen.flex}>
@@ -99,121 +136,125 @@ export function FixtureFormScreen({
         behavior="padding"
       >
         <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={screen.title}>New fixture</Text>
+          <TopBar back={<BackLink label="Cancel" chevron={false} onPress={leave} />} title="New fixture" />
 
-          <Text style={screen.fieldLabel}>Opposition</Text>
-          <TextInput
-            style={screen.input}
+          <FieldRow
+            first
+            label="Opposition"
             value={opponent}
-            onChangeText={setOpponent}
+            onChangeText={changed(setOpponent)}
             placeholder="Who are you playing?"
-            placeholderTextColor={colours.inkFaint}
             autoCapitalize="words"
             autoCorrect={false}
             maxLength={40}
             returnKeyType="done"
           />
 
-          <Text style={screen.fieldLabel}>Competition</Text>
-          <ChipRow>
-            {COMPETITIONS.map((c) => (
-              <Chip
-                key={c}
-                label={competitionLabel(c)}
-                selected={c === competition}
-                // Tapping the chosen one clears it: a coach who picked wrongly
-                // should not have to remember which value means "unset".
-                onPress={() => setCompetition(competition === c ? null : c)}
-              />
-            ))}
-          </ChipRow>
+          <KickoffField value={kickoffAt} onChange={changed(setKickoffAt)} />
 
-          <PitchChips value={pitch} onChange={setPitch} />
+          <SegmentedRow
+            label="Minutes"
+            options={TOTAL_MINUTES_CHOICES.map((m) => ({
+              value: m as number,
+              label: `${m}`,
+              accessibilityLabel: `${m} minutes`,
+            }))}
+            value={totalMinutes}
+            onChange={(m) => m !== null && changed(setTotalMinutes)(m)}
+          />
+          <SegmentedRow
+            label="Periods"
+            options={PERIOD_COUNT_CHOICES.map((p) => ({ value: p as number, label: periodNounPlural(p) }))}
+            value={periodCount}
+            onChange={(p) => p !== null && changed(setPeriodCount)(p)}
+          />
+          <RowNav label="Shape" value={shapeLabel(shape)} onPress={() => setSheet('shape')} />
+          <Text style={local.hint}>Just for this match. Your default stays as it is.</Text>
+          <RowNav
+            label="Competition"
+            value={competition ? competitionLabel(competition) : 'None'}
+            onPress={() => setSheet('competition')}
+          />
 
-          <Text style={screen.fieldLabel}>Stats</Text>
-          <ChipRow>
-            <Chip label="Counts" selected={!excludeFromStats} onPress={() => setExcludeFromStats(false)} />
-            <Chip label="Leave out" selected={excludeFromStats} onPress={() => setExcludeFromStats(true)} />
-          </ChipRow>
-          <Text style={screen.hint}>
-            Leave out a one-off or ad hoc game: its minutes stay on record but are not in averages or season
-            totals. You can change this later from the match report.
-          </Text>
-
-          <Text style={screen.fieldLabel}>Kick-off</Text>
-          <KickoffField value={kickoffAt} onChange={setKickoffAt} />
-
-          <RefereeField value={pitch} onChange={setPitch} />
-
-          <Text style={screen.fieldLabel}>This match's length</Text>
-          <ChipRow>
-            {TOTAL_MINUTES_CHOICES.map((m) => (
-              <Chip
-                key={m}
-                label={`${m}`}
-                selected={m === totalMinutes}
-                onPress={() => setTotalMinutes(m)}
-                compact
-              />
-            ))}
-          </ChipRow>
-          <Text style={screen.hint}>minutes</Text>
-
-          <Text style={screen.fieldLabel}>Played in</Text>
-          <ChipRow>
-            {PERIOD_COUNT_CHOICES.map((p) => (
-              <Chip
-                key={p}
-                label={periodNounPlural(p)}
-                selected={p === periodCount}
-                onPress={() => setPeriodCount(p)}
-              />
-            ))}
-          </ChipRow>
-
-          <Text style={screen.fieldLabel}>Shape</Text>
-          <ChipRow>
-            {SHAPES.map((s) => (
-              <Chip
-                key={s.code}
-                label={shapeLabel(s.code)}
-                detail={s.description}
-                selected={s.code === shape}
-                onPress={() => setShape(s.code)}
-                wide
-              />
-            ))}
-          </ChipRow>
-          <Text style={screen.hint}>
-            Just for this match. Your default stays as it is.
-          </Text>
-
-          <Pressable
-            style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]}
-            onPress={() =>
-              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape, excludeFromStats, pitch })
-            }
+          <Section
+            title="Pitch, referee and stats"
+            summary={`${pitchLine ?? 'Not set'} · ${excludeFromStats ? 'left out' : 'counts'}`}
+            open={moreOpen}
+            onToggle={() => setMoreOpen((o) => !o)}
           >
-            <Text style={screen.buttonLabel}>Save fixture</Text>
-          </Pressable>
-
-          <Pressable onPress={onCancel} style={screen.linkHit}>
-            <Text style={screen.link}>Cancel — nothing is saved</Text>
-          </Pressable>
+            <PitchChips value={pitch} onChange={changed(setPitch)} />
+            <RefereeField value={pitch} onChange={changed(setPitch)} />
+            <SegmentedRow
+              label="Stats"
+              options={[
+                { value: false, label: 'Counts' },
+                { value: true, label: 'Leave out' },
+              ]}
+              value={excludeFromStats}
+              onChange={(v) => v !== null && changed(setExcludeFromStats)(v)}
+            />
+            <Text style={local.hint}>
+              Leave out a one-off or ad hoc game: its minutes stay on record but are not in averages or season
+              totals. You can change this later from the match report.
+            </Text>
+          </Section>
         </ScrollView>
+        <MainFoot>
+          <FormStatus phase={phase} />
+          <MainButton
+            label="Save fixture"
+            disabled={!canSaveForm(phase, true)}
+            onPress={() => {
+              dispatch({ type: 'save' });
+              onSave({ opponent, competition, kickoffAt, totalMinutes, periodCount, shape, excludeFromStats, pitch });
+            }}
+          />
+        </MainFoot>
       </KeyboardAvoidingView>
+
+      <ListSheet
+        visible={sheet === 'shape'}
+        title="Shape"
+        items={SHAPES.map((s) => ({ value: s.code, label: shapeLabel(s.code), detail: s.description }))}
+        value={shape}
+        onPick={(code) => {
+          changed(setShape)(code);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet<Competition | 'none'>
+        visible={sheet === 'competition'}
+        title="Competition"
+        items={[
+          { value: 'none' as Competition | 'none', label: 'None' },
+          ...COMPETITIONS.map((c) => ({ value: c as Competition | 'none', label: competitionLabel(c) })),
+        ]}
+        value={competition ?? 'none'}
+        onPick={(c) => {
+          changed<Competition | null>(setCompetition)(c === 'none' ? null : (c as Competition));
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <LeaveAsk visible={asking} thing="fixture" onKeep={() => setAsking(false)} onLeave={onCancel} />
     </View>
   );
 }
 
+/** How many coming Saturdays are offered as segments (Dee: "the next three"). */
+const DAY_SEGMENTS = 3;
+
 /**
- * Kick-off, picked — #80 (PO ruling 2026-10-03: option A).
+ * Kick-off, picked — #80 (PO ruling 2026-10-03: option A), on the #264
+ * controls.
  *
  * > *"entering fixture date pain, needs a picker or restricted dropdowns"*
  *
- * The next 8 Saturdays and the usual kick-off times, one tap each. "Other
- * date" opens a month and a day, still without a keyboard. No dependency: the
- * rules are tested in `src/app/kickoff.ts`.
+ * The next three Saturdays as segments (a second tap clears the day), "Other
+ * date" a Row › opening a list of every day in the coming months, and the
+ * time a Row › opening the usual kick-off times. Still no keyboard and no
+ * dependency: the rules are tested in `src/app/kickoff.ts`.
  */
 function KickoffField({
   value,
@@ -227,16 +268,16 @@ function KickoffField({
 
   const [day, setDay] = useState<Date | null>(valid ? startOfDay(parsed!) : null);
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
-  const [other, setOther] = useState(false);
+  const [sheet, setSheet] = useState<'day' | 'time' | null>(null);
   const [now] = useState(() => appNow());
-  const saturdays = upcomingSaturdays(now);
+  const saturdays = upcomingSaturdays(now, DAY_SEGMENTS);
   // AC4: a saved day that is not one of the coming Saturdays still shows,
-  // selected, rather than as a blank.
+  // on the Other date row, rather than as a blank.
   const offList = day !== null && !saturdays.some((s) => sameDay(s, day));
-  const [month, setMonth] = useState<[number, number]>(() =>
-    day ? [day.getFullYear(), day.getMonth()] : [now.getFullYear(), now.getMonth()]
-  );
   const times = KICKOFF_TIMES.includes(time) ? KICKOFF_TIMES : [...KICKOFF_TIMES, time].sort();
+  const allDays = upcomingMonths(now).flatMap(([y, m]) =>
+    Array.from({ length: daysInMonth(y, m) }, (_, i) => new Date(y, m, i + 1))
+  ).filter((d) => d.getTime() >= startOfDay(now).getTime());
 
   const pick = (d: Date | null, t: string) => {
     setDay(d);
@@ -246,71 +287,45 @@ function KickoffField({
 
   return (
     <View style={local.kickoff}>
-      <ChipRow>
-        {saturdays.map((s) => (
-          <Chip
-            key={s.toISOString()}
-            label={dayLabel(s)}
-            selected={day !== null && sameDay(s, day)}
-            onPress={() => {
-              setOther(false);
-              pick(day !== null && sameDay(s, day) ? null : s, time);
-            }}
-          />
-        ))}
-        {offList && <Chip label={dayLabel(day!)} selected onPress={() => setOther(true)} />}
-        <Chip label="Other date" selected={other} onPress={() => setOther(!other)} />
-      </ChipRow>
+      <SegmentedRow
+        label="Day"
+        stacked
+        options={saturdays.map((s) => ({ value: s.getTime(), label: dayLabel(s) }))}
+        value={day !== null && !offList ? day.getTime() : null}
+        allowClear
+        onChange={(t) => pick(t === null ? null : new Date(t), time)}
+      />
+      <RowNav label="Other date" value={offList ? dayLabel(day!) : ''} onPress={() => setSheet('day')} />
+      <RowNav label="Kick-off time" value={time} onPress={() => setSheet('time')} />
+      <Text style={local.hint}>{day ? `${dayLabel(day)} at ${time}` : 'No date yet — you can add it later.'}</Text>
 
-      {other && (
-        <>
-          <Text style={screen.hint}>Month, then day.</Text>
-          <ChipRow>
-            {upcomingMonths(now).map(([y, m]) => (
-              <Chip
-                key={`${y}-${m}`}
-                label={monthLabel(y, m)}
-                selected={month[0] === y && month[1] === m}
-                onPress={() => setMonth([y, m])}
-              />
-            ))}
-          </ChipRow>
-          <ChipRow>
-            {Array.from({ length: daysInMonth(month[0], month[1]) }, (_, i) => {
-              const d = new Date(month[0], month[1], i + 1);
-              return (
-                <Chip
-                  key={i}
-                  label={`${i + 1}`}
-                  selected={day !== null && sameDay(d, day)}
-                  onPress={() => {
-                    pick(d, time);
-                    setOther(false);
-                  }}
-                  narrow
-                />
-              );
-            })}
-          </ChipRow>
-        </>
-      )}
-
-      <Text style={screen.hint}>Kick-off time</Text>
-      <ChipRow>
-        {times.map((t) => (
-          <Chip key={t} label={t} selected={t === time} onPress={() => pick(day, t)} narrow />
-        ))}
-      </ChipRow>
-
-      <Text style={screen.hint}>
-        {day
-          ? `${dayLabel(day)} at ${time}`
-          : 'No date yet — you can add it later.'}
-      </Text>
+      <ListSheet
+        visible={sheet === 'day'}
+        title="Other date"
+        items={allDays.map((d) => ({ value: d.getTime(), label: dayLabel(d) }))}
+        value={day ? day.getTime() : null}
+        onPick={(t) => {
+          pick(new Date(t), time);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'time'}
+        title="Kick-off time"
+        items={times.map((t) => ({ value: t, label: t }))}
+        value={time}
+        onPick={(t) => {
+          pick(day, t);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
     </View>
   );
 }
 
 const local = StyleSheet.create({
   kickoff: { alignSelf: 'stretch' },
+  hint: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginVertical: 4 },
 });

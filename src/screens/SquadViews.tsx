@@ -45,6 +45,7 @@ import { SortHeading, useTableSort } from './TableSort';
 import { BandDot, ColumnChart, KeyItem, OwedBar, UnitStack, chartColours, unitColours } from './Charts';
 import { VIEW_NOTHING_YET } from '../app/gettingStarted';
 import { EmptyState } from './GettingStarted';
+import { BackLink, RowNav, TopBar } from './controls';
 import { colours, screen, TOUCH_TARGET } from './theme';
 
 // ============================================================================
@@ -53,35 +54,27 @@ import { colours, screen, TOUCH_TARGET } from './theme';
 
 export function SquadTiles({ views, onOpen }: { views: SquadViews; onOpen: (view: SquadView) => void }) {
   const tiles = squadTiles(views);
-  const pairs = [tiles.slice(0, 2), tiles.slice(2, 4)];
+  // #264: each view is a Row › (it opens a screen); its answer is the light
+  // line under the title, and the accessible name keeps "Title: answer".
   return (
     <View style={local.tilesBlock}>
       <Text style={screen.fieldLabel}>Squad views</Text>
-      {pairs.map((pair, k) => (
-        <View key={k} style={local.tileRow}>
-          {pair.map((t) => (
-            <Pressable
-              key={t.view}
-              onPress={() => onOpen(t.view)}
-              style={({ pressed }) => [local.tile, pressed && screen.buttonPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`${t.title}: ${t.answer}`}
-            >
-              <View style={local.tileHead}>
-                <Text style={local.tileTitle}>{t.title}</Text>
-                <Text style={local.chevron}>›</Text>
-              </View>
-              <Text style={local.tileAnswer}>{t.answer}</Text>
-            </Pressable>
-          ))}
-        </View>
+      {tiles.map((t, i) => (
+        <RowNav
+          key={t.view}
+          first={i === 0}
+          label={t.title}
+          detail={t.answer}
+          accessibilityLabel={`${t.title}: ${t.answer}`}
+          onPress={() => onOpen(t.view)}
+        />
       ))}
     </View>
   );
 }
 
 // ============================================================================
-// The frame every view shares: a way back at the top and at the foot
+// The frame every view shares: one way back, top left (#264 V31)
 // ============================================================================
 
 interface ViewProps {
@@ -111,15 +104,10 @@ function ViewFrame({
   return (
     <View style={screen.flex}>
       <ScrollView contentContainerStyle={screen.scroll}>
-        <Pressable onPress={onBack} style={screen.linkHit}>
-          <Text style={screen.link}>Back to Squad</Text>
-        </Pressable>
+        <TopBar back={<BackLink label="Squad" onPress={onBack} />} />
         <Text style={screen.title}>{VIEW_TITLE[view]}</Text>
         {note !== null && <Text style={screen.caption}>{note}.</Text>}
         {children}
-        <Pressable style={({ pressed }) => [screen.button, pressed && screen.buttonPressed]} onPress={onBack}>
-          <Text style={screen.buttonLabel}>Back to Squad</Text>
-        </Pressable>
       </ScrollView>
     </View>
   );
