@@ -21,6 +21,10 @@ The APK on the releases page stays debug-signed and sideloadable.
         Decodes the keystore from the secrets into a private temp file, signs
         a copy of AAB as OUT, verifies it, prints the SHA-256 fingerprint, and
         deletes the keystore whatever happens.
+    play_bundle.py signer AAB
+        #232: the bundle's one signer verifies, is not the debug key, and its
+        SHA-256 fingerprint is printed as FINGERPRINT=... (google-play.yml
+        compares it with the one the play job wrote on the release page).
     play_bundle.py assets RELEASE_JSON
         Every asset on the release is one this project publishes (#211 D14).
     play_bundle.py --self-test
@@ -30,7 +34,9 @@ Passwords reach jarsigner and keytool through environment variables
 """
 
 import base64
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -165,7 +171,10 @@ def verify(aab):
     prints = re.findall(r"SHA256: ([0-9A-F:]{95})", text)
     if len(owners) != 1 or len(prints) != 1:
         return [f"expected one signer, found {len(owners)}"], None
-    print(f"  signer: {owners[0]}")
+    # #232 criterion 15: the certificate's owner is a person's name and town,
+    # and Actions logs are public, so only whether it is the debug key is said.
+    print(f"  signer: one certificate ({'the Android debug key' if DEBUG_OWNER in owners[0] else 'not the debug key'}; "
+          "owner not printed)")
     print(f"  SHA-256 fingerprint: {prints[0]}")
     if DEBUG_OWNER in owners[0]:
         return ["the bundle is signed with the Android debug key, which Play refuses"], prints[0]
@@ -286,7 +295,9 @@ def self_test():
         # Signing, with throwaway keys made here, exactly as Rob's steps make
         # his: PKCS12 from keytool, base64 of the file, three secrets.
         upload = os.path.join(d, "upload.keystore")
-        make_keystore(upload, "upload", "right-pass", "CN=Heart FC Coach upload, O=Self-test")
+        # #232 QA-5: a made-up person and town, never Rob's, so the test
+        # below can prove a certificate's owner never reaches a log.
+        make_keystore(upload, "upload", "right-pass", "CN=Pat Example, L=Madeup Town, O=Self-test")
         debug = os.path.join(d, "debug.keystore")
         make_keystore(debug, "androiddebugkey", "android", "CN=Android Debug, O=Android, C=US")
         os.environ["DEBUG_PASS"] = "android"
@@ -304,6 +315,14 @@ def self_test():
             problems, fingerprint = sign_with_secrets(debug_signed, out)
             check("healthy: the secrets sign a debug-signed bundle afresh, and it verifies",
                   problems == [] and fingerprint is not None)
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                verify(out)
+                main(["play_bundle.py", "signer", out])
+            shown = shown.getvalue()
+            check("never prints the certificate's owner (criterion 15): no name, no town, fingerprint only",
+                  "Pat Example" not in shown and "Madeup" not in shown and "Owner" not in shown
+                  and f"FINGERPRINT={fingerprint}" in shown)
             check("healthy: the signed bundle keeps every file but the old signature",
                   {i for i in zipfile.ZipFile(aab).namelist()} <=
                   set(zipfile.ZipFile(out).namelist()))
@@ -356,6 +375,10 @@ def main(argv):
         return 1 if state == "partial" else 0
     elif args[:1] == ["sign"] and len(args) == 3:
         found, fingerprint = sign_with_secrets(args[1], args[2])
+        if fingerprint and not found:
+            print(f"FINGERPRINT={fingerprint}")
+    elif args[:1] == ["signer"] and len(args) == 2:
+        found, fingerprint = verify(args[1])
         if fingerprint and not found:
             print(f"FINGERPRINT={fingerprint}")
     elif args[:1] == ["assets"] and len(args) == 2:

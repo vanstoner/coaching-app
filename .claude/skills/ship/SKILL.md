@@ -58,7 +58,29 @@ Rob's upload key from the `play-store` environment (limited to main, no
 reviewer) and attaches the `.aab`, its `.sha256` and the key's fingerprint to
 the same release. Secrets not set: green, and the page says so. Set but wrong:
 red, naming the problem, never a value; the APK release is untouched. The
-APK stays debug-signed for sideloading. Upload to Play is by hand, for now.
+APK stays debug-signed for sideloading. The signer's certificate owner is a
+person's name, so it is never printed: only its fingerprint and whether it is
+the debug key (#232 criterion 15).
+
+**Closed track on approval (#232 Part 1).** `google-play.yml` is the Play
+twin of `testflight.yml`: a push to `main` that changes `app.json`, or a
+dispatch, waits (bounded, on Linux, outside the environment) for that
+commit's release to carry its signed `.aab`, then in the `google-play`
+environment (Rob's reviewer, main only, the only home of
+`PLAY_SERVICE_ACCOUNT_JSON`) checks the file is the one the `play` job
+signed (SHA-256, the APK's JS, `distribution:app`, the version and build,
+the fingerprint on the page) and runs `play_api.py release`: one edit, the
+bundle reused if Play holds it, `<version> (build N)` on `PLAY_TRACK` as
+`completed` with `whats_new.txt` as notes (at most 500 characters, D3;
+`ci.yml` fails a bump over that), one commit, read back. `PLAY_PRODUCTION`
+(`'off'`) adds production in a second edit. The client's `guard()` refuses
+every write #232 does not name before it is sent, and any track but
+`PLAY_TRACK` (production only when `PLAY_PRODUCTION` is on); a refusal after
+the closed-track commit reports the build as on that track; read-only (`-f check=true`,
+`-f dry_run=true`) allows opening, reading and deleting its own edit only.
+Token: an RS256 JWT signed with `openssl`, no pip. `-f play_for=SHA` is the
+recovery. `PLAY_TRACK` is empty until the check names the closed track. The
+listing, icon, feature graphic and shots are Part 2.
 
 **TestFlight (#108 A).** `testflight.yml` signs and uploads the release
 build of `main`, in the `app-store` environment (Rob approves every run),
