@@ -112,7 +112,12 @@ describe('the docs follow (#228 AC11, AC12)', () => {
     expect(arch).not.toMatch(/sped up by the Test kit/);
     expect(arch).not.toMatch(/Beta clock offset and speed/);
   });
-  it('the App Store notes still say test matches run at up to 10x', () => {
-    expect(read('store', 'app-store', 'en-GB', 'whats_new.txt')).toContain('test matches at up to 10x speed');
+  // Replaced in 2.2.0 (#249): whats_new.txt now holds only the version's own
+  // notes, because Google Play takes at most 500 characters and a version bump
+  // must fit (#232 Part 1, play_api.py notes-check --require). The 10x claim
+  // lives on in the store description.
+  it('the store listing still says test matches run at up to ten times speed', () => {
+    expect(read('store', 'app-store', 'en-GB', 'description.txt')).toContain('at up to ten times speed');
+    expect(read('store', 'app-store', 'en-GB', 'whats_new.txt')).not.toMatch(/\b(5|8)x\b/);
   });
 });

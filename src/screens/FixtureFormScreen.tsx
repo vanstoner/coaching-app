@@ -14,8 +14,9 @@
  * fill in later — and refusing to save one would mean a coach who does not yet
  * know the kick-off time cannot record the game at all.
  *
- * #264: a form. Opposition is a Field row; minutes and periods are
- * Segmented; Shape and Competition are Rows › to list sheets; the pitch,
+ * #264: a form. Opposition is a Field row; periods are Segmented; Minutes
+ * (seven lengths, #249 C11), Shape (list B, #249 I36) and Competition are
+ * Rows › to list sheets; the pitch,
  * referee and stats sit in a closed Section. Save fixture is the pinned Main
  * button under "Not saved yet"; Cancel is top left, and leaving a changed
  * form asks first (V29, V30).
@@ -38,8 +39,9 @@ import {
   upcomingMonths,
   upcomingSaturdays,
 } from '../app/kickoff';
-import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
-import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
+import { PERIOD_COUNT_CHOICES, periodNounPlural } from '../app/matchClock';
+import { MINUTES_ITEMS, minutesValue, type SeasonSize } from '../app/shapeList';
+import { shapeLabel, type ShapeCode } from '../app/shapes';
 import { pitchAndRefereeLine } from '../app/pitch';
 import { canSaveForm, formReducer, initialFormPhase, leaveNeedsAsking } from '../app/saveState';
 import {
@@ -56,6 +58,7 @@ import {
   TopBar,
 } from './controls';
 import { PitchChips, RefereeField, type PitchValue } from './PitchFields';
+import { ShapeCost, ShapeSheet } from './ShapeSheet';
 import { colours, screen } from './theme';
 import { appNow } from '../app/appClock';
 
@@ -89,10 +92,13 @@ export function FixtureFormScreen({
   onSave,
   onCancel,
   creates = true,
+  seasonSize = { side: null, mainSet: false },
 }: {
   initial: FixtureDraft;
   onSave: (draft: FixtureDraft) => void;
   onCancel: () => void;
+  /** #249 I39: the season's size, for the Shape sheet and its cost line. */
+  seasonSize?: SeasonSize;
   /** A new fixture (Rob, 30 Oct): Not saved yet from the start, Save on. False when editing one. */
   creates?: boolean;
 }) {
@@ -110,7 +116,7 @@ export function FixtureFormScreen({
   const [phase, dispatch] = useReducer(formReducer, creates, initialFormPhase);
   const [touched, setTouched] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [sheet, setSheet] = useState<'shape' | 'competition' | null>(null);
+  const [sheet, setSheet] = useState<'shape' | 'competition' | 'minutes' | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const changed =
     <T,>(set: (v: T) => void) =>
@@ -159,16 +165,7 @@ export function FixtureFormScreen({
 
           <KickoffField value={kickoffAt} onChange={changed(setKickoffAt)} />
 
-          <SegmentedRow
-            label="Minutes"
-            options={TOTAL_MINUTES_CHOICES.map((m) => ({
-              value: m as number,
-              label: `${m}`,
-              accessibilityLabel: `${m} minutes`,
-            }))}
-            value={totalMinutes}
-            onChange={(m) => m !== null && changed(setTotalMinutes)(m)}
-          />
+          <RowNav label="Minutes" value={minutesValue(totalMinutes)} onPress={() => setSheet('minutes')} />
           <SegmentedRow
             label="Periods"
             options={PERIOD_COUNT_CHOICES.map((p) => ({ value: p as number, label: periodNounPlural(p) }))}
@@ -176,6 +173,7 @@ export function FixtureFormScreen({
             onChange={(p) => p !== null && changed(setPeriodCount)(p)}
           />
           <RowNav label="Shape" value={shapeLabel(shape)} onPress={() => setSheet('shape')} />
+          <ShapeCost season={seasonSize} shape={shape} />
           <Text style={local.hint}>Just for this match. Your default stays as it is.</Text>
           <RowNav
             label="Competition"
@@ -219,13 +217,23 @@ export function FixtureFormScreen({
         </MainFoot>
       </KeyboardAvoidingView>
 
-      <ListSheet
+      <ShapeSheet
         visible={sheet === 'shape'}
-        title="Shape"
-        items={SHAPES.map((s) => ({ value: s.code, label: shapeLabel(s.code), detail: s.description }))}
+        season={seasonSize}
         value={shape}
         onPick={(code) => {
           changed(setShape)(code);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'minutes'}
+        title="Minutes"
+        items={MINUTES_ITEMS}
+        value={totalMinutes}
+        onPick={(m) => {
+          changed(setTotalMinutes)(m);
           setSheet(null);
         }}
         onCancel={() => setSheet(null)}

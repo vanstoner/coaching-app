@@ -35,7 +35,7 @@ import type { Distribution } from './distribution';
 import { opponentLabel } from './fixtures';
 import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
-import { slotSpots } from './pitchLayout';
+import { slotSpots, type Rect } from './pitchLayout';
 import { displayName } from './squad';
 
 /** 2×2 is the default: it reads better on a phone (Rob, #165). */
@@ -56,6 +56,56 @@ export const PLAN_IMAGE_WIDTH: Record<PlanImageLayout, number> = { grid: 1200, r
 export function shareFirstStep(periodCount: number, distribution: Distribution): 'ask' | 'grid' {
   if (distribution === 'store') return 'grid';
   return periodCount === 4 ? 'ask' : 'grid';
+}
+
+/**
+ * Image pixels, per layout. The grid's pitches are wider, so its type is
+ * larger. Here rather than in the view so the geometry is tested in Node.
+ */
+export const PLAN_IMAGE_SIZES = {
+  grid: { pad: 40, gap: 32, title: 60, details: 30, period: 36, position: 26, name: 40, sub: 34, bench: 30, footer: 26 },
+  row: { pad: 36, gap: 28, title: 60, details: 30, period: 32, position: 20, name: 30, sub: 28, bench: 24, footer: 24 },
+} as const;
+
+/**
+ * A name box's width as a fraction of its pitch: 30 %, three in a row at
+ * 0.18 / 0.5 / 0.82 never touch; 22 % at 11-a-side, the whole pitch, with
+ * the phone's four-across spacing (#249 H33; Rob, 30 Oct, `approve 1`).
+ */
+export function planSlotWidth(onFieldCount: number): number {
+  return onFieldCount >= 11 ? 0.22 : 0.3;
+}
+
+/** One period's column width and pitch height, in image pixels. */
+export function planPitchSize(layout: PlanImageLayout, periodCount: number): { colWidth: number; pitchHeight: number } {
+  const s = PLAN_IMAGE_SIZES[layout];
+  // Four in a row is for quarters; halves sit side by side either way.
+  const cols = layout === 'row' ? periodCount : Math.min(2, periodCount);
+  const colWidth = (PLAN_IMAGE_WIDTH[layout] - 2 * s.pad - s.gap * (cols - 1)) / cols;
+  return { colWidth, pitchHeight: (colWidth * 4) / 3 };
+}
+
+/**
+ * Where a name box is drawn on its pitch, in image pixels: the position name
+ * and the pill together, centred on the spot. PlanImageView draws exactly
+ * this, so the geometry test measures what is in the picture.
+ */
+export function planSlotBox(
+  slot: Pick<PlanImageSlot, 'x' | 'y'>,
+  layout: PlanImageLayout,
+  colWidth: number,
+  pitchHeight: number,
+  slotWidth: number
+): Rect {
+  const s = PLAN_IMAGE_SIZES[layout];
+  // The label (with its 4px margin) and the pill (6px padding each side).
+  const height = s.position * 1.2 + 4 + s.name * 1.2 + 12;
+  return {
+    x: colWidth * (slot.x - slotWidth / 2),
+    y: pitchHeight * slot.y - (s.position * 1.2 + s.name * 1.2 + 16) / 2,
+    width: colWidth * slotWidth,
+    height,
+  };
 }
 
 export const PLAN_IMAGE_FOOTER = 'The plan, not a promise: it can change on the day.';
@@ -91,6 +141,8 @@ export interface PlanImage {
   /** "Saturday 10 October · kick-off 10:00 · 4 quarters of 12½ min". */
   details: string;
   periods: PlanImagePeriod[];
+  /** A name box's width as a fraction of its pitch (`planSlotWidth`). */
+  slotWidth: number;
   footer: string;
 }
 
@@ -214,6 +266,7 @@ export function planImage(input: {
     title: `${squadName} v ${opponentLabel(match)}`,
     details: `${kickoffLine(match.kickoffAt)} · ${lengthLine(match.totalMinutes, periodCount)}`,
     periods,
+    slotWidth: planSlotWidth(format.onFieldCount),
     footer: PLAN_IMAGE_FOOTER,
   };
 }

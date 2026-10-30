@@ -15,6 +15,12 @@
  * A plan for an upcoming match is not in the record, and a restored fixture
  * has none: `PLANS_NOT_RESTORED` says so on screen.
  *
+ * **A formation this build does not know is refused, never swapped** (ADR-023
+ * D4; #249 J42, J43, Rob's Q4): a planned fixture in one is left out and
+ * counted, a Settings default in one leaves this phone's own, and the rest of
+ * the file comes back. Played matches are not affected: minutes fold from
+ * intervals.
+ *
  * Pure TypeScript. No minute is made here: minutes fold from intervals.
  */
 
@@ -26,16 +32,63 @@ import { DEFAULT_SHAPE, formatForShape, makeFormat, readShapeCode } from './shap
 
 export const PLANS_NOT_RESTORED = 'Plans for upcoming matches are not in a minutes file, so none were restored.';
 
-/** The shape and names a record gives, as a format. Fresh ids: a format belongs to one phone. */
-export function formatFromRecord(shape: string | null, labels: readonly string[], fallback?: Format): Format {
-  // Every shape this build knows, the 5-a-side ones included (#223).
+/** What `formatFromRecord` gives: the format, or why it was refused. */
+export type FormatFromRecord = { ok: true; format: Format } | { ok: false; shape: string; reason: string };
+
+/** Why a stored shape was refused (ADR-023 D4). */
+export const unknownShapeReason = (shape: string): string =>
+  `This version does not know the formation ${shape}. Update Heart FC Coach, then import again.`;
+
+/**
+ * The shape and names a record gives, as a format. Fresh ids: a format
+ * belongs to one phone.
+ *
+ * A shape this build does not know is **refused** with a reason, never
+ * replaced by a format of another size (ADR-023 D4). A null shape, one the
+ * writing build could not name, keeps the fallback as before (#249 J44).
+ */
+export function formatFromRecord(shape: string | null, labels: readonly string[], fallback?: Format): FormatFromRecord {
+  // Every shape this build knows, the 5-, 9- and 11-a-side ones included.
   const code = readShapeCode(shape);
+  if (shape !== null && code === null) return { ok: false, shape, reason: unknownShapeReason(shape) };
   const base = code ? makeFormat(code) : (fallback ?? formatForShape(DEFAULT_SHAPE, null));
-  if (labels.length !== base.positions.length) return base;
+  if (labels.length !== base.positions.length) return { ok: true, format: base };
   return {
-    ...base,
-    positions: base.positions.map((p, i) => ({ ...p, label: labels[i] || p.label })),
+    ok: true,
+    format: {
+      ...base,
+      positions: base.positions.map((p, i) => ({ ...p, label: labels[i] || p.label })),
+    },
   };
+}
+
+/** What an import left out because this build does not know its formation (#249 J43). */
+export interface UnknownShapes {
+  /** The codes of the planned fixtures not brought back, one per fixture. */
+  fixtures: string[];
+  /** The Settings default's code, when this phone kept its own; else null. */
+  settings: string | null;
+}
+
+/**
+ * The line an import adds when something was left out (#249 J43): the item,
+ * the code and the remedy. Null when nothing was.
+ */
+export function unknownShapesMessage(left: UnknownShapes): string | null {
+  const parts: string[] = [];
+  const codes = [...new Set(left.fixtures)].join(', ');
+  const n = left.fixtures.length;
+  if (n > 0) {
+    parts.push(
+      `${n} planned ${n === 1 ? 'fixture uses a formation' : 'fixtures use formations'} this version does not know (${codes}), so ${n === 1 ? 'it was' : 'they were'} not brought back.`
+    );
+  }
+  if (left.settings !== null) {
+    parts.push(
+      `The file's Match defaults use a formation this version does not know (${left.settings}), so this phone kept its own.`
+    );
+  }
+  return parts.length === 0 ? null : `${parts.join(' ')} Update Heart FC Coach, then import again.`;
 }
 
 /** A child from the record, with their profile where one was recorded. */
@@ -77,18 +130,24 @@ export function plannedFixtures(ledger: Ledger): LedgerFixture[] {
   return ledger.fixtures.filter((f) => f.state === 'planned' && !recorded.has(f.id) && !hidden.has(f.id));
 }
 
-/** A planned fixture rebuilt on this phone, with its own id, so later recording lines up. */
+/**
+ * A planned fixture rebuilt on this phone, with its own id, so later
+ * recording lines up. Null when its formation is one this build does not
+ * know (ADR-023 D4): it is left out, never rebuilt at another size.
+ */
 export function fixtureFromRecord(
   f: LedgerFixture,
   players: Player[],
   squadId: UUID,
   defaults: Format,
   nowFn: () => Date
-): SavedMatch {
+): SavedMatch | null {
+  const read = formatFromRecord(f.shape, f.labels, defaults);
+  if (!read.ok) return null;
   const { stored } = newMatch(
     {
       squadId,
-      format: formatFromRecord(f.shape, f.labels, defaults),
+      format: read.format,
       totalMinutes: f.totalMinutes,
       periodCount: f.periodCount,
       players,
@@ -111,6 +170,24 @@ export function fixtureFromRecord(
   };
 }
 
+/** Planned fixtures rebuilt, and the codes of those refused (ADR-023 D4). */
+function rebuildFixtures(
+  fixtures: readonly LedgerFixture[],
+  players: Player[],
+  squadId: UUID,
+  defaults: Format,
+  now: Date
+): { rebuilt: SavedMatch[]; refused: string[] } {
+  const rebuilt: SavedMatch[] = [];
+  const refused: string[] = [];
+  for (const f of fixtures) {
+    const made = fixtureFromRecord(f, players, squadId, defaults, () => now);
+    if (made) rebuilt.push(made);
+    else refused.push(f.shape ?? '');
+  }
+  return { rebuilt, refused };
+}
+
 export interface Restored {
   squadId: UUID;
   squadName: string;
@@ -118,15 +195,24 @@ export interface Restored {
   /** Null when the record holds no settings (a ledger from before 1.3.0). */
   settings: { format: Format; totalMinutes: number; periodCount: number; buzzWhenSubDue: boolean } | null;
   fixtures: SavedMatch[];
+  /** What was left out for a formation this build does not know (#249 J43). */
+  unknownShapes: UnknownShapes;
 }
 
-function settingsFrom(s: LedgerSettings | null): Restored['settings'] {
-  if (!s || s.totalMinutes <= 0 || s.periodCount <= 0) return null;
+/** The record's settings; refused (`unknown`) when their formation is one this build does not know. */
+function settingsFrom(s: LedgerSettings | null): { settings: Restored['settings']; unknown: string | null } {
+  if (!s || s.totalMinutes <= 0 || s.periodCount <= 0) return { settings: null, unknown: null };
+  const read = formatFromRecord(s.shape, s.labels);
+  // ADR-023 D4: this phone keeps its own defaults, length and periods included.
+  if (!read.ok) return { settings: null, unknown: read.shape };
   return {
-    format: formatFromRecord(s.shape, s.labels),
-    totalMinutes: s.totalMinutes,
-    periodCount: s.periodCount,
-    buzzWhenSubDue: s.buzzWhenSubDue,
+    settings: {
+      format: read.format,
+      totalMinutes: s.totalMinutes,
+      periodCount: s.periodCount,
+      buzzWhenSubDue: s.buzzWhenSubDue,
+    },
+    unknown: null,
   };
 }
 
@@ -134,14 +220,16 @@ function settingsFrom(s: LedgerSettings | null): Restored['settings'] {
 export function restoreFromRecord(ledger: Ledger, fallbackSquadId: UUID, defaults: Format, now: Date): Restored {
   const squadId = (ledger.squad.id || fallbackSquadId) as UUID;
   const players = restorablePlayers(ledger).map((p) => playerFromRecord(ledger, p, squadId, now));
-  const settings = settingsFrom(ledger.settings);
+  const { settings, unknown } = settingsFrom(ledger.settings);
   const format = settings?.format ?? defaults;
+  const { rebuilt, refused } = rebuildFixtures(plannedFixtures(ledger), players, squadId, format, now);
   return {
     squadId,
     squadName: ledger.squad.name,
     players,
     settings,
-    fixtures: plannedFixtures(ledger).map((f) => fixtureFromRecord(f, players, squadId, format, () => now)),
+    fixtures: rebuilt,
+    unknownShapes: { fixtures: refused, settings: unknown },
   };
 }
 
@@ -150,6 +238,11 @@ export interface Extended {
   matches: SavedMatch[];
   addedPlayers: number;
   addedFixtures: number;
+  /**
+   * Fixtures left out for a formation this build does not know (#249 J43).
+   * Settings are never taken from a file on this path, so `settings` is null.
+   */
+  unknownShapes: UnknownShapes;
 }
 
 /** #195 AC5: a phone with data gets what it is missing, and nothing it has is changed. */
@@ -167,14 +260,19 @@ export function extendFromRecord(
     .map((p) => playerFromRecord(ledger, p, squadId, now));
   const nextPlayers = [...players, ...newPlayers];
   const knownMatches = new Set(matches.map((m) => m.match.id));
-  const newFixtures = plannedFixtures(ledger)
-    .filter((f) => !knownMatches.has(f.id))
-    .map((f) => fixtureFromRecord(f, nextPlayers, squadId, defaults, () => now));
+  const { rebuilt, refused } = rebuildFixtures(
+    plannedFixtures(ledger).filter((f) => !knownMatches.has(f.id)),
+    nextPlayers,
+    squadId,
+    defaults,
+    now
+  );
   return {
     players: nextPlayers,
-    matches: [...matches, ...newFixtures],
+    matches: [...matches, ...rebuilt],
     addedPlayers: newPlayers.length,
-    addedFixtures: newFixtures.length,
+    addedFixtures: rebuilt.length,
+    unknownShapes: { fixtures: refused, settings: null },
   };
 }
 

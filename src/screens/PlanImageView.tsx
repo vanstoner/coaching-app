@@ -17,7 +17,14 @@ import { forwardRef } from 'react';
 import { PixelRatio, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Text } from './Text';
 
-import { PLAN_IMAGE_WIDTH, type PlanImage, type PlanImageLayout } from '../app/planImage';
+import {
+  PLAN_IMAGE_SIZES,
+  PLAN_IMAGE_WIDTH,
+  planPitchSize,
+  planSlotBox,
+  type PlanImage,
+  type PlanImageLayout,
+} from '../app/planImage';
 
 const PAPER = '#f7f4ea';
 const INK = '#13261f';
@@ -29,15 +36,6 @@ const GOLD = '#ffd166';
 const PILL = '#ffffff';
 const LINE = 'rgba(255,255,255,0.35)';
 
-/** Image pixels, per layout. The grid's pitches are wider, so its type is larger. */
-const SIZES = {
-  grid: { pad: 40, gap: 32, title: 60, details: 30, period: 36, position: 26, name: 40, sub: 34, bench: 30, footer: 26 },
-  row: { pad: 36, gap: 28, title: 60, details: 30, period: 32, position: 20, name: 30, sub: 28, bench: 24, footer: 24 },
-} as const;
-
-/** A slot's width as a fraction of the pitch: three in a row at 0.18 / 0.5 / 0.82 never touch. */
-const SLOT_WIDTH = 0.3;
-
 export const PlanImageView = forwardRef<View, {
   image: PlanImage;
   layout: PlanImageLayout;
@@ -45,12 +43,10 @@ export const PlanImageView = forwardRef<View, {
 }>(function PlanImageView({ image, layout, onLayout }, ref) {
   const k = 1 / PixelRatio.get();
   const px = (n: number) => n * k;
-  const s = SIZES[layout];
+  const s = PLAN_IMAGE_SIZES[layout];
   const width = PLAN_IMAGE_WIDTH[layout];
   // Four in a row is for quarters; halves sit side by side either way.
-  const cols = layout === 'row' ? image.periods.length : Math.min(2, image.periods.length);
-  const colWidth = (width - 2 * s.pad - s.gap * (cols - 1)) / cols;
-  const pitchHeight = (colWidth * 4) / 3;
+  const { colWidth, pitchHeight } = planPitchSize(layout, image.periods.length);
 
   const t = (size: number, colour: string, weight: '400' | '600' | '700' = '400') => ({
     fontSize: px(size),
@@ -86,44 +82,40 @@ export const PlanImageView = forwardRef<View, {
                   { height: px(pitchHeight * 0.13), borderWidth: px(3), borderColor: LINE },
                 ]}
               />
-              {period.slots.map((slot) => (
-                <View
-                  key={slot.positionId}
-                  style={[
-                    local.slot,
-                    {
-                      width: px(colWidth * SLOT_WIDTH),
-                      left: px(colWidth * (slot.x - SLOT_WIDTH / 2)),
-                      // Centred on the spot: the label and pill together are about this tall.
-                      top: px(pitchHeight * slot.y - (s.position * 1.2 + s.name * 1.2 + 16) / 2),
-                    },
-                  ]}
-                >
-                  <Text
-                    allowFontScaling={false}
-                    numberOfLines={1}
-                    style={[local.stretch, t(s.position, POSITION, '700'), { marginBottom: px(4) }]}
-                  >
-                    {slot.label}
-                  </Text>
+              {period.slots.map((slot) => {
+                // Centred on the spot; 22 % wide at 11-a-side (#249 H33).
+                const box = planSlotBox(slot, layout, colWidth, pitchHeight, image.slotWidth);
+                return (
                   <View
-                    style={[
-                      local.pill,
-                      { backgroundColor: slot.keeper ? GOLD : PILL, paddingVertical: px(6) },
-                    ]}
+                    key={slot.positionId}
+                    style={[local.slot, { width: px(box.width), left: px(box.x), top: px(box.y) }]}
                   >
                     <Text
                       allowFontScaling={false}
                       numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.6}
-                      style={[local.stretch, t(s.name, INK, '700')]}
+                      style={[local.stretch, t(s.position, POSITION, '700'), { marginBottom: px(4) }]}
                     >
-                      {slot.name ?? '–'}
+                      {slot.label}
                     </Text>
+                    <View
+                      style={[
+                        local.pill,
+                        { backgroundColor: slot.keeper ? GOLD : PILL, paddingVertical: px(6) },
+                      ]}
+                    >
+                      <Text
+                        allowFontScaling={false}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.6}
+                        style={[local.stretch, t(s.name, INK, '700')]}
+                      >
+                        {slot.name ?? '–'}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
 
             <View style={{ marginTop: px(12) }}>

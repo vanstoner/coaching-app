@@ -78,7 +78,7 @@ import {
   type LedgerSettings,
   type SetupInput,
 } from './ledgerSetup';
-import { shapeOfFormat } from './shapes';
+import { SHAPE_SIDES, shapeOfFormat } from './shapes';
 
 export type { LedgerFixture, LedgerProfile, LedgerSettings, SetupInput } from './ledgerSetup';
 
@@ -1153,8 +1153,14 @@ export const FIRST_SEASON_ID = 'first-season' as UUID;
 /** Age groups a season may name (#224 AC5): U7 to U18. */
 export const AGE_GROUPS: readonly string[] = Array.from({ length: 12 }, (_, i) => `U${i + 7}`);
 
-/** Main formats 2.0.0 offers, as players a side (#224 T9): 5 and 7. */
-export const MAIN_SIDES: readonly number[] = [5, 7];
+/**
+ * Main formats a season may name, as players a side: every size a shape
+ * exists for, 5, 7, 9 and 11 (#224 T9; #249 B7, ADR-023 D1).
+ */
+export const MAIN_SIDES: readonly number[] = SHAPE_SIDES;
+
+/** "5-, 7-, 9- or 11-a-side", from `MAIN_SIDES`. */
+const MAIN_SIDES_WORDS = `${MAIN_SIDES.slice(0, -1).map((n) => `${n}-`).join(', ')} or ${MAIN_SIDES[MAIN_SIDES.length - 1]}-a-side`;
 
 /** A season name's limit (#243 Q4). */
 export const SEASON_NAME_MAX = 16;
@@ -1225,7 +1231,7 @@ function seasonRecord(
     return { ok: false, reason: 'The age group is U7 to U18.' };
   }
   if (input.mainSide !== null && !MAIN_SIDES.includes(input.mainSide)) {
-    return { ok: false, reason: 'The main format is 5-a-side or 7-a-side.' };
+    return { ok: false, reason: `The main format is ${MAIN_SIDES_WORDS}.` };
   }
   const have = ledger.seasons.find((x) => x.id === input.id);
   return {

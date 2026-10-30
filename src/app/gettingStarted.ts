@@ -241,7 +241,7 @@ export const MADE_UP_OPPONENTS: ReadonlySet<string> = new Set([...TEST_OPPONENTS
  * Its limits, for the Architect (ruling Q6 asks Ada to check this):
  *
  * - **A false yes** needs a real squad named only from Ava, Ben, Cal, Dee, Eli,
- *   Fay, Gus, Hal, Ivy and Jo, playing a team called Test Rovers, Sample Town,
+ *   Fay, Gus, Hal, Ivy, Jo, Kai, Lia, Mo and Ned (#249), playing a team called Test Rovers, Sample Town,
  *   Mock Albion, Practice Park, Example Wanderers, Dummy Athletic, Trial Town,
  *   Fixture Forest, Demo Dynamos, Placeholder City or Sample United. The cost
  *   is one yellow line pointing at Forget everything; nothing is changed.

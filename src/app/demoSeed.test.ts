@@ -16,7 +16,7 @@ import { createMemoryStore, clearSession, loadSession, saveSession } from './per
 import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from './placeholderSquad';
 import { BUZZ_WHEN_SUB_DUE_DEFAULT } from './settings';
 import { makePlayer } from './squad';
-import { TEST_NAMES, TEST_OPPONENTS } from './testKit';
+import { TEST_NAMES, TEST_OPPONENTS, testNamesFor } from './testKit';
 import { SEASON, addTestSeason } from './testSeason';
 import { STORE_OPPONENTS, STORE_SUB_DUE_AFTER_LAUNCH_MS, seedDemo, seedFor, shouldAutoSeed, storeContents, type SessionDefaults, type StoreContents } from './demoSeed';
 import { MatchEngine } from '../engine/MatchEngine';
@@ -129,7 +129,7 @@ describe('the demo seeds on first open, through the real save path (#146 AC4)', 
     expect(first.seeds).toBe(true);
 
     const saved = (await loadSession(store))!;
-    expect(saved.players.map((p) => p.firstName).sort()).toEqual([...TEST_NAMES].sort());
+    expect(saved.players.map((p) => p.firstName).sort()).toEqual([...testNamesFor(7)].sort());
     expect(saved.matches).toHaveLength(2 + SEASON.length);
     expect(saved.squadId).toBe(d.squadId);
     expect(saved.squadName).toBe(PLACEHOLDER_SQUAD_NAME);

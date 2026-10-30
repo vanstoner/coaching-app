@@ -492,3 +492,19 @@ analysis, iOS". Entries are added as each release ships.
   the ten steps behind every figure, and an info tap beside each figure
   opens its step. The spec holds the same words, and a test keeps them
   equal.
+- **2.2.0 (in progress) — 9- and 11-a-side (#249; ADR-023).** Rob, 29 Oct:
+  *"I do want 9 and 11 aside formats available with appropriate setups."*
+  Four formations join the four there were: 3-3-2 and 3-2-3 at 9-a-side,
+  4-4-2 and 4-3-3 at 11-a-side, with the 4-3-3 wingers counted as attack.
+  Matches can be 70 or 80 minutes, picked from a list. A new team is
+  offered the format for its age group (U7–U8 5-a-side, U9–U10 7, U11–U12
+  9, U13 and up 11), and Start a new season makes the same suggestion; a
+  9-a-side team starts at 60 minutes in halves and an 11-a-side one at 70.
+  At 11-a-side every pill on the pitch is narrower, so a back four fits a
+  phone, and pills are 48 dp tall everywhere. The formation list shows this
+  season's size first and says what a match at another size costs the
+  season's figures. An import from a later version leaves out a planned
+  fixture or default in a formation this one does not know, and says so,
+  rather than turning it into 7-a-side. Older versions cannot do that: a
+  9- or 11-a-side fixture imported into a version before 2.2.0 becomes
+  7-a-side without a word. Release 2.1.0 is frozen as a fixture (#167).

@@ -5,7 +5,7 @@ import { uuid } from '../types/index';
 import { makeSevenASideFormat } from './placeholderSquad';
 import { makePlayer } from './squad';
 import { projectPlan } from './matchPlan';
-import { TEST_NAMES, addTestData, isBetaBuild, showTestKit } from './testKit';
+import { addTestData, isBetaBuild, showTestKit, testNamesFor } from './testKit';
 
 const root = resolve(__dirname, '../..');
 
@@ -75,7 +75,7 @@ describe('test data (#95 AC4)', () => {
 
   it('adds a synthetic squad and two fixtures, the first planned with a sub each period', () => {
     const data = addTestData([], [], squadId, format, 50, 4, now);
-    expect(data.players.map((p) => p.firstName)).toEqual(TEST_NAMES);
+    expect(data.players.map((p) => p.firstName)).toEqual(testNamesFor(7));
     expect(data.matches).toHaveLength(2);
     const [soon, later] = data.matches;
     expect(Date.parse(soon.match.kickoffAt!)).toBe(now.getTime() + 30 * 60_000);
@@ -92,7 +92,7 @@ describe('test data (#95 AC4)', () => {
     const once = addTestData([mine], [], squadId, format, 50, 4, now);
     expect(once.players.filter((p) => p.firstName === 'Ben')).toEqual([mine]);
     const twice = addTestData(once.players, once.matches, squadId, format, 50, 4, now);
-    expect(twice.players).toHaveLength(TEST_NAMES.length);
+    expect(twice.players).toHaveLength(testNamesFor(7).length);
     expect(twice.matches).toHaveLength(4);
     expect(twice.summary).toBe('Added 0 test players and 2 fixtures.');
   });

@@ -4,7 +4,7 @@ NEW IN 1.3.0
 • Sub alerts: 30 seconds before each planned sub, the clock's prompt rises green, turns amber, then red if you're late, and the phone buzzes once. Tap Done and the sub is made.
 • The plan you share with parents shows every sub's exact time.
 • Results from your goals, awards, and your own tallies on each match.
-• 5-a-side formations and 40-minute matches, beside 7-a-side.
+• 5-, 7-, 9- and 11-a-side formations, and matches from 40 to 90 minutes.
 • Back up the whole app to one file and restore it on a new phone.
 
 PLAN BEFORE KICK-OFF

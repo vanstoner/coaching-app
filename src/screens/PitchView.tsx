@@ -35,16 +35,17 @@ import { Text } from './Text';
 
 import type { Format, UUID } from '../types/index';
 import {
-  PILL_WIDTH_FRACTION,
+  PILL_HEIGHT,
+  PITCH_ASPECT,
   dropTargetAt,
+  pillWidthFor,
+  slotBox,
   slotSpots,
   type DropTarget,
   type Rect,
 } from '../app/pitchLayout';
 import type { Sheet } from '../app/teamSheet';
-import { colours, TOUCH_TARGET } from './theme';
-
-const PILL_HEIGHT = 46;
+import { colours } from './theme';
 
 export interface PitchViewProps {
   format: Format;
@@ -189,7 +190,8 @@ export function PitchView(props: PitchViewProps) {
     return made;
   };
 
-  const pillWidth = Math.max(TOUCH_TARGET * 2, pitch.width * PILL_WIDTH_FRACTION);
+  // #249 F25: 72dp for every pill at 11-a-side, so a row of four fits a phone.
+  const pillWidth = pillWidthFor(format.onFieldCount, pitch.width);
 
   // A render FUNCTION, not a component: a component defined in here would be a
   // new type every render, remounting the pill under the finger mid-drag.
@@ -210,7 +212,8 @@ export function PitchView(props: PitchViewProps) {
           dragging && s.dimmed,
         ]}
       >
-        <Text style={[s.name, onBench && s.benchName]} numberOfLines={1}>
+        {/* One line, ending in "…" when too long, never clipped mid-letter (#249 F29). */}
+        <Text style={[s.name, onBench && s.benchName]} numberOfLines={1} ellipsizeMode="tail">
           {nameOf(id)}
         </Text>
         {detailOf && (
@@ -234,17 +237,11 @@ export function PitchView(props: PitchViewProps) {
         {pitch.width > 0 &&
           spots.map((spot) => {
             const who = sheet[spot.positionId] ?? null;
+            const box = slotBox(spot, pitch.width, pitch.height, pillWidth);
             return (
               <View
                 key={spot.positionId}
-                style={[
-                  s.slot,
-                  {
-                    width: pillWidth,
-                    left: spot.x * pitch.width - pillWidth / 2,
-                    top: spot.y * pitch.height - PILL_HEIGHT / 2 - 14,
-                  },
-                ]}
+                style={[s.slot, { width: box.width, left: box.x, top: box.y }]}
               >
                 {props.onRenamePosition ? (
                   <Pressable
@@ -332,7 +329,7 @@ const s = StyleSheet.create({
   root: { alignSelf: 'stretch' },
   pitch: {
     alignSelf: 'stretch',
-    aspectRatio: 3 / 3.8,
+    aspectRatio: PITCH_ASPECT,
     backgroundColor: '#13573f',
     borderColor: colours.line,
     borderWidth: 2,

@@ -49,10 +49,15 @@ interface Position { id: UUID; formatId: UUID; label: string; kind: 'goalkeeper'
 ```
 
 - Exactly one `goalkeeper` position per format.
-- Four built-in shapes (`src/app/shapes.ts`), each a list of slots with a
+- Eight built-in shapes (`src/app/shapes.ts`), each a list of slots with a
   renameable label and a fixed unit: **2-3-1 + GK** and **2-2-2 + GK**
   (`name` "7-a-side", `onFieldCount` 7); **1-2-1 + GK** (GK, D, LM, RM, F) and
-  **2-2 + GK** (GK, LB, RB, LF, RF), "5-a-side", `onFieldCount` 5 (#223).
+  **2-2 + GK** (GK, LB, RB, LF, RF), "5-a-side", `onFieldCount` 5 (#223);
+  **3-3-2 + GK** and **3-2-3 + GK**, "9-a-side"; **4-4-2 + GK** and
+  **4-3-3 + GK** (wingers measured as ATT), "11-a-side" (#249, ADR-023). A
+  code is permanent and unique across sizes; no two shapes of one size share
+  unit counts (ADR-023 D2). A shape code a build does not know is refused on
+  import, never swapped for another size (D4).
   `shapeOfFormat` reads a shape from its unit counts, never its labels. Every
   count of players (lineup, readiness, Getting started, plan, pitch, plan
   image) is the match format's `onFieldCount`, never a fixed 7.

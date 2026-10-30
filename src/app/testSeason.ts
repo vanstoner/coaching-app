@@ -36,7 +36,7 @@ import { endMatch } from './matchClosing';
 import { newMatch, openMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
 import { makePlayer } from './squad';
-import { TEST_NAMES } from './testKit';
+import { TEST_NAMES, testNamesFor } from './testKit';
 
 const MIN = 60_000;
 const DAY = 86_400_000;
@@ -131,7 +131,7 @@ export function addTestSeason(input: TestSeasonInput): TestSeason {
 
   // The test squad, joined before the season began (ruling E reads createdAt).
   const have = new Set(input.players.filter((p) => p.active).map((p) => p.firstName));
-  const added = TEST_NAMES.filter((n) => !have.has(n)).map((n) => ({
+  const added = testNamesFor(input.format.onFieldCount).filter((n) => !have.has(n)).map((n) => ({
     ...makePlayer(input.squadId, n),
     createdAt: seasonStart.toISOString(),
   }));

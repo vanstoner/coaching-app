@@ -11,9 +11,10 @@
  * > *"the match length and format are probably match specific - but happy to
  * > have defaults in the settings."*
  *
- * Four shapes: two 7-a-side, and two 5-a-side added by #223 (PO, 18 Oct:
+ * Eight shapes: two 7-a-side, two 5-a-side added by #223 (PO, 18 Oct:
  * *"Is it too late to add a 5 aside option? And with that option different
- * formations.. 1121, 122"*, read as GK + 1-2-1 and GK + 2-2). A shape is a
+ * formations.. 1121, 122"*, read as GK + 1-2-1 and GK + 2-2), and two each at
+ * 9- and 11-a-side added by #249 (ADR-023 D1). A shape is a
  * list of slots, and a slot carries a
  * **label the coach reads** and a **unit time is measured against**. The label
  * is a coaching cue for this match and may be renamed; the unit is one of the
@@ -31,9 +32,10 @@ import type { Format, Position, PositionUnit } from '../types/index';
 /**
  * The shapes this squad plays: the ones the PO named. Stored as written in a
  * minutes file (`shape` on fixture, settings and structure records), so a
- * code is never renamed once released.
+ * code is never renamed once released, and never reused at another team size
+ * (ADR-023 D1).
  */
-export type ShapeCode = '2-3-1' | '2-2-2' | '1-2-1' | '2-2';
+export type ShapeCode = '2-3-1' | '2-2-2' | '1-2-1' | '2-2' | '3-3-2' | '3-2-3' | '4-4-2' | '4-3-3';
 
 export interface ShapeSlot {
   /** What the coach sees. Theirs to rename; nothing is measured against it. */
@@ -124,7 +126,113 @@ export const SHAPES: readonly ShapeSpec[] = [
       { label: 'RF', unit: 'ATT', roleCode: 'ST' },
     ],
   },
+  // #249, ADR-023 D1 (Rob, 30 Oct, ruling 1a): two shapes each at 9- and
+  // 11-a-side, slots back to front. D2: for one team size no two shapes have
+  // the same unit counts, because `shapeOfFormat` reads a shape by them.
+  {
+    code: '3-3-2',
+    formatName: '9-a-side',
+    label: '3-3-2',
+    description: '9-a-side · 3 defence · 3 midfield · 2 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'LB', unit: 'DEF', roleCode: 'LB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'RB', unit: 'DEF', roleCode: 'RB' },
+      { label: 'LM', unit: 'MID', roleCode: 'LM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'RM', unit: 'MID', roleCode: 'RM' },
+      { label: 'LF', unit: 'ATT', roleCode: 'ST' },
+      { label: 'RF', unit: 'ATT', roleCode: 'ST' },
+    ],
+  },
+  {
+    code: '3-2-3',
+    formatName: '9-a-side',
+    label: '3-2-3',
+    description: '9-a-side · 3 defence · 2 midfield · 3 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'LB', unit: 'DEF', roleCode: 'LB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'RB', unit: 'DEF', roleCode: 'RB' },
+      { label: 'LM', unit: 'MID', roleCode: 'LM' },
+      { label: 'RM', unit: 'MID', roleCode: 'RM' },
+      { label: 'LW', unit: 'ATT', roleCode: 'LW' },
+      { label: 'ST', unit: 'ATT', roleCode: 'ST' },
+      { label: 'RW', unit: 'ATT', roleCode: 'RW' },
+    ],
+  },
+  {
+    code: '4-4-2',
+    formatName: '11-a-side',
+    label: '4-4-2',
+    description: '11-a-side · 4 defence · 4 midfield · 2 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'LB', unit: 'DEF', roleCode: 'LB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'RB', unit: 'DEF', roleCode: 'RB' },
+      { label: 'LM', unit: 'MID', roleCode: 'LM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'RM', unit: 'MID', roleCode: 'RM' },
+      { label: 'LF', unit: 'ATT', roleCode: 'ST' },
+      { label: 'RF', unit: 'ATT', roleCode: 'ST' },
+    ],
+  },
+  {
+    code: '4-3-3',
+    formatName: '11-a-side',
+    label: '4-3-3',
+    description: '11-a-side · 4 defence · 3 midfield · 3 attack',
+    // The wingers are measured as attack (Rob, 30 Oct, ruling 1a).
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'LB', unit: 'DEF', roleCode: 'LB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'CB', unit: 'DEF', roleCode: 'CB' },
+      { label: 'RB', unit: 'DEF', roleCode: 'RB' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'LW', unit: 'ATT', roleCode: 'LW' },
+      { label: 'ST', unit: 'ATT', roleCode: 'ST' },
+      { label: 'RW', unit: 'ATT', roleCode: 'RW' },
+    ],
+  },
 ] as const;
+
+/** How many are on the pitch in a shape, the keeper included: its team size. */
+export function sideOfShape(code: ShapeCode): number {
+  return shapeSpec(code).slots.length;
+}
+
+/** Every team size a shape exists for, smallest first: 5, 7, 9, 11 (ADR-023 D1). */
+export const SHAPE_SIDES: readonly number[] = [...new Set(SHAPES.map((s) => s.slots.length))].sort((a, b) => a - b);
+
+/**
+ * Each team size's default shape (#249 A2). The one table every place that
+ * needs "the shape for this size" reads: a new team, the age nudge, a new
+ * season. 5-a-side is `2-2`, the shape the age nudge has always used.
+ */
+const DEFAULT_SHAPE_FOR_SIDE: Readonly<Record<number, ShapeCode>> = { 5: '2-2', 7: '2-3-1', 9: '3-3-2', 11: '4-4-2' };
+
+/** The default shape for a team size; null for a size no shape has. */
+export function defaultShapeFor(side: number): ShapeCode | null {
+  return DEFAULT_SHAPE_FOR_SIDE[side] ?? null;
+}
+
+/**
+ * The cue without its size, for a line under a size heading (#249 I38):
+ * "3 defence · 3 midfield · 2 attack".
+ */
+export function shapeCue(code: ShapeCode): string {
+  const spec = shapeSpec(code);
+  const prefix = `${spec.formatName} · `;
+  return spec.description.startsWith(prefix) ? spec.description.slice(prefix.length) : spec.description;
+}
 
 /** Every shape code, for reading one back from a record. */
 export const SHAPE_CODES: readonly ShapeCode[] = SHAPES.map((s) => s.code);

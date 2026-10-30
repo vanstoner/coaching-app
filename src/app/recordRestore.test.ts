@@ -31,8 +31,14 @@ import { newMatch } from './matchLifecycle';
 import type { SavedMatch } from './persistence';
 import { makeSevenASideFormat } from './placeholderSquad';
 import { recordOnlyMatches } from './recordOnly';
-import { PLANS_NOT_RESTORED, extendFromRecord, formatFromRecord, restoreFromRecord } from './recordRestore';
-import { formatForShape } from './shapes';
+import {
+  PLANS_NOT_RESTORED,
+  extendFromRecord,
+  formatFromRecord,
+  restoreFromRecord,
+  unknownShapesMessage,
+} from './recordRestore';
+import { formatForShape, shapeOfFormat } from './shapes';
 import { makePlayer, removePlayer, restorePlayer } from './squad';
 import { squadViews } from './squadViews';
 import { addTestSeason } from './testSeason';
@@ -191,12 +197,17 @@ describe('restore from the record (#195 AC4, AC7 round trip)', () => {
     expect(r.fixtures).toEqual([]);
   });
 
-  it('an unknown shape falls back, and labels apply only when they fit', () => {
-    const f: Format = formatFromRecord('3-2-1', ['a', 'b']);
+  // Replaced for ADR-023 D4 (Rob, 30 Oct, ruling 6a): an unknown shape used
+  // to fall back to the default format; it is now refused with a reason.
+  it('an unknown shape is refused with a reason; a null one falls back; labels apply only when they fit', () => {
+    const refused = formatFromRecord('3-2-1', ['a', 'b']);
+    expect(refused).toEqual({ ok: false, shape: '3-2-1', reason: expect.stringContaining('3-2-1') });
+    const unnamed = formatFromRecord(null, ['a', 'b']);
+    if (!unnamed.ok) throw new Error('a null shape keeps the fallback');
+    const f: Format = unnamed.format;
     expect(f.positions.length).toBe(7);
-    expect(formatFromRecord('2-2-2', ['K', 'L', 'R', 'M', 'N', 'S', 'T']).positions.map((x) => x.label)).toEqual([
-      'K', 'L', 'R', 'M', 'N', 'S', 'T',
-    ]);
+    const named = formatFromRecord('2-2-2', ['K', 'L', 'R', 'M', 'N', 'S', 'T']);
+    expect(named.ok && named.format.positions.map((x) => x.label)).toEqual(['K', 'L', 'R', 'M', 'N', 'S', 'T']);
   });
 });
 
@@ -313,5 +324,69 @@ describe('a fill-in not counted in fairness (#190)', () => {
     l = fillIn(l, child.id);
     expect(foldLedger(l).find((t) => t.playerId === child.id)).toEqual(minutes);
     expect(squadViews(l, back).season.children.find((c) => c.playerId === child.id)?.fillIn).toBe(true);
+  });
+});
+
+describe('a formation this build does not know is refused, one item at a time (#249 J42–J45, ADR-023 D4)', () => {
+  /** The phone's record, with its first fixture and its settings in a formation from a later build. */
+  function fromLaterBuild(): { p: ReturnType<typeof phone>; ledger: Ledger; unknownId: UUID } {
+    const p = phone();
+    const unknownId = p.fixtures[0].match.id;
+    const ledger: Ledger = {
+      ...p.ledger,
+      fixtures: p.ledger.fixtures.map((f) => (f.id === unknownId ? { ...f, shape: '4-2-3-1', labels: [] } : f)),
+      settings: p.ledger.settings ? { ...p.ledger.settings, shape: '4-2-3-1', labels: [] } : null,
+    };
+    return { p, ledger, unknownId };
+  }
+
+  it('restoreFromRecord leaves the fixture out, keeps the phone’s defaults, and brings the rest back', () => {
+    const { p, ledger, unknownId } = fromLaterBuild();
+    const r = restoreFromRecord(ledger, uuid(), makeSevenASideFormat(), LATER);
+    expect(r.fixtures.map((f) => f.match.id)).toEqual([p.fixtures[1].match.id]);
+    expect(r.fixtures.some((f) => f.match.id === unknownId)).toBe(false);
+    // Nothing at another size was made: no settings, no stand-in fixture.
+    expect(r.settings).toBeNull();
+    expect(r.players).toHaveLength(p.players.length);
+    expect(r.unknownShapes).toEqual({ fixtures: ['4-2-3-1'], settings: '4-2-3-1' });
+    const said = unknownShapesMessage(r.unknownShapes)!;
+    expect(said).toContain('1 planned fixture uses a formation this version does not know (4-2-3-1)');
+    expect(said).toContain('Match defaults');
+    expect(said).toContain('Update Heart FC Coach, then import again.');
+  });
+
+  it('extendFromRecord adds what it knows and counts what it refused', () => {
+    const { p, ledger, unknownId } = fromLaterBuild();
+    const x = extendFromRecord(ledger, p.players, [], p.squadId, p.format, LATER);
+    expect(x.matches.map((m) => m.match.id)).toEqual([p.fixtures[1].match.id]);
+    expect(x.matches.some((m) => m.match.id === unknownId)).toBe(false);
+    expect(x.addedFixtures).toBe(1);
+    expect(x.unknownShapes).toEqual({ fixtures: ['4-2-3-1'], settings: null });
+  });
+
+  it('nothing refused, nothing said', () => {
+    expect(unknownShapesMessage({ fixtures: [], settings: null })).toBeNull();
+  });
+
+  it('restores 3-3-2, 3-2-3, 4-4-2 and 4-3-3 with their renamed labels', () => {
+    for (const code of ['3-3-2', '3-2-3', '4-4-2', '4-3-3'] as const) {
+      const n = code.startsWith('4') ? 11 : 9;
+      const labels = Array.from({ length: n }, (_, i) => `Pos${i}`);
+      const p = phone();
+      const ledger: Ledger = {
+        ...p.ledger,
+        fixtures: p.ledger.fixtures.map((f) => ({ ...f, shape: code, labels })),
+        settings: p.ledger.settings ? { ...p.ledger.settings, shape: code, labels } : null,
+      };
+      const r = restoreFromRecord(ledger, uuid(), makeSevenASideFormat(), LATER);
+      expect(r.unknownShapes).toEqual({ fixtures: [], settings: null });
+      expect(r.settings?.format.onFieldCount).toBe(n);
+      expect(shapeOfFormat(r.settings!.format)).toBe(code);
+      expect(r.settings!.format.positions.map((x) => x.label)).toEqual(labels);
+      for (const f of r.fixtures) {
+        expect(shapeOfFormat(f.format!)).toBe(code);
+        expect(f.format!.positions.map((x) => x.label)).toEqual(labels);
+      }
+    }
   });
 });

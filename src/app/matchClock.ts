@@ -45,8 +45,13 @@ export function formatSubTime(ms: number): string {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
 }
 
-/** The match lengths the coach can pick. PO ruling, 2026-09-18; 40 added by #223 AC8. */
-export const TOTAL_MINUTES_CHOICES = [40, 50, 60, 75, 90] as const;
+/**
+ * The match lengths the coach can pick. PO ruling, 2026-09-18; 40 added by
+ * #223 AC8; 70 and 80 by #249 (ruling 3a). The FA's longest youth matches
+ * were checked for it: 60 at 9v9 (U11–U12), 70 at U13–U14, 80 at U15–U16 and
+ * 90 at U17–U18 (Bea, https://github.com/vanstoner/coaching-app/issues/249#issuecomment-6531975832).
+ */
+export const TOTAL_MINUTES_CHOICES = [40, 50, 60, 70, 75, 80, 90] as const;
 
 /** Halves or quarters. Every combination above divides exactly into both. */
 export const PERIOD_COUNT_CHOICES = [2, 4] as const;

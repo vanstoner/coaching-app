@@ -20,7 +20,7 @@ import { scoreOf } from './matchEvents';
 import { seasonOutfieldShares } from './outfieldTarget';
 import { makeSevenASideFormat } from './placeholderSquad';
 import { createMemoryStore, loadSession, saveSession, type SavedMatch } from './persistence';
-import { addTestData, TEST_NAMES } from './testKit';
+import { addTestData, TEST_NAMES, testNamesFor } from './testKit';
 import { SEASON, SEASON_KEEPER, addTestSeason, lastSaturdayBefore } from './testSeason';
 
 const MIN = 60_000;
@@ -89,7 +89,7 @@ describe('a past season in the Test kit (#106 AC1)', () => {
     expect(missed('Ava')).toBe(1);
     expect(missed('Ivy')).toBe(0);
     for (const m of ledger.matches) {
-      expect(m.attendance?.length).toBe(TEST_NAMES.length);
+      expect(m.attendance?.length).toBe(testNamesFor(7).length);
       expect(m.attendance?.every((a) => a.note === null)).toBe(true);
     }
   });
@@ -112,7 +112,7 @@ describe('a past season in the Test kit (#106 AC1)', () => {
   });
 
   it('uses first names only from the test list', () => {
-    expect(s.players.map((p) => p.firstName).sort()).toEqual([...TEST_NAMES].sort());
+    expect(s.players.map((p) => p.firstName).sort()).toEqual([...testNamesFor(7)].sort());
     expect(ledger.players.every((p) => TEST_NAMES.includes(p.firstName))).toBe(true);
   });
 
@@ -262,7 +262,7 @@ describe('the season is additive and gated (#106 AC3)', () => {
       ledger: emptyLedger(squadId, 'Test FC', NOW),
       now: NOW,
     });
-    expect(data.players).toHaveLength(TEST_NAMES.length);
+    expect(data.players).toHaveLength(testNamesFor(7).length);
     expect(data.matches).toHaveLength(kit.matches.length + SEASON.length);
     // Untouched: the fixtures already there.
     expect(data.matches.slice(0, kit.matches.length)).toEqual(kit.matches);
