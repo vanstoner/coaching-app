@@ -279,10 +279,13 @@ env:
 # The keyboard covers the tab bar on a phone: a tap on "Home" would land on
 # a key. Put it away first. Run 40953960645 (diagnostic), iPhone: hideKeyboard
 # left it up (step-090), as it did on the Add a team form. The name field
-# keeps focus on Return (#219), so tap the page's heading instead: a tap on
-# plain content dismisses the keyboard (keyboardShouldPersistTaps="handled").
-- tapOn:
-    point: "50%,9%"
+# keeps focus on Return (#219). Run 41038444305: since #264 the heading is
+# outside the list, so a tap on it no longer closes the keyboard (Home was
+# never reached). Drag the list instead (keyboardDismissMode="on-drag").
+- swipe:
+    start: "50%,45%"
+    end: "50%,30%"
+- waitForAnimationToEnd
 - takeScreenshot: diag-08f-keyboard-down
 - tapOn: ${TAB_HOME}
 # Run 41031067106 (iPad): Getting started was not found on Home, and the retry

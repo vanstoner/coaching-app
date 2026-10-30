@@ -298,7 +298,9 @@ export function SquadScreen({
           {seasonName !== null && <Text style={screen.caption}>{seasonName}</Text>}
           <Text style={screen.hint}>First names are best. Nothing leaves this phone.</Text>
 
-          <ScrollView style={screen.list} keyboardShouldPersistTaps="handled">
+          {/* Dragging the list puts the keyboard away: the name field keeps focus on
+              Return (#219), and since #264 the heading is outside this list (run 41038444305). */}
+          <ScrollView style={screen.list} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             {/* #143 AC1: the squad views, each answering before it is tapped. */}
             {onTab && anyReconstructed && (
               <SegmentedRow
