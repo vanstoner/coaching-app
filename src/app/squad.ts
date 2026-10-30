@@ -155,6 +155,17 @@ export function displayName(player: { firstName: string; displaySuffix?: string 
 }
 
 /**
+ * The one child whose shown name differs between two squad lists, with
+ * that new name; null when none did, or more than one (QA on #260, D7:
+ * a rename's Save names the child it renamed).
+ */
+export function renamedIn(before: readonly Player[], after: readonly Player[]): string | null {
+  const was = new Map(before.map((p) => [p.id, displayName(p)]));
+  const changed = after.filter((p) => was.has(p.id) && was.get(p.id) !== displayName(p));
+  return changed.length === 1 ? displayName(changed[0]) : null;
+}
+
+/**
  * True when another player in the squad shares this first name.
  *
  * Not an error — it is how the screen knows to ask the coach for an initial.

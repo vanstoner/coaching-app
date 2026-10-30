@@ -111,3 +111,19 @@ export function sheetStatus(dirty: boolean | undefined): FormPhase | null {
 export function sheetExit(dirty: boolean | undefined): 'ask' | 'close' {
   return dirty === true ? 'ask' : 'close';
 }
+
+/**
+ * The toast after a form's Save (V29; QA on #260, D7): it names what was
+ * saved, "Saved: fixture v Rovers". Shown only once the write succeeded.
+ */
+export function savedToast(what: string): string {
+  return `Saved: ${what}`;
+}
+
+/**
+ * ✓ Saved only once the write has succeeded (V28; QA on #260, D8): `mark`
+ * runs when `save` resolves true, never on a failed or refused save.
+ */
+export async function tickWhenSaved(save: Promise<boolean>, mark: () => void): Promise<void> {
+  if (await save.catch(() => false)) mark();
+}

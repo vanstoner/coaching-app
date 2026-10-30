@@ -34,6 +34,7 @@ import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '.
 import { SHOW_AGAIN } from '../app/gettingStarted';
 import type { KeyValueStore } from '../app/persistence';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
+import { tickWhenSaved } from '../app/saveState';
 import { MAX_TEAM_NAME_LENGTH, describeDefaults, normaliseTeamName } from '../app/settings';
 import {
   SETTINGS_SECTIONS_KEY,
@@ -130,17 +131,18 @@ export function SettingsScreen({
   store = null,
 }: {
   squadName: string;
-  onSquadName: (s: string) => void;
+  /** Resolves true once the session is written (V28: the tick waits for it). */
+  onSquadName: (s: string) => Promise<boolean>;
   totalMinutes: number;
   periodCount: number;
   /** Null when the stored format matches neither shape — a custom one. */
   shape: ShapeCode | null;
-  onTotalMinutes: (n: number) => void;
-  onPeriodCount: (n: number) => void;
-  onShape: (shape: ShapeCode) => void;
+  onTotalMinutes: (n: number) => Promise<boolean>;
+  onPeriodCount: (n: number) => Promise<boolean>;
+  onShape: (shape: ShapeCode) => Promise<boolean>;
   /** "Buzz when a sub is due" (#137). */
   buzzWhenSubDue: boolean;
-  onBuzzWhenSubDue: (on: boolean) => void;
+  onBuzzWhenSubDue: (on: boolean) => Promise<boolean>;
   /** Player minutes: season, export, import (#75). Drawn by the caller. */
   minutes?: SettingsPart | null;
   /** Settings › Awards (#197). */
@@ -229,8 +231,7 @@ export function SettingsScreen({
                     return;
                   }
                   setClash(null);
-                  onSquadName(text);
-                  ticks.mark('team');
+                  void tickWhenSaved(onSquadName(text), () => ticks.mark('team'));
                 }}
                 // Cleaned when the coach leaves the field rather than as they
                 // type, so a space mid-word is not eaten under their thumb.
@@ -238,7 +239,7 @@ export function SettingsScreen({
                   setClash(null);
                   const next = normaliseTeamName(squadName, PLACEHOLDER_SQUAD_NAME);
                   // A name cleaned into another team's stays as it was saved.
-                  if (!taken(next)) onSquadName(next);
+                  if (!taken(next)) void onSquadName(next);
                 }}
                 placeholder="Your team"
                 autoCapitalize="words"
@@ -282,8 +283,7 @@ export function SettingsScreen({
                 value={totalMinutes}
                 onChange={(m) => {
                   if (m === null) return;
-                  onTotalMinutes(m);
-                  ticks.mark('defaults');
+                  void tickWhenSaved(onTotalMinutes(m), () => ticks.mark('defaults'));
                 }}
               />
               <SegmentedRow
@@ -292,8 +292,7 @@ export function SettingsScreen({
                 value={periodCount}
                 onChange={(pc) => {
                   if (pc === null) return;
-                  onPeriodCount(pc);
-                  ticks.mark('defaults');
+                  void tickWhenSaved(onPeriodCount(pc), () => ticks.mark('defaults'));
                 }}
               />
               {/* The arithmetic a coach should see before Saturday, not at kick-off. */}
@@ -313,8 +312,7 @@ export function SettingsScreen({
                 value={buzzWhenSubDue}
                 onChange={(on) => {
                   if (on === null) return;
-                  onBuzzWhenSubDue(on);
-                  ticks.mark('defaults');
+                  void tickWhenSaved(onBuzzWhenSubDue(on), () => ticks.mark('defaults'));
                 }}
               />
               <Text style={local.hint}>
@@ -364,8 +362,7 @@ export function SettingsScreen({
         value={shape}
         onPick={(code) => {
           setShapeSheet(false);
-          onShape(code);
-          ticks.mark('defaults');
+          void tickWhenSaved(onShape(code), () => ticks.mark('defaults'));
         }}
         onCancel={() => setShapeSheet(false)}
       />

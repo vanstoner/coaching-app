@@ -35,9 +35,11 @@ import {
   listedFixtures,
   matchIsUnderway,
   openDestination,
+  opponentLabel,
   whenLabel,
   competitionLabel,
 } from './src/app/fixtures';
+import { savedToast } from './src/app/saveState';
 import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
 import { currentQuarter, periodNounPlural } from './src/app/matchClock';
 import {
@@ -53,6 +55,7 @@ import {
   playedPlayerIds,
   displayName,
   playersForMatch,
+  renamedIn,
   splitName,
   squadReadiness,
 } from './src/app/squad';
@@ -819,6 +822,17 @@ function TeamApp({
     [store, sessionInput, squadName, players, match, matches, commitLedger]
   );
 
+  /**
+   * A setting's own save (V28; QA on #260, D8): the session with this one
+   * value changed, written now, true once it is on disk. The save on the
+   * next render writes the same; this one is what ✓ Saved waits for.
+   */
+  const saveSetting = useCallback(
+    (overrides: Partial<SessionInput>): Promise<boolean> =>
+      saveSessionIfWritable(store, sessionWritableRef.current, sessionInput(overrides)),
+    [store, sessionInput]
+  );
+
   /** Export the minutes file — an explicit act, to where the coach chooses (ADR-011 §4). */
   const exportMinutes = useCallback(async () => {
     const written = ledgerRef.current;
@@ -1095,8 +1109,9 @@ function TeamApp({
       // instead of their game.
       persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
       setStep('fixtures');
+      showToast(savedToast(`fixture v ${opponentLabel(stored.match)}`));
     },
-    [squadId, format, matches, persist, match, squad, newSeasonId]
+    [squadId, format, matches, persist, match, squad, newSeasonId, showToast]
   );
 
   /**
@@ -1459,12 +1474,15 @@ function TeamApp({
     (next: Player[]) => {
       const kept = new Set(next.map((p) => p.id));
       const gone = players.filter((p) => !kept.has(p.id)).map((p) => p.id);
+      const renamed = renamedIn(players, next);
       setPlayers(next);
+      // V29 (QA on #260, D7): a rename's Save names what was saved.
+      if (renamed !== null) showToast(savedToast(`the name ${renamed}`));
       if (gone.length > 0 && ledgerRef.current && !ledgerBlockedRef.current) {
         commitLedger(recordRemovedPlayers(ledgerRef.current, gone, appNow()));
       }
     },
-    [players, commitLedger]
+    [players, commitLedger, showToast]
   );
 
   /** #190: mark a child not counted in fairness, or counted again, with a note. */
@@ -1479,10 +1497,11 @@ function TeamApp({
         const r = setPlayerFairness(current, playerId, counted, note, appNow());
         if (!r.ok) return r.reason;
         commitLedger(r.ledger);
+        showToast(savedToast(counted ? 'counted in fairness again' : 'marked a fill-in'));
         return null;
       },
     }),
-    [persist, commitLedger]
+    [persist, commitLedger, showToast]
   );
 
   /**
@@ -1492,9 +1511,11 @@ function TeamApp({
    */
   const recordActions = useCallback(
     (matchId: UUID) => {
-      const apply = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }): string | null => {
+      // V29 (QA on #260, D7): each correction's Save names what was saved.
+      const apply = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }, what: string): string | null => {
         if (!r.ok) return r.reason;
         commitLedger(r.ledger);
+        showToast(savedToast(what));
         return null;
       };
       const current = () => (ledgerBlockedRef.current ? null : ledgerRef.current);
@@ -1502,27 +1523,31 @@ function TeamApp({
       return {
         addEvent: (kind: 'goal' | 'conceded', playerId: UUID | null, note: string) => {
           const l = current();
-          return l ? apply(addUnknownTimeEvent(l, matchId, kind, playerId, note, appNow())) : refused;
+          return l
+            ? apply(addUnknownTimeEvent(l, matchId, kind, playerId, note, appNow()), kind === 'goal' ? 'goal added' : 'goal against added')
+            : refused;
         },
         withdraw: (eventId: UUID, note: string) => {
           const l = current();
-          return l ? apply(withdrawRecordEvent(l, matchId, eventId, note, appNow())) : refused;
+          return l ? apply(withdrawRecordEvent(l, matchId, eventId, note, appNow()), 'goal taken back') : refused;
         },
         correctStructure: (periodMs: number[], note: string) => {
           const l = current();
-          return l ? apply(correctStructure(l, matchId, periodMs, note, appNow())) : refused;
+          return l ? apply(correctStructure(l, matchId, periodMs, note, appNow()), 'how it was played') : refused;
         },
         giveAward: (awardTypeId: UUID, playerId: UUID, note: string) => {
           const l = current();
-          return l ? apply(giveAward(l, matchId, awardTypeId, playerId, note, appNow())) : refused;
+          return l ? apply(giveAward(l, matchId, awardTypeId, playerId, note, appNow()), 'award given') : refused;
         },
         changeAward: (awardTypeId: UUID, from: UUID, to: UUID | null, note: string) => {
           const l = current();
-          return l ? apply(changeAward(l, matchId, awardTypeId, from, to, note, appNow())) : refused;
+          return l
+            ? apply(changeAward(l, matchId, awardTypeId, from, to, note, appNow()), to === null ? 'award taken back' : 'award changed')
+            : refused;
         },
       };
     },
-    [commitLedger]
+    [commitLedger, showToast]
   );
 
   /**
@@ -1871,9 +1896,10 @@ function TeamApp({
       commitLedger(result.ledger);
       repaint();
       persist();
+      showToast(savedToast('attendance correction'));
       return null;
     },
-    [match, persist, commitLedger]
+    [match, persist, commitLedger, showToast]
   );
 
   /**
@@ -1892,9 +1918,10 @@ function TeamApp({
       commitLedger(result.ledger);
       repaint();
       persist();
+      showToast(savedToast(excluded ? 'match left out of the figures' : 'match counted again'));
       return null;
     },
-    [match, persist, commitLedger]
+    [match, persist, commitLedger, showToast]
   );
 
   const startQuarter = useCallback(
@@ -2264,7 +2291,11 @@ function TeamApp({
         ownSide={own}
         counted={m.formatCount?.counted === true}
         countedNote={m.formatCount?.note ?? null}
-        onCount={(counted, note) => applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()))}
+        onCount={(counted, note) => {
+          const refused = applyToLedger((l) => setFormatCounted(l, matchId, counted, note, appNow()));
+          if (refused === null) showToast(savedToast(counted ? `counted in ${seasonName(its)}` : 'left out of the season'));
+          return refused;
+        }}
       />
     );
   };
@@ -2533,15 +2564,32 @@ function TeamApp({
                 }
               : null
           }
-          onSquadName={setSquadName}
+          // V28 (QA on #260, D8): each resolves once the write is done, so
+          // ✓ Saved shows only for a save that succeeded.
+          onSquadName={(name) => {
+            setSquadName(name);
+            return saveSetting({ squadName: name });
+          }}
           totalMinutes={totalMinutes}
           periodCount={periodCount}
           shape={shapeOfFormat(format)}
-          onTotalMinutes={setTotalMinutes}
-          onPeriodCount={setPeriodCount}
-          onShape={setDefaultShape}
+          onTotalMinutes={(n) => {
+            setTotalMinutes(n);
+            return saveSetting({ totalMinutes: n });
+          }}
+          onPeriodCount={(n) => {
+            setPeriodCount(n);
+            return saveSetting({ periodCount: n });
+          }}
+          onShape={(code) => {
+            setDefaultShape(code);
+            return saveSetting({ format: formatForShape(code, format) });
+          }}
           buzzWhenSubDue={buzzWhenSubDue}
-          onBuzzWhenSubDue={setBuzzWhenSubDue}
+          onBuzzWhenSubDue={(on) => {
+            setBuzzWhenSubDue(on);
+            return saveSetting({ buzzWhenSubDue: on });
+          }}
           minutes={{
             summary: minutesSummary(seasonView?.matches.length ?? 0, seasonView ? seasonRows(seasonView).length : 0),
             node: (

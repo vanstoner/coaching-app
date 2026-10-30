@@ -3,7 +3,11 @@
  * leaving a changed form, and what a sheet writes when it closes.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { makePlayer, renamedIn } from './squad';
+import { uuid } from '../types/index';
 import {
   SAVED_TICK_MS,
   canSaveForm,
@@ -13,7 +17,9 @@ import {
   leaveQuestion,
   savedTickRemainingMs,
   savedTickVisible,
+  savedToast,
   sheetCommit,
+  tickWhenSaved,
   sheetExit,
   sheetStatus,
   type FormAction,
@@ -111,5 +117,65 @@ describe('a form sheet says Not saved yet and asks before discarding (V29, V30; 
   it('changed: "Not saved yet", and Cancel, a tap outside or Back asks first', () => {
     expect(formStatusText(sheetStatus(true)!)).toBe('Not saved yet');
     expect(sheetExit(true)).toBe('ask');
+  });
+});
+
+describe('a form’s Save shows a toast naming what was saved (V29; QA on #260, D7)', () => {
+  it('names it', () => {
+    expect(savedToast('fixture v Rovers')).toBe('Saved: fixture v Rovers');
+  });
+
+  it('a rename names the child by their new shown name; nothing else is a rename', () => {
+    const squad = uuid();
+    const alex = makePlayer(squad, 'Alex');
+    const bo = makePlayer(squad, 'Bo');
+    expect(renamedIn([alex, bo], [{ ...alex, displaySuffix: 'S' }, bo])).toBe('Alex S');
+    expect(renamedIn([alex, bo], [alex, bo])).toBeNull();
+    expect(renamedIn([alex], [alex, bo])).toBeNull(); // an add
+    expect(renamedIn([alex, bo], [alex])).toBeNull(); // a remove
+    expect(renamedIn([alex, bo], [{ ...alex, keeper: 'main' }, bo])).toBeNull(); // a preference
+  });
+
+  it('App toasts after the fixture, rename and correction saves succeed', () => {
+    const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf-8');
+    expect(app).toMatch(/showToast\(savedToast\(`fixture v \$\{opponentLabel\(stored\.match\)\}`\)\)/);
+    expect(app).toMatch(/if \(renamed !== null\) showToast\(savedToast\(`the name \$\{renamed\}`\)\)/);
+    // Each Record correction goes through apply(), which toasts only when ok.
+    expect(app).toMatch(/if \(!r\.ok\) return r\.reason;\s+commitLedger\(r\.ledger\);\s+showToast\(savedToast\(what\)\);/);
+    expect(app).toMatch(/showToast\(savedToast\('attendance correction'\)\)/);
+  });
+});
+
+describe('✓ Saved only after the save succeeded (V28; QA on #260, D8)', () => {
+  it('a save that resolves true ticks', async () => {
+    let ticked = 0;
+    await tickWhenSaved(Promise.resolve(true), () => ticked++);
+    expect(ticked).toBe(1);
+  });
+
+  it('a failed, refused or throwing save never ticks', async () => {
+    let ticked = 0;
+    await tickWhenSaved(Promise.resolve(false), () => ticked++);
+    await tickWhenSaved(Promise.reject(new Error('disk full')), () => ticked++);
+    expect(ticked).toBe(0);
+  });
+
+  it('no tick before the save has resolved', async () => {
+    let ticked = 0;
+    let finish: (ok: boolean) => void = () => {};
+    const done = tickWhenSaved(new Promise<boolean>((r) => (finish = r)), () => ticked++);
+    await Promise.resolve();
+    expect(ticked).toBe(0);
+    finish(true);
+    await done;
+    expect(ticked).toBe(1);
+  });
+
+  it('Settings marks every tick through tickWhenSaved, never straight after the call', () => {
+    const settings = readFileSync(join(__dirname, '..', 'screens', 'SettingsScreen.tsx'), 'utf-8');
+    const marks = settings.match(/ticks\.mark\(/g) ?? [];
+    const waited = settings.match(/tickWhenSaved\([^;]*ticks\.mark\(/g) ?? [];
+    expect(marks.length).toBe(5);
+    expect(waited.length).toBe(marks.length);
   });
 });
