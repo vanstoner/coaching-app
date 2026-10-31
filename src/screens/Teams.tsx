@@ -29,7 +29,7 @@ import { Text } from './Text';
 
 import { AGE_GROUPS } from '../app/ledger';
 import { MAX_TEAM_NAME_LENGTH } from '../app/settings';
-import { TEAM_FORMATS, formatForAge, sameTeamName, teamNameProblem } from '../app/teamRows';
+import { TEAM_FORMATS, formatForAge, sameTeamName, startingHint, teamNameProblem } from '../app/teamRows';
 import type { TeamSummary } from '../app/storage/teams';
 import type { ShapeCode } from '../app/shapes';
 import { formReducer, leaveNeedsAsking } from '../app/saveState';
@@ -267,6 +267,8 @@ export function AddTeamScreen({
   const ready = problem === null && seasonName.trim() !== '';
   const side = TEAM_FORMATS.find((f) => f.shape === shape)?.side ?? 7;
   const format = TEAM_FORMATS.find((f) => f.shape === shape);
+  // #249 D18 (Q1): what a 9- or 11-a-side team's matches start at.
+  const starting = startingHint(side);
 
   return (
     <KeyboardAvoidingView style={screen.flex} behavior="padding">
@@ -313,6 +315,7 @@ export function AddTeamScreen({
           onPress={() => setSheet('format')}
         />
         <Text style={[screen.hint, local.left]}>New matches start in this format. You can still change one match.</Text>
+        {starting !== null && <Text style={[screen.hint, local.left]}>{starting}</Text>}
 
         <Text style={screen.fieldLabel}>Fairness</Text>
         <View style={local.lens}>
@@ -353,7 +356,8 @@ export function AddTeamScreen({
       <ListSheet
         visible={sheet === 'format'}
         title="Main format"
-        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: f.label, detail: f.detail }))}
+        // #249 Q3: all eight shapes, one line each, "9-a-side · 3-3-2".
+        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: `${f.label} · ${f.detail}` }))}
         value={shape}
         onPick={(s) => {
           setShape(s);

@@ -362,10 +362,15 @@ describe('the record keeps each match 5- or 7-a-side (#223 AC4, #196, #195)', ()
     expect(shapeOfFormat(byOpponent.get('Sample 2-3-1')!.format!)).toBe('2-3-1');
   });
 
-  it('reads both 5-a-side codes from a record, and a code it does not know as the fallback', () => {
-    expect(formatFromRecord('1-2-1', []).onFieldCount).toBe(5);
-    expect(formatFromRecord('2-2', ['GK', 'A', 'B', 'C', 'D']).positions.map((p) => p.label)).toEqual(['GK', 'A', 'B', 'C', 'D']);
-    expect(formatFromRecord('4-4-2', []).onFieldCount).toBe(7);
+  // Replaced for ADR-023 D4 (Rob, 30 Oct, ruling 6a): a code this build does
+  // not know is refused, never read as the 7-a-side fallback; and 4-4-2 is
+  // now a shape this build knows (#249).
+  it('reads both 5-a-side codes from a record, and refuses a code it does not know', () => {
+    const five = formatFromRecord('1-2-1', []);
+    expect(five.ok && five.format.onFieldCount).toBe(5);
+    const renamed = formatFromRecord('2-2', ['GK', 'A', 'B', 'C', 'D']);
+    expect(renamed.ok && renamed.format.positions.map((p) => p.label)).toEqual(['GK', 'A', 'B', 'C', 'D']);
+    expect(formatFromRecord('4-2-3-1', []).ok).toBe(false);
   });
 
   it('the released 1.2.0 reader parses a record with 5-a-side matches, and gives the same minutes (ADR-021 D1)', () => {
@@ -384,8 +389,9 @@ describe('the record keeps each match 5- or 7-a-side (#223 AC4, #196, #195)', ()
 // ---------------------------------------------------------------------------
 
 describe('40 minutes is a match length (#223 AC8)', () => {
-  it('offers 40, 50, 60, 75 and 90, in that order', () => {
-    expect([...TOTAL_MINUTES_CHOICES]).toEqual([40, 50, 60, 75, 90]);
+  // 70 and 80 added by #249 (ruling 3a); 40 is still among them, in order.
+  it('offers 40, 50, 60, 70, 75, 80 and 90, in that order', () => {
+    expect([...TOTAL_MINUTES_CHOICES]).toEqual([40, 50, 60, 70, 75, 80, 90]);
   });
 
   it('splits 40 into halves of 20:00 or quarters of 10:00, a default sub at 10:00 or 5:00', () => {

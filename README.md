@@ -7,8 +7,8 @@ builds are compiled in CI ahead of TestFlight.
 
 What it does today: several teams on one phone, switched like browser
 profiles, each with its own seasons (age group, level, main format); a squad
-of first names with position preferences; fixtures and Play now, in 5-a-side
-or 7-a-side; a plan for every period with projected minutes; a match clock
+of first names with position preferences; fixtures and Play now, in 5-, 7-, 9-
+or 11-a-side; a plan for every period with projected minutes; a match clock
 with substitution reminders, a pitch you drag players around, goals, assists,
 the coach's own tallies and a score; awards; a match report closed with **End
 match**; each child's minutes against the season average; and a signed,

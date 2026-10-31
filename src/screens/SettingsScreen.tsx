@@ -30,7 +30,7 @@ import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native
 import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
-import { PERIOD_COUNT_CHOICES, TOTAL_MINUTES_CHOICES, periodNounPlural } from '../app/matchClock';
+import { PERIOD_COUNT_CHOICES, periodNounPlural } from '../app/matchClock';
 import { SHOW_AGAIN } from '../app/gettingStarted';
 import type { KeyValueStore } from '../app/persistence';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
@@ -47,7 +47,8 @@ import {
   toggleSection,
   type SettingsSectionId,
 } from '../app/settingsSections';
-import { SHAPES, shapeLabel, type ShapeCode } from '../app/shapes';
+import { MINUTES_ITEMS, minutesValue, type SeasonSize } from '../app/shapeList';
+import { shapeLabel, type ShapeCode } from '../app/shapes';
 import { BuildLabel } from './BuildLabel';
 import {
   Action,
@@ -60,6 +61,7 @@ import {
   SegmentedRow,
   useSavedTicks,
 } from './controls';
+import { ShapeCost, ShapeSheet } from './ShapeSheet';
 import { colours, screen } from './theme';
 
 /** A section another file draws: its body and its closed heading's summary (#263 AC9). */
@@ -128,6 +130,7 @@ export function SettingsScreen({
   onShowGettingStarted = null,
   team = null,
   season = null,
+  seasonSize = { side: null, mainSet: false },
   store = null,
 }: {
   squadName: string;
@@ -175,12 +178,14 @@ export function SettingsScreen({
   } | null;
   /** #243 Q5: Settings › Season, drawn by the caller, first in Settings. */
   season?: SettingsPart | null;
+  /** #249 I39: the season's size, for the Shape sheet and its cost line. */
+  seasonSize?: SeasonSize;
   /** This phone's store, for which sections are open (#263 AC5). */
   store?: KeyValueStore | null;
 }) {
   const { isOpen, toggle } = useOpenSections(store);
   const ticks = useSavedTicks<SettingsSectionId>();
-  const [shapeSheet, setShapeSheet] = useState(false);
+  const [sheet, setSheet] = useState<'shape' | 'minutes' | null>(null);
   // QA D9, N4: a name another team on this phone has is never saved, not even
   // while typed: it stays in the box, with the reason, and leaving the box
   // puts back the name that is saved. Any other name saves as it is typed.
@@ -273,19 +278,8 @@ export function SettingsScreen({
               <Text style={local.caption}>
                 Defaults for a new match. Changing one never alters a fixture you have already saved.
               </Text>
-              <SegmentedRow
-                label="Minutes"
-                options={TOTAL_MINUTES_CHOICES.map((m) => ({
-                  value: m as number,
-                  label: `${m}`,
-                  accessibilityLabel: `${m} minutes`,
-                }))}
-                value={totalMinutes}
-                onChange={(m) => {
-                  if (m === null) return;
-                  void tickWhenSaved(onTotalMinutes(m), () => ticks.mark('defaults'));
-                }}
-              />
+              {/* #249 C11: seven lengths, so a Row › to a list sheet (#264: Segmented is for 2–5). */}
+              <RowNav label="Minutes" value={minutesValue(totalMinutes)} onPress={() => setSheet('minutes')} />
               <SegmentedRow
                 label="Periods"
                 options={PERIOD_COUNT_CHOICES.map((pc) => ({ value: pc as number, label: periodNounPlural(pc) }))}
@@ -300,8 +294,9 @@ export function SettingsScreen({
               <RowNav
                 label="Shape"
                 value={shape ? shapeLabel(shape) : 'Custom'}
-                onPress={() => setShapeSheet(true)}
+                onPress={() => setSheet('shape')}
               />
+              <ShapeCost season={seasonSize} shape={shape} />
               <Text style={local.hint}>You can still name the positions whatever you want on the day.</Text>
               <SegmentedRow
                 label="Buzz for subs"
@@ -355,16 +350,26 @@ export function SettingsScreen({
         </ScrollView>
       </KeyboardAvoidingView>
       <BuildLabel />
-      <ListSheet
-        visible={shapeSheet}
-        title="Shape"
-        items={SHAPES.map((s) => ({ value: s.code, label: shapeLabel(s.code), detail: s.description }))}
+      <ShapeSheet
+        visible={sheet === 'shape'}
+        season={seasonSize}
         value={shape}
         onPick={(code) => {
-          setShapeSheet(false);
+          setSheet(null);
           void tickWhenSaved(onShape(code), () => ticks.mark('defaults'));
         }}
-        onCancel={() => setShapeSheet(false)}
+        onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'minutes'}
+        title="Minutes"
+        items={MINUTES_ITEMS}
+        value={totalMinutes}
+        onPick={(m) => {
+          setSheet(null);
+          void tickWhenSaved(onTotalMinutes(m), () => ticks.mark('defaults'));
+        }}
+        onCancel={() => setSheet(null)}
       />
       <StatusBar style="light" />
     </View>

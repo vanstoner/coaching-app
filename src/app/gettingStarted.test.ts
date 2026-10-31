@@ -11,7 +11,7 @@ import { progressById } from './liveMatch';
 import type { SavedMatch } from './persistence';
 import { DEFAULT_QUARTER_COUNT, DEFAULT_TOTAL_MINUTES, PLACEHOLDER_SQUAD_NAME, makeSevenASideFormat } from './placeholderSquad';
 import { makePlayer } from './squad';
-import { TEST_NAMES, TEST_OPPONENTS } from './testKit';
+import { TEST_OPPONENTS, testNamesFor } from './testKit';
 import { SEASON } from './testSeason';
 import {
   GETTING_STARTED_KEY,
@@ -205,7 +205,7 @@ describe('the made-up team (AC5, Q5)', () => {
 
   it('loads the Test kit squad, its two fixtures and its nine-match season, into the ledger too', () => {
     const team = madeUp();
-    expect(team.players.map((p) => p.firstName)).toEqual(TEST_NAMES);
+    expect(team.players.map((p) => p.firstName)).toEqual(testNamesFor(7));
     expect(team.matches).toHaveLength(2 + SEASON.length);
     expect(team.ledger?.matches.length).toBe(SEASON.length);
     expect(team.message).toBe(`Made-up team loaded: 10 players, 2 fixtures, ${SEASON.length} played matches.`);

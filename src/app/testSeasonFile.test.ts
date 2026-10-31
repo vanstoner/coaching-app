@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import type { Player } from '../types/index';
 import { emptyLedger, importLedger, isWritable, parseLedger, type Ledger } from './ledger';
 import { squadViews } from './squadViews';
-import { TEST_NAMES } from './testKit';
+import { TEST_NAMES, testNamesFor } from './testKit';
 import { TEST_FILE_SQUAD_ID, testSeasonFile, testSeasonLedger } from './testSeasonFile';
 
 const COMMITTED = resolve(__dirname, '../../test-data/test-season.json');
@@ -50,7 +50,7 @@ describe('the test season file (#157)', () => {
     const ledger = testSeasonLedger(now);
     expect(ledger.squad.id).toBe(TEST_FILE_SQUAD_ID);
     const names = ledger.players.map((p) => p.firstName);
-    for (const n of TEST_NAMES) expect(names).toContain(n);
+    for (const n of testNamesFor(7)) expect(names).toContain(n);
     for (const n of names) expect(TEST_NAMES).toContain(n);
     expect(ledger.matches.length).toBeGreaterThanOrEqual(9);
   });
@@ -84,7 +84,7 @@ describe('the test season file (#157)', () => {
       const { ledger, players } = importOntoEmptyPhone(parsed(text), now);
       const views = squadViews(ledger, players);
       const playedSomething = views.season.children.filter((c) => c.played > 0);
-      expect(playedSomething.length).toBe(TEST_NAMES.length);
+      expect(playedSomething.length).toBe(testNamesFor(7).length);
       expect(views.season.squadAverageMs).not.toBeNull();
       expect(views.matches.length).toBe(ledger.matches.length);
       expect(views.positions.some((p) => p.total > 0)).toBe(true);

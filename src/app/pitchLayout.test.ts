@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import { makeFormat } from './shapes';
-import { PILL_WIDTH_FRACTION, dropTargetAt, pillDetail, slotSpots } from './pitchLayout';
+import {
+  NARROW_PILL_WIDTH,
+  PILL_HEIGHT,
+  PILL_WIDTH_FRACTION,
+  PITCH_ASPECT,
+  dropTargetAt,
+  pillDetail,
+  pillWidthFor,
+  slotBox,
+  slotSpots,
+} from './pitchLayout';
 
 describe('the pitch layout (#83 AC1)', () => {
   it('draws 2-3-1 attacking upwards, left on the left', () => {
@@ -140,5 +150,84 @@ describe('the time under a pill (#125, ADR-015: total pitch time)', () => {
   it('shows 00:00 for a child with no minutes yet', () => {
     expect(pillDetail(undefined, false)).toBe('00:00');
     expect(pillDetail(undefined, true)).toBe('GK 00:00');
+  });
+});
+
+describe('9- and 11-a-side on a 360dp phone (#249 F24–F28, F31)', () => {
+  // PitchView on a 360dp phone: 18dp of screen padding each side, 2 of border.
+  const W = 324;
+  const H = W / PITCH_ASPECT;
+  const ALL = ['2-3-1', '2-2-2', '1-2-1', '2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3'] as const;
+
+  const boxes = (code: (typeof ALL)[number]) => {
+    const format = makeFormat(code);
+    const w = pillWidthFor(format.onFieldCount, W);
+    return slotSpots(format).map((s) => ({ spot: s, box: slotBox(s, W, H, w) }));
+  };
+
+  it('9-a-side keeps today’s pills; 11-a-side is 72dp for every pill, the keeper’s too', () => {
+    expect(pillWidthFor(9, W)).toBe(Math.max(96, W * PILL_WIDTH_FRACTION));
+    expect(pillWidthFor(7, W)).toBe(Math.max(96, W * PILL_WIDTH_FRACTION));
+    expect(pillWidthFor(11, W)).toBe(72);
+    expect(NARROW_PILL_WIDTH).toBe(72);
+    expect(PILL_HEIGHT).toBe(48);
+    for (const code of ['4-4-2', '4-3-3'] as const) for (const { box } of boxes(code)) expect(box.width).toBe(72);
+  });
+
+  it('a row of four sits at 0.13 / 0.377 / 0.623 / 0.87; rows of 1, 2 and 3 keep their places', () => {
+    const def = slotSpots(makeFormat('4-4-2')).filter((s) => s.unit === 'DEF').map((s) => s.x);
+    expect(def).toEqual([0.13, 0.377, 0.623, 0.87]);
+    const mid = slotSpots(makeFormat('4-3-3')).filter((s) => s.unit === 'MID').map((s) => s.x);
+    expect(mid).toEqual([0.18, 0.5, 0.82]);
+    const att = slotSpots(makeFormat('4-4-2')).filter((s) => s.unit === 'ATT').map((s) => s.x);
+    expect(att).toEqual([0.3, 0.7]);
+  });
+
+  it('L sits left and R right; LF and RF keep slot order, LF on the left', () => {
+    for (const code of ['3-3-2', '3-2-3', '4-4-2', '4-3-3'] as const) {
+      const spots = slotSpots(makeFormat(code));
+      const at = (l: string) => spots.find((s) => s.label === l)!;
+      for (const [l, r] of [['LB', 'RB'], ['LM', 'RM'], ['LW', 'RW'], ['LF', 'RF']]) {
+        if (!spots.some((s) => s.label === l)) continue;
+        expect(at(l).x, `${code} ${l}`).toBeLessThan(at(r).x);
+        for (const s of spots.filter((x) => x.y === at(l).y && x.label !== l)) expect(at(l).x).toBeLessThan(s.x);
+        for (const s of spots.filter((x) => x.y === at(r).y && x.label !== r)) expect(at(r).x).toBeGreaterThan(s.x);
+      }
+    }
+  });
+
+  it('no two pills overlap, label line included; every pill is on the pitch; a row of four is 8dp apart', () => {
+    for (const code of ALL) {
+      const b = boxes(code);
+      for (const { box } of b) {
+        expect(box.x, code).toBeGreaterThanOrEqual(0);
+        expect(box.y, code).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, code).toBeLessThanOrEqual(W);
+        expect(box.y + box.height, code).toBeLessThanOrEqual(H);
+      }
+      for (let i = 0; i < b.length; i++) {
+        for (let j = i + 1; j < b.length; j++) {
+          const r = b[i].box;
+          const s = b[j].box;
+          const ox = Math.min(r.x + r.width, s.x + s.width) - Math.max(r.x, s.x);
+          const oy = Math.min(r.y + r.height, s.y + s.height) - Math.max(r.y, s.y);
+          expect(ox > 0 && oy > 0, `${code}: ${b[i].spot.label} and ${b[j].spot.label}`).toBe(false);
+          if (b[i].spot.y === b[j].spot.y && b.filter((x) => x.spot.y === b[i].spot.y).length === 4) {
+            // F28 asks for 8dp; F25's own positions give 7.7dp between the
+            // middle pair at 324dp (0.246 × 324 − 72), which Dee's prototype
+            // rounded to 8. Reported on the PR for Bea, not changed here.
+            expect(-ox, `${code} row of four`).toBeGreaterThanOrEqual(7.5);
+          }
+        }
+      }
+    }
+  });
+
+  it('a drop on each of the four DEF pills of 4-4-2 lands on that slot', () => {
+    const pitch = { x: 0, y: 0, width: W, height: H };
+    const spots = slotSpots(makeFormat('4-4-2'));
+    for (const s of spots.filter((x) => x.unit === 'DEF')) {
+      expect(dropTargetAt(s.x * W, s.y * H, pitch, spots, [], null)).toEqual({ kind: 'slot', positionId: s.positionId });
+    }
   });
 });

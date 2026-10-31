@@ -1,7 +1,7 @@
 # Domain models
 
-Status: **Current** (checked against the code of 2.1.0 at `b5174a8`, 30 Oct 2026, the release check; before that `64d145f`, #259). First retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
-Last updated: 2026-10-30 (2.1.0 release check: a fill-in in a match's fair share, #261; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
+Status: **Current** (checked against the code of 2.2.0 at `961c856`, 31 Oct 2026, the release check; 2.1.0 at `b5174a8`; before that `64d145f`, #259). First retrofitted from `src/types/index.ts`, `src/engine/MatchEngine.ts`, `src/app/persistence.ts` and `src/app/ledger.ts` at `e04fbb0`, 2026-10-09.
+Last updated: 2026-10-31 (2.2.0 release check: 9- and 11-a-side in Match, the record's `season` and `structure`, #249; 2.1.0 release check: a fill-in in a match's fair share, #261; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239, #173, #180, #184, #188, #192, #193, #202, #195, #190)
 
 The types are the source of truth; this page names the rules the types cannot
 express. Spec 01 ([01-domain-model.md](./archive/v1-specs/01-domain-model.md), archived
@@ -49,10 +49,15 @@ interface Position { id: UUID; formatId: UUID; label: string; kind: 'goalkeeper'
 ```
 
 - Exactly one `goalkeeper` position per format.
-- Four built-in shapes (`src/app/shapes.ts`), each a list of slots with a
+- Eight built-in shapes (`src/app/shapes.ts`), each a list of slots with a
   renameable label and a fixed unit: **2-3-1 + GK** and **2-2-2 + GK**
   (`name` "7-a-side", `onFieldCount` 7); **1-2-1 + GK** (GK, D, LM, RM, F) and
-  **2-2 + GK** (GK, LB, RB, LF, RF), "5-a-side", `onFieldCount` 5 (#223).
+  **2-2 + GK** (GK, LB, RB, LF, RF), "5-a-side", `onFieldCount` 5 (#223);
+  **3-3-2 + GK** and **3-2-3 + GK**, "9-a-side"; **4-4-2 + GK** and
+  **4-3-3 + GK** (wingers measured as ATT), "11-a-side" (#249, ADR-023). A
+  code is permanent and unique across sizes; no two shapes of one size share
+  unit counts (ADR-023 D2). A shape code a build does not know is refused on
+  import, never swapped for another size (D4).
   `shapeOfFormat` reads a shape from its unit counts, never its labels. Every
   count of players (lineup, readiness, Getting started, plan, pitch, plan
   image) is the match format's `onFieldCount`, never a fixed 7.
@@ -67,7 +72,7 @@ interface Match {
   id: UUID; squadId: UUID; formatId: UUID;
   opponent: string | null; competition: 'league' | 'cup' | 'friendly' | 'tournament' | null;
   kickoffAt: string | null;
-  totalMinutes: number;       // default 50; offered 40, 50, 60, 75, 90 (40: #223)
+  totalMinutes: number;       // default 50; offered 40, 50, 60, 70, 75, 80, 90 (40: #223; 70, 80: #249)
   quarterCount: number;       // periods: 4 (quarters) or 2 (halves)
   status: MatchStatus; createdAt: string;
   excludeFromStats?: boolean;               // #187: "Leave out" on the form; the record's `exclusion` takes over (ADR-020)
@@ -249,14 +254,14 @@ interface Ledger {                          // key coaching-app/ledger/v2
 //            excludeFromStats, state: 'planned' | 'cancelled', archived, note,
 //            season?,                     // 2.0.0: the season it was made in, kept by every save; absent = first season
 //            surface?: '3g' | '4g' | 'grass', condition?: 'excellent' | 'good' | 'poor' }   // 2.1.0, #254: absent when unset
-// season   { id, name, startedAt, mainSide: 5 | 7 | null, ageGroup: 'U7'…'U18' | null,
+// season   { id, name, startedAt, mainSide: 5 | 7 | 9 | 11 | null, ageGroup: 'U7'…'U18' | null,
 //            level: 'development' | 'competitive' | null, lens: 'full', note }   // the coach's inputs only;
 //            first season's id is 'first-season'; current = latest started after it (#243 AC1, AC9)
 // format-count { matchId, counted, note }   // #243 AC8: an off-format match counted in, or left out again
 // profile  { playerId, keeperPreference, prefers, outfieldTarget, active, removed,
 //            fairness: 'counted' | 'not-counted', note }   // fairness changes only with a note (#190)
 // settings { squad, shape, labels[], totalMinutes, periodCount, buzzWhenSubDue }
-// structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction; shape '2-3-1' | '2-2-2' | '1-2-1' | '2-2', onField 7 or 5 (#223)
+// structure { matchId, periodCount, periodMs[], shape, onField, note }   // #196: as the clock ran, or a noted correction; shape '2-3-1' | '2-2-2' | '1-2-1' | '2-2' (#223) | '3-3-2' | '3-2-3' | '4-4-2' | '4-3-3' (#249), onField 5, 7, 9 or 11
 // award-type { id, name, active, note }                        // #197; defaults 'player-of-the-week', 'mr-assister'
 // award      { matchId, awardTypeId, playerId, given, note }   // key includes the child: joint winners
 // event-type { id, label, tier: 'tally', credited: 'child' | 'team', active, note }   // #198; events of it: kind 'tally:<id>'

@@ -124,7 +124,8 @@ import {
   sideCounts,
   playedIn,
 } from './src/app/seasons';
-import { TEAM_FORMATS } from './src/app/teamRows';
+import { newSeasonShape, startingDefaults } from './src/app/teamRows';
+import type { SeasonSize } from './src/app/shapeList';
 import {
   NewSeasonPrompt,
   OffFormatCard,
@@ -200,7 +201,13 @@ import {
 import { BUILT_IN_TALLIES } from './src/app/tallies';
 import { ledgerWriter, openStoredLedger } from './src/app/storage/ledgerStore';
 import { setupFrom } from './src/app/ledgerSetup';
-import { PLANS_NOT_RESTORED, extendFromRecord, restoreFromRecord, squadNameAfterImport } from './src/app/recordRestore';
+import {
+  PLANS_NOT_RESTORED,
+  extendFromRecord,
+  restoreFromRecord,
+  squadNameAfterImport,
+  unknownShapesMessage,
+} from './src/app/recordRestore';
 import {
   HELD_MATCH_REFUSAL,
   importChoice,
@@ -531,6 +538,15 @@ function TeamApp({
     () => (viewLedger ? ledgerForSeason(viewLedger, season.id) : null),
     [viewLedger, season.id]
   );
+  /**
+   * #249 I39: the season's size for the Shape sheets and their cost line,
+   * worked out on each read (invariant 1): the main format once set, else
+   * the dominating side.
+   */
+  const seasonSize: SeasonSize = useMemo(
+    () => ({ side: seasonView ? seasonSide(seasonView) : null, mainSet: season.mainSide !== null }),
+    [seasonView, season.mainSide]
+  );
   /** A new fixture's season (#243 AC11): absent in the first season, so its record is as before. */
   const newSeasonId = season.id === FIRST_SEASON_ID ? undefined : season.id;
   const [testMatchMessage, setTestMatchMessage] = useState('');
@@ -700,8 +716,16 @@ function TeamApp({
         // season; the rest is a fresh install's (AC4).
         if (initial !== null) {
           const firstFormat = formatForShape(initial.shape, null);
+          // #249 D14–D17: 9-a-side starts at 60 min in halves, 11-a-side at 70;
+          // 5- and 7-a-side at today's defaults. Only the starting defaults.
+          const starting = startingDefaults(initial.side) ?? {
+            totalMinutes: DEFAULT_TOTAL_MINUTES,
+            periodCount: DEFAULT_QUARTER_COUNT,
+          };
           setSquadName(initial.name);
           setFormat(firstFormat);
+          setTotalMinutes(starting.totalMinutes);
+          setPeriodCount(starting.periodCount);
           const seasoned = ledgerRef.current
             ? saveSeason(
                 ledgerRef.current,
@@ -719,7 +743,7 @@ function TeamApp({
           void saveSessionIfWritable(
             store,
             sessionWritableRef.current,
-            sessionInput({ squadName: initial.name, format: firstFormat })
+            sessionInput({ squadName: initial.name, format: firstFormat, ...starting })
           );
         }
         setStep('fixtures');
@@ -867,10 +891,13 @@ function TeamApp({
       // with data only gains what it is missing; nothing on it is overwritten.
       const fresh = players.length === 0 && matches.length === 0;
       let restoredFixtures = 0;
+      // ADR-023 D4 (#249 J43): what was left out for a formation this build does not know.
+      let leftOut: string | null = null;
       if (fresh) {
         const r = restoreFromRecord(report.ledger, squadId, format, appNow());
         const nextName = r.squadName || squadName;
         restoredFixtures = r.fixtures.length;
+        leftOut = unknownShapesMessage(r.unknownShapes);
         commitLedger(report.ledger);
         setPlayers(r.players);
         setSquadId(r.squadId);
@@ -904,6 +931,7 @@ function TeamApp({
         // QA F2 (ruling `file name wins`): an adopted file's team name stands.
         const nextName = squadNameAfterImport(report, squadName);
         restoredFixtures = x.addedFixtures;
+        leftOut = unknownShapesMessage(x.unknownShapes);
         commitLedger(report.ledger);
         setPlayers(x.players);
         setMatches(x.matches);
@@ -911,15 +939,11 @@ function TeamApp({
         persist({ players: x.players, matches: x.matches, squadName: nextName });
       }
       const said = describeImport(report);
-      setLedgerMessage(
-        importedMessage(
-          restoredFixtures > 0
-            ? `${said} ${restoredFixtures} upcoming ${restoredFixtures === 1 ? 'fixture' : 'fixtures'} added. ${PLANS_NOT_RESTORED}`
-            : said,
-          file,
-          report.ledger
-        )
-      );
+      const added =
+        restoredFixtures > 0
+          ? `${said} ${restoredFixtures} upcoming ${restoredFixtures === 1 ? 'fixture' : 'fixtures'} added. ${PLANS_NOT_RESTORED}`
+          : said;
+      setLedgerMessage(importedMessage(leftOut ? `${added} ${leftOut}` : added, file, report.ledger));
     },
     [squadId, squadName, players, matches, format, persist, commitLedger]
   );
@@ -2329,6 +2353,7 @@ function TeamApp({
           }}
           onSave={saveFixture}
           onCancel={() => setStep('fixtures')}
+          seasonSize={seasonSize}
         />
       );
     }
@@ -2368,10 +2393,9 @@ function TeamApp({
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
 
     if (effectiveStep === 'seasonStart' && ledger) {
-      // AC4: the last season's format, unless the team's default fits it better.
-      const ownShape = shapeOfFormat(format);
-      const fits = TEAM_FORMATS.find((f) => f.shape === ownShape && (season.mainSide === null || f.side === season.mainSide));
-      const bySide = TEAM_FORMATS.find((f) => f.side === season.mainSide);
+      // AC4: the last season's format, unless the team's default fits it
+      // better; a named fallback, never a place in a list (#249 B9); then
+      // the age nudge for the age it suggests (E23).
       return (
         <StartSeasonScreen
           from={season}
@@ -2379,7 +2403,13 @@ function TeamApp({
           players={squad.length}
           defaultName={nextSeasonName(season.name) || seasonNameFor(appNow())}
           defaultAge={nextAgeGroup(season.ageGroup) ?? 'U10'}
-          defaultShape={(fits ?? bySide ?? TEAM_FORMATS[2]).shape}
+          // #249 E23 (QA Q1): the age moved up a year moves the format too.
+          defaultShape={newSeasonShape(
+            shapeOfFormat(format),
+            season.mainSide,
+            season.ageGroup,
+            nextAgeGroup(season.ageGroup) ?? 'U10'
+          )}
           upcoming={upcomingIds.length}
           onStart={startNewSeason}
           onCancel={() => setStep('settings')}
@@ -2509,6 +2539,7 @@ function TeamApp({
       return (
         <SettingsScreen
           store={store}
+          seasonSize={seasonSize}
           squadName={squadName}
           season={
             ledger && !ledgerBlockedRef.current ? {

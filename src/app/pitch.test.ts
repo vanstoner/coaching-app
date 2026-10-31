@@ -152,11 +152,11 @@ describe('the pitch survives a restore and an older build (#254 AC2, AC4, AC16; 
       format,
       () => NOW
     );
-    expect(back.match).toMatchObject({ surface: '4g', condition: 'poor' });
+    expect(back!.match).toMatchObject({ surface: '4g', condition: 'poor' });
     // The next ordinary save writes them again, not a fixture without them.
-    expect(fixtureRecord({ match: back.match, format })).toMatchObject({ surface: '4g', condition: 'poor' });
+    expect(fixtureRecord({ match: back!.match, format })).toMatchObject({ surface: '4g', condition: 'poor' });
     const later = fixtureFromRecord(read({ type: 'fixture', id: uuid(), totalMinutes: 50, periodCount: 4, surface: 'indoor' })!, kids, squadId, format, () => NOW);
-    expect(fixtureRecord({ match: later.match, format })).toMatchObject({ surface: 'indoor' });
+    expect(fixtureRecord({ match: later!.match, format })).toMatchObject({ surface: 'indoor' });
   });
 
   it('the released 1.2.0 reader opens a 2.1.0 record and keeps the fields it does not know', async () => {

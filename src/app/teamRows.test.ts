@@ -55,11 +55,13 @@ describe('Add a team (#224 AC5)', () => {
     );
   });
 
+  // Replaced for #249 E20 (Rob, 30 Oct, ruling 5a and "U9 fix"): U11 now goes
+  // to 9-a-side and U15 to 11; the full table is in nineAndEleven.test.ts.
   it('nudges the format by age, and leaves a choice that already fits', () => {
     expect(formatForAge('U8', '2-3-1')).toBe('2-2');
     expect(formatForAge('U8', '1-2-1')).toBe('1-2-1');
-    expect(formatForAge('U11', '2-2')).toBe('2-3-1');
-    expect(formatForAge('U15', '2-2')).toBe('2-2');
+    expect(formatForAge('U11', '2-2')).toBe('3-3-2');
+    expect(formatForAge('U15', '2-2')).toBe('4-4-2');
   });
 });
 

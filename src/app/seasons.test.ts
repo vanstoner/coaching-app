@@ -274,7 +274,8 @@ describe('starting and confirming seasons (#243 AC2, AC4, AC9)', () => {
     });
   });
 
-  it('refuses a name over 16 characters, an age group outside U7–U18, a format 2.0.0 does not offer', () => {
+  // 9 is now a main format (#249 B7, ADR-023 D1); 6 and 8 are still refused.
+  it('refuses a name over 16 characters, an age group outside U7–U18, a format the app does not offer', () => {
     const l = emptyLedger(squadId, 'Mock FC', NOW);
     const base = {
       id: uuid(),
@@ -285,7 +286,7 @@ describe('starting and confirming seasons (#243 AC2, AC4, AC9)', () => {
     };
     expect(saveSeason(l, { ...base, name: 'Seventeen chars!!' }, NOW).ok).toBe(false);
     expect(saveSeason(l, { ...base, ageGroup: 'U6' }, NOW).ok).toBe(false);
-    expect(saveSeason(l, { ...base, mainSide: 9 }, NOW).ok).toBe(false);
+    expect(saveSeason(l, { ...base, mainSide: 8 }, NOW).ok).toBe(false);
     expect(saveSeason(l, { ...base, name: '2026–27' }, NOW).ok).toBe(true);
   });
 

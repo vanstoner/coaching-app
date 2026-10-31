@@ -42,8 +42,21 @@ export function showTestKit(buildLabel: string, isDev: boolean, distribution: Di
   return isDev || isBetaBuild(buildLabel) || distribution === 'demo';
 }
 
-/** Made-up first names, so nothing in a beta looks like the real squad. */
-export const TEST_NAMES = ['Ava', 'Ben', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo'];
+/**
+ * Made-up first names, so nothing in a beta looks like the real squad. The
+ * first ten are the 2.1.0 list, unchanged, so existing test data still reads
+ * as the made-up team; four more let it field 11 with a bench (#249 K47).
+ */
+export const TEST_NAMES = ['Ava', 'Ben', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lia', 'Mo', 'Ned'];
+
+/**
+ * The made-up names a team of `onFieldCount` takes: the first ten, as before,
+ * or enough to field the team with a bench of three (#249 K48), so a 5- or
+ * 7-a-side kit (and every store shot seeded from one) is unchanged.
+ */
+export function testNamesFor(onFieldCount: number): string[] {
+  return TEST_NAMES.slice(0, Math.max(10, onFieldCount + 3));
+}
 export const TEST_OPPONENTS = ['Test Rovers', 'Sample Town'];
 
 export interface TestData {
@@ -70,8 +83,9 @@ export function addTestData(
   periodCount: number,
   now: Date
 ): TestData {
+  const names = testNamesFor(format.onFieldCount);
   const have = new Set(players.filter((p) => p.active).map((p) => p.firstName));
-  const added = TEST_NAMES.filter((n) => !have.has(n)).map((n) => makePlayer(squadId, n));
+  const added = names.filter((n) => !have.has(n)).map((n) => makePlayer(squadId, n));
   const squad = [...players, ...added];
   const testPlayers = squad.filter((p) => p.active && TEST_NAMES.includes(p.firstName));
 

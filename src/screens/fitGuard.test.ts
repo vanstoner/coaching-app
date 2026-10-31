@@ -52,3 +52,26 @@ describe('the referee placeholder (#254 AC5, D15)', () => {
     expect(src('PitchFields.tsx')).toContain(`placeholder="Referee's name (stays on this phone)"`);
   });
 });
+
+describe('four in a row at 360dp (#249 F29, H34)', () => {
+  it('PitchView takes its pill width from pillWidthFor, which is 72dp with 11 on the pitch', () => {
+    const pitch = src('PitchView.tsx');
+    expect(pitch).toMatch(/const pillWidth = pillWidthFor\(format\.onFieldCount, pitch\.width\);/);
+    expect(src('../app/pitchLayout.ts')).toMatch(/onFieldCount >= 11 \? NARROW_PILL_WIDTH :/);
+    // The drag ghost and the empty-slot outline use the same width.
+    expect(pitch).toMatch(/s\.ghost,\s*\{ width: pillWidth,/);
+    expect(pitch).toMatch(/style=\{\[s\.empty, \{ width: pillWidth \}/);
+  });
+
+  it('the name in a pill is one line that ends in "…", never clipped mid-letter', () => {
+    expect(src('PitchView.tsx')).toMatch(/<Text style=\{\[s\.name, onBench && s\.benchName\]\} numberOfLines=\{1\} ellipsizeMode="tail">/);
+  });
+
+  it('the plan picture is captured at its measured height, never a constant', () => {
+    const file = src('../app/planImageFile.ts');
+    expect(file).toMatch(/const height = Math\.round\(\(size\.height \* width\) \/ size\.width\);/);
+    const view = src('PlanImageView.tsx');
+    expect(view).not.toMatch(/style=\{\[local\.paper, \{[^}]*height/);
+    expect(view).toMatch(/planSlotBox\(slot, layout, colWidth, pitchHeight, image\.slotWidth\)/);
+  });
+});

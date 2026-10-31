@@ -38,14 +38,68 @@ function side(label: string): number {
  * spacing so three pills of PILL_WIDTH_FRACTION never touch: at 0.18 / 0.5 /
  * 0.82 the gap between pills is 0.32 - 0.28 = 0.04 of the pitch, about 13dp
  * on a 360dp phone, where even spacing (0.25 apart) overlapped them.
+ *
+ * A row of four (#249 F25, Dee's option A): 0.13 / 0.377 / 0.623 / 0.87,
+ * for NARROW_PILL_WIDTH pills, about 8dp apart on a 324dp pitch.
  */
 function rowX(n: number, i: number): number {
-  const table: Record<number, number[]> = { 1: [0.5], 2: [0.3, 0.7], 3: [0.18, 0.5, 0.82] };
+  const table: Record<number, number[]> = {
+    1: [0.5],
+    2: [0.3, 0.7],
+    3: [0.18, 0.5, 0.82],
+    4: [0.13, 0.377, 0.623, 0.87],
+  };
   return table[n]?.[i] ?? (i + 1) / (n + 1);
 }
 
 /** The width of a pill, as a fraction of the pitch's width. */
 export const PILL_WIDTH_FRACTION = 0.28;
+
+/** The narrowest pill below 11-a-side: two touch targets (#83). */
+export const MIN_PILL_WIDTH = 96;
+
+/**
+ * Every pill's width at 11-a-side, the keeper's included: one width for the
+ * whole pitch (#249 F25; Rob, 30 Oct, `approve 1`).
+ */
+export const NARROW_PILL_WIDTH = 72;
+
+/** A pill's height in every format: a full touch target (#264 V1; #249 F26). */
+export const PILL_HEIGHT = 48;
+
+/** The gold position name above a pill: 13dp of line and 2 of margin. */
+export const SLOT_LABEL_HEIGHT = 15;
+
+/** The drawn pitch's width over its height. */
+export const PITCH_ASPECT = 3 / 3.8;
+
+/**
+ * How wide a pill is on a pitch `pitchWidth` across: 72dp when the format
+ * has 11 on the pitch, otherwise today's max(96dp, 28 % of the pitch) (#249
+ * F24, F25). The drag ghost and the empty-slot outline use the same width.
+ */
+export function pillWidthFor(onFieldCount: number, pitchWidth: number): number {
+  return onFieldCount >= 11 ? NARROW_PILL_WIDTH : Math.max(MIN_PILL_WIDTH, pitchWidth * PILL_WIDTH_FRACTION);
+}
+
+/**
+ * Where a slot is drawn, in the pitch's own dp: the position name above the
+ * pill, the pill centred 14dp above the spot. PitchView draws exactly this,
+ * so the geometry test measures what is on screen.
+ */
+export function slotBox(
+  spot: Pick<SlotSpot, 'x' | 'y'>,
+  pitchWidth: number,
+  pitchHeight: number,
+  pillWidth: number
+): Rect {
+  return {
+    x: spot.x * pitchWidth - pillWidth / 2,
+    y: spot.y * pitchHeight - PILL_HEIGHT / 2 - 14,
+    width: pillWidth,
+    height: SLOT_LABEL_HEIGHT + PILL_HEIGHT,
+  };
+}
 
 /** Every position's spot on the pitch. */
 export function slotSpots(format: Format): SlotSpot[] {

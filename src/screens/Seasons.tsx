@@ -23,7 +23,7 @@ import { Text } from './Text';
 
 import { AGE_GROUPS, MAIN_SIDES, SEASON_NAME_MAX, type LedgerSeason } from '../app/ledger';
 import { seasonLine, seasonName } from '../app/seasons';
-import { TEAM_FORMATS } from '../app/teamRows';
+import { TEAM_FORMATS, formatForAge } from '../app/teamRows';
 import type { ShapeCode } from '../app/shapes';
 import { formReducer, leaveNeedsAsking } from '../app/saveState';
 import {
@@ -173,6 +173,7 @@ const sideName = (n: number) => `${n}-a-side`;
 /** AC9: the main format left unset, saying what setting it would change. */
 function MainFormat({ sides, onSet }: { sides: ReadonlyMap<number, number>; onSet: (side: number) => string | null }) {
   const [choice, setChoice] = useState<number | null>(null);
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const total = [...sides.values()].reduce((a, b) => a + b, 0);
   const most = [...sides].sort((a, b) => b[1] - a[1])[0];
@@ -185,11 +186,18 @@ function MainFormat({ sides, onSet }: { sides: ReadonlyMap<number, number>; onSe
           ? `Until you set it, the season's figures use the format you've played most: ${sideName(most[0])} so far (${most[1]} of ${total} matches).`
           : "Until you set it, the season's figures use the format you play most."}
       </Text>
-      <SegmentedRow
-        label="Main format"
-        options={MAIN_SIDES.map((s) => ({ value: s, label: sideName(s) }))}
+      {/* #249 B8: four sizes do not fit a segmented row at 360dp, so a list sheet (#264). */}
+      <RowNav label="Main format" value={choice === null ? 'Pick one' : sideName(choice)} onPress={() => setPicking(true)} />
+      <ListSheet
+        visible={picking}
+        title="Main format"
+        items={MAIN_SIDES.map((s) => ({ value: s, label: sideName(s) }))}
         value={choice}
-        onChange={(s) => s !== null && setChoice(s)}
+        onPick={(s) => {
+          setChoice(s);
+          setPicking(false);
+        }}
+        onCancel={() => setPicking(false)}
       />
       {choice !== null && (
         <>
@@ -255,7 +263,12 @@ export function StartSeasonScreen({
       dispatch({ type: 'change' });
     };
   const setName = changed(setNameRaw);
-  const setAge = changed(setAgeRaw);
+  // #249 E23 (Q2): the same age nudge as Add a team, on the format only;
+  // Match defaults stay as they are.
+  const setAge = changed((a: string) => {
+    setAgeRaw(a);
+    setShapeRaw((s) => formatForAge(a, s));
+  });
   const setLevel = changed(setLevelRaw);
   const setShape = changed(setShapeRaw);
   const leave = () => (leaveNeedsAsking(phase) ? setAsking(true) : onCancel());
@@ -349,7 +362,8 @@ export function StartSeasonScreen({
       <ListSheet
         visible={sheet === 'format'}
         title="Main format"
-        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: f.label, detail: f.detail }))}
+        // #249 Q3: all eight shapes, one line each, "9-a-side · 3-3-2".
+        items={TEAM_FORMATS.map((f) => ({ value: f.shape, label: `${f.label} · ${f.detail}` }))}
         value={shape}
         onPick={(v) => {
           setShape(v);
