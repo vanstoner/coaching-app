@@ -70,17 +70,23 @@ it's a test version, Google needs Rob to add you first.
 
 ## Getting started (both phones)
 
-1. Open the app and add your squad. **First names are best.** For two
+1. Open the app and tap **Add your team**: its name, the season, the age
+   group and the format (5-, 7-, 9- or 11-a-side). Want a look first? **Try
+   it with a made-up team** fills every screen with a made-up squad.
+2. Add your squad on the **Squad** tab. **First names are best.** For two
    children with the same name, add an initial ("Alex S"). The app never asks
    for surnames, birthdays or photos, and warns before saving a longer name.
-2. Add your next fixture, then press **Play now** when you kick off. The app
-   tells you who's due off.
-3. After the match, the **Played** list and the season tables show everyone's
-   minutes.
+3. Add your next fixture with **+ Fixture**, or press **Play now** when you
+   kick off. The app tells you who's due off.
+4. After the match, tap **End match** at the bottom of the report. The
+   **Squad** tab then shows everyone's minutes for the season.
 
-**Keep your season safe:** **Settings › Back up this app** puts everything
-into one file you can save or email to yourself. If you change phones, use
-**Restore** on the new one.
+**The [how-to guide](https://vanstoner.github.io/coaching-app/guide.html) walks through a whole week**, from planning
+the match to seeing who is next in line for more time.
+
+**Keep your season safe:** **Settings › Backup › Back up this app** puts every
+team into one file you can save or email to yourself. If you change phones,
+use **Restore from a backup** on the new one.
 
 ## Telling Rob what you think
 

@@ -126,7 +126,7 @@ describe('Forget everything (#207)', () => {
   it('AC5: the privacy policy says what this does', () => {
     const policy = readFileSync(new URL('../../../PRIVACY.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
     expect(policy).toContain(
-      'Settings › Forget everything** removes the squad, its matches, every recorded minute and any copies the app kept aside'
+      'Settings › Danger zone › Forget everything** removes the squad, its matches, every recorded minute and any copies the app kept aside'
     );
   });
 });

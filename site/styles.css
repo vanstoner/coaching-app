@@ -55,3 +55,14 @@ footer a { color: var(--muted); }
 
 /* testers.html: the test-season download, big enough to hit with a thumb. */
 .download a { display: inline-block; padding: 14px 22px; border-radius: 10px; background: var(--warn); color: #10231a; font-weight: 700; text-decoration: none; }
+
+/* The App Store shots: a strip on the home page, inline in the guide. */
+.shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (min-width: 640px) { .shots { grid-template-columns: repeat(4, 1fr); } }
+.shots figure { margin: 0; }
+.shots img, .prose img { width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); display: block; }
+.shots figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; text-align: center; }
+.prose img { max-width: 260px; margin: 12px 12px 0 0; display: inline-block; vertical-align: top; }
+.prose a:has(> img) { display: inline-block; }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+.prose code { background: var(--raised); padding: 1px 5px; border-radius: 4px; }

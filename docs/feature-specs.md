@@ -1,7 +1,7 @@
 # Feature specs
 
 Status: **Current** (#239 S2, 25 October 2026). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-31 (release check of 2.2.0: Start a new season, Import with Rob's 31 Oct rulings, the pitch row added, Waiting to build to the labels; 2.2.0 itself: 9- and 11-a-side, #249, ADR-023: Add a team, Season, Start a new season, Defaults, Add fixture, Getting started card, Play now, Share plan, Import, Test kit; earlier the release check of 2.1.0 at `b5174a8`)
+Last updated: 2026-10-31 (docs refresh: 2.2.0 shipped, #232 Part 1 in use; release check of 2.2.0: Start a new season, Import with Rob's 31 Oct rulings, the pitch row added, Waiting to build to the labels; 2.2.0 itself: 9- and 11-a-side, #249, ADR-023: Add a team, Season, Start a new season, Defaults, Add fixture, Getting started card, Play now, Share plan, Import, Test kit; earlier the release check of 2.1.0 at `b5174a8`)
 
 **This is the current spec.** Specs 01–03 are archived as v1 intent
 ([`archive/v1-specs/`](./archive/v1-specs/01-domain-model.md)); where they differ
@@ -155,8 +155,8 @@ in the release PR. `docs/process/validate-docs.py` checks both in CI.
 What is not built yet, by the issue's `target:` label, which is the one place
 a target version lives (#240 Q5, Rob, 29 Oct). This section mirrors the
 labels and the issues' state as read on 31 October 2026; the issue is the
-truth. **target:2.2.0**'s feature (#249, 9- and 11-a-side) is built on this
-branch and is rows above; 2.1.0's (#54, #252, #254, #261 items 1–2, #262,
+truth. **target:2.2.0**'s feature (#249, 9- and 11-a-side) shipped in 2.2.0
+(#269) and is rows above; 2.1.0's (#54, #252, #254, #261 items 1–2, #262,
 #263, #264) shipped in 2.1.0.
 
 ### target:2.3.0
@@ -183,7 +183,7 @@ branch and is rows above; 2.1.0's (#54, #252, #254, #261 items 1–2, #262,
 
 | Issue | Status | What | Next step |
 |---|---|---|---|
-| [#232](https://github.com/vanstoner/coaching-app/issues/232) | Ready | Google Play: release on approval, and a store listing | Approved split (30 Oct): Part 1, the closed track (P0–P7, 1–5, 9–16), merged in #267 and #268; Part 2, the listing (6–8), next |
+| [#232](https://github.com/vanstoner/coaching-app/issues/232) | Ready | Google Play: release on approval, and a store listing | Approved split (30 Oct): Part 1, the closed track (P0–P7, 1–5, 9–16), merged in #267 and #268, first used for 2.2.0 on 31 Oct; Part 2, the listing (6–8), next |
 | [#152](https://github.com/vanstoner/coaching-app/issues/152) | Proposed | Type scale, child page and Squad tiles (criteria from 6 Oct, before 2.0) | Bea re-checks against 2.0, then Rob |
 | [#250](https://github.com/vanstoner/coaching-app/issues/250) | Idea | Dark launch: features on in the beta only | Deferred with #249; Bea's criteria |
 | [#241](https://github.com/vanstoner/coaching-app/issues/241) | Idea | Fairness lenses by age group and level | Quotes, then an ADR amending ADR-015 |

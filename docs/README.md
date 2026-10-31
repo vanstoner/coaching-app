@@ -7,6 +7,8 @@ it wrong (#123). Anything not listed here is either code or archive.
 |---|---|
 | Know the rules every change follows | [CLAUDE.md](../CLAUDE.md) |
 | Know what the app is and how to install it | [README.md](../README.md) |
+| Install it as a coach (the website's "Try it" page) | [COACHES.md](../COACHES.md) |
+| Use it as a new coach (the website's how-to guide) | [GUIDE.md](../GUIDE.md) |
 | Know what shipped, when and why | [HISTORY.md](../HISTORY.md) |
 | Know why a load-bearing choice was made | [Decision log (ADRs)](./decisions/README.md) |
 | See how the app is built: layout, state, storage, navigation | [System architecture](./system-architecture.md) |
