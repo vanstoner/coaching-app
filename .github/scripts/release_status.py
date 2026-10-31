@@ -64,10 +64,20 @@ FLOW_KEYS = {
 # --------------------------------------------------------------------------
 # Reading GitHub
 
+class _KeepRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # surface the redirect as an HTTPError so log() can follow it without the token
+
+
+_NO_REDIRECT = urllib.request.build_opener(_KeepRedirect)
+
 class GitHub:
-    def __init__(self, token):
+    def __init__(self, token, api=API):
         self.token = token
+        self.api = api
         self.calls = 0
+        self.logs_read = 0
+        self.logs_failed = 0
 
     def get(self, path, raw=False):
         url = path if path.startswith("http") else f"{API}/repos/{REPO}/{path}"
@@ -95,16 +105,35 @@ class GitHub:
         return out
 
     def log(self, job_id):
+        """A job's log. GitHub answers with a redirect to its log storage,
+        which refuses a request still carrying the GitHub token (HTTP 401),
+        so the redirect is followed by hand, without the token."""
         try:
-            return self.get(f"actions/jobs/{job_id}/logs", raw=True)
+            req = urllib.request.Request(f"{self.api}/repos/{REPO}/actions/jobs/{job_id}/logs", headers={
+                "Accept": "application/vnd.github+json", "User-Agent": "coaching-app-release-status",
+                **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
+            self.calls += 1
+            try:
+                with _NO_REDIRECT.open(req, timeout=60) as r:
+                    self.logs_read += 1
+                    return r.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                if e.code not in (301, 302, 303, 307, 308) or not e.headers.get("Location"):
+                    raise
+                plain = urllib.request.Request(e.headers["Location"], headers={"User-Agent": "coaching-app-release-status"})
+                with urllib.request.urlopen(plain, timeout=60) as r:
+                    self.logs_read += 1
+                    return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             if not self.token and shutil.which("gh"):
                 # A local dry run with no token: the gh CLI reads the log.
                 got = subprocess.run(["gh", "api", f"repos/{REPO}/actions/jobs/{job_id}/logs"],
                                      capture_output=True, text=True)
                 if got.returncode == 0:
+                    self.logs_read += 1
                     return got.stdout
             print(f"note: job {job_id}'s log could not be read (HTTP {e.code})", file=sys.stderr)
+            self.logs_failed += 1
             return ""
 
 
@@ -606,6 +635,11 @@ def gather(out_dir, previous_url):
     gh = GitHub(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
     lookup = apple_lookup()
     status = scrub(gather_status(gh, now, lookup))
+    if gh.logs_failed and not gh.logs_read:
+        # Every store run's log was unreadable: publishing would show every
+        # store step as Not started. Fail, so the last good data is kept (10).
+        print(f"WHY THIS STEP FAILED: none of {gh.logs_failed} job logs could be read", file=sys.stderr)
+        return 1
     flow = scrub(gather_flow(gh, now, previous_flow(previous_url), status))
     os.makedirs(out_dir, exist_ok=True)
     for name, data in (("status.json", status), ("flow.json", flow)):
@@ -672,12 +706,45 @@ def self_test():
     planted["versions"][0]["email"] = "x"
     check("privacy: a key not on the allow-list is refused", bool(privacy_problems(planted, STATUS_KEYS)))
     check("scrub: an '@' in a title is spelled out", "@" not in json.dumps(scrub({"title": "@types/node"})))
+    check("log redirect: followed without the token, as the log storage needs", redirect_case())
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "status.json")
         json.dump(healthy, open(p, "w"))
         check("check: the healthy file exits 0", check_files([p]) == 0)
     print(f"{total - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
+
+
+def redirect_case():
+    """A local stand-in for GitHub: /repos/.../logs redirects to /blob, which
+    refuses any request carrying an Authorization header (as Azure does)."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.endswith("/logs"):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/blob")
+                self.end_headers()
+            elif self.headers.get("Authorization"):
+                self.send_response(401)
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"Uploaded to TestFlight (build 7).")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        gh = GitHub("secret-token", api=f"http://127.0.0.1:{srv.server_port}")
+        return "build 7" in gh.log(1) and gh.logs_read == 1
+    finally:
+        srv.shutdown()
 
 
 def main(argv):
