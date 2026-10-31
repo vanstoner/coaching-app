@@ -172,7 +172,7 @@ truth. **target:2.2.0**'s feature (#249, 9- and 11-a-side) shipped in 2.2.0
 
 | Issue | Status | What | Next step |
 |---|---|---|---|
-| [#240](https://github.com/vanstoner/coaching-app/issues/240) | Ready | Release tracker page, with the idea flow (criteria 1–18, 20–34) | Pip builds it in a later 2.x |
+| [#240](https://github.com/vanstoner/coaching-app/issues/240) | Ready | Release tracker page, with the idea flow (criteria 1–18, 20–34) | Built on 31 Oct (Rob: "approve 240 now"), public at `releases.html`; closes when it merges |
 | [#253](https://github.com/vanstoner/coaching-app/issues/253) | Idea | Restart a quarter; abandon a match with confirmation | Ada (the record's shape) |
 | [#113](https://github.com/vanstoner/coaching-app/issues/113) | Idea | Connected match: central stats and parents' inputs | An ADR, GDPR first |
 | [#258](https://github.com/vanstoner/coaching-app/issues/258) | Idea | Collaborate: share a team, a fixture, a live match | An ADR, GDPR first |
