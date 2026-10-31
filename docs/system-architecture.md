@@ -1,7 +1,7 @@
 # System architecture
 
-Status: **Current** (checked against the code of 2.1.0 at `b5174a8`, 30 Oct 2026, the release check; before that `64d145f`, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-30 (2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
+Status: **Current** (checked against the code of 2.2.0 at `961c856`, 31 Oct 2026, the release check; 2.1.0 at `b5174a8`; before that `64d145f`, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
+Last updated: 2026-10-31 (2.2.0 release check: no new module, record or route, App.tsx size; 2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -24,7 +24,7 @@ No navigation library, no state library, no network client. The one React Contex
 
 ```
 index.ts            registerRootComponent(App)
-App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,250 lines
+App.tsx             the shell (`App`: teams) and `TeamApp` (one team's state, every action, the router); about 3,300 lines
 src/engine/         MatchEngine — pure TS, mutates a MatchState in place
 src/types/          domain types, uuid() (Hermes-safe)
 src/app/            pure rules, each with a *.test.ts beside it

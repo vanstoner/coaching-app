@@ -398,8 +398,8 @@ analysis, iOS". Entries are added as each release ships.
   how it was played ("2 halves of 25:00"), as its record page does. Minutes
   already agreed and are unchanged. A match still being played reads as
   before.
-- **Heart FC Coach 2.0.0: teams and seasons (#224, #243; ADR-022), in
-  progress.** Rob, 18 Oct: *"if I am a coach of multiple squads I'll need to
+- **29 October — Heart FC Coach 2.0.0: teams and seasons (#224, #243;
+  ADR-022).** Rob, 18 Oct: *"if I am a coach of multiple squads I'll need to
   switch to a squad and from there everything is only related to that
   team … thinking like profiles in a browser."* Built in steps on one pull
   request, each step a beta:
@@ -447,7 +447,7 @@ analysis, iOS". Entries are added as each release ships.
   kick-off, still has no date (the record keeps no clock time for a period)
   and stays last. Release 2.0.0 is frozen as a fixture, in the team layout
   2.0.0 phones use (#167).
-- **2.1.0 (in progress) — first names by default (#54).** Rob, 26 Oct: relax
+- **30 October — Heart FC Coach 2.1.0: first names by default (#54).** Rob, 26 Oct: relax
   the one-name rule to a warning. One word is still added at once; a longer
   name stops at a warning that says why first names are the default and
   recommends an initial ("Alex S"), with Keep and Change it beside it. A
@@ -492,8 +492,8 @@ analysis, iOS". Entries are added as each release ships.
   the ten steps behind every figure, and an info tap beside each figure
   opens its step. The spec holds the same words, and a test keeps them
   equal.
-- **2.2.0 (in progress) — 9- and 11-a-side (#249; ADR-023).** Rob, 29 Oct:
-  *"I do want 9 and 11 aside formats available with appropriate setups."*
+- **31 October — Heart FC Coach 2.2.0: 9- and 11-a-side (#249; ADR-023).**
+  Rob, 29 Oct: *"I do want 9 and 11 aside formats available with appropriate setups."*
   Four formations join the four there were: 3-3-2 and 3-2-3 at 9-a-side,
   4-4-2 and 4-3-3 at 11-a-side, with the 4-3-3 wingers counted as attack.
   Matches can be 70 or 80 minutes, picked from a list. A new team is
@@ -506,5 +506,5 @@ analysis, iOS". Entries are added as each release ships.
   season's figures. An import from a later version leaves out a planned
   fixture or default in a formation this one does not know, and says so,
   rather than turning it into 7-a-side. Older versions cannot do that: a
-  9- or 11-a-side fixture imported into a version before 2.2.0 becomes
-  7-a-side without a word. Release 2.1.0 is frozen as a fixture (#167).
+  9- or 11-a-side fixture imported into a version before 2.2.0 takes that
+  phone's default format, 7-a-side unless it is set to 5, without a word. Release 2.1.0 is frozen as a fixture (#167).
