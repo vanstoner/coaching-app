@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Releases · Heart of the Game: Coach</title>
+<meta name="description" content="Where each version of Heart of the Game: Coach is, from pull request to the App Store and Google Play, and how ideas move into the app.">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* #240: this page reads in light and dark (criterion 5); the rest of the site is dark. */
+  :root { --done: #3ecf8e; --rob: #ffd166; --store: #7cc4ff; --failed: #ff7a7a; --off: #8aa69a; --card: var(--raised); }
+  @media (prefers-color-scheme: light) {
+    :root { --pitch: #f4f7f5; --raised: #ffffff; --line: #cfdcd5; --ink: #10231a; --muted: #4a6458; --accent: #12855a;
+            --warn: #8a5a00; --done: #12855a; --rob: #8a5a00; --store: #1f5f99; --failed: #b3261e; --off: #5d7268; }
+    header.top a.home { color: var(--ink); }
+  }
+  .rel { max-width: 760px; padding: 8px 0 48px; }
+  .rel h1 { font-size: 32px; margin: 8px 0 4px; }
+  .asof { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .stale { border: 1px solid var(--rob); color: var(--rob); border-radius: 10px; padding: 10px 12px; margin: 0 0 16px; font-size: 15px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 0 0 16px; }
+  .box h2 { font-size: 18px; margin: 0 0 8px; }
+  .needs li { margin: 6px 0; }
+  .ver > summary { cursor: pointer; list-style: none; font-weight: 700; font-size: 20px; }
+  .ver > summary::-webkit-details-marker { display: none; }
+  .ver > summary::before { content: "› "; color: var(--muted); }
+  .ver[open] > summary::before { content: "⌄ "; }
+  .lane { margin: 14px 0 0; }
+  .lane h3 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .step:first-of-type { border-top: 0; }
+  .ico { font-size: 18px; line-height: 22px; text-align: center; }
+  .sname { font-weight: 600; overflow-wrap: anywhere; }
+  .sstate { font-size: 14px; }
+  .snote { grid-column: 2; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .s-done .sstate { color: var(--done); } .s-rob .sstate { color: var(--rob); }
+  .s-apple .sstate, .s-google .sstate { color: var(--store); } .s-failed .sstate { color: var(--failed); }
+  .s-not_started .sstate { color: var(--off); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--muted); }
+  .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 16px; }
+  @media (min-width: 560px) { .strip { grid-template-columns: repeat(6, 1fr); } }
+  .strip a { display: block; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+             border-radius: 12px; padding: 10px; text-align: center; border-top: 4px solid var(--c); }
+  .strip b { display: block; font-size: 24px; }
+  .strip span { font-size: 13px; color: var(--muted); }
+  .stage-group h3 { margin: 18px 0 8px; font-size: 18px; scroll-margin-top: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 0 0 8px; }
+  .card a.t { color: var(--ink); text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
+  .track { display: flex; gap: 3px; margin: 8px 0 6px; }
+  .track i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+  .track i.on { background: var(--c); }
+  .meta { font-size: 13px; color: var(--muted); }
+  button.more { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 14px; min-height: 44px; }
+  .chart { width: 100%; height: auto; touch-action: pan-y; display: block; }
+  .readout { font-size: 14px; color: var(--muted); min-height: 2.6em; margin: 6px 0 0; }
+  .rung { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 14px; }
+  .rung h3 { font-size: 17px; margin: 0 0 6px; }
+  .tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+  .tabs button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font: inherit; }
+  .tabs button[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+  .left li { margin: 4px 0; font-size: 14px; }
+  .muted { color: var(--muted); }
+  footer, footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="home" href="./"><img src="icon.png" alt=""></a>
+    <a class="home" href="./"><span>Heart of the Game: Coach</span></a>
+    <nav><a href="guide.html">Guide</a><a href="releases.html">Releases</a><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
+  </header>
+  <main class="rel">
+    <h1>Releases</h1>
+    <p class="asof" id="asof">Loading…</p>
+    <div id="stale" class="stale" hidden></div>
+    <section id="needs" class="box needs" hidden><h2>Needs you</h2><ul id="needs-list"></ul></section>
+    <div id="versions"></div>
+    <section class="box" id="betas-box" hidden><h2>Open PR betas</h2><div id="betas"></div></section>
+    <p class="legend" aria-label="What each state means">
+      <span>✓ Done</span><span>✋ Waiting on Rob</span><span>⏳ Waiting on Apple or Google</span><span>✕ Failed</span><span>○ Not started</span>
+    </p>
+
+    <h2 style="margin-top:40px">From idea to the app</h2>
+    <p class="muted" style="margin-top:0">Every open idea and where it is, and how ideas have moved into the app since 16 September. Each stage is read from a recorded fact on its issue, never guessed.</p>
+    <nav class="strip" id="strip" aria-label="Stages"></nav>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-now" aria-selected="true" aria-controls="view-now">Now</button>
+      <button role="tab" id="tab-flow" aria-selected="false" aria-controls="view-flow">Flow</button>
+      <button role="tab" id="tab-ladder" aria-selected="false" aria-controls="view-ladder">Ladder</button>
+    </div>
+    <section id="view-now" role="tabpanel"></section>
+    <section id="view-flow" role="tabpanel" hidden>
+      <svg id="chart" class="chart" viewBox="0 0 360 220" role="img" aria-label="Cumulative flow of ideas by stage"></svg>
+      <p class="readout" id="readout" aria-live="polite"></p>
+      <p class="meta" id="recon"></p>
+      <p id="leftline" class="muted"></p>
+      <ul id="leftlist" class="left" hidden></ul>
+    </section>
+    <section id="view-ladder" role="tabpanel" hidden></section>
+  </main>
+  <footer>
+    <a href="./">Home</a> &middot; <a href="guide.html">Guide</a> &middot; <a href="support.html">Support</a><br>&copy; 2026 Stephen Robert Vanstone
+  </footer>
+</div>
+<script>
+(function () {
+  "use strict";
+  var STATE = {
+    done: ["✓", "Done"], rob: ["✋", "Waiting on Rob"], apple: ["⏳", "Waiting on Apple"],
+    google: ["⏳", "Waiting on Google"], failed: ["✕", "Failed"], not_started: ["○", "Not started"]
+  };
+  var STAGES = [["idea", "Idea", "#9aa7a1"], ["specified", "Specified", "#7cc4ff"], ["ready", "Ready", "#b48cff"],
+                ["building", "Building", "#ffd166"], ["beta", "Beta", "#ff9f6e"], ["live", "Live", "#3ecf8e"]];
+  var DAY = 86400000;
+
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    for (var k in attrs || {}) {
+      if (k === "text") e.textContent = attrs[k]; else if (k === "html") e.innerHTML = attrs[k]; else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return e;
+  }
+  function fmtDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+  // Waiting time is worked out from the recorded time on every draw, never counted up.
+  function since(iso) {
+    var ms = Date.now() - new Date(iso).getTime();
+    var h = Math.floor(ms / 3600000);
+    if (h < 1) return "under an hour";
+    if (h < 48) return h + (h === 1 ? " hour" : " hours");
+    return Math.floor(h / 24) + " days";
+  }
+  function link(href, text) { return href ? el("a", { href: href, text: text }) : document.createTextNode(text); }
+
+  function drawStep(s) {
+    var st = STATE[s.state] || STATE.not_started;
+    var words = st[1];
+    if (s.state === "done" && s.date) words += ", " + fmtDate(s.date);
+    if ((s.state === "apple" || s.state === "google" || s.state === "rob") && s.since) words += " · " + since(s.since);
+    var row = el("div", { "class": "step s-" + s.state });
+    row.appendChild(el("span", { "class": "ico", "aria-hidden": "true", text: st[0] }));
+    row.appendChild(el("div", {}, [el("div", { "class": "sname" }, [link(s.link, s.name)]), el("div", { "class": "sstate", text: words })]));
+    var notes = [];
+    if (s.action) notes.push(link(s.link, s.action));
+    if (s.note) notes.push(document.createTextNode((s.action ? " · " : "") + s.note));
+    if (s.state === "failed" && s.link && !s.action) { notes.unshift(link(s.link, "Why this job failed")); }
+    if (notes.length) row.appendChild(el("div", { "class": "snote" }, notes));
+    return row;
+  }
+
+  function drawStatus(s) {
+    document.getElementById("asof").textContent = "As of " + new Date(s.generated_at).toLocaleString("en-GB",
+      { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    var waiting = false, needs = [];
+    var host = document.getElementById("versions");
+    s.versions.forEach(function (v) {
+      var d = el("details", { "class": "box ver" });
+      if (v.role === "current") d.setAttribute("open", "");
+      d.appendChild(el("summary", { text: v.version + " · build " + v.build + (v.role === "previous" ? " (previous)" : "") }));
+      v.lanes.forEach(function (lane) {
+        var l = el("div", { "class": "lane" }, [el("h3", { text: lane.lane })]);
+        lane.steps.forEach(function (st) {
+          l.appendChild(drawStep(st));
+          if (st.state === "apple" || st.state === "google" || st.state === "rob") waiting = true;
+          // 6a, R4: release steps only; a failed PR beta stays on its own row.
+          if ((st.state === "rob" || st.state === "failed") && st.id !== "pr_beta") needs.push({ v: v.version, s: st });
+        });
+        d.appendChild(l);
+      });
+      host.appendChild(d);
+    });
+    if (needs.length) {
+      var ul = document.getElementById("needs-list");
+      needs.forEach(function (n) {
+        ul.appendChild(el("li", {}, [n.v + ": " + n.s.name + " — ", link(n.s.link, n.s.action || STATE[n.s.state][1])]));
+      });
+      document.getElementById("needs").hidden = false;
+    }
+    if (s.pr_betas && s.pr_betas.length) {
+      var b = document.getElementById("betas");
+      s.pr_betas.forEach(function (p) {
+        b.appendChild(drawStep({ id: "pr_beta", name: "#" + p.pr + " " + p.title, state: p.state, date: p.date, note: p.note, link: p.link }));
+      });
+      document.getElementById("betas-box").hidden = false;
+    }
+    // Criterion 6: stale after 24 hours while something waits.
+    var age = Date.now() - new Date(s.generated_at).getTime();
+    if (waiting && age > DAY) {
+      var st = document.getElementById("stale");
+      st.textContent = "Last refreshed " + since(s.generated_at) + " ago while steps are waiting: this may be out of date.";
+      st.hidden = false;
+    }
+  }
+
+  // ---------------------------------------------------------------- flow
+  function drawFlow(f, status) {
+    var open = f.items.filter(function (i) { return i.stage && i.stage !== "live"; });
+    var live = f.items.filter(function (i) { return i.stage === "live"; });
+    var strip = document.getElementById("strip");
+    STAGES.forEach(function (s) {
+      var n = s[0] === "live" ? live.length : open.filter(function (i) { return i.stage === s[0]; }).length;
+      var a = el("a", { href: "#stage-" + s[0], style: "--c:" + s[2] }, [el("b", { text: String(n) }),
+        el("span", { text: s[0] === "live" ? "Live, shipped since 17 Sep" : s[1] })]);
+      a.addEventListener("click", function () { select("now"); });
+      strip.appendChild(a);
+    });
+    drawNow(open, live);
+    drawChart(f);
+    drawLadder(f, status);
+  }
+
+  function card(i) {
+    var idx = STAGES.map(function (s) { return s[0]; }).indexOf(i.stage);
+    var c = (STAGES[idx] || STAGES[0])[2];
+    var track = el("div", { "class": "track", "aria-hidden": "true", style: "--c:" + c });
+    STAGES.forEach(function (s, n) { track.appendChild(el("i", n <= idx ? { "class": "on" } : {})); });
+    var v = i.versions && i.versions.length ? i.versions.join(", ") : "No version yet";
+    var since = i.dates[i.stage] ? " · " + (STAGES[idx] || [0, "Idea"])[1] + " since " + fmtDate(i.dates[i.stage]) : "";
+    return el("div", { "class": "card" }, [el("a", { "class": "t", href: i.link, text: "#" + i.number + " " + i.title }), track,
+      el("div", { "class": "meta", text: v + since })]);
+  }
+
+  function drawNow(open, live) {
+    var host = document.getElementById("view-now");
+    STAGES.slice().reverse().forEach(function (s) {
+      var list = s[0] === "live" ? [] : open.filter(function (i) { return i.stage === s[0]; });
+      var g = el("div", { "class": "stage-group" }, [el("h3", { id: "stage-" + s[0], text: s[1] + " · " + (s[0] === "live" ? live.length : list.length) })]);
+      if (s[0] === "live") {
+        g.appendChild(el("p", { "class": "muted", text: "Shipped in a release. The Ladder lists them by version." }));
+      } else if (!list.length) {
+        g.appendChild(el("p", { "class": "muted", text: "Nothing here now." }));
+      }
+      list.forEach(function (i, n) {
+        var c = card(i);
+        if (list.length > 5 && n >= 4) c.hidden = true;
+        g.appendChild(c);
+      });
+      if (list.length > 5) {
+        var b = el("button", { "class": "more", text: "Show " + (list.length - 4) + " more" });
+        b.addEventListener("click", function () { g.querySelectorAll(".card").forEach(function (x) { x.hidden = false; }); b.remove(); });
+        g.appendChild(b);
+      }
+      host.appendChild(g);
+    });
+  }
+
+  function stageOn(i, d) {
+    var ds = i.dates;
+    if (!ds.idea || ds.idea > d) return null;
+    if (ds.live && ds.live <= d) return "live";
+    if (i.left && ds.closed && ds.closed <= d) return null;
+    var best = "idea";
+    ["specified", "ready", "building", "beta"].forEach(function (s) { if (ds[s] && ds[s] <= d) best = s; });
+    return best;
+  }
+
+  function drawChart(f) {
+    var svg = document.getElementById("chart"), NS = "http://www.w3.org/2000/svg";
+    var start = new Date("2026-09-16T00:00:00Z"), end = new Date(f.generated_at);
+    var days = [];
+    for (var t = start.getTime(); t <= end.getTime(); t += DAY) days.push(new Date(t).toISOString().slice(0, 10));
+    // Each day is folded from the recorded stage dates on every draw.
+    var rows = days.map(function (d) {
+      var c = {}; STAGES.forEach(function (s) { c[s[0]] = 0; });
+      f.items.forEach(function (i) { var s = stageOn(i, d); if (s) c[s]++; });
+      return c;
+    });
+    var max = Math.max.apply(null, rows.map(function (c) { return STAGES.reduce(function (a, s) { return a + c[s[0]]; }, 0); })) || 1;
+    var W = 360, H = 200, x = function (n) { return (n / Math.max(1, days.length - 1)) * W; }, y = function (v) { return H - (v / max) * (H - 10); };
+    var order = ["live", "beta", "building", "ready", "specified", "idea"];
+    var base = days.map(function () { return 0; });
+    order.forEach(function (key) {
+      var top = rows.map(function (c, n) { return base[n] + c[key]; });
+      var pts = top.map(function (v, n) { return x(n) + "," + y(v); }).concat(base.slice().reverse().map(function (v, n) { return x(days.length - 1 - n) + "," + y(v); }));
+      var p = document.createElementNS(NS, "polygon");
+      p.setAttribute("points", pts.join(" "));
+      p.setAttribute("fill", STAGES.filter(function (s) { return s[0] === key; })[0][2]);
+      p.setAttribute("opacity", "0.85");
+      svg.appendChild(p);
+      base = top;
+    });
+    var lastLabel = -99;
+    (f.releases || []).forEach(function (r) {
+      var n = days.indexOf(r.date); if (n < 0) return;
+      var ln = document.createElementNS(NS, "line");
+      ln.setAttribute("x1", x(n)); ln.setAttribute("x2", x(n)); ln.setAttribute("y1", 0); ln.setAttribute("y2", H);
+      ln.setAttribute("stroke", "currentColor"); ln.setAttribute("stroke-dasharray", "2 3"); ln.setAttribute("opacity", "0.5");
+      svg.appendChild(ln);
+      var tx = document.createElementNS(NS, "text");
+      tx.setAttribute("x", x(n) + 2); tx.setAttribute("y", 212); tx.setAttribute("font-size", "8"); tx.setAttribute("fill", "currentColor");
+      tx.textContent = r.version;
+      // Releases close together keep their lines; only labels far enough apart are written.
+      if (x(n) - lastLabel > 24) { svg.appendChild(tx); lastLabel = x(n); }
+    });
+    if (f.first_refresh && days.indexOf(f.first_refresh) > 0) {
+      document.getElementById("recon").textContent = "Before " + fmtDate(f.first_refresh + "T12:00:00Z") +
+        ", when this page began, the Specified and Ready dates are reconstructed from the issues' approval comments.";
+    }
+    var cursor = document.createElementNS(NS, "line");
+    cursor.setAttribute("y1", 0); cursor.setAttribute("y2", H); cursor.setAttribute("stroke", "currentColor"); cursor.setAttribute("stroke-width", "1.5");
+    svg.appendChild(cursor);
+    function read(n) {
+      n = Math.max(0, Math.min(days.length - 1, n));
+      cursor.setAttribute("x1", x(n)); cursor.setAttribute("x2", x(n));
+      var c = rows[n];
+      document.getElementById("readout").textContent = fmtDate(days[n] + "T12:00:00Z") + ": " +
+        STAGES.map(function (s) { return s[1] + " " + c[s[0]]; }).join(" · ");
+    }
+    function at(ev) {
+      var r = svg.getBoundingClientRect(), px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+      read(Math.round(px / r.width * (days.length - 1)));
+    }
+    svg.addEventListener("pointermove", at); svg.addEventListener("pointerdown", at);
+    svg.setAttribute("tabindex", "0");
+    var pos = days.length - 1;
+    svg.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft") pos--; else if (e.key === "ArrowRight") pos++; else return;
+      pos = Math.max(0, Math.min(days.length - 1, pos)); read(pos); e.preventDefault();
+    });
+    read(days.length - 1);
+    // Criterion 28: the ideas that left without a release, as one line.
+    var left = f.items.filter(function (i) { return i.left; });
+    var count = function (r) { return left.filter(function (i) { return i.left === r; }).length; };
+    var line = document.getElementById("leftline");
+    var a = el("a", { href: "#", text: left.length + " left without a release" });
+    line.appendChild(a);
+    line.appendChild(document.createTextNode(": " + count("not_planned") + " not planned, " + count("duplicate") + " duplicate, " +
+      count("no_app_change") + " done without an app change."));
+    var ul = document.getElementById("leftlist");
+    left.forEach(function (i) { ul.appendChild(el("li", {}, [el("a", { href: i.link, text: "#" + i.number + " " + i.title })])); });
+    a.addEventListener("click", function (e) { e.preventDefault(); ul.hidden = !ul.hidden; });
+  }
+
+  function drawLadder(f, status) {
+    var host = document.getElementById("view-ladder");
+    var rels = (f.releases || []).slice();
+    var liveItems = f.items.filter(function (i) { return i.stage === "live"; });
+    var rungs = [];
+    var current = status && status.versions && status.versions[0];
+    var previous = status && status.versions && status.versions[1];
+    var openIssues = f.items.filter(function (i) { return i.stage && i.stage !== "live"; });
+    var markers = {};
+    openIssues.forEach(function (i) { (i.versions || []).forEach(function (v) { if (v !== "later") (markers[v] = markers[v] || []).push(i); }); });
+    Object.keys(markers).sort(function (a, b) {
+      var pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+      return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
+    }).forEach(function (v) { rungs.push({ title: v + " · planned", items: markers[v] }); });
+    var beta = openIssues.filter(function (i) { return i.stage === "beta"; });
+    if (beta.length) rungs.unshift({ title: "In beta", items: beta });
+    [previous, current].forEach(function (v) {  // unshifted, so the latest release ends up first
+      if (!v) return;
+      var shipped = liveItems.filter(function (i) { return (i.versions || []).indexOf(v.version) >= 0; });
+      // The live and beta rungs take their store state from the tracker's own data (criterion 30).
+      var lanes = v.lanes.filter(function (l) { return l.lane !== "Build"; }).map(function (l) {
+        var last = l.steps.filter(function (s) { return s.state !== "not_started"; }).pop() || l.steps[0];
+        return l.lane + ": " + last.name + " — " + STATE[last.state][1];
+      }).join(" · ");
+      rungs.unshift({ title: v.version + (v.role === "current" ? " · latest release" : " · previous release"), note: lanes, items: shipped });
+    });
+    var later = openIssues.filter(function (i) { return !(i.versions || []).some(function (v) { return v !== "later"; }); });
+    rungs.push({ title: "Later", items: later });
+    rungs.forEach(function (r) {
+      var d = el("div", { "class": "rung" }, [el("h3", { text: r.title + " · " + r.items.length })]);
+      if (r.note) d.appendChild(el("p", { "class": "meta", text: r.note }));
+      r.items.slice(0, 6).forEach(function (i) { d.appendChild(card(i)); });
+      if (r.items.length > 6) d.appendChild(el("p", { "class": "meta", text: "and " + (r.items.length - 6) + " more" }));
+      host.appendChild(d);
+    });
+    var counts = {};
+    liveItems.forEach(function (i) { (i.versions || []).forEach(function (v) { counts[v] = (counts[v] || 0) + 1; }); });
+    host.appendChild(el("h3", { text: "Shipped so far" }));
+    host.appendChild(el("p", { "class": "meta", text: rels.map(function (r) { return r.version + ": " + (counts[r.version] || 0); }).join(" · ") }));
+  }
+
+  function select(name) {
+    ["now", "flow", "ladder"].forEach(function (n) {
+      document.getElementById("tab-" + n).setAttribute("aria-selected", String(n === name));
+      document.getElementById("view-" + n).hidden = n !== name;
+    });
+  }
+  ["now", "flow", "ladder"].forEach(function (n) { document.getElementById("tab-" + n).addEventListener("click", function () { select(n); }); });
+
+  Promise.all([fetch("status.json", { cache: "no-store" }).then(function (r) { return r.json(); }),
+               fetch("flow.json", { cache: "no-store" }).then(function (r) { return r.json(); }).catch(function () { return null; })])
+    .then(function (got) {
+      drawStatus(got[0]);
+      if (got[1]) drawFlow(got[1], got[0]);
+    })
+    .catch(function () { document.getElementById("asof").textContent = "The release data could not be loaded."; });
+})();
+</script>
+</body>
+</html>

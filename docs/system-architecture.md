@@ -1,7 +1,7 @@
 # System architecture
 
 Status: **Current** (checked against the code of 2.2.0 at `961c856`, 31 Oct 2026, the release check; 2.1.0 at `b5174a8`; before that `64d145f`, #259). First retrofitted from the code at `e04fbb0` (v1.0.1), 2026-10-09.
-Last updated: 2026-10-31 (2.2.0 release check: no new module, record or route, App.tsx size; 2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
+Last updated: 2026-10-31 (the release pipeline diagram, #240; 2.2.0 release check: no new module, record or route, App.tsx size; 2.1.0 release check: the #261 modules, Android Back, icons; the control vocabulary `src/screens/controls/`, #264; Settings sections and two phone keys, #263; 2.1.0 check, #259; 2.0.0 truth pass, #248; earlier #239)
 
 One page. Where it and the code disagree, the code wins. Fix this page.
 
@@ -215,3 +215,37 @@ build numbers from CI run numbers (`app.config.js`). Before bundling, CI
 writes two modules the app reads: `generated-build-label.ts` (the build
 label, #52) and `generated-distribution.ts` (`app`, `beta`, `demo` or
 `store`, read by `src/app/distribution.ts`; anything else reads as `app`).
+
+## The release pipeline (#240)
+
+Each gate is marked by who holds it. The public page
+[`releases.html`](https://vanstoner.github.io/coaching-app/releases.html)
+uses the same lanes and step names. `pages.yml` refreshes its data
+(`status.json`, `flow.json`, from `.github/scripts/release_status.py`):
+
+- after every Android APK, TestFlight, Google Play or App Store listing run
+  on `main`;
+- daily while a step waits on Apple or Google.
+
+The refresh only reads. A PR that changes a workflow's gates updates this
+diagram (#217).
+
+```mermaid
+flowchart TB
+  subgraph Build["Build lane"]
+    PR["PR"] -->|"ready or ci:full (CI)"| Beta["PR beta: Heart FC Beta Coach (CI)"]
+    Beta -->|"merge (Rob)"| Main["Main build (CI)"]
+    Main --> Rel["Main APK release + signed Play bundle (CI)"]
+  end
+  subgraph iPhone["iPhone lane"]
+    Rel -->|"app-store approval (Rob)"| TFU["TestFlight upload (CI)"]
+    TFU --> TFE["TestFlight external: Externals, Beta App Review (Apple)"]
+    TFU --> ASR["App Store review (Apple)"]
+    ASR -->|"released on approval"| Live["Live on the App Store"]
+  end
+  subgraph Android["Android lane"]
+    Rel -.->|"not used since #232"| PI["Play internal"]
+    Rel -->|"google-play approval (Rob)"| PC["Play closed test: 12 testers x 14 days (Google)"]
+    PC -->|"PLAY_PRODUCTION on (Rob)"| PP["Play production (Google)"]
+  end
+```

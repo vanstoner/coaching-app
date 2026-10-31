@@ -160,6 +160,15 @@ call; `off` until he rules).
 
 - Workflows, build scripts, gates, release plumbing.
 - A green `main`, and an APK Rob can install from the releases page.
+- **The release tracker (#240).** It is the public `releases.html`:
+  - **where each version is:** the Build, iPhone and Android lanes;
+  - **"From idea to the app":** Now, Flow and Ladder.
+
+  `pages.yml` refreshes its data with `release_status.py`. It refreshes after
+  every build or store run on `main`, and daily while a step waits on Apple
+  or Google. It only reads, it never fails a release, and its privacy check
+  refuses an `@`, a JWT or an unlisted key. A change to a gate updates the
+  pipeline diagram in `docs/system-architecture.md` in the same PR.
 - **Docs that stay true (#123).** Every PR either updates any doc it makes
   wrong (README.md, a spec, an ADR, a skill, CLAUDE.md) or says in its
   description "No doc affected". The live set is listed in `docs/README.md`;

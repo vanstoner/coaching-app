@@ -7,14 +7,26 @@ name: Website
 # is GUIDE.md, the how-to guide, with the App Store shots served beside it. A PR builds and checks it (the healthy case, before merge); a push
 # to main publishes it. The App Store's support and privacy links point here.
 # Needs Settings › Pages › Source: GitHub Actions, once.
+#
+# releases.html (#240) reads status.json and flow.json, which this workflow
+# gathers from GitHub and Apple's public lookup on every build: after each
+# Android APK, TestFlight, Google Play or App Store listing run on main, and
+# once a day while a step waits on Apple or Google (Q2). It only reads;
+# nothing it does can fail or change a release (criteria 9, 10).
 
 on:
   push:
     branches: [main]
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py]
   pull_request:
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py]
   workflow_dispatch:
+  workflow_run:
+    workflows: [Android APK, TestFlight, Google Play, App Store listing]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * *"
 
 # #230: a newer push to a PR cancels its older check (nothing is written on
 # a PR). On main, never: `deploy` is not cancelled mid-publish.
@@ -30,8 +42,31 @@ jobs:
     name: Build and check the site
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Read-only: the release tracker reads runs, issues and PRs (#240 criterion 9).
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.need.outputs.publish }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Q2 on #240: the daily run refreshes only while a step waits on Apple
+      # or Google; any other event always builds.
+      - name: Is the daily refresh needed?
+        id: need
+        run: |
+          if [ "${{ github.event_name }}" != schedule ]; then echo "publish=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if curl -fsS https://vanstoner.github.io/coaching-app/status.json 2>/dev/null | grep -qE '"state": "(apple|google)"'; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"; echo "a step is waiting on Apple or Google: refreshing"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"; echo "nothing waits on Apple or Google: no refresh today"
+          fi
+
+      - name: Self-test the release tracker's data and privacy checks
+        run: python3 .github/scripts/release_status.py --self-test
 
       - name: Self-test the site check
         run: python3 .github/scripts/build_site.py --self-test
@@ -49,6 +84,34 @@ jobs:
           test -s /tmp/guide.html || { echo "WHY THIS JOB FAILED: GitHub rendered GUIDE.md as nothing"; exit 1; }
           python3 .github/scripts/build_site.py /tmp/privacy.html /tmp/coaches.html /tmp/guide.html _site
 
+      # #240 criteria 7-10: gather the tracker's data. A failure never fails
+      # the site: the last published data is kept and the page shows its age.
+      - name: Gather the release tracker's data (reads only)
+        id: gather
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          start=$(date +%s)
+          python3 .github/scripts/release_status.py gather _site --previous https://vanstoner.github.io/coaching-app
+          echo "gathered in $(( $(date +%s) - start ))s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the last published data if gathering failed
+        if: steps.gather.outcome != 'success'
+        run: |
+          echo "Release tracker data could not be gathered; keeping the last published files (criterion 10)." | tee -a "$GITHUB_STEP_SUMMARY"
+          for f in status.json flow.json; do
+            curl -fsS "https://vanstoner.github.io/coaching-app/$f" -o "_site/$f" || rm -f "_site/$f"
+          done
+
+      # Criterion 11: nothing personal and nothing secret is ever published.
+      - name: Check the tracker's data holds no personal data or secrets
+        run: |
+          files=$(ls _site/status.json _site/flow.json 2>/dev/null || true)
+          [ -z "$files" ] && { echo "no tracker data to check"; exit 0; }
+          python3 .github/scripts/release_status.py check $files || {
+            echo "WHY THIS JOB FAILED: the release tracker's data failed the privacy check (PRIVACY PROBLEM lines above)"; exit 1; }
+
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
@@ -56,7 +119,7 @@ jobs:
   deploy:
     name: Publish
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -30,7 +30,7 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 MARK = "<!-- PRIVACY.md, rendered by pages.yml -->"
 COACHES_MARK = "<!-- COACHES.md, rendered by pages.yml -->"
 GUIDE_MARK = "<!-- GUIDE.md, rendered by pages.yml -->"
-PAGES = ("index.html", "privacy.html", "support.html", "testers.html", "coaches.html", "guide.html")
+PAGES = ("index.html", "privacy.html", "support.html", "testers.html", "coaches.html", "guide.html", "releases.html")
 # Pages made from Markdown: (page, template, marker).
 RENDERED = (
     ("privacy.html", "privacy.template.html", MARK),
