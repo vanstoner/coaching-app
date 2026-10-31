@@ -406,11 +406,13 @@ def android_lane(v, rel, play, now, newer):
     return [internal, closed, prod]
 
 
-def day_of_14(now):
+def day_of_14(now, path=CLOSED_TEST_START):
+    """Q4: "day N of 14", counting the start date as day 1; past day 14 it
+    says the 14 days have passed."""
     try:
-        start = open(CLOSED_TEST_START, encoding="utf-8").read().strip()
+        start = open(path, encoding="utf-8").read().strip()
         n = (dt.date.fromisoformat(now[:10]) - dt.date.fromisoformat(start)).days + 1
-        return f" · day {min(n, 14)} of 14" if n < 14 else " · 14 days passed"
+        return f" · day {n} of 14" if n <= 14 else " · 14 days passed"
     except (OSError, ValueError):
         return " · start date not recorded"
 
@@ -707,6 +709,15 @@ def self_test():
     check("privacy: a key not on the allow-list is refused", bool(privacy_problems(planted, STATUS_KEYS)))
     check("scrub: an '@' in a title is spelled out", "@" not in json.dumps(scrub({"title": "@types/node"})))
     check("log redirect: followed without the token, as the log storage needs", redirect_case())
+    with tempfile.TemporaryDirectory() as tmp:
+        start = os.path.join(tmp, "closed-test-start.txt")
+        open(start, "w").write("2026-10-28\n")
+        check("day of 14: the start date is day 1, and 31 Oct is day 4",
+              day_of_14("2026-10-31T15:00:00Z", start) == " · day 4 of 14")
+        check("day of 14: 10 Nov is still day 14, 11 Nov has passed",
+              day_of_14("2026-11-10T09:00:00Z", start) == " · day 14 of 14"
+              and day_of_14("2026-11-11T09:00:00Z", start) == " · 14 days passed")
+        check("day of 14: no file says so", day_of_14("2026-10-31T15:00:00Z", start + ".x") == " · start date not recorded")
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "status.json")
         json.dump(healthy, open(p, "w"))
