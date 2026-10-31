@@ -29,7 +29,8 @@ header.top nav a:hover { color: var(--ink); }
 .hero p.lede { font-size: clamp(18px, 2.6vw, 21px); color: var(--muted); max-width: 640px; margin: 0 auto; }
 .badge { display: inline-block; margin-top: 28px; padding: 12px 22px; border-radius: 999px;
   background: var(--accent); color: var(--ink); font-weight: 600; text-decoration: none; }
-.badge.soon { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.stores { margin: 28px 0 0; }
+.hero .stores img { display: inline-block; width: 180px; height: auto; border-radius: 0; box-shadow: none; }
 section.band { padding: 48px 0; border-top: 1px solid var(--line); }
 section.band h2 { font-size: 26px; margin: 0 0 8px; }
 section.band p.sub { color: var(--muted); margin: 0 0 28px; }
@@ -55,3 +56,14 @@ footer a { color: var(--muted); }
 
 /* testers.html: the test-season download, big enough to hit with a thumb. */
 .download a { display: inline-block; padding: 14px 22px; border-radius: 10px; background: var(--warn); color: #10231a; font-weight: 700; text-decoration: none; }
+
+/* The App Store shots: a strip on the home page, inline in the guide. */
+.shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (min-width: 640px) { .shots { grid-template-columns: repeat(4, 1fr); } }
+.shots figure { margin: 0; }
+.shots img, .prose img { width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); display: block; }
+.shots figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; text-align: center; }
+.prose img { max-width: 260px; margin: 12px 12px 0 0; display: inline-block; vertical-align: top; }
+.prose a:has(> img) { display: inline-block; }
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+.prose code { background: var(--raised); padding: 1px 5px; border-radius: 4px; }

@@ -1056,7 +1056,7 @@ jobs:
               echo "The beta it came from was approved and merged, so there is nothing to test here."
               echo "The next pull request's Heart FC Beta Coach replaces this note."
               echo
-              echo "**iPhone: waiting on Apple enrolment (#108)**"
+              echo "**iPhone: through TestFlight, for a merge that moves the version (#226)**"
             } > beta-note.md
             if ! gh release create beta \
                 --target "$GITHUB_SHA" \
@@ -1193,9 +1193,10 @@ jobs:
           gh release upload "$TAG" "$AAB" "$AAB.sha256" --clobber || exit 1
           {
             echo
-            echo "## Upload to Google Play"
+            echo "## Google Play"
             echo
-            echo "\`$AAB\` is this build for the Play Console: **Testing › Closed testing › Create new release**, then upload it."
+            echo "\`$AAB\` is this build's signed bundle. When this merge moved the version, \`google-play.yml\` puts it"
+            echo "on the closed track once Rob approves that run (#232); nothing is uploaded by hand."
             echo "It is signed with the upload key, SHA-256 fingerprint:"
             echo
             echo '```'

@@ -2,8 +2,9 @@
 
 A junior football coaching app for a coach and their teams. It answers one question
 at the touchline: **who comes off next, and is everyone getting a fair share?**
-It is a substitution reminder, not a timing system. Android first; iPhone
-builds are compiled in CI ahead of TestFlight.
+It is a substitution reminder, not a timing system. Android first; on iPhone
+it is [in the App Store](https://apps.apple.com/gb/app/heart-of-the-game-coach/id6819699395) as **Heart of the Game: Coach**, released
+through TestFlight.
 
 What it does today: several teams on one phone, switched like browser
 profiles, each with its own seasons (age group, level, main format); a squad
@@ -64,8 +65,11 @@ exactly the captioned set. The release run puts them on the new version
 before it submits it; the listing run can also upload them.
 
 The website, [vanstoner.github.io/coaching-app](https://vanstoner.github.io/coaching-app/),
-is `site/` with the privacy page made from PRIVACY.md; `pages.yml` checks it
-on a pull request and publishes it from `main`. The listing's support and
+is `site/` with three pages made from Markdown: the privacy policy from
+PRIVACY.md, the install page for coaches from [COACHES.md](COACHES.md), and
+the how-to guide for a new coach from [GUIDE.md](GUIDE.md). The iPhone App
+Store screenshots are shown on the home page and in the guide. `pages.yml`
+checks it on a pull request and publishes it from `main`. The listing's support and
 privacy links point there, and `store-listing.yml` refuses to send them unless
 both pages answer.
 
@@ -77,11 +81,11 @@ To test it with a season in it ([#157](https://github.com/vanstoner/coaching-app
 1. On the iPhone, download
    [`test-season.json`](https://github.com/vanstoner/coaching-app/raw/main/test-data/test-season.json)
    and save it to Files. It is the Test kit's made-up squad (Ava to Jo) and past season.
-2. In Heart FC Coach: **Settings › Import minutes file**, and pick it.
-3. Test. Then **Settings › Forget everything** to empty the phone again.
+2. In Heart FC Coach: **Settings › Player minutes › Import minutes file**, and pick it.
+3. Test. Then **Settings › Danger zone › Forget everything** to empty the phone again.
 
 Import brings in the players and the minutes, so the Squad tab, its views,
-each child's page and the Settings minutes table fill, and **Played** lists the
+each child's page and the Settings › Player minutes table fill, and **Played** lists the
 file's matches, read-only. The file holds no fixtures to come or keeper
 preferences, and a missed match does not count as missed (an imported player
 counts as joining the squad on the day of the import).
@@ -93,9 +97,9 @@ what changed; the beta also lists its test steps.
 
 ## Run it on a Mac (iPhone simulator)
 
-iPhone: waiting on Apple enrolment ([#108](https://github.com/vanstoner/coaching-app/issues/108)).
-Until then it runs only in the simulator that comes with Xcode. A real iPhone
-needs that enrolment.
+A coach's real iPhone gets the app from TestFlight (below). On a Mac it also
+runs in the simulator that comes with Xcode, which is how to try a pull
+request's beta on an iPhone screen.
 
 **Route 1: download the build CI made.** Each release carries
 `coaching-app-ios-simulator_….zip` (the beta: `coaching-beta-ios-simulator_….zip`),
@@ -147,9 +151,13 @@ Route 1 is standalone. Each step below is one that failed when skipped (#133):
 
 ## On a real iPhone
 
-- **Coaches: TestFlight**, once Apple enrolment is done
-  ([#108](https://github.com/vanstoner/coaching-app/issues/108)). A
-  standalone install that works at the touchline.
+- **Coaches: [the App Store](https://apps.apple.com/gb/app/heart-of-the-game-coach/id6819699395).** TestFlight comes first: a merge
+  that moves the version uploads that build
+  once Rob approves its `testflight.yml` run
+  ([#108](https://github.com/vanstoner/coaching-app/issues/108),
+  [#226](https://github.com/vanstoner/coaching-app/issues/226)). A standalone
+  install that works at the touchline; [COACHES.md](COACHES.md) is the
+  coach's install page.
 - **Development only: Expo Go.** Install Expo Go from the App Store, put the
   phone on the same Wi-Fi as the Mac, run `npx expo start` and scan its QR
   code with the Camera. It runs only while the Mac is serving it, keeps its

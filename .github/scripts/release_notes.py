@@ -44,7 +44,7 @@ import re
 import subprocess
 import sys
 
-IPHONE_STATUS = "iPhone: waiting on Apple enrolment (#108)"
+IPHONE_STATUS = "iPhone: through TestFlight, for a merge that moves the version (#226)"
 SIMULATOR_LINE = ("Mac: an iPhone-simulator build (`.zip`) is attached below by the iOS workflow "
                   "when its build finishes; see \"Run it on a Mac\" in the README.")
 CLOSES = re.compile(r"^\s*(?:closes|fixes|resolves)\s+#(\d+)\b", re.I | re.M)
