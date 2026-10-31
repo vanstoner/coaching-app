@@ -29,7 +29,8 @@ header.top nav a:hover { color: var(--ink); }
 .hero p.lede { font-size: clamp(18px, 2.6vw, 21px); color: var(--muted); max-width: 640px; margin: 0 auto; }
 .badge { display: inline-block; margin-top: 28px; padding: 12px 22px; border-radius: 999px;
   background: var(--accent); color: var(--ink); font-weight: 600; text-decoration: none; }
-.badge.soon { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.stores { margin: 28px 0 0; }
+.hero .stores img { display: inline-block; width: 180px; height: auto; border-radius: 0; box-shadow: none; }
 section.band { padding: 48px 0; border-top: 1px solid var(--line); }
 section.band h2 { font-size: 26px; margin: 0 0 8px; }
 section.band p.sub { color: var(--muted); margin: 0 0 28px; }

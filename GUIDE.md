@@ -7,8 +7,10 @@ then see who is getting a fair share.
 The app answers one question at the touchline: **who comes off next, and is
 everyone getting a fair share?** It suggests; you always decide.
 
-Don't have the app yet? See [Try Heart FC Coach](https://vanstoner.github.io/coaching-app/coaches.html) for how to
-install it on an iPhone or an Android phone.
+Don't have the app yet? On an iPhone, get it from the App Store. For an
+Android phone, see [Try Heart FC Coach](https://vanstoner.github.io/coaching-app/coaches.html).
+
+[![Download on the App Store](https://vanstoner.github.io/coaching-app/app-store-badge.svg)](https://apps.apple.com/gb/app/heart-of-the-game-coach/id6819699395)
 
 **In this guide**
 

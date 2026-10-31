@@ -3,7 +3,8 @@
 A junior football coaching app for a coach and their teams. It answers one question
 at the touchline: **who comes off next, and is everyone getting a fair share?**
 It is a substitution reminder, not a timing system. Android first; on iPhone
-it goes out through TestFlight and the App Store.
+it is [in the App Store](https://apps.apple.com/gb/app/heart-of-the-game-coach/id6819699395) as **Heart of the Game: Coach**, released
+through TestFlight.
 
 What it does today: several teams on one phone, switched like browser
 profiles, each with its own seasons (age group, level, main format); a squad
@@ -150,7 +151,8 @@ Route 1 is standalone. Each step below is one that failed when skipped (#133):
 
 ## On a real iPhone
 
-- **Coaches: TestFlight.** A merge that moves the version uploads that build
+- **Coaches: [the App Store](https://apps.apple.com/gb/app/heart-of-the-game-coach/id6819699395).** TestFlight comes first: a merge
+  that moves the version uploads that build
   once Rob approves its `testflight.yml` run
   ([#108](https://github.com/vanstoner/coaching-app/issues/108),
   [#226](https://github.com/vanstoner/coaching-app/issues/226)). A standalone
