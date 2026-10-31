@@ -122,3 +122,11 @@ Season figures, fairness and the record need no change for 9 or 11.
   expensive to reverse.
 - **Keep falling back to the default shape on an unknown code.** Rejected. It
   silently changes a fixture's team size, which is the gap D4 closes.
+
+## Correction (31 Oct, at the 2.2.0 close-out)
+
+D4 says an older build turns a 9- or 11-a-side fixture or default into "a
+7-a-side one" and writes `2-3-1` back. Precisely: an older build's
+`formatFromRecord` falls back to **that phone's own default format**, which is
+`2-3-1` unless the coach chose another, so it can be 5-a-side. The decision is
+unchanged; only the description of the older-build gap is corrected (Bea).
