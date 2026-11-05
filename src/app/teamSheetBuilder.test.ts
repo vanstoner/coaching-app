@@ -214,7 +214,7 @@ describe('positions rotate (B10)', () => {
     for (let p = 1; p < r.plan.periods.length; p++) {
       for (const [pos, who] of Object.entries(r.plan.periods[p].slots)) {
         if (pos === goal || !who) continue;
-        expect(r.plan.periods[p - 1].slots[pos]).not.toBe(who);
+        expect(r.plan.periods[p - 1].slots[pos as UUID]).not.toBe(who);
       }
     }
   });
