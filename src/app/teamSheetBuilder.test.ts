@@ -9,7 +9,7 @@ import { makePlayer } from './squad';
 import { makeFormat, type ShapeCode } from './shapes';
 import { periodLengthMs, projectPlan } from './matchPlan';
 import { formatClock } from './matchClock';
-import { buildTeamSheet, rotateKeepers, type SeasonInput } from './teamSheetBuilder';
+import { buildTeamSheet, rotateKeepers, seasonInputs, type SeasonInput } from './teamSheetBuilder';
 
 const NAMES = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lou', 'Max', 'Ned', 'Oli', 'Pip'];
 const squadOf = (n: number): Player[] => {
@@ -217,5 +217,24 @@ describe('positions rotate (B10)', () => {
         expect(r.plan.periods[p - 1].slots[pos as UUID]).not.toBe(who);
       }
     }
+  });
+});
+
+describe('the season inputs come from the record’s own folds (D2, D3)', () => {
+  it('sums goal time, counts the matches kept, and carries owed time in ms', () => {
+    const [a, b] = squadOf(2);
+    const goal = (ms: number) => ({ goalMs: ms });
+    const inputs = seasonInputs(
+      [
+        { minutes: new Map([[a.id, goal(12.5 * 60_000)], [b.id, goal(0)]]) },
+        { minutes: new Map([[a.id, goal(6.25 * 60_000)]]) },
+      ],
+      [
+        { playerId: a.id, owed: -3 },
+        { playerId: b.id, owed: null },
+      ]
+    );
+    expect(inputs.get(a.id)).toEqual({ goalMs: 18.75 * 60_000, owedMs: -3 * 60_000, timesKept: 2 });
+    expect(inputs.get(b.id)).toEqual({ goalMs: 0, owedMs: null, timesKept: 0 });
   });
 });

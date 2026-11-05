@@ -271,3 +271,37 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
   }
   return { plan, minutes, rangeMs: spread(minutes.values()) };
 }
+
+/** What the Keepers step names beside each keeper (B7): their goal time and times kept this season. */
+export interface SeasonKeeping extends SeasonInput {
+  /** Matches this season with any time in goal. */
+  timesKept: number;
+}
+
+/**
+ * The season's inputs, from the Squad views' own folds (invariant 1: worked
+ * out on each read, never stored). `matches` are the season's matches with
+ * each child's minutes; `owed` is Going into Saturday's figure, in whole
+ * minutes, null for a Main keeper or a fill-in.
+ */
+export function seasonInputs(
+  matches: readonly { minutes: ReadonlyMap<UUID, { goalMs: number }> }[],
+  owed: readonly { playerId: UUID; owed: number | null }[]
+): Map<UUID, SeasonKeeping> {
+  const out = new Map<UUID, SeasonKeeping>();
+  const row = (id: UUID) => {
+    let r = out.get(id);
+    if (!r) out.set(id, (r = { goalMs: 0, owedMs: null, timesKept: 0 }));
+    return r;
+  };
+  for (const m of matches) {
+    for (const [id, mins] of m.minutes) {
+      if (mins.goalMs <= 0) continue;
+      const r = row(id);
+      r.goalMs += mins.goalMs;
+      r.timesKept += 1;
+    }
+  }
+  for (const o of owed) row(o.playerId).owedMs = o.owed === null ? null : o.owed * 60_000;
+  return out;
+}

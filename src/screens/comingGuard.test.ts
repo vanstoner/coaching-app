@@ -52,3 +52,37 @@ describe('Play now picks a fixture (#278)', () => {
     expect(app).toContain('onPlayNow={liveReal && matchIsUnderway(liveReal.state.quarters) ? null : playNow}');
   });
 });
+
+describe('Build the team sheet (#277 B6–B12)', () => {
+  const sheet = src('TeamSheetScreen.tsx');
+
+  it('each fixture to come has a Team sheet row (B6)', () => {
+    expect(src('FixturesScreen.tsx')).toContain('<RowNav label="Team sheet" onPress={() => onTeamSheet(match.id)} />');
+  });
+
+  it('the four steps are on one screen, in the coach’s order (B6, P1)', () => {
+    const order = ["1. Who's coming", '2. Keepers', '3. Mid-', '4. Everyone else'].map((t) => sheet.indexOf(t));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('the defaults are Rotate for me, Place them and Even (B6, P3)', () => {
+    expect(sheet).toContain("useState<'rotate' | 'choose'>('rotate')");
+    expect(sheet).toContain('const [subs, setSubs] = useState(true);');
+    expect(sheet).toContain("useState<Fill>('even')");
+  });
+
+  it('Make it again asks first and comes with Undo (B12)', () => {
+    expect(sheet).toContain("onPress={() => (made ? setAsking(true) : make())}");
+    expect(sheet).toMatch(/onUndo\('Team sheet made again', \(\) => onChange\(before\)\)/);
+  });
+
+  it('it saves to the match’s ordinary plan (B12, D6)', () => {
+    expect(app).toMatch(/<TeamSheetScreen[\s\S]*?onChange=\{\(plan\) => savePlan\(sheetMatch\.match\.id, plan\)\}/);
+  });
+
+  it('the nudge and the short mark are neutral, never the warning colour (B8, C16)', () => {
+    expect(sheet).not.toContain('colours.warn');
+    expect(sheet).not.toContain('screen.overtime');
+  });
+});

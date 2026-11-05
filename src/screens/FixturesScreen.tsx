@@ -58,6 +58,7 @@ export function FixturesScreen({
   plannedIds,
   coming,
   onComing,
+  onTeamSheet,
   housekeeping,
   onPlayNow,
   buildLabel,
@@ -90,6 +91,8 @@ export function FixturesScreen({
   /** #277 A1: each fixture's Who's coming summary. */
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
+  /** #277 B6: the fixture's Team sheet. */
+  onTeamSheet: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
   /**
@@ -133,7 +136,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, coming, onComing, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, coming, onComing, onTeamSheet, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -235,6 +238,7 @@ interface CardActions {
   plannedIds: ReadonlySet<UUID>;
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
+  onTeamSheet: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
@@ -353,6 +357,7 @@ function FixtureCard({
   plannedIds,
   coming,
   onComing,
+  onTeamSheet,
   housekeeping,
   scores,
   periods,
@@ -453,6 +458,8 @@ function FixtureCard({
       {match.status === 'planned' && coming.has(match.id) && (
         <RowNav label="Who's coming" value={coming.get(match.id)} onPress={() => onComing(match.id)} first />
       )}
+      {/* #277 B6: the whole match at once, built from four choices. */}
+      {match.status === 'planned' && <RowNav label="Team sheet" onPress={() => onTeamSheet(match.id)} />}
       {match.status === 'planned' && (
         <RowNav
           label={planned ? 'Edit the plan' : 'Plan this match'}

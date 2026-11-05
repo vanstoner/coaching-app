@@ -258,6 +258,9 @@ import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { WhichMatchScreen } from './src/screens/WhichMatchScreen';
+import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
+import { seasonInputs } from './src/app/teamSheetBuilder';
+import { squadViews } from './src/app/squadViews';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
 import {
@@ -518,6 +521,10 @@ function TeamApp({
   const [planningId, setPlanningId] = useState<UUID | null>(null);
   /** The fixture whose Who's coming is open (#277 A). */
   const [comingId, setComingId] = useState<UUID | null>(null);
+  /** Where Who's coming returns to: Home, or the team sheet it was opened from. */
+  const [comingReturn, setComingReturn] = useState<Step>('fixtures');
+  /** The fixture whose team sheet is open (#277 B). */
+  const [sheetId, setSheetId] = useState<UUID | null>(null);
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -2400,7 +2407,7 @@ function TeamApp({
           availability={comingMatch.availability}
           changedAt={comingMatch.comingChangedAt ?? null}
           onChange={(list) => saveComing(comingMatch.match.id, list)}
-          onBack={() => setStep('fixtures')}
+          onBack={() => setStep(comingReturn)}
         />
       );
     }
@@ -2438,6 +2445,38 @@ function TeamApp({
 
     // Each match's kick-off, for ruling E: who was in the squad for it.
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
+
+    // #277 B: the team sheet, for a fixture not yet kicked off.
+    const sheetMatch = effectiveStep === 'teamSheet' ? matches.find((m) => m.match.id === sheetId) : undefined;
+    if (sheetMatch) {
+      const views = squadViews(seasonView, players, { kickoffs: kickoffs() });
+      return (
+        <TeamSheetScreen
+          title={`${squadName} v ${opponentLabel(sheetMatch.match)}`}
+          format={sheetMatch.format ?? format}
+          totalMinutes={sheetMatch.match.totalMinutes}
+          periodCount={sheetMatch.match.quarterCount}
+          players={squad}
+          availability={sheetMatch.availability}
+          plan={sheetMatch.plan}
+          season={seasonInputs(views.matches, views.owed)}
+          onChange={(plan) => savePlan(sheetMatch.match.id, plan)}
+          onComing={() => {
+            setComingId(sheetMatch.match.id);
+            setComingReturn('teamSheet');
+            setStep('coming');
+          }}
+          onSquad={() => goToTab('squad')}
+          onEditPeriods={() => {
+            setPlanningId(sheetMatch.match.id);
+            setPlanReturn('teamSheet');
+            setStep('plan');
+          }}
+          onUndo={(text, undo) => showToast(text, undo)}
+          onBack={() => setStep('fixtures')}
+        />
+      );
+    }
 
     if (effectiveStep === 'seasonStart' && ledger) {
       // AC4: the last season's format, unless the team's default fits it
@@ -2962,7 +3001,12 @@ function TeamApp({
         coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
         onComing={(id) => {
           setComingId(id);
+          setComingReturn('fixtures');
           setStep('coming');
+        }}
+        onTeamSheet={(id) => {
+          setSheetId(id);
+          setStep('teamSheet');
         }}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked

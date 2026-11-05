@@ -52,7 +52,9 @@ export type Step =
   /** Who's coming to a fixture (#277 A). Full screen, Done exits. */
   | 'coming'
   /** Play now: which fixture to play (#278). Full screen, Back exits. */
-  | 'whichMatch';
+  | 'whichMatch'
+  /** Build the team sheet (#277 B, C). Full screen, Done exits. */
+  | 'teamSheet';
 
 export type Tab = 'home' | 'squad' | 'settings';
 
