@@ -260,6 +260,11 @@ export interface SavedMatch {
   benchStints: BenchStint[];
   availability: [UUID, AvailabilityStatus][];
   /**
+   * When Who's coming last changed (#277 A4), epoch ms. Planning, never the
+   * record; absent until the coach first changes it.
+   */
+  comingChangedAt?: number;
+  /**
    * The shape this match is played in — #70, ADR-012.
    *
    * A snapshot, not a reference. `Match.formatId` has always said "snapshotted
@@ -434,6 +439,8 @@ export function mergeCurrentMatch(
     // the match from engine state must not drop it on the first save.
     plan: at === -1 ? undefined : existing[at].plan,
     archived: at === -1 ? undefined : existing[at].archived,
+    // #277: when Who's coming last changed, kept like the plan.
+    comingChangedAt: at === -1 ? undefined : existing[at].comingChangedAt,
     // Records, merged by id: what is stored plus what the live state holds.
     // Append-only, so the union is always right, and no save — one that
     // carries no list, or a list rebuilt short — can drop an event.

@@ -877,8 +877,10 @@ function structureRecord(record: MatchRecord): LedgerRecord | null {
 }
 
 function availabilityOf(record: MatchRecord): [UUID, AvailabilityStatus][] {
-  if (record.playerAvailability) return [...record.playerAvailability.entries()];
-  return record.availability ?? [];
+  const all = record.playerAvailability ? [...record.playerAvailability.entries()] : (record.availability ?? []);
+  // #277 (ADR-024 D1): "Not heard" is planning, never the record. A child still
+  // unconfirmed at kick-off was unticked on Here today, so is recorded absent.
+  return all.map(([id, status]) => [id, status === 'unconfirmed' ? 'absent' : status]);
 }
 
 const kickedOff = (record: MatchRecord) =>

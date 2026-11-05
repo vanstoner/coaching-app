@@ -66,6 +66,8 @@ const STATUS_LABEL: Record<string, string> = {
   absent: 'absent',
   injured: 'injured',
   unavailable: 'unavailable',
+  // #277: Not heard at kick-off was unticked on Here today; the record says absent.
+  unconfirmed: 'absent',
 };
 
 /** "+4", "-6", "0": whole minutes from the fair share. */

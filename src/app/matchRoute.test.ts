@@ -132,8 +132,11 @@ describe('App.tsx wires the route (source check: no screen-render tests in Node)
     expect(openFixtureBlock).toMatch(/setSquadErrand\('match'\);\s*setMatchRoute\(\{ kind: 'fixture', matchId \}\)/);
   });
 
-  it('Play now routes the errand to Play now', () => {
-    expect(playNowBlock).toMatch(/setSquadErrand\('match'\);\s*setMatchRoute\(PLAY_NOW_ROUTE\)/);
+  // #278 (Rob, 1 Nov) overturned "Play now starts a match from the defaults":
+  // it now opens Which match?, and a fixture opens by openFixture, as its card does.
+  it('Play now opens Which match?, never a match from the defaults', () => {
+    expect(playNowBlock).toContain("setStep('whichMatch')");
+    expect(playNowBlock).not.toContain('beginMatch');
   });
 
   it("Squad's count and Start follow the route, never beginMatch(false) directly", () => {

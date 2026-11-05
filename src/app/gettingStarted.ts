@@ -48,7 +48,7 @@ export const TOAST_MS = 3_500;
 
 /** Home with no matches at all (Q3). The buttons it means are just above it. */
 export const NO_MATCHES_YET =
-  "No matches yet. Add Saturday's match with the button above, or press Play now when a game starts.";
+  "No matches yet. Add Saturday's match with + Fixture above, then press Play now when it kicks off.";
 /** Played, before the first match has been played (Q3). */
 export const NOTHING_PLAYED_YET =
   "Nothing played yet. When you end a match it moves here, with everyone's minutes.";

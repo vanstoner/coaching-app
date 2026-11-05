@@ -256,6 +256,9 @@ import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
+import { WhosComingScreen } from './src/screens/WhosComingScreen';
+import { WhichMatchScreen } from './src/screens/WhichMatchScreen';
+import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
 import {
   adoptPositionNames,
@@ -513,6 +516,8 @@ function TeamApp({
 
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
+  /** The fixture whose Who's coming is open (#277 A). */
+  const [comingId, setComingId] = useState<UUID | null>(null);
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -1188,6 +1193,25 @@ function TeamApp({
   );
 
   /**
+   * Who's coming changed (#277 A2). The stored copy takes the list and the
+   * time; a held match not yet kicked off takes it too, so the Lineup's Here
+   * today starts from it (A5). After kick-off the list is history and the
+   * screen is not offered.
+   */
+  const saveComing = useCallback(
+    (matchId: UUID, availability: [UUID, AvailabilityStatus][]) => {
+      const at = appNow().getTime();
+      const next = matches.map((m) => (m.match.id === matchId ? { ...m, availability, comingChangedAt: at } : m));
+      setMatches(next);
+      const held = match && match.state.match.id === matchId && beforeKickoff(match.state) ? match : null;
+      if (held) for (const [id, status] of availability) held.engine.setAvailability(held.state, id, status);
+      persist({ matches: next });
+      if (held) setMatch({ ...held });
+    },
+    [matches, match, persist]
+  );
+
+  /**
    * Rename one match's positions (#166). The new format goes onto the match
    * everywhere it is held — the stored copy and, if it is the one held, the
    * live one — so every screen showing that match shows the new names. Only
@@ -1317,17 +1341,9 @@ function TeamApp({
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch, newSeasonId]);
 
-  const playNow = useCallback(() => {
-    if (squadReadiness(squad, format.onFieldCount).ready) {
-      beginMatch(false);
-      return;
-    }
-    // Not enough players yet. The squad editor, then the lineup — never the
-    // fixture form, which is the thing Play now exists to skip.
-    setSquadErrand('match');
-    setMatchRoute(PLAY_NOW_ROUTE);
-    setStep('squad');
-  }, [squad, format, beginMatch]);
+  // #278 (Rob, 1 Nov): Play now picks an upcoming fixture; there is no
+  // ad-hoc match. Opening one is openFixture, as its card does.
+  const playNow = useCallback(() => setStep('whichMatch'), []);
 
   const resume = useCallback(() => {
     if (!pending) return;
@@ -2358,6 +2374,37 @@ function TeamApp({
       );
     }
 
+    const comingMatch = effectiveStep === 'coming' ? matches.find((m) => m.match.id === comingId) : undefined;
+    if (effectiveStep === 'whichMatch') {
+      return (
+        <WhichMatchScreen
+          matches={listedFixtures(real, false)
+            .map((m) => m.match)
+            .filter((m) => !hiddenIds.has(m.id))}
+          now={appNow()}
+          progress={progressById(real, liveReal)}
+          periods={periodsById(real, liveReal)}
+          coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
+          onOpen={openFixture}
+          onAdd={() => setStep('fixtureForm')}
+          onBack={() => setStep('fixtures')}
+        />
+      );
+    }
+
+    if (comingMatch) {
+      return (
+        <WhosComingScreen
+          title={`${squadName} v ${opponentLabel(comingMatch.match)}`}
+          players={squad}
+          availability={comingMatch.availability}
+          changedAt={comingMatch.comingChangedAt ?? null}
+          onChange={(list) => saveComing(comingMatch.match.id, list)}
+          onBack={() => setStep('fixtures')}
+        />
+      );
+    }
+
     if (effectiveStep === 'plan' && planning) {
       // The held match's quarters, not the stored copy's, which may be stale.
       const planQuarters =
@@ -2911,6 +2958,12 @@ function TeamApp({
           setStep('plan');
         }}
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
+        // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
+        coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
+        onComing={(id) => {
+          setComingId(id);
+          setStep('coming');
+        }}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked
           // off a moment ago must not still be offered for deletion.

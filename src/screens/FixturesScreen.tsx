@@ -56,6 +56,8 @@ export function FixturesScreen({
   onAdd,
   onPlan,
   plannedIds,
+  coming,
+  onComing,
   housekeeping,
   onPlayNow,
   buildLabel,
@@ -85,6 +87,9 @@ export function FixturesScreen({
   onPlan: (matchId: UUID) => void;
   /** Fixtures that already have something planned, so the link says so. */
   plannedIds: ReadonlySet<UUID>;
+  /** #277 A1: each fixture's Who's coming summary. */
+  coming: ReadonlyMap<UUID, string>;
+  onComing: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
   /**
@@ -128,7 +133,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, coming, onComing, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -228,6 +233,8 @@ interface CardActions {
   onDelete: (matchId: UUID) => void;
   onPlan: (matchId: UUID) => void;
   plannedIds: ReadonlySet<UUID>;
+  coming: ReadonlyMap<UUID, string>;
+  onComing: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
@@ -344,6 +351,8 @@ function FixtureCard({
   onDelete,
   onPlan,
   plannedIds,
+  coming,
+  onComing,
   housekeeping,
   scores,
   periods,
@@ -440,8 +449,16 @@ function FixtureCard({
 
       {/* Only before kick-off: once a match is played its plan is history. */}
       {/* #264: the plan opens a screen (a Row ›, labels kept: EDIT_PLAN). */}
+      {/* #277 A1: Who's coming first, then the plan: the coach's order. */}
+      {match.status === 'planned' && coming.has(match.id) && (
+        <RowNav label="Who's coming" value={coming.get(match.id)} onPress={() => onComing(match.id)} first />
+      )}
       {match.status === 'planned' && (
-        <RowNav label={planned ? 'Edit the plan' : 'Plan this match'} onPress={() => onPlan(match.id)} first />
+        <RowNav
+          label={planned ? 'Edit the plan' : 'Plan this match'}
+          onPress={() => onPlan(match.id)}
+          first={!coming.has(match.id)}
+        />
       )}
 
       {/* Archive can be undone, so it is an Action, not Danger. */}
