@@ -38,6 +38,7 @@ import {
   PILL_HEIGHT,
   PITCH_ASPECT,
   dropTargetAt,
+  fitPitchHeight,
   pillWidthFor,
   slotBox,
   slotSpots,
@@ -73,6 +74,23 @@ export interface PitchViewProps {
    * the lineup pass it; the live clock never does (ruling Q1).
    */
   onRenamePosition?: (positionId: UUID) => void;
+  /**
+   * #276: room for the pitch in the scrolling area, so a small phone shows the
+   * whole pitch and the bench at once (`fitPitchHeight`). Omitted: the pitch's
+   * natural shape, as before.
+   */
+  room?: number | null;
+  /**
+   * #276: where the finger is while a player is dragged (window y), and null
+   * when the drag ends, so the screen can scroll near its edges.
+   */
+  onDragAt?: (pageY: number | null) => void;
+  /**
+   * #276: the containing ScrollView's offset. A drag that scrolls the screen
+   * moves this component under the finger; the drop is worked out against
+   * the offset at the drag's start, synchronously, never a stale measure.
+   */
+  scrollOffset?: number;
 }
 
 export function PitchView(props: PitchViewProps) {
@@ -82,6 +100,7 @@ export function PitchView(props: PitchViewProps) {
 
   // Layout, in this component's own coordinates.
   const [pitch, setPitch] = useState<Rect>({ x: 0, y: 0, width: 0, height: 0 });
+  const [rootWidth, setRootWidth] = useState(0);
 
   // The responders below are made ONCE per player and must outlive renders: a
   // PanResponder recreated mid-gesture loses the gesture. They read whatever
@@ -92,28 +111,40 @@ export function PitchView(props: PitchViewProps) {
   const benchPills = useRef(new Map<UUID, Rect>());
   const rootPage = useRef({ x: 0, y: 0 });
   const root = useRef<View>(null);
+  /** The ScrollView's offset when rootPage was last measured (#276). */
+  const offsetAtMeasure = useRef(0);
 
-  // The drag in progress: who, and where the floating copy is.
-  const [drag, setDrag] = useState<{ id: UUID; x: number; y: number } | null>(null);
+  // The drag in progress: who, and where the finger is (window coordinates).
+  const [drag, setDrag] = useState<{ id: UUID; pageX: number; pageY: number } | null>(null);
   const dragRef = useRef<{ id: UUID } | null>(null);
 
   const endDrag = () => {
     dragRef.current = null;
     setDrag(null);
     latest.current.props.onDragging?.(false);
+    latest.current.props.onDragAt?.(null);
   };
   // The screen going away mid-drag must not leave anything behind.
   useEffect(() => () => props.onDragging?.(false), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const measureRoot = () =>
+  const measureRoot = () => {
+    const offset = latest.current.props.scrollOffset ?? 0;
     root.current?.measureInWindow((x, y) => {
       rootPage.current = { x, y };
+      offsetAtMeasure.current = offset;
     });
+  };
 
-  const local = (e: GestureResponderEvent) => ({
-    x: e.nativeEvent.pageX - rootPage.current.x,
-    y: e.nativeEvent.pageY - rootPage.current.y,
+  /**
+   * A window point in this component's coordinates. If the screen has
+   * scrolled since the measure (#276's edge scrolling), this component has
+   * moved up by that much, so the point is that much further down it.
+   */
+  const toLocal = (pageX: number, pageY: number) => ({
+    x: pageX - rootPage.current.x,
+    y: pageY - rootPage.current.y + ((latest.current.props.scrollOffset ?? 0) - offsetAtMeasure.current),
   });
+  const local = (e: GestureResponderEvent) => toLocal(e.nativeEvent.pageX, e.nativeEvent.pageY);
 
   const targetAt = (x: number, y: number) =>
     dropTargetAt(
@@ -168,8 +199,8 @@ export function PitchView(props: PitchViewProps) {
           latest.current.props.onDragging?.(true);
         }
         if (dragRef.current) {
-          const p = local(e);
-          setDrag({ id, x: p.x, y: p.y });
+          setDrag({ id, pageX: e.nativeEvent.pageX, pageY: e.nativeEvent.pageY });
+          latest.current.props.onDragAt?.(e.nativeEvent.pageY);
         }
       },
       onPanResponderRelease: (e) => {
@@ -226,9 +257,20 @@ export function PitchView(props: PitchViewProps) {
   };
 
   return (
-    <View ref={root} onLayout={measureRoot} style={s.root}>
+    <View
+      ref={root}
+      onLayout={(e) => {
+        setRootWidth(e.nativeEvent.layout.width);
+        measureRoot();
+      }}
+      style={s.root}
+    >
       <View
-        style={s.pitch}
+        style={[
+          s.pitch,
+          // #276: sized to the room on a small phone; the natural shape until measured.
+          props.room !== undefined && rootWidth > 0 && { aspectRatio: undefined, height: fitPitchHeight(rootWidth, props.room) },
+        ]}
         onLayout={(e: LayoutChangeEvent) => setPitch(e.nativeEvent.layout)}
       >
         <View style={s.halfway} />
@@ -312,8 +354,9 @@ export function PitchView(props: PitchViewProps) {
           pointerEvents="none"
           style={[
             s.pill,
+            // Its place is worked out on every draw, so it stays under the finger while the screen scrolls.
             s.ghost,
-            { width: pillWidth, left: drag.x - pillWidth / 2, top: drag.y - PILL_HEIGHT },
+            { width: pillWidth, left: toLocal(drag.pageX, drag.pageY).x - pillWidth / 2, top: toLocal(drag.pageX, drag.pageY).y - PILL_HEIGHT },
           ]}
         >
           <Text style={s.name} numberOfLines={1}>

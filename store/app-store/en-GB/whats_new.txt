@@ -1,7 +1,11 @@
+New in 2.2.1:
+
+• Small phones: the whole pitch fits on screen, so the top position is easy to reach
+• Dragging a player near the top or bottom of the screen scrolls it, and a drop just past the pitch's edge lands on the nearest position
+• Pitch and referee now sits below the pitch
+
 New in 2.2.0:
 
 • 9- and 11-a-side: 3-3-2, 3-2-3, 4-4-2 and 4-3-3
-• 70- and 80-minute matches, picked from a list
-• A new team is offered the format for its age group; 9-a-side starts at 60 min in halves, 11-a-side at 70
-• The formation list shows this season's size first, and what another size costs the season's figures
-• An import from a newer version leaves out a formation this one does not know, and says so
+• 70- and 80-minute matches
+• A new team is offered the format for its age group

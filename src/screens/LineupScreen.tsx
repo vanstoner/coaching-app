@@ -55,6 +55,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { EDGE_SCROLL_STEP, edgeScrollDirection } from '../app/pitchLayout';
 import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
@@ -112,6 +113,9 @@ import {
   UndoToast,
 } from './controls';
 import { colours, screen, TOUCH_TARGET } from './theme';
+
+/** #276: what must show under the pitch with it: the bench label and one row of the bench. */
+const BENCH_ROOM = 110;
 
 export function LineupScreen({
   pitch = null,
@@ -193,6 +197,40 @@ export function LineupScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  // #276: a small phone. The scrolling area is measured so the pitch can be
+  // sized to show with the bench (`fitPitchHeight`), and a drag near its top
+  // or bottom edge scrolls it, so the top row and the bench are both reachable.
+  const scroller = useRef<ScrollView>(null);
+  const scrollBox = useRef<View>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const scrollYRef = useRef(0);
+  const viewport = useRef({ top: 0, height: 0, content: 0 });
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const edgeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const edgeDirection = useRef<-1 | 0 | 1>(0);
+  const stopEdgeScroll = () => {
+    if (edgeTimer.current) clearInterval(edgeTimer.current);
+    edgeTimer.current = null;
+    edgeDirection.current = 0;
+  };
+  useEffect(() => stopEdgeScroll, []);
+  /** While dragging: scroll a step every tick the finger stays near an edge. */
+  const onDragAt = (pageY: number | null) => {
+    const dir = pageY === null ? 0 : edgeScrollDirection(pageY, viewport.current.top, viewport.current.height);
+    if (dir === edgeDirection.current) return;
+    stopEdgeScroll();
+    if (dir === 0) return;
+    edgeDirection.current = dir;
+    edgeTimer.current = setInterval(() => {
+      const max = Math.max(0, viewport.current.content - viewport.current.height);
+      const next = Math.min(max, Math.max(0, scrollYRef.current + dir * EDGE_SCROLL_STEP));
+      if (next === scrollYRef.current) return;
+      scrollYRef.current = next;
+      setScrollY(next);
+      scroller.current?.scrollTo({ y: next, animated: false });
+    }, 40);
+  };
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
   /** Kept so `apply` reads as before; the old inline pickers are now sheets. */
@@ -305,9 +343,30 @@ export function LineupScreen({
           {noun} {quarter?.index ?? 1} of {state.match.quarterCount}
           {shape ? ` · ${shape}` : ''}
         </Text>
-        {pitch}
-
-        <ScrollView style={screen.list} scrollEnabled={!dragging}>
+        <View
+          ref={scrollBox}
+          style={screen.list}
+          onLayout={(e) => {
+            viewport.current.height = e.nativeEvent.layout.height;
+            setViewportHeight(e.nativeEvent.layout.height);
+            scrollBox.current?.measureInWindow((_x, y) => {
+              viewport.current.top = y;
+            });
+          }}
+        >
+        <ScrollView
+          ref={scroller}
+          style={local.fill}
+          scrollEnabled={!dragging}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+            setScrollY(e.nativeEvent.contentOffset.y);
+          }}
+          onContentSizeChange={(_, h) => {
+            viewport.current.content = h;
+          }}
+        >
           {/* #83: the shape drawn as a pitch. Drag a player, or tap one and
               then where they go. Before kick-off this edits the sheet only. */}
           <Text style={screen.fieldLabel}>On the pitch</Text>
@@ -336,6 +395,10 @@ export function LineupScreen({
             onDragging={setDragging}
             onMove={(id, target) => setSheet(editSheet(sheet, id, target))}
             onRenamePosition={names ? setRenaming : undefined}
+            // #276: the pitch and the bench strip together in the visible area where they fit.
+            room={viewportHeight === null ? null : viewportHeight - BENCH_ROOM}
+            onDragAt={onDragAt}
+            scrollOffset={scrollY}
           />
           {names && (
             <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
@@ -400,6 +463,9 @@ export function LineupScreen({
             </>
           )}
 
+          {/* #276: Pitch and referee sits below the pitch, so a small phone shows the whole pitch. */}
+          {pitch}
+
           <ActionRow>
             {hasPlan && <Action label="Use plan" onPress={() => replaceWith(fromPlan(), 'Lineup set from the plan')} />}
             <Action
@@ -409,6 +475,7 @@ export function LineupScreen({
           </ActionRow>
           {onPlanRest && <RowNav label="Plan the rest of the match" onPress={onPlanRest} />}
         </ScrollView>
+        </View>
 
         <Text style={[screen.caption, !complete && screen.overtime]}>
           {onPitch.length} of {format.onFieldCount} picked
@@ -540,6 +607,7 @@ export function LineupScreen({
 }
 
 const local = StyleSheet.create({
+  fill: { flex: 1 },
   fromPlan: {
     alignSelf: 'stretch',
     color: colours.warn,
