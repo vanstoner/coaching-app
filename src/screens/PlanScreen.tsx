@@ -68,6 +68,7 @@ import {
   useSavedTick,
 } from './controls';
 import { PitchView } from './PitchView';
+import { useEdgeScroll } from './useEdgeScroll';
 import { ActionSheet, SheetButton } from './Sheet';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
@@ -140,6 +141,8 @@ export function PlanScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+  // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
+  const edge = useEdgeScroll(dragging);
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
   /** The sub sheet (#120, #264): a draft until Save. */
@@ -264,7 +267,7 @@ export function PlanScreen({
 
   return (
     <View style={screen.flex}>
-      <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
+      <ScrollView contentContainerStyle={screen.scroll} {...edge.scrollProps}>
         {/* #264: the way out top left; ✓ Saved right-justified on the top bar (Dee: the plan saves as one). */}
         <TopBar
           back={<BackLink label="Done" accessibilityLabel="Done" onPress={onBack} />}
@@ -323,6 +326,7 @@ export function PlanScreen({
           onSelect={setPitchPick}
           onTapPlayer={tapPlayer}
           onDragging={setDragging}
+          {...edge.pitchProps}
           onMove={(id, target) =>
             change(setPeriodSlots(plan, periodIndex, editSheet(period.slots, id, target)))
           }

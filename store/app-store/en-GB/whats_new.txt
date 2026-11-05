@@ -1,4 +1,4 @@
-New in 2.2.1:
+New in 2.3.0:
 
 • Small phones: the whole pitch fits on screen, so the top position is easy to reach
 • Dragging a player near the top or bottom of the screen scrolls it, and a drop just past the pitch's edge lands on the nearest position

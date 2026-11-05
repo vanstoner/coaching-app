@@ -508,10 +508,12 @@ analysis, iOS". Entries are added as each release ships.
   rather than turning it into 7-a-side. Older versions cannot do that: a
   9- or 11-a-side fixture imported into a version before 2.2.0 takes that
   phone's default format, 7-a-side unless it is set to 5, without a word. Release 2.1.0 is frozen as a fixture (#167).
-- **5 November — Heart FC Coach 2.2.1: small phones (#276).** A coach on a
+- **5 November — Heart FC Coach 2.3.0, part 1: small phones (#276).** A coach on a
   small phone could only just drag a player to the centre forward: the pitch
   was taller than the screen, and the screen would not scroll mid-drag. Now
   the pitch is sized to show with the bench where it fits (never so short
   that rows touch), Pitch and referee sits below it, a drag near the top or
-  bottom of the screen scrolls it, and a drop just past the pitch's top edge
-  still lands on the top row. Release 2.2.0 is frozen as a fixture (#167).
+  bottom of the screen scrolls it (on the lineup, the plan and the clock),
+  and a drop just past the pitch's top edge still lands on the top row.
+  Rob's beta check found the plan screen did not scroll; it now shares the
+  lineup's edge scrolling. Shipping with #277 and #278 in 2.3.0 (Rob, 5 Nov). Release 2.2.0 is frozen as a fixture (#167).
