@@ -260,6 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { WhichMatchScreen } from './src/screens/WhichMatchScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { seasonInputs } from './src/app/teamSheetBuilder';
+import { parseSheetView, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
@@ -525,6 +526,8 @@ function TeamApp({
   const [comingReturn, setComingReturn] = useState<Step>('fixtures');
   /** The fixture whose team sheet is open (#277 B). */
   const [sheetId, setSheetId] = useState<UUID | null>(null);
+  /** #277 C13 (ADR-024 D5): a view choice on this phone, never the record. */
+  const [sheetView, setSheetView] = useState<SheetView>('formation');
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -648,6 +651,8 @@ function TeamApp({
       // #218: whether the coach closed Getting started on this phone.
       const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
       const quietRaw = await store.getItem(SEASON_PROMPT_KEY).catch(() => null);
+      // #277 C13: Formation or Table, as last chosen on this phone.
+      setSheetView(parseSheetView(await store.getItem(SHEET_VIEW_KEY).catch(() => null)));
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -2461,6 +2466,12 @@ function TeamApp({
           plan={sheetMatch.plan}
           season={seasonInputs(views.matches, views.owed)}
           onChange={(plan) => savePlan(sheetMatch.match.id, plan)}
+          view={sheetView}
+          onView={(v) => {
+            setSheetView(v);
+            // A view choice: losing it costs a tap, so a failed write is let go.
+            void store.setItem(SHEET_VIEW_KEY, v).catch(() => undefined);
+          }}
           onComing={() => {
             setComingId(sheetMatch.match.id);
             setComingReturn('teamSheet');

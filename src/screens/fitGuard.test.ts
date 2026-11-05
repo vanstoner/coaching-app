@@ -80,7 +80,7 @@ describe('dragging near the edge scrolls on every screen with a pitch (#276)', (
   // Rob, 5 Nov: the plan screen did not scroll when a bench player was dragged
   // up, because only the lineup screen had edge scrolling. Every screen that
   // draws a PitchView now takes it from the one hook.
-  const screens = ['LineupScreen.tsx', 'PlanScreen.tsx', 'ClockScreen.tsx'];
+  const screens = ['LineupScreen.tsx', 'PlanScreen.tsx', 'ClockScreen.tsx', 'TeamSheetScreen.tsx'];
   it('each screen that draws a pitch is that list', () => {
     const drawing = readdirSync(__dirname).filter((f) => f.endsWith('.tsx') && src(f).includes('<PitchView'));
     expect(drawing.sort()).toEqual([...screens].sort());

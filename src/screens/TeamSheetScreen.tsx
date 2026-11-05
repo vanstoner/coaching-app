@@ -13,7 +13,7 @@
  * worked out from the plan each time it draws (invariant 1).
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
@@ -22,6 +22,12 @@ import { formatClock, periodNoun } from '../app/matchClock';
 import { periodLengthMs, planFor, planHasContent, projectPlan, type MatchPlan } from '../app/matchPlan';
 import { comingRows, comingSummary } from '../app/whosComing';
 import { buildTeamSheet, rotateKeepers, type Fill, type SeasonKeeping } from '../app/teamSheetBuilder';
+import { benchOf, swapInPeriod, type SheetView } from '../app/teamSheetEdit';
+import { editSheet } from '../app/teamSheet';
+import { setPeriodSlots } from '../app/matchPlan';
+import { PitchView } from './PitchView';
+import { TeamSheetViews } from './TeamSheetViews';
+import { useEdgeScroll } from './useEdgeScroll';
 import {
   Action,
   BackLink,
@@ -50,7 +56,8 @@ export function TeamSheetScreen({
   availability,
   plan: stored,
   season,
-  sheet,
+  view,
+  onView,
   onChange,
   onComing,
   onSquad,
@@ -68,8 +75,9 @@ export function TeamSheetScreen({
   availability: [UUID, AvailabilityStatus][] | undefined;
   plan: MatchPlan | undefined;
   season: ReadonlyMap<UUID, SeasonKeeping>;
-  /** The sheet's views (Formation or Table), drawn under the steps. */
-  sheet?: ReactNode;
+  /** Formation or Table, as last chosen on this phone (C13). */
+  view: SheetView;
+  onView: (view: SheetView) => void;
   onChange: (plan: MatchPlan) => void;
   onComing: () => void;
   onSquad: () => void;
@@ -100,6 +108,22 @@ export function TeamSheetScreen({
 
   const plan = planFor(stored, periodCount);
   const made = planHasContent(stored);
+  const comingIds = coming.map((p) => p.id);
+
+  // C14: ⤢ enlarges one period to the full pitch, where dragging works (P4).
+  const [enlarged, setEnlarged] = useState<number | null>(null);
+  const [pick, setPick] = useState<UUID | null>(null);
+  const [dragging, setDragging] = useState(false);
+  // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
+  const edge = useEdgeScroll(dragging);
+
+  /** C17: a swap, with Undo in the toast, as elsewhere. */
+  const swap = (periodIndex: number, a: UUID, b: UUID) => {
+    const before = plan;
+    onChange(swapInPeriod(plan, periodIndex, a, b));
+    tick.mark();
+    onUndo(`Swapped ${name(a)} and ${name(b)}`, () => onChange(before));
+  };
 
   const make = () => {
     const before = stored;
@@ -140,7 +164,7 @@ export function TeamSheetScreen({
 
   return (
     <View style={screen.flex}>
-      <ScrollView contentContainerStyle={screen.scroll}>
+      <ScrollView contentContainerStyle={screen.scroll} {...edge.scrollProps}>
         <TopBar
           back={<BackLink label="Done" accessibilityLabel="Done" onPress={onBack} />}
           title="Team sheet"
@@ -229,9 +253,52 @@ export function TeamSheetScreen({
           />
         </View>
 
+        {made && enlarged === null && (
+          <TeamSheetViews
+            plan={plan}
+            format={format}
+            coming={comingIds}
+            name={(id) => name(id)}
+            short={short}
+            view={view}
+            onView={onView}
+            onSwap={swap}
+            onEnlarge={setEnlarged}
+          />
+        )}
+        {made && enlarged !== null && (
+          <View>
+            <View style={local.enlargedHead}>
+              <BackLink label="All of them" onPress={() => setEnlarged(null)} />
+              <Text style={local.enlargedTitle}>{`${noun} ${enlarged + 1}`}</Text>
+            </View>
+            <PitchView
+              format={format}
+              sheet={plan.periods[enlarged].slots}
+              bench={benchOf(plan.periods[enlarged], comingIds)}
+              nameOf={(id) => name(id)}
+              selected={pick}
+              onSelect={setPick}
+              onDragging={setDragging}
+              {...edge.pitchProps}
+              onMove={(id, target) => {
+                const period = plan.periods[enlarged];
+                // C17: onto someone, it is a swap and the sub follows the place;
+                // onto an empty place or the bench, an ordinary move.
+                const other =
+                  target.kind === 'player'
+                    ? target.playerId
+                    : target.kind === 'slot'
+                      ? (period.slots[target.positionId] ?? null)
+                      : null;
+                if (other) swap(enlarged, id, other);
+                else onChange(setPeriodSlots(plan, enlarged, editSheet(period.slots, id, target)));
+              }}
+            />
+          </View>
+        )}
         {made && (
           <>
-            {sheet}
             {projection && (
               <View>
                 <GroupLabel>Minutes</GroupLabel>
@@ -302,4 +369,6 @@ const local = StyleSheet.create({
   minuteTime: { color: colours.inkMuted, fontSize: 15, includeFontPadding: false, flexShrink: 0 },
   // #261 AC7: neutral, never the warning colour.
   minuteShort: { color: colours.ink },
+  enlargedHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  enlargedTitle: { color: colours.ink, fontSize: 16, fontWeight: '600', includeFontPadding: false },
 });

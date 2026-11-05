@@ -86,3 +86,38 @@ describe('Build the team sheet (#277 B6–B12)', () => {
     expect(sheet).not.toContain('screen.overtime');
   });
 });
+
+describe('the sheet: Formation and Table (#277 C13–C18)', () => {
+  const views = src('TeamSheetViews.tsx');
+  const sheet = src('TeamSheetScreen.tsx');
+
+  it('Formation | Table, remembered on this phone and cleared by Forget everything (C13, D5)', () => {
+    expect(views).toContain("{ value: 'formation', label: 'Formation' }");
+    expect(views).toContain("{ value: 'table', label: 'Table' }");
+    expect(app).toContain('void store.setItem(SHEET_VIEW_KEY, v)');
+    expect(readFileSync(join(__dirname, '../app/storage/forget.ts'), 'utf-8')).toContain('SHEET_VIEW_KEY,');
+  });
+
+  it('Formation is 2 × 2 in portrait and four in a row in landscape, with ⤢ to enlarge (C14)', () => {
+    expect(views).toContain('width > height ? Math.min(4, plan.periods.length) : Math.min(2, plan.periods.length)');
+    expect(views).toContain('onPress={() => onEnlarge(p)}');
+  });
+
+  it('the enlarged period is the full pitch, where dragging works (C17, P4)', () => {
+    expect(sheet).toMatch(/enlarged !== null && \([\s\S]*?<PitchView[\s\S]*?onDragging=\{setDragging\}/);
+  });
+
+  it('the Table keeps the position column still while the periods scroll (C15)', () => {
+    expect(views).toMatch(/<View style=\{\{ width: LABEL_W \}\}>[\s\S]*?<ScrollView horizontal/);
+  });
+
+  it('a second tap in the same period swaps, with Undo (C17)', () => {
+    expect(views).toContain('if (picked.id !== id) onSwap(period, picked.id, id);');
+    expect(sheet).toMatch(/onUndo\(`Swapped \$\{name\(a\)\} and \$\{name\(b\)\}`, \(\) => onChange\(before\)\)/);
+  });
+
+  it('every target is at least a touch target tall (C18)', () => {
+    for (const style of ['chip', 'benchChip']) expect(views).toMatch(new RegExp(`${style}: \\{[^}]*minHeight: TOUCH_TARGET`));
+    expect(views).toMatch(/cell: \{\s*height: TOUCH_TARGET/);
+  });
+});
