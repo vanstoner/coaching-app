@@ -188,9 +188,16 @@ interface MatchEvent {
 
 ## Availability
 
-`'available' | 'absent' | 'injured' | 'unavailable'`, per match, keyed by
-player. Editable freely before kick-off; afterwards only via a late arrival or
-a noted correction. The ledger snapshots it at kick-off (ADR-014 §4).
+`'available' | 'absent' | 'injured' | 'unavailable' | 'unconfirmed'`, per
+match, keyed by player. Editable freely before kick-off; afterwards only via a
+late arrival or a noted correction. The ledger snapshots it at kick-off
+(ADR-014 §4).
+
+Before kick-off it is **Who's coming** (#277, ADR-024 D1): Coming =
+`available`, Can't = `unavailable`, Not heard = `unconfirmed`. `unconfirmed`
+lives in the session only: the kick-off snapshot records it as `absent`, so the
+record never holds it. `comingChangedAt` (session) is when the list last
+changed.
 
 ## Plans (intent, never minutes)
 

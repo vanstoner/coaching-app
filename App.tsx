@@ -41,7 +41,7 @@ import {
 } from './src/app/fixtures';
 import { savedToast } from './src/app/saveState';
 import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
-import { currentQuarter, periodNounPlural } from './src/app/matchClock';
+import { currentQuarter, periodNoun, periodNounPlural } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
   DEFAULT_TOTAL_MINUTES,
@@ -260,7 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { WhichMatchScreen } from './src/screens/WhichMatchScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { seasonInputs } from './src/app/teamSheetBuilder';
-import { parseSheetView, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
+import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
@@ -2923,6 +2923,14 @@ function TeamApp({
               (currentQuarter(match.state)?.index ?? 1) - 1
             ]
           }
+          // #277 D20: anyone unticked who the plan still places, from this period on.
+          planGaps={planGaps(
+            matches.find((m) => m.match.id === match.state.match.id)?.plan,
+            absentIds(match.state),
+            (id) => displayName(players.find((p) => p.id === id) ?? { firstName: '?', displaySuffix: null }),
+            periodNoun(match.state.match.quarterCount) === 'Quarter' ? 'Q' : 'H',
+            (currentQuarter(match.state)?.index ?? 1) - 1
+          )}
           onStart={startQuarter}
           onLeave={leaveMatch}
           onPlanRest={planTheRest}

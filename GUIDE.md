@@ -89,15 +89,38 @@ On **Home**, tap **+ Fixture**.
   own phone's match screens.
 - Tap **Save fixture**. It appears under **Coming up** on Home.
 
-No time to plan? On match day just tap **Play now**. It starts a match from
-your defaults, with no form to fill in.
+**Who's coming**: on the fixture's card, tap **Who's coming**. Everyone
+starts as **Coming**. Tap a name to change it: Coming, then **Can't**, then
+**Not heard**, then back. It saves as you tap, so come back to it as replies
+arrive through the week. The card shows the count, like "9 coming · 2 can't
+· 1 not heard".
 
 <img src="store/app-store/screenshots/iphone/07-five.png" alt="Fixtures in your format and match length" width="260">
 
 ## 4. Plan the match
 
-On a fixture under **Coming up**, tap **Plan this match** (or **Edit the
-plan** once you've started one).
+The quickest way is the **Team sheet**. On a fixture under **Coming up**, tap
+**Team sheet**. Four choices sit on one screen, each with a sensible default:
+
+1. **Who's coming**: the list above.
+2. **Keepers**: **Rotate for me** shares goal round, starting with whoever
+   has been in goal least this season (never a child marked Not in goal). Or
+   **I'll choose** a keeper for each period.
+3. **Mid-quarter subs**: **Place them** puts one sub in each period, halfway:
+   whoever has played most comes off for whoever has played least. Or
+   **None**.
+4. **Everyone else**: **Even** gives everyone equal time with positions
+   rotated, the same answer every time. **Shuffle** gives a different mix.
+
+Tap **Make the team sheet**. You see every period at once as **Formation**
+(tap ⤢ to make one big, where you can drag) or as a **Table** of positions
+and periods. Tap one child, then another in the same period, to swap them;
+**Undo** is in the message that appears. Each child's minutes and the fair
+share are underneath.
+
+To work period by period instead, tap **Plan this match** (or **Edit the
+plan** once you've started one), or **Edit quarter by quarter** on the Team
+sheet.
 
 - For each quarter or half, put the children on the pitch and on the bench.
   Each child's **projected minutes** for the match show as you go, so you can
@@ -118,10 +141,12 @@ happens on the day.
 
 ## 5. On the day: the lineup
 
-Open the match from Home (or tap **Play now**). You arrive on the lineup for
-the first period.
+Open the match from Home, or tap **Play now** and pick it from the list of
+matches coming up. You arrive on the lineup for the first period, filled from
+your plan.
 
-- **Here today**: untick anyone who isn't there. They can't be picked, and the
+- **Here today** starts from Who's coming: untick anyone who isn't there. If
+  they are in the plan, the lineup says which periods, so you can change them. They can't be picked, and the
   app knows they missed the match. Someone turns up late? Between periods,
   **Arrived late?** adds them.
 - **Use plan** fills the pitch from your plan. **Use suggestion** fills it

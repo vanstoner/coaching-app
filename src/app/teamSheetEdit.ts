@@ -113,3 +113,32 @@ export function sheetTable(
   }
   return rows;
 }
+
+/**
+ * #277 D20: a child who was coming but is unticked on match day, and every
+ * period of the plan they are placed in (in a slot, or coming on). The app
+ * never re-plans by itself; the Lineup says where, so the coach can tweak.
+ * "Ivy is in Q1 and Q3 of the plan but not here today." One line per child.
+ */
+export function planGaps(
+  plan: MatchPlan | undefined,
+  absent: ReadonlySet<UUID>,
+  name: (id: UUID) => string,
+  short: string,
+  fromPeriod = 0
+): string[] {
+  if (!plan) return [];
+  const where = new Map<UUID, number[]>();
+  plan.periods.forEach((period, p) => {
+    if (p < fromPeriod) return;
+    const placed = new Set<UUID>();
+    for (const id of Object.values(period.slots)) if (id) placed.add(id);
+    for (const s of period.subs) if (s.onId) placed.add(s.onId);
+    for (const id of placed) if (absent.has(id)) where.set(id, [...(where.get(id) ?? []), p]);
+  });
+  return [...where].map(([id, periods]) => {
+    const labels = periods.map((p) => `${short}${p + 1}`);
+    const list = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+    return `${name(id)} is in ${list} of the plan but not here today.`;
+  });
+}

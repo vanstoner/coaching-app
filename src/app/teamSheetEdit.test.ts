@@ -9,7 +9,7 @@ import { displayName, makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { benchOf, frontToBack, parseSheetView, sheetTable, swapInPeriod } from './teamSheetEdit';
+import { benchOf, frontToBack, parseSheetView, planGaps, sheetTable, swapInPeriod } from './teamSheetEdit';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -88,5 +88,26 @@ describe('Formation or Table is a view choice on this phone (C13, D5)', () => {
     expect(parseSheetView(null)).toBe('formation');
     expect(parseSheetView('table')).toBe('table');
     expect(parseSheetView('junk')).toBe('formation');
+  });
+});
+
+describe('match day: a child unticked who is in the plan is pointed out (D20)', () => {
+  it('names every period they are placed in, and re-plans nothing', () => {
+    const plan = sheet();
+    const absentee = Object.values(plan.periods[0].slots)[2]!;
+    const lines = planGaps(plan, new Set([absentee]), name, 'Q');
+    const periods = plan.periods
+      .map((p, i) => (Object.values(p.slots).includes(absentee) || p.subs.some((s) => s.onId === absentee) ? `Q${i + 1}` : null))
+      .filter(Boolean);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(new RegExp(`^${name(absentee)} is in .*Q1.* of the plan but not here today\\.$`));
+    for (const p of periods) expect(lines[0]).toContain(p!);
+    expect(planGaps(plan, new Set(), name, 'Q')).toEqual([]);
+  });
+
+  it('periods already played are left out', () => {
+    const plan = sheet();
+    const only0 = Object.values(plan.periods[0].slots).find((id) => !plan.periods.slice(1).some((p) => Object.values(p.slots).includes(id) || p.subs.some((s) => s.onId === id)));
+    if (only0) expect(planGaps(plan, new Set([only0]), name, 'Q', 1)).toEqual([]);
   });
 });

@@ -121,3 +121,14 @@ describe('the sheet: Formation and Table (#277 C13–C18)', () => {
     expect(views).toMatch(/cell: \{\s*height: TOUCH_TARGET/);
   });
 });
+
+describe('match day (#277 D19, D20)', () => {
+  it('the Lineup starts from the plan’s period, as before (D19)', () => {
+    expect(src('LineupScreen.tsx')).toContain('const initial = () => (hasPlan ? fromPlan() : fromSuggestion());');
+  });
+
+  it('it names who is in the plan but not here today, from this period on, and re-plans nothing (D20)', () => {
+    expect(app).toMatch(/planGaps=\{planGaps\([\s\S]*?absentIds\(match\.state\)[\s\S]*?\(currentQuarter\(match\.state\)\?\.index \?\? 1\) - 1/);
+    expect(src('LineupScreen.tsx')).toMatch(/\{planGaps\.map\(\(line\) => \(\s*<Text key=\{line\} style=\{screen\.hint\}>/);
+  });
+});

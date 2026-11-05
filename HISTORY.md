@@ -508,7 +508,7 @@ analysis, iOS". Entries are added as each release ships.
   rather than turning it into 7-a-side. Older versions cannot do that: a
   9- or 11-a-side fixture imported into a version before 2.2.0 takes that
   phone's default format, 7-a-side unless it is set to 5, without a word. Release 2.1.0 is frozen as a fixture (#167).
-- **5 November — Heart FC Coach 2.3.0, part 1: small phones (#276).** A coach on a
+- **5 November — Heart FC Coach 2.3.0: Who's coming, the Team sheet, Play now picks a match, and small phones (#277, #278, #276).** Rob's planning order, built in (#277, ADR-024 Proposed): each fixture has **Who's coming** (Coming, Can't, Not heard, saved as you tap; Not heard never reaches the record) and a **Team sheet**: four choices on one screen (keepers rotated by the season's goal time, one mid-quarter sub, Even or Shuffle) make every period's plan at once, with the best spread half-quarters allow (9 coming at 7-a-side: 37:30–43:45). It shows as Formation or Table, with tap-to-swap and Undo. On match day the lineup says who is in the plan but not here. **Play now** lists the matches coming up instead of starting a blank one (#278). Small phones (#276): a coach on a
   small phone could only just drag a player to the centre forward: the pitch
   was taller than the screen, and the screen would not scroll mid-drag. Now
   the pitch is sized to show with the bench where it fits (never so short

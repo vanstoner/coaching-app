@@ -53,6 +53,7 @@ state management does.
 | [021](./021-the-record-of-truth.md) | The minutes record becomes the record of truth: fixtures, results, awards, provenance | Accepted | 2026-10-17 |
 | [022](./022-teams-and-seasons.md) | Teams are key prefixes, seasons live in each team's record, ADR-007 superseded | Accepted | 2026-10-25 |
 | [023](./023-formats-at-9-and-11.md) | Formats at 9 and 11 | Accepted | 2026-10-30 |
+| [024](./024-whos-coming-and-the-team-sheet.md) | Who's coming and the team sheet | Proposed | 2026-11-05 |
 
 ## Template
 

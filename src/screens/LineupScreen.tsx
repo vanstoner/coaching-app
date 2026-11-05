@@ -125,6 +125,7 @@ export function LineupScreen({
   onStart,
   onLeave,
   onPlanRest,
+  planGaps = [],
   attendance,
   names,
 }: {
@@ -141,6 +142,8 @@ export function LineupScreen({
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
+  /** #277 D20: who is in the plan but not here today, and where. Never re-planned for the coach. */
+  planGaps?: string[];
   /** Rename this match's positions (#166): before kick-off and between periods. */
   names?: PositionNaming;
   /**
@@ -314,6 +317,11 @@ export function LineupScreen({
               then where they go. Before kick-off this edits the sheet only. */}
           <Text style={screen.fieldLabel}>On the pitch</Text>
           {hasPlan && <Text style={local.fromPlan}>From your plan. Change anything.</Text>}
+          {planGaps.map((line) => (
+            <Text key={line} style={screen.hint}>
+              {line}
+            </Text>
+          ))}
           <Text style={screen.hint}>
             {pitchPick
               ? `Now tap where ${nameOf.get(pitchPick) ?? ''} goes, or tap them again to cancel.`
