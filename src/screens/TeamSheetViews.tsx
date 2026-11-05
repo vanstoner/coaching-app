@@ -61,6 +61,7 @@ export function TeamSheetViews({
     }
     setPicked({ period, id });
   };
+  const noun = short === 'Q' ? 'quarter' : 'half';
   const isPicked = (period: number, id: UUID | null) => id !== null && picked?.period === period && picked.id === id;
 
   return (
@@ -75,7 +76,9 @@ export function TeamSheetViews({
         onChange={(v) => v && onView(v)}
       />
       <Text style={local.hint}>
-        {picked ? 'Now tap who they swap with, in the same period.' : 'Tap one child, then another in the same period, to swap them.'}
+        {picked
+          ? `Now tap who they swap with, in the same ${noun}.`
+          : `Tap one child, then another in the same ${noun}, to swap them, bench included.`}
       </Text>
       {view === 'formation' ? (
         <Formation plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onEnlarge={onEnlarge} />
@@ -123,56 +126,61 @@ function Formation({
         return (
           <View key={p} style={[local.card, { width: `${100 / perRow}%` }]}>
             <View style={local.cardHead}>
-              <Text style={local.cardTitle}>{`${short}${p + 1}`}</Text>
+              <Text style={local.cardTitle} numberOfLines={1}>
+                {`${short}${p + 1}`}
+                {sub ? <Text style={local.cardSub}>{` · ${name(sub.onId!)} on ${formatSubTime(sub.atMs)}`}</Text> : null}
+              </Text>
               <Pressable
                 onPress={() => onEnlarge(p)}
                 accessibilityRole="button"
                 accessibilityLabel={`Enlarge ${short}${p + 1}`}
-                hitSlop={8}
                 style={local.enlarge}
               >
-                <Text style={local.enlargeText}>⤢</Text>
+                <Text style={local.enlargeText}>Enlarge</Text>
               </Pressable>
             </View>
-            <Text style={local.cardSub} numberOfLines={1}>
-              {sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : ' '}
-            </Text>
             <View style={local.pitch}>
               {spots.map((spot) => {
                 const who = period.slots[spot.positionId] ?? null;
+                const position = format.positions.find((x) => x.id === spot.positionId)!;
                 const off = sub && who === sub.offId;
+                const keeper = position.kind === 'goalkeeper';
                 return (
                   <Pressable
                     key={spot.positionId}
                     onPress={() => tap(p, who)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${short}${p + 1}, ${spot.label}, ${who ? name(who) : 'empty'}${off ? ', comes off' : ''}`}
-                    style={[
-                      local.chip,
-                      { width: `${chipPct}%`, left: `${spot.x * 100 - chipPct / 2}%`, top: `${spot.y * 100 - 9}%` },
-                      isPicked(p, who) && local.chipPicked,
-                    ]}
+                    accessibilityLabel={`${short}${p + 1}, ${position.label}, ${who ? name(who) : 'empty'}${off ? `, off at ${formatSubTime(sub.atMs)}` : ''}`}
+                    style={[local.chipHit, { width: `${chipPct}%`, left: `${spot.x * 100 - chipPct / 2}%`, top: `${spot.y * 100 - 9}%` }]}
                   >
-                    <Text style={local.chipName} numberOfLines={1} ellipsizeMode="tail">
-                      {who ? name(who) : '–'}
-                    </Text>
-                    {off && <Text style={local.chipSub}>{`${shortLabel(format.positions.find((x) => x.id === spot.positionId)!)} ⇄`}</Text>}
+                    <View style={[local.chip, keeper && local.chipKeeper, isPicked(p, who) && local.chipPicked]}>
+                      <Text style={local.chipName} numberOfLines={1} ellipsizeMode="tail">
+                        {who ? name(who) : '–'}
+                      </Text>
+                      <Text style={local.chipRole} numberOfLines={1}>
+                        {off ? `${shortLabel(position)} · off ${formatSubTime(sub.atMs)}` : shortLabel(position)}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
             </View>
+            <Text style={local.benchLabelSmall}>Bench</Text>
             <View style={local.bench}>
+              {bench.length === 0 && <Text style={local.benchNone}>Nobody</Text>}
               {bench.map((id) => (
                 <Pressable
                   key={id}
                   onPress={() => tap(p, id)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${short}${p + 1}, bench, ${name(id)}`}
-                  style={[local.benchChip, isPicked(p, id) && local.chipPicked]}
+                  accessibilityLabel={`${short}${p + 1}, bench, ${name(id)}${sub && sub.onId === id ? `, on at ${formatSubTime(sub.atMs)}` : ''}`}
+                  style={local.benchHit}
                 >
-                  <Text style={local.benchName} numberOfLines={1}>
-                    {name(id)}
-                  </Text>
+                  <View style={[local.benchChip, isPicked(p, id) && local.chipPicked]}>
+                    <Text style={local.benchName} numberOfLines={1}>
+                      {name(id)}
+                    </Text>
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -256,31 +264,41 @@ const local = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -3 },
   card: { padding: 3 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: colours.ink, fontSize: 15, fontWeight: '600', includeFontPadding: false },
-  enlarge: { minWidth: TOUCH_TARGET, minHeight: TOUCH_TARGET, alignItems: 'flex-end', justifyContent: 'center' },
-  enlargeText: { color: colours.action, fontSize: 20, includeFontPadding: false },
-  cardSub: { color: colours.inkMuted, fontSize: 12, includeFontPadding: false, marginBottom: 2 },
+  cardTitle: { flex: 1, color: colours.ink, fontSize: 15, fontWeight: '600', includeFontPadding: false },
+  cardSub: { color: colours.inkMuted, fontSize: 12, fontWeight: '400' },
+  enlarge: { minHeight: TOUCH_TARGET, justifyContent: 'center', paddingLeft: 6 },
+  enlargeText: { color: colours.action, fontSize: 13, fontWeight: '600', includeFontPadding: false },
   pitch: {
     position: 'relative',
-    aspectRatio: 0.72,
+    aspectRatio: 0.75,
     backgroundColor: colours.pitchRaised,
     borderWidth: 1,
     borderColor: colours.line,
-    borderRadius: 6,
-  },
-  chip: {
-    position: 'absolute',
-    minHeight: TOUCH_TARGET,
-    justifyContent: 'center',
-    alignItems: 'center',
     borderRadius: 8,
   },
-  chipPicked: { backgroundColor: colours.accent },
-  chipName: { alignSelf: 'stretch', textAlign: 'center', color: colours.ink, fontSize: 12, includeFontPadding: false, flexShrink: 0 },
-  chipSub: { color: colours.saved, fontSize: 10, includeFontPadding: false },
-  bench: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
-  benchChip: { width: '50%', minHeight: TOUCH_TARGET, justifyContent: 'center', borderRadius: 8 },
-  benchName: { alignSelf: 'stretch', textAlign: 'center', color: colours.inkMuted, fontSize: 12, includeFontPadding: false },
+  // The hit area is a full touch target; the pill inside it is drawn smaller (C18).
+  chipHit: { position: 'absolute', minHeight: TOUCH_TARGET, justifyContent: 'center', alignItems: 'center' },
+  // Prototype (Dee, 1 Nov): a white pill, the position under the name; the keeper gold.
+  chip: {
+    alignSelf: 'stretch',
+    backgroundColor: colours.ink,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+  },
+  chipKeeper: { backgroundColor: colours.warn },
+  // Colour only: metrics never change between states (theme.ts).
+  chipPicked: { borderColor: colours.warn },
+  chipName: { alignSelf: 'stretch', textAlign: 'center', color: '#0b3d2e', fontSize: 12, fontWeight: '700', includeFontPadding: false, flexShrink: 0 },
+  chipRole: { alignSelf: 'stretch', textAlign: 'center', color: '#3f6b5b', fontSize: 9, fontWeight: '600', includeFontPadding: false },
+  benchLabelSmall: { color: colours.inkMuted, fontSize: 11, letterSpacing: 1, marginTop: 6, includeFontPadding: false },
+  bench: { flexDirection: 'row', flexWrap: 'wrap' },
+  benchNone: { color: colours.inkFaint, fontSize: 12, paddingVertical: 8 },
+  benchHit: { width: '50%', minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: 2 },
+  benchChip: { borderRadius: 14, borderWidth: 2, borderColor: colours.line, borderStyle: 'dashed', paddingVertical: 4 },
+  benchName: { alignSelf: 'stretch', textAlign: 'center', color: colours.ink, fontSize: 12, includeFontPadding: false },
   table: { flexDirection: 'row', marginTop: 4 },
   headRow: { flexDirection: 'row' },
   headCell: { height: 32, justifyContent: 'center' },

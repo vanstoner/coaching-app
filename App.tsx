@@ -257,7 +257,6 @@ import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
-import { WhichMatchScreen } from './src/screens/WhichMatchScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
@@ -444,13 +443,6 @@ function TeamApp({
     const handle = setTimeout(() => setToast(null), toast.ms);
     return () => clearTimeout(handle);
   }, [toast]);
-  /** The card's third step points at Play now for a moment. */
-  const [pointAtPlayNow, setPointAtPlayNow] = useState(false);
-  useEffect(() => {
-    if (!pointAtPlayNow) return;
-    const handle = setTimeout(() => setPointAtPlayNow(false), 2_400);
-    return () => clearTimeout(handle);
-  }, [pointAtPlayNow]);
   /** Squad opened to add the squad: the name box is ready. */
   const [focusName, setFocusName] = useState(false);
   /** Whether every step was done at the last draw, to say so once when they all are (AC2). */
@@ -1353,9 +1345,6 @@ function TeamApp({
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch, newSeasonId]);
 
-  // #278 (Rob, 1 Nov): Play now picks an upcoming fixture; there is no
-  // ad-hoc match. Opening one is openFixture, as its card does.
-  const playNow = useCallback(() => setStep('whichMatch'), []);
 
   const resume = useCallback(() => {
     if (!pending) return;
@@ -2230,7 +2219,6 @@ function TeamApp({
       } else if (key === 'match') {
         setStep('fixtureForm');
       } else {
-        setPointAtPlayNow(true);
         showToast(PLAY_NOW_TOAST);
       }
     },
@@ -2387,23 +2375,6 @@ function TeamApp({
     }
 
     const comingMatch = effectiveStep === 'coming' ? matches.find((m) => m.match.id === comingId) : undefined;
-    if (effectiveStep === 'whichMatch') {
-      return (
-        <WhichMatchScreen
-          matches={listedFixtures(real, false)
-            .map((m) => m.match)
-            .filter((m) => !hiddenIds.has(m.id))}
-          now={appNow()}
-          progress={progressById(real, liveReal)}
-          periods={periodsById(real, liveReal)}
-          coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
-          onOpen={openFixture}
-          onAdd={() => setStep('fixtureForm')}
-          onBack={() => setStep('fixtures')}
-        />
-      );
-    }
-
     if (comingMatch) {
       return (
         <WhosComingScreen
@@ -3011,10 +2982,6 @@ function TeamApp({
           setStep('record');
         }}
         onAdd={() => setStep('fixtureForm')}
-        onPlan={(id) => {
-          setPlanningId(id);
-          setStep('plan');
-        }}
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
         coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
@@ -3052,7 +3019,6 @@ function TeamApp({
           showingArchived: showArchived,
           onToggleArchived: () => setShowArchived((v) => !v),
         }}
-        onPlayNow={liveReal && matchIsUnderway(liveReal.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
         notice={sessionMessage}
         // #218: the made-up team's line (Q6) and Getting started (AC1, AC2).
@@ -3080,7 +3046,6 @@ function TeamApp({
           </>
         }
         nothingPlayed={nextButton}
-        highlightPlayNow={pointAtPlayNow}
       />
     );
   })();

@@ -3,5 +3,5 @@ New in 2.3.0:
 • Who's coming: mark each child Coming, Can't or Not heard during the week
 • Team sheet: four choices make the whole match's plan at once, keepers rotated, every child's time even
 • See every quarter at once, as a formation or a table, and tap two names to swap
-• Play now picks one of your upcoming matches
+• Home is your list of matches: tap one to play it
 • Small phones: the whole pitch fits, and dragging near the edge scrolls

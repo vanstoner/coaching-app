@@ -77,7 +77,7 @@ describe('the table (C15, Rob 5 Nov): positions down the side, periods across', 
     const rows = sheetTable(plan, format, ids, name);
     const sub = plan.periods[0].subs[0];
     const offCell = rows.find((r) => r.cells[0].playerId === sub.offId)!.cells[0];
-    expect(offCell.note).toBe(`⇄ ${name(sub.onId!)} 6:15`);
+    expect(offCell.note).toBe(`${name(sub.onId!)} on 6:15`);
     const onRow = rows.find((r) => r.positionId === null && r.cells[0].playerId === sub.onId)!;
     expect(onRow.cells[0].note).toMatch(/^on 6:15 at .+$/);
   });

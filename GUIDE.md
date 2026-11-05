@@ -49,7 +49,7 @@ The first time you open the app it says **No teams on this phone yet**.
   the app offers to clear the made-up team.
 
 Home then shows a **Getting started** line with three steps: add your squad,
-add your next match, and press Play now at kick-off. Each step ticks itself
+add your next match, and open it at kick-off. Each step ticks itself
 off, and the line goes away when all three are done.
 
 <img src="store/app-store/screenshots/iphone/08-start.png" alt="Getting started: ready for Saturday in three steps" width="260">
@@ -141,8 +141,7 @@ happens on the day.
 
 ## 5. On the day: the lineup
 
-Open the match from Home, or tap **Play now** and pick it from the list of
-matches coming up. You arrive on the lineup for the first period, filled from
+At kick-off, tap the match on Home. You arrive on the lineup for the first period, filled from
 your plan.
 
 - **Here today** starts from Who's coming: untick anyone who isn't there. If

@@ -54,13 +54,11 @@ export function FixturesScreen({
   onOpen,
   onDelete,
   onAdd,
-  onPlan,
   plannedIds,
   coming,
   onComing,
   onTeamSheet,
   housekeeping,
-  onPlayNow,
   buildLabel,
   progress,
   scores,
@@ -71,7 +69,6 @@ export function FixturesScreen({
   onOpenRecord,
   guide,
   nothingPlayed = null,
-  highlightPlayNow = false,
   provenance = new Map(),
   header,
 }: {
@@ -84,8 +81,6 @@ export function FixturesScreen({
   /** Only offered on a fixture that has never been kicked off. */
   onDelete: (matchId: UUID) => void;
   onAdd: () => void;
-  /** Plan a fixture's periods before kick-off (#72). Offered only before it. */
-  onPlan: (matchId: UUID) => void;
   /** Fixtures that already have something planned, so the link says so. */
   plannedIds: ReadonlySet<UUID>;
   /** #277 A1: each fixture's Who's coming summary. */
@@ -95,14 +90,6 @@ export function FixturesScreen({
   onTeamSheet: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
-  /**
-   * Kick off now, from the defaults, with no fixture form — PO ruling,
-   * 2026-09-20: *Play now: **yes.***
-   *
-   * Null while a match is already underway. Starting a second one would
-   * orphan the first, and the In-progress card above is the way back into it.
-   */
-  onPlayNow: (() => void) | null;
   buildLabel: string;
   /** Each match's progress, live match included: what files it as Played. */
   progress: ReadonlyMap<UUID, MatchProgress>;
@@ -128,15 +115,13 @@ export function FixturesScreen({
    * phone's Home is as it was (AC6).
    */
   nothingPlayed?: { label: string; onPress: () => void } | null;
-  /** #218: the card's third step points at Play now for a moment. */
-  highlightPlayNow?: boolean;
   /** How far each played match can be trusted (#199), derived from the record. */
   provenance?: ReadonlyMap<UUID, Provenance>;
   /** #224 T1: the team chip, in place of the title. */
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, onPlan, plannedIds, coming, onComing, onTeamSheet, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -156,15 +141,10 @@ export function FixturesScreen({
             start one come next, so they never scroll away as Played grows. */}
         <Section title="Now" rows={current} {...cardProps} />
 
-        {/* #228 (Dee's clutter fix 2): Play now and + Fixture together; the hint went.
-            #264: Play now is the Main button; + Fixture opens a form, so a Row ›. */}
+        {/* Rob, 5 Nov ("approve drop play now"): Home is the list of matches, so a
+            match is played by tapping its card. + Fixture is the one Main button. */}
         <View style={local.startRow}>
-          {onPlayNow && (
-            <View style={[local.playNow, highlightPlayNow && local.playNowHighlight]}>
-              <MainButton label="Play now" onPress={onPlayNow} />
-            </View>
-          )}
-          <RowNav label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
+          <MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
         </View>
 
         {rows.length === 0 && recordOnly.length === 0 ? (
@@ -234,7 +214,6 @@ interface CardActions {
   now: Date;
   onOpen: (matchId: UUID) => void;
   onDelete: (matchId: UUID) => void;
-  onPlan: (matchId: UUID) => void;
   plannedIds: ReadonlySet<UUID>;
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
@@ -353,7 +332,6 @@ function FixtureCard({
   now,
   onOpen,
   onDelete,
-  onPlan,
   plannedIds,
   coming,
   onComing,
@@ -458,12 +436,14 @@ function FixtureCard({
       {match.status === 'planned' && coming.has(match.id) && (
         <RowNav label="Who's coming" value={coming.get(match.id)} onPress={() => onComing(match.id)} first />
       )}
-      {/* #277 B6: the whole match at once, built from four choices. */}
-      {match.status === 'planned' && <RowNav label="Team sheet" onPress={() => onTeamSheet(match.id)} />}
+      {/* #277 B6: the whole match at once, built from four choices. Quarter by
+          quarter is inside it (Rob, 5 Nov: one way to plan, not two rows). */}
       {match.status === 'planned' && (
         <RowNav
-          label={planned ? 'Edit the plan' : 'Plan this match'}
-          onPress={() => onPlan(match.id)}
+          label="Team sheet"
+          value={planned ? 'Made' : undefined}
+          accessibilityLabel={`Team sheet for ${opponent}${planned ? ', made' : ''}`}
+          onPress={() => onTeamSheet(match.id)}
           first={!coming.has(match.id)}
         />
       )}
@@ -483,11 +463,9 @@ function FixtureCard({
 
 const local = StyleSheet.create({
   startRow: { alignSelf: 'stretch', marginTop: 14 },
-  playNow: { alignSelf: 'stretch', marginBottom: 6, borderRadius: 14, borderWidth: 3, borderColor: 'transparent' },
   section: { alignSelf: 'stretch' },
   emptyUnderLabel: { marginTop: 4 },
   // The border is always there, transparent until it shows, so nothing moves.
-  playNowHighlight: { borderColor: colours.warn },
   card: {
     alignSelf: 'stretch',
     backgroundColor: colours.pitchRaised,

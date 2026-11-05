@@ -1,7 +1,7 @@
 /**
  * #277 A1 and #278: source guards, because Node cannot draw a screen. They
- * check the wiring a coach meets: Who's coming on every fixture to come, and
- * Play now going to Which match? with no ad-hoc match.
+ * check the wiring a coach meets: Who's coming and the Team sheet on every
+ * fixture to come, and Home as the one way into a match.
  */
 
 import { readFileSync } from 'node:fs';
@@ -12,16 +12,16 @@ const src = (f: string) => readFileSync(join(__dirname, f), 'utf-8');
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf-8');
 
 describe("Who's coming on each fixture to come (#277 A1)", () => {
-  it('the card shows the row, with its summary, before the plan row', () => {
+  it('the card shows the row, with its summary, before the Team sheet row', () => {
     const card = src('FixturesScreen.tsx');
     const coming = card.indexOf('<RowNav label="Who\'s coming" value={coming.get(match.id)}');
-    const plan = card.indexOf("label={planned ? 'Edit the plan' : 'Plan this match'}");
+    const plan = card.indexOf('label="Team sheet"');
     expect(coming).toBeGreaterThan(-1);
     expect(coming).toBeLessThan(plan);
   });
 
-  it('Home and Which match? read the summary from the match’s own availability', () => {
-    expect(app.match(/comingSummary\(comingRows\(m\.availability, squad\)\)/g)?.length).toBe(2);
+  it('Home reads the summary from the match’s own availability', () => {
+    expect(app.match(/comingSummary\(comingRows\(m\.availability, squad\)\)/g)?.length).toBe(1);
   });
 
   it('each tap saves at once with ✓ Saved (A2)', () => {
@@ -37,27 +37,24 @@ describe("Who's coming on each fixture to come (#277 A1)", () => {
   });
 });
 
-describe('Play now picks a fixture (#278)', () => {
-  it('lists Coming up only, and offers + Fixture when there is none (AC1, AC3)', () => {
-    const which = src('WhichMatchScreen.tsx');
-    expect(which).toContain("inBucket(fixtureList(matches, now, null, progress), 'future')");
-    expect(which).toContain('<MainButton label="+ Fixture" onPress={onAdd} />');
+describe('no Play now: Home is the list of matches (#278; Rob, 5 Nov)', () => {
+  it('+ Fixture is the Main button and there is no Which match? screen', () => {
+    expect(src('FixturesScreen.tsx')).toContain('<MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />');
+    expect(app).not.toContain('WhichMatchScreen');
   });
 
-  it('a tap opens the fixture as its card does (AC2)', () => {
-    expect(app).toMatch(/<WhichMatchScreen[\s\S]*?onOpen=\{openFixture\}/);
-  });
-
-  it('is hidden while a match is under way, as before (AC4)', () => {
-    expect(app).toContain('onPlayNow={liveReal && matchIsUnderway(liveReal.state.quarters) ? null : playNow}');
+  it('a card opens its match, as before', () => {
+    expect(src('FixturesScreen.tsx')).toContain('onPress={() => onOpen(match.id)}');
   });
 });
 
 describe('Build the team sheet (#277 B6–B12)', () => {
   const sheet = src('TeamSheetScreen.tsx');
 
-  it('each fixture to come has a Team sheet row (B6)', () => {
-    expect(src('FixturesScreen.tsx')).toContain('<RowNav label="Team sheet" onPress={() => onTeamSheet(match.id)} />');
+  it('each fixture to come has one Team sheet row, and no separate plan row (B6; Rob, 5 Nov)', () => {
+    const card = src('FixturesScreen.tsx');
+    expect(card).toMatch(/<RowNav\s+label="Team sheet"[\s\S]*?onPress=\{\(\) => onTeamSheet\(match\.id\)\}/);
+    expect(card).not.toContain("'Plan this match'");
   });
 
   it('the four steps are on one screen, in the coach’s order (B6, P1)', () => {
@@ -117,7 +114,7 @@ describe('the sheet: Formation and Table (#277 C13–C18)', () => {
   });
 
   it('every target is at least a touch target tall (C18)', () => {
-    for (const style of ['chip', 'benchChip']) expect(views).toMatch(new RegExp(`${style}: \\{[^}]*minHeight: TOUCH_TARGET`));
+    for (const style of ['chipHit', 'benchHit']) expect(views).toMatch(new RegExp(`${style}: \\{[^}]*minHeight: TOUCH_TARGET`));
     expect(views).toMatch(/cell: \{\s*height: TOUCH_TARGET/);
   });
 });

@@ -60,7 +60,7 @@ export const shortLabel = (p: Position) => p.roleCode ?? p.label;
 export interface TableCell {
   /** Who starts here (or sits in this bench place); null when empty. */
   playerId: UUID | null;
-  /** "⇄ Kai 6:15" under a starter who comes off; "on 6:15 at LB" on the bench. */
+  /** "Kai on 6:15" under a starter who comes off; "on 6:15 at LB" on the bench. */
   note: string | null;
 }
 
@@ -90,7 +90,7 @@ export function sheetTable(
     cells: plan.periods.map((period) => {
       const who = period.slots[position.id] ?? null;
       const sub = period.subs.find((s) => s.offId !== null && s.offId === who && s.onId !== null);
-      return { playerId: who, note: sub ? `⇄ ${name(sub.onId!)} ${formatSubTime(sub.atMs)}` : null };
+      return { playerId: who, note: sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : null };
     }),
   }));
   const benches = plan.periods.map((period) => benchOf(period, coming));

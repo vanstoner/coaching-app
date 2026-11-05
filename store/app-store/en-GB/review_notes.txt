@@ -6,7 +6,7 @@
 - In Safari on the test device, open https://vanstoner.github.io/coaching-app/testers.html and tap Download the test season, then Download. It saves to Files > Downloads.
 - In the app: Settings > Import minutes file, and choose test-season.json (in Recents, or Browse > Downloads). It adds 10 players and a past season.
 - Squad tab: the four tiles (Season grid, Fairness, Going into Saturday, Positions tried) and any child's page.
-- Home > Play now > Use suggestion > Start quarter: the live match clock. Tap a player for Goal or Save, or drag a bench player onto the pitch to substitute. End the match for the report.
+- Home > + Fixture > Save fixture, then tap that fixture's card > Use suggestion > Start quarter: the live match clock. Tap a player for Goal or Save, or drag a bench player onto the pitch to substitute. End the match for the report.
 - Settings > Backup > Back up this app writes one file with everything the app keeps; Restore from a backup shows what a file holds before replacing anything.
 - Settings > Forget everything removes all data.
 

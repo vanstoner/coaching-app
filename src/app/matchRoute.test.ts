@@ -126,17 +126,16 @@ describe('App.tsx wires the route (source check: no screen-render tests in Node)
   const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf8');
   const squadBlock = app.slice(app.indexOf("if (effectiveStep === 'squad')"), app.indexOf('<LineupScreen'));
   const openFixtureBlock = app.slice(app.indexOf('const openFixture = useCallback'), app.indexOf('const beginMatch = useCallback'));
-  const playNowBlock = app.slice(app.indexOf('const playNow = useCallback'), app.indexOf('const resume = useCallback'));
 
   it('opening a fixture short of players routes the errand to that fixture', () => {
     expect(openFixtureBlock).toMatch(/setSquadErrand\('match'\);\s*setMatchRoute\(\{ kind: 'fixture', matchId \}\)/);
   });
 
-  // #278 (Rob, 1 Nov) overturned "Play now starts a match from the defaults":
-  // it now opens Which match?, and a fixture opens by openFixture, as its card does.
-  it('Play now opens Which match?, never a match from the defaults', () => {
-    expect(playNowBlock).toContain("setStep('whichMatch')");
-    expect(playNowBlock).not.toContain('beginMatch');
+  // #278, then Rob 5 Nov ("approve drop play now"): no Play now at all. A match
+  // is played by opening its fixture; nothing on Home starts one from the defaults.
+  it('Home offers no Play now', () => {
+    expect(app).not.toContain('const playNow = useCallback');
+    expect(app).not.toContain('onPlayNow=');
   });
 
   it("Squad's count and Start follow the route, never beginMatch(false) directly", () => {
