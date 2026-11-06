@@ -228,6 +228,28 @@ describe('keepers (B7, D2)', () => {
     expect(rotateKeepers(players, 1, periodLengthMs(50, 4), season)).toEqual([players[5].id]);
   });
 
+  it('with no Main keeper coming, a Back-up keeps every period (Rob, 6 Nov)', () => {
+    const players = squadOf(9);
+    players[2] = { ...players[2], keeper: 'backup' };
+    players[6] = { ...players[6], keeper: 'backup' };
+    // The Back-up with less time in goal this season keeps.
+    const season = new Map<UUID, SeasonInput>([[players[2].id, { goalMs: 25 * 60_000, owedMs: 0 }]]);
+    expect(rotateKeepers(players, 4, periodLengthMs(50, 4), season)).toEqual(Array(4).fill(players[6].id));
+    // A Main keeper still comes first.
+    players[4] = { ...players[4], keeper: 'main' };
+    expect(rotateKeepers(players, 4, periodLengthMs(50, 4), season)).toEqual(Array(4).fill(players[4].id));
+  });
+
+  it('with a Main keeper in goal all match, everyone else gets the best spread whole quarters allow', () => {
+    // 9 coming, the Main keeper in goal: 6 outfield places × 4 quarters among 8.
+    const players = squadOf(9);
+    players[0] = { ...players[0], keeper: 'main' };
+    const r = build('2-3-1', 9, { players, subs: false });
+    const others = players.slice(1).map((p) => r.minutes.get(p.id)!);
+    expect(Math.max(...others) - Math.min(...others)).toBe(0); // 24 places / 8 = 3 quarters each
+    expect(r.minutes.get(players[0].id)).toBe(50 * 60_000);
+  });
+
   it('a Main keeper who is coming keeps every period', () => {
     const players = squadOf(9);
     players[4] = { ...players[4], keeper: 'main' };

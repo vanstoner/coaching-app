@@ -73,10 +73,13 @@ export interface BuiltSheet {
 const owed = (season: ReadonlyMap<UUID, SeasonInput>, id: UUID) => season.get(id)?.owedMs ?? 0;
 
 /**
- * Each period's keeper, rotating (B7). A Main keeper who is coming keeps
- * every period. Otherwise each period takes the eligible child with the least
- * time in goal, the season's plus this plan's so far; ties to the most owed,
- * then squad order. Null for a period when nobody coming may go in goal.
+ * Each period's keeper (B7; Rob, 6 Nov). A Main keeper who is coming keeps
+ * every period; the coach may move them by hand. With no Main keeper coming,
+ * a Back-up keeps every period (the least kept this season, if several), as
+ * the Lineup suggestion already does. Otherwise each period takes the
+ * eligible child with the least time in goal, the season's plus this plan's
+ * so far; ties to the most owed, then squad order. Null for a period when
+ * nobody coming may go in goal.
  */
 export function rotateKeepers(
   coming: readonly Player[],
@@ -86,6 +89,11 @@ export function rotateKeepers(
 ): (UUID | null)[] {
   const main = coming.find((p) => p.keeper === 'main');
   if (main) return Array.from({ length: periodCount }, () => main.id);
+  const order0 = new Map(coming.map((p, i) => [p.id, i]));
+  const backup = coming
+    .filter((p) => p.keeper === 'backup')
+    .sort((a, b) => (season.get(a.id)?.goalMs ?? 0) - (season.get(b.id)?.goalMs ?? 0) || order0.get(a.id)! - order0.get(b.id)!)[0];
+  if (backup) return Array.from({ length: periodCount }, () => backup.id);
   const eligible = coming.filter((p) => p.keeper !== 'never');
   const goal = new Map(eligible.map((p) => [p.id, season.get(p.id)?.goalMs ?? 0]));
   const order = new Map(coming.map((p, i) => [p.id, i]));
@@ -264,13 +272,17 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
 
   // The search: the same rule tried with ties broken in other orders, the
   // smallest spread kept. A fixed seed, so the answer is the same every time.
+  // A Main keeper is out of the comparison, as they are out of the fair share
+  // (ADR-015): their full match must not decide which arrangement is fairest.
+  const mainKeeper = coming.find((p) => p.keeper === 'main')?.id;
+  const shared = (halves: Map<UUID, number>) => [...halves].filter(([id]) => id !== mainKeeper).map(([, n]) => n);
   const next = random(EVEN_SEED);
   let best: { periods: PeriodTime[]; halves: Map<UUID, number> } | null = null;
   for (let t = 0; t < TRIES && ids.length > 0; t++) {
     const order = t === 0 ? ids : shuffled(ids, next);
     const tried = allocate(ids, order, periodKeepers, outfield.length, subs, season, fixed);
-    if (!best || spread(tried.halves.values()) < spread(best.halves.values())) best = tried;
-    if (spread(best.halves.values()) <= 1) break;
+    if (!best || spread(shared(tried.halves)) < spread(shared(best.halves))) best = tried;
+    if (spread(shared(best.halves)) <= 1) break;
   }
 
   const plan: MatchPlan = { periods: [] };

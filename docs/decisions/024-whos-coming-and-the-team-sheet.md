@@ -33,8 +33,9 @@ in the session only. At kick-off the snapshot records `unconfirmed` as
 no reader of the record, the minutes file or a frozen release's data changes.
 A fixture stored before 2.3.0 reads every child as Coming.
 
-**D2. Keeper rotation is a suggestion input.** Rotate for me takes the
-eligible child with the least time in goal this season, folded from the
+**D2. Keeper rotation is a suggestion input.** A Main keeper who is coming
+keeps every period; with none coming, a Back-up does (Rob, 6 Nov). Otherwise
+Rotate for me takes the eligible child with the least time in goal this season, folded from the
 record each time. It is never stored, never compared with a target and never
 shown as over or under. The step shows how many matches each keeper kept.
 
