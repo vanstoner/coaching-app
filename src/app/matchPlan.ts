@@ -50,6 +50,11 @@ export interface PlannedPeriod {
   /** Position id → the player starting there, or null if not picked yet. */
   slots: Record<UUID, UUID | null>;
   subs: PlannedSwap[];
+  /**
+   * Positions the coach filled by hand on the team sheet (#277, Rob 6 Nov):
+   * Fill and Rearrange leave them alone. Intent, like the rest of the plan.
+   */
+  pinned?: UUID[];
 }
 
 export interface MatchPlan {

@@ -57,7 +57,7 @@ export function applyKeepers(plan: MatchPlan, format: Format, keepers: readonly 
     slots[goal.id] = keeper;
     // A keeper never comes on or off at the sub (B9): drop a sub that named them.
     const subs = period.subs.filter((s) => s.onId !== keeper && s.offId !== keeper);
-    next = { periods: next.periods.map((x, i) => (i === p ? { slots, subs } : x)) };
+    next = { periods: next.periods.map((x, i) => (i === p ? { ...period, slots, subs } : x)) };
   });
   return next;
 }
@@ -78,6 +78,7 @@ export function swapInPeriod(plan: MatchPlan, periodIndex: number, a: UUID, b: U
       const slots: Record<UUID, UUID | null> = {};
       for (const [pos, who] of Object.entries(period.slots) as [UUID, UUID | null][]) slots[pos] = swap(who);
       return {
+        ...period,
         slots,
         subs: period.subs.map((s) => ({ ...s, onId: swap(s.onId), offId: swap(s.offId) })),
       };
@@ -180,4 +181,79 @@ export function planGaps(
     const list = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
     return `${name(id)} is in ${list} of the plan but not here today.`;
   });
+}
+
+/** Mark positions in a period as filled by hand (Rob, 6 Nov: the green dot). */
+export function pinPlaces(plan: MatchPlan, periodIndex: number, positionIds: readonly UUID[]): MatchPlan {
+  return {
+    periods: plan.periods.map((period, i) =>
+      i === periodIndex ? { ...period, pinned: [...new Set([...(period.pinned ?? []), ...positionIds])] } : period
+    ),
+  };
+}
+
+/** Is this position in this period one the coach filled by hand, with someone still in it? */
+export function isPinned(period: PlannedPeriod, positionId: UUID): boolean {
+  return (period.pinned ?? []).includes(positionId) && (period.slots[positionId] ?? null) !== null;
+}
+
+/**
+ * What Fill starts from (#277, Rob 6 Nov): each period keeps its keeper and
+ * every place filled by hand; everything else, the subs included, is cleared
+ * for the fill to decide again.
+ */
+export function keepPinned(plan: MatchPlan, format: Format): MatchPlan {
+  const goal = format.positions.find((p) => p.kind === 'goalkeeper')?.id;
+  return {
+    periods: plan.periods.map((period) => {
+      const slots: Record<UUID, UUID | null> = {};
+      for (const pos of format.positions) {
+        const keep = pos.id === goal || isPinned(period, pos.id);
+        slots[pos.id] = keep ? (period.slots[pos.id] ?? null) : null;
+      }
+      return { slots, subs: [], pinned: (period.pinned ?? []).filter((id) => slots[id]) };
+    }),
+  };
+}
+
+/**
+ * ⟳ Rearrange one period (Rob, 6 Nov): the same children on the pitch and on
+ * the bench, in new places, so nobody's minutes move. The keeper and every
+ * place filled by hand stay. `turn` moves each child that many places on;
+ * with `prefers`, a child goes to a free place in their own area first.
+ */
+export function rearrangePeriod(
+  plan: MatchPlan,
+  periodIndex: number,
+  format: Format,
+  turn: number,
+  prefers?: (id: UUID) => PositionUnit | null
+): MatchPlan {
+  const period = plan.periods[periodIndex];
+  if (!period) return plan;
+  const free = frontToBack(format).filter(
+    (p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)
+  );
+  if (free.length < 2) return plan;
+  const kids = free.map((p) => period.slots[p.id]!);
+  const k = 1 + (Math.abs(turn) % (kids.length - 1));
+  const moved = [...kids.slice(k), ...kids.slice(0, k)];
+  const slots = { ...period.slots };
+  if (prefers) {
+    const open = [...free];
+    const order = [...moved.filter((id) => prefers(id)), ...moved.filter((id) => !prefers(id))];
+    for (const id of order) {
+      const i = open.findIndex((p) => p.unit === prefers(id));
+      const [spot] = open.splice(i >= 0 ? i : 0, 1);
+      slots[spot.id] = id;
+    }
+  } else {
+    free.forEach((p, i) => (slots[p.id] = moved[i]));
+  }
+  return { periods: plan.periods.map((x, i) => (i === periodIndex ? { ...x, slots } : x)) };
+}
+
+/** Can this period be rearranged: at least two outfield places not filled by hand? */
+export function canRearrange(period: PlannedPeriod, format: Format): boolean {
+  return format.positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
 }

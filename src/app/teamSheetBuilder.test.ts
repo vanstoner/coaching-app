@@ -9,7 +9,7 @@ import { makePlayer } from './squad';
 import { makeFormat, type ShapeCode } from './shapes';
 import { periodLengthMs, projectPlan } from './matchPlan';
 import { formatClock } from './matchClock';
-import { buildTeamSheet, rotateKeepers, seasonInputs, type SeasonInput } from './teamSheetBuilder';
+import { buildTeamSheet, fairestSubs, rotateKeepers, seasonInputs, type SeasonInput } from './teamSheetBuilder';
 
 const NAMES = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lou', 'Max', 'Ned', 'Oli', 'Pip'];
 const squadOf = (n: number): Player[] => {
@@ -21,7 +21,7 @@ const none = new Map<UUID, SeasonInput>();
 function build(
   shape: ShapeCode,
   n: number,
-  opts: { periods?: number; minutes?: number; subs?: boolean; fill?: 'fair' | 'positions'; season?: Map<UUID, SeasonInput>; players?: Player[]; format?: ReturnType<typeof makeFormat> } = {}
+  opts: { periods?: number; minutes?: number; subs?: number; fill?: 'fair' | 'positions'; season?: Map<UUID, SeasonInput>; players?: Player[]; format?: ReturnType<typeof makeFormat> } = {}
 ) {
   const format = opts.format ?? makeFormat(shape);
   const players = opts.players ?? squadOf(n);
@@ -35,7 +35,7 @@ function build(
     periodCount: periods,
     coming: players,
     keepers,
-    subs: opts.subs ?? true,
+    subs: opts.subs ?? 1,
     fill: opts.fill ?? 'fair',
     season,
   });
@@ -59,7 +59,7 @@ describe('the healthy case (B11): 9 coming, 7-a-side, 4 × 12:30', () => {
   });
 
   it('with None: 37:30–50:00, the best whole quarters allow', () => {
-    const r = build('2-3-1', 9, { subs: false });
+    const r = build('2-3-1', 9, { subs: 0 });
     expect(range(r.minutes)).toBe('37:30–50:00');
     expect(r.plan.periods.every((p) => p.subs.length === 0)).toBe(true);
     expect(projectPlan(r.plan, r.format, 50, 4, r.players).problems).toEqual([]);
@@ -73,9 +73,11 @@ describe('the healthy case (B11): 9 coming, 7-a-side, 4 × 12:30', () => {
  * (the pair at the sub) and who gets none. Children are interchangeable, so
  * the search runs over sorted count vectors.
  */
-function bestPossibleHalves(n: number, onField: number, periods: number, subs: boolean): number {
-  const twos = subs && n > onField ? onField - 1 : onField;
-  const ones = subs && n > onField ? 2 : 0;
+function bestPossibleHalves(n: number, onField: number, periods: number, subs: number): number {
+  // k pairs a period: the keeper is always a two, so at most onField - 1 outfielders swap.
+  const k = Math.max(0, Math.min(subs, n - onField, onField - 1));
+  const twos = onField - k;
+  const ones = 2 * k;
   let states = new Set<string>([JSON.stringify(Array(n).fill(0))]);
   for (let p = 0; p < periods; p++) {
     const next = new Set<string>();
@@ -116,8 +118,9 @@ describe('no plan with a smaller spread exists (D4), checked by exhaustive searc
   for (const { shape, onField, ns } of cases) {
     for (const n of ns) {
       for (const periods of [2, 4]) {
-        for (const subs of [true, false]) {
-          it(`${n} coming at ${onField}-a-side, ${periods} periods, ${subs ? 'subs' : 'none'}`, () => {
+        for (const subs of [0, 1, 2]) {
+          if (subs === 2 && n - onField < 2) continue;
+          it(`${n} coming at ${onField}-a-side, ${periods} periods, ${subs} sub${subs === 1 ? '' : 's'} a period`, () => {
             const r = build(shape, n, { periods, minutes: 48, subs });
             const halfMs = periodLengthMs(48, periods) / 2;
             const oracle = bestPossibleHalves(n, onField, periods, subs) * halfMs;
@@ -154,7 +157,7 @@ describe('Fill the rest (Rob, 6 Nov): the same answer every time, around what is
       periodCount: 4,
       coming: players,
       keepers: first.keepers,
-      subs: true,
+      subs: 1,
       fill: 'fair',
       season: none,
       existing,
@@ -178,7 +181,7 @@ describe('Fill the rest (Rob, 6 Nov): the same answer every time, around what is
       periodCount: 4,
       coming: players,
       keepers: first.keepers,
-      subs: true,
+      subs: 1,
       fill: 'fair',
       season: none,
       existing: first.plan,
@@ -244,7 +247,7 @@ describe('keepers (B7, D2)', () => {
     // 9 coming, the Main keeper in goal: 6 outfield places × 4 quarters among 8.
     const players = squadOf(9);
     players[0] = { ...players[0], keeper: 'main' };
-    const r = build('2-3-1', 9, { players, subs: false });
+    const r = build('2-3-1', 9, { players, subs: 0 });
     const others = players.slice(1).map((p) => r.minutes.get(p.id)!);
     expect(Math.max(...others) - Math.min(...others)).toBe(0); // 24 places / 8 = 3 quarters each
     expect(r.minutes.get(players[0].id)).toBe(50 * 60_000);
@@ -289,7 +292,7 @@ describe('mid-period subs (B9)', () => {
 
 describe('positions rotate (B10)', () => {
   it('nobody holds the same outfield position in consecutive periods when they start both', () => {
-    const r = build('2-3-1', 8, { subs: false });
+    const r = build('2-3-1', 8, { subs: 0 });
     const goal = r.format.positions.find((p) => p.kind === 'goalkeeper')!.id;
     for (let p = 1; p < r.plan.periods.length; p++) {
       for (const [pos, who] of Object.entries(r.plan.periods[p].slots)) {
@@ -316,5 +319,33 @@ describe('the season inputs come from the record’s own folds (D2, D3)', () => 
     );
     expect(inputs.get(a.id)).toEqual({ goalMs: 18.75 * 60_000, owedMs: -3 * 60_000, timesKept: 2 });
     expect(inputs.get(b.id)).toEqual({ goalMs: 0, owedMs: null, timesKept: 0 });
+  });
+});
+
+describe('the Subs stepper starts at the fewest subs with the fairest split (Rob, 6 Nov)', () => {
+  it('9 coming at 7-a-side: 1', () => {
+    const players = squadOf(9);
+    const format = makeFormat('2-3-1');
+    const keepers = rotateKeepers(players, 4, periodLengthMs(50, 4), none);
+    expect(fairestSubs({ format, totalMinutes: 50, periodCount: 4, coming: players, keepers, fill: 'fair', season: none })).toBe(1);
+  });
+
+  it('a full bench of 7 coming at 7-a-side: none', () => {
+    const players = squadOf(7);
+    const format = makeFormat('2-3-1');
+    const keepers = rotateKeepers(players, 4, periodLengthMs(50, 4), none);
+    expect(fairestSubs({ format, totalMinutes: 50, periodCount: 4, coming: players, keepers, fill: 'fair', season: none })).toBe(0);
+  });
+
+  it('two subs a period: two pairs at the midpoint, none of them the keeper', () => {
+    const r = build('2-3-1', 10, { subs: 2 });
+    r.plan.periods.forEach((period, i) => {
+      expect(period.subs).toHaveLength(2);
+      for (const s of period.subs) {
+        expect(s.atMs).toBe(periodLengthMs(50, 4) / 2);
+        expect(s.offId).not.toBe(r.keepers[i]);
+      }
+    });
+    expect(projectPlan(r.plan, r.format, 50, 4, r.players).problems).toEqual([]);
   });
 });

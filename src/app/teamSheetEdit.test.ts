@@ -9,7 +9,7 @@ import { displayName, makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { emptyPlan, periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { applyKeepers, benchOf, frontToBack, keepersOf, parseSheetView, planGaps, sheetTable, swapInPeriod } from './teamSheetEdit';
+import { applyKeepers, benchOf, canRearrange, frontToBack, isPinned, keepPinned, keepersOf, parseSheetView, pinPlaces, planGaps, rearrangePeriod, sheetTable, swapInPeriod } from './teamSheetEdit';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -23,7 +23,7 @@ const sheet = () =>
     periodCount: 4,
     coming: players,
     keepers: rotateKeepers(players, 4, periodLengthMs(50, 4), new Map()),
-    subs: true,
+    subs: 1,
     fill: 'fair',
     season: new Map(),
   }).plan;
@@ -130,5 +130,59 @@ describe('the keepers go in goal from the start (Rob, 6 Nov)', () => {
     expect(next.periods[0].slots[goal.id]).toBe(outfielder);
     expect(Object.values(next.periods[0].slots)).toContain(was);
     expect(projectPlan(next, format, 50, 4, players).problems).toEqual([]);
+  });
+});
+
+describe('placed by hand, Fill and ⟳ Rearrange (#277, Rob 6 Nov)', () => {
+  const goal = () => format.positions.find((p) => p.kind === 'goalkeeper')!.id;
+  const outfieldIds = () => frontToBack(format).filter((p) => p.kind !== 'goalkeeper').map((p) => p.id);
+
+  it('Fill starts from the keepers and the places filled by hand, subs cleared', () => {
+    const plan = pinPlaces(sheet(), 1, [outfieldIds()[0]]);
+    const start = keepPinned(plan, format);
+    expect(start.periods[1].slots[outfieldIds()[0]]).toBe(plan.periods[1].slots[outfieldIds()[0]]);
+    expect(start.periods[1].slots[goal()]).toBe(plan.periods[1].slots[goal()]);
+    expect(Object.values(start.periods[0].slots).filter(Boolean)).toHaveLength(1);
+    expect(start.periods.every((p) => p.subs.length === 0)).toBe(true);
+  });
+
+  it('a pin on an emptied place no longer counts', () => {
+    const plan = pinPlaces(sheet(), 0, [outfieldIds()[0]]);
+    plan.periods[0].slots[outfieldIds()[0]] = null;
+    expect(isPinned(plan.periods[0], outfieldIds()[0])).toBe(false);
+  });
+
+  it('Rearrange keeps the same children on and off, so no minute moves', () => {
+    const plan = sheet();
+    const next = rearrangePeriod(plan, 2, format, 1);
+    const on = (p: typeof plan) => new Set(Object.values(p.periods[2].slots));
+    expect(on(next)).toEqual(on(plan));
+    expect(next.periods[2].subs).toEqual(plan.periods[2].subs);
+    expect(next.periods[2].slots).not.toEqual(plan.periods[2].slots);
+    const mins = (p: typeof plan) => projectPlan(p, format, 50, 4, players).rows.map((r) => r.pitchMs);
+    expect(mins(next)).toEqual(mins(plan));
+    expect(next.periods[0]).toBe(plan.periods[0]);
+  });
+
+  it('Rearrange leaves the keeper and places filled by hand where they are', () => {
+    const pinned = outfieldIds()[1];
+    const plan = pinPlaces(sheet(), 0, [pinned]);
+    for (const turn of [1, 2, 3]) {
+      const next = rearrangePeriod(plan, 0, format, turn);
+      expect(next.periods[0].slots[pinned]).toBe(plan.periods[0].slots[pinned]);
+      expect(next.periods[0].slots[goal()]).toBe(plan.periods[0].slots[goal()]);
+    }
+  });
+
+  it('nothing to rearrange with fewer than two free places', () => {
+    const plan = pinPlaces(sheet(), 0, outfieldIds().slice(1));
+    expect(canRearrange(plan.periods[0], format)).toBe(false);
+    expect(rearrangePeriod(plan, 0, format, 1)).toBe(plan);
+  });
+
+  it('a swap keeps the period’s pins (the plan carries them)', () => {
+    const plan = pinPlaces(sheet(), 0, [outfieldIds()[0]]);
+    const [a, b] = Object.values(plan.periods[0].slots).filter(Boolean) as UUID[];
+    expect(swapInPeriod(plan, 0, a, b).periods[0].pinned).toEqual([outfieldIds()[0]]);
   });
 });

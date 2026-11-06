@@ -133,7 +133,7 @@ export function TeamSheetScreen({
         periodCount,
         coming,
         keepers,
-        subs,
+        subs: subs ? 1 : 0,
         fill,
         season,
         existing: sheet,

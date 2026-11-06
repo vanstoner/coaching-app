@@ -11,7 +11,9 @@
  *   order. A Main keeper who is coming keeps every period. The season's goal
  *   time is an input to this suggestion only: never stored, never a target
  *   (invariant 3, ADR-015).
- * - **Mid-period subs** (B9): at most one per period, at its midpoint (#205).
+ * - **Mid-period subs** (B9; Rob, 6 Nov "B approved"): n pairs a period, all
+ *   at its midpoint (#205); `fairestSubs` gives the fewest n with the fairest
+ *   split, which is where the coach's stepper starts.
  *   Whoever has played most comes off, for whoever has played least. The
  *   keeper never comes off.
  * - **Everyone else** (B10, B11): equal pitch time across the match, in
@@ -50,8 +52,8 @@ export interface BuildInput {
   coming: readonly Player[];
   /** Each period's keeper (see `rotateKeepers`); null leaves goal to the fill. */
   keepers: readonly (UUID | null)[];
-  /** Place one mid-period sub per period (B9), or none. */
-  subs: boolean;
+  /** Subs a period, all at its midpoint (B9; Rob 6 Nov: a number, not one or none). */
+  subs: number;
   fill: Fill;
   season: ReadonlyMap<UUID, SeasonInput>;
   /**
@@ -136,15 +138,16 @@ function shuffled<T>(items: readonly T[], next: () => number): T[] {
 interface Fixed {
   full: UUID[];
   half: UUID[];
-  hasSub: boolean;
+  /** Sub pairs already on the sheet; a period with any keeps them and gets no more. */
+  pairs: number;
 }
 
-/** One period's time, in half-periods: who is full (2), who starts and comes off, who comes on. */
+/** One period's time, in half-periods: who is full (2), who start and come off, who come on (pairwise). */
 interface PeriodTime {
   keeper: UUID | null;
   full: UUID[];
-  off: UUID | null;
-  on: UUID | null;
+  off: UUID[];
+  on: UUID[];
 }
 
 /**
@@ -156,7 +159,7 @@ function allocate(
   order: readonly UUID[],
   keepers: readonly (UUID | null)[],
   outfieldSlots: number,
-  useSubs: boolean,
+  subsPer: number,
   season: ReadonlyMap<UUID, SeasonInput>,
   fixed: readonly Fixed[]
 ): { periods: PeriodTime[]; halves: Map<UUID, number> } {
@@ -179,7 +182,7 @@ function allocate(
     for (const id of here.full) halves.set(id, halves.get(id)! + 2);
     for (const id of here.half) halves.set(id, halves.get(id)! + 1);
     const placed = new Set([...here.full, ...here.half]);
-    const slotsLeft = outfieldSlots - here.full.length - (here.hasSub ? 1 : 0);
+    const slotsLeft = outfieldSlots - here.full.length - here.pairs;
     const left = periodCount - p;
     const need = (id: UUID) => target.get(id)! - halves.get(id)!;
     // Most need first; a child whose need cannot wait (it fills every half
@@ -187,36 +190,39 @@ function allocate(
     const candidates = ids
       .filter((id) => id !== keeper && !placed.has(id))
       .sort((a, b) => need(b) - need(a) || rank.get(a)! - rank.get(b)!);
-    const subs = useSubs && !here.hasSub && slotsLeft >= 1 && candidates.length > slotsLeft;
-    const fullCount = Math.max(0, Math.min(candidates.length, subs ? slotsLeft - 1 : slotsLeft));
+    // n pairs, never more than the places left or the children beyond them.
+    const pairs =
+      here.pairs > 0 ? 0 : Math.max(0, Math.min(subsPer, slotsLeft, candidates.length - slotsLeft));
+    const fullCount = Math.max(0, Math.min(candidates.length, slotsLeft - pairs));
     // A child who needs an odd number of halves takes a single when one is going.
     let full: UUID[];
     let singles: UUID[] = [];
-    if (subs) {
+    if (pairs > 0) {
       const odd = candidates.filter((id) => need(id) % 2 === 1 && need(id) < 2 * left);
-      const pickSingles = odd.slice(0, 2);
+      const pick = odd.slice(0, 2 * pairs);
       for (const id of candidates) {
-        if (pickSingles.length >= 2) break;
-        if (!pickSingles.includes(id) && candidates.indexOf(id) >= fullCount) pickSingles.push(id);
+        if (pick.length >= 2 * pairs) break;
+        if (!pick.includes(id) && candidates.indexOf(id) >= fullCount) pick.push(id);
       }
-      singles = pickSingles;
+      for (const id of candidates) {
+        if (pick.length >= 2 * pairs) break;
+        if (!pick.includes(id)) pick.push(id);
+      }
+      singles = pick;
       full = candidates.filter((id) => !singles.includes(id)).slice(0, fullCount);
     } else {
       full = candidates.slice(0, fullCount);
     }
     for (const id of full) halves.set(id, halves.get(id)! + 2);
     for (const id of singles) halves.set(id, halves.get(id)! + 1);
-    // B9: whoever has played most so far (before this period) comes off; ties
-    // to the less owed, so the more owed comes on.
-    let off: UUID | null = null;
-    let on: UUID | null = null;
-    if (singles.length === 2) {
-      const [a, b] = singles;
-      const before = (id: UUID) => halves.get(id)! - 1;
-      const aOff = before(a) > before(b) || (before(a) === before(b) && owed(season, a) <= owed(season, b));
-      off = aOff ? a : b;
-      on = aOff ? b : a;
-    }
+    // B9: whoever has played most so far (before this period) comes off, for
+    // whoever has played least; ties to the less owed, so the more owed comes on.
+    const before = (id: UUID) => halves.get(id)! - 1;
+    const ranked = [...singles].sort(
+      (a, b) => before(b) - before(a) || owed(season, a) - owed(season, b) || rank.get(a)! - rank.get(b)!
+    );
+    const off = ranked.slice(0, pairs);
+    const on = ranked.slice(pairs).reverse();
     periods.push({ keeper, full, off, on });
   });
   return { periods, halves };
@@ -254,14 +260,15 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
   // What is already on the sheet, period by period: kept as it is.
   const before = Array.from({ length: periodCount }, (_, p) => existing?.periods[p]);
   const fixed: Fixed[] = before.map((period) => {
-    const sub = period?.subs.find((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId));
+    const subsHere = (period?.subs ?? []).filter((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId));
+    const offs = new Set(subsHere.map((s) => s.offId!));
     const inSlots = outfield
       .map((pos) => period?.slots[pos.id] ?? null)
       .filter((id): id is UUID => id !== null && isComing.has(id));
     return {
-      full: inSlots.filter((id) => id !== sub?.offId),
-      half: sub ? [sub.offId!, sub.onId!] : [],
-      hasSub: sub !== undefined,
+      full: inSlots.filter((id) => !offs.has(id)),
+      half: subsHere.flatMap((s) => [s.offId!, s.onId!]),
+      pairs: subsHere.length,
     };
   });
   const periodKeepers = Array.from({ length: periodCount }, (_, i) => {
@@ -288,7 +295,7 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
   const plan: MatchPlan = { periods: [] };
   const lastPlace = new Map<UUID, number>();
   for (let p = 0; p < periodCount; p++) {
-    const time = best?.periods[p] ?? { keeper: null, full: [], off: null, on: null };
+    const time = best?.periods[p] ?? { keeper: null, full: [], off: [], on: [] };
     const slots: Record<UUID, UUID | null> = {};
     for (const position of format.positions) slots[position.id] = null;
     if (goal && time.keeper) slots[goal.id] = time.keeper;
@@ -305,7 +312,7 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
     // The rest: Fairly rotates each child one place on from where they last
     // played (B10); Using positions takes a free place in their preferred
     // area first (Rob, 6 Nov), else rotates.
-    const starters = [...time.full, ...(time.off ? [time.off] : [])].sort((a, b) => ids.indexOf(a) - ids.indexOf(b));
+    const starters = [...time.full, ...time.off].sort((a, b) => ids.indexOf(a) - ids.indexOf(b));
     const free = () => outfield.map((_, i) => i).filter((i) => !taken.has(i));
     const ordered =
       fill === 'positions'
@@ -332,7 +339,7 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
     const kept = before[p]?.subs.filter((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId)) ?? [];
     const period: PlannedPeriod = {
       slots,
-      subs: kept.length > 0 ? kept : time.off && time.on ? [{ offId: time.off, onId: time.on, atMs }] : [],
+      subs: kept.length > 0 ? kept : time.off.map((offId, i) => ({ offId, onId: time.on[i], atMs })),
     };
     // The child who comes on takes the place; they rotate from it next time.
     for (const s of period.subs) if (s.offId && s.onId && lastPlace.has(s.offId)) lastPlace.set(s.onId, lastPlace.get(s.offId)!);
@@ -383,4 +390,30 @@ export function seasonInputs(
   }
   for (const o of owed) row(o.playerId).owedMs = o.owed === null ? null : o.owed * 60_000;
   return out;
+}
+
+/**
+ * Where the coach's Subs stepper starts (Rob, 6 Nov): the fewest subs a
+ * period that give the fairest split the coming children allow. Worked out
+ * by building the sheet for each number, from none up to the bench.
+ */
+export function fairestSubs(input: Omit<BuildInput, 'subs'>): number {
+  const outfield = input.format.positions.filter((p) => p.kind !== 'goalkeeper').length;
+  const keepers = input.keepers.filter((k) => k !== null).length > 0 ? 1 : 0;
+  const bench = Math.max(0, input.coming.length - outfield - keepers);
+  const main = input.coming.find((p) => p.keeper === 'main')?.id;
+  const rangeOf = (n: number) => {
+    const built = buildTeamSheet({ ...input, subs: n });
+    return spread([...built.minutes].filter(([id]) => id !== main).map(([, ms]) => ms));
+  };
+  let best = 0;
+  let bestRange = rangeOf(0);
+  for (let n = 1; n <= bench; n++) {
+    const r = rangeOf(n);
+    if (r < bestRange) {
+      best = n;
+      bestRange = r;
+    }
+  }
+  return best;
 }
