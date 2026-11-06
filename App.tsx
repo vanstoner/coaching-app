@@ -2384,6 +2384,11 @@ function TeamApp({
           changedAt={comingMatch.comingChangedAt ?? null}
           onChange={(list) => saveComing(comingMatch.match.id, list)}
           onBack={() => setStep(comingReturn)}
+          // Rob, 6 Nov: Who's coming flows straight on to the team sheet.
+          onNext={() => {
+            setSheetId(comingMatch.match.id);
+            setStep('teamSheet');
+          }}
         />
       );
     }
@@ -2428,10 +2433,9 @@ function TeamApp({
       const views = squadViews(seasonView, players, { kickoffs: kickoffs() });
       return (
         <TeamSheetScreen
-          title={`${squadName} v ${opponentLabel(sheetMatch.match)}`}
+          match={sheetMatch.match}
+          squadName={squadName}
           format={sheetMatch.format ?? format}
-          totalMinutes={sheetMatch.match.totalMinutes}
-          periodCount={sheetMatch.match.quarterCount}
           players={squad}
           availability={sheetMatch.availability}
           plan={sheetMatch.plan}

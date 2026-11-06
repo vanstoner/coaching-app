@@ -15,12 +15,51 @@ import type { Format, Position, PositionUnit, UUID } from '../types/index';
 import { formatSubTime } from './matchClock';
 import type { MatchPlan, PlannedPeriod } from './matchPlan';
 
-/** The view a coach last chose, on this phone only (C13, D5). */
-export type SheetView = 'formation' | 'table';
+/**
+ * The view a coach last chose, on this phone only (C13, D5): the real pitch
+ * one quarter at a time (Rob, 6 Nov: "pitch view need to remain awesome"),
+ * all quarters side by side, or the table.
+ */
+export type SheetView = 'formation' | 'all' | 'table';
 export const SHEET_VIEW_KEY = 'coaching-app/sheet-view/v1';
 
 export function parseSheetView(raw: string | null): SheetView {
-  return raw === 'table' ? 'table' : 'formation';
+  return raw === 'table' || raw === 'all' ? raw : 'formation';
+}
+
+/** Each period's keeper as the plan has it: whoever is in goal, or null. */
+export function keepersOf(plan: MatchPlan, format: Format): (UUID | null)[] {
+  const goal = format.positions.find((p) => p.kind === 'goalkeeper');
+  return plan.periods.map((period) => (goal ? (period.slots[goal.id] ?? null) : null));
+}
+
+/**
+ * Put each period's keeper in goal (Rob, 6 Nov: the quarters show "with the
+ * keepers already in goal"). A keeper who was elsewhere in that period swaps
+ * with whoever was in goal, so nobody is lost and a sub follows its place.
+ */
+export function applyKeepers(plan: MatchPlan, format: Format, keepers: readonly (UUID | null)[]): MatchPlan {
+  const goal = format.positions.find((p) => p.kind === 'goalkeeper');
+  if (!goal) return plan;
+  let next = plan;
+  keepers.forEach((keeper, p) => {
+    const period = next.periods[p];
+    if (!period || !keeper) return;
+    const now = period.slots[goal.id] ?? null;
+    if (now === keeper) return;
+    const placed = Object.values(period.slots).includes(keeper) || period.subs.some((s) => s.onId === keeper);
+    if (now && placed) {
+      next = swapInPeriod(next, p, now, keeper);
+      return;
+    }
+    const slots: Record<UUID, UUID | null> = {};
+    for (const [pos, who] of Object.entries(period.slots) as [UUID, UUID | null][]) slots[pos] = who === keeper ? null : who;
+    slots[goal.id] = keeper;
+    // A keeper never comes on or off at the sub (B9): drop a sub that named them.
+    const subs = period.subs.filter((s) => s.onId !== keeper && s.offId !== keeper);
+    next = { periods: next.periods.map((x, i) => (i === p ? { slots, subs } : x)) };
+  });
+  return next;
 }
 
 /** Who is on the bench in a period: the coming children not in a slot, in squad order. */

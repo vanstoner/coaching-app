@@ -7,9 +7,9 @@ import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import { displayName, makePlayer } from './squad';
 import { makeFormat } from './shapes';
-import { periodLengthMs, projectPlan } from './matchPlan';
+import { emptyPlan, periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { benchOf, frontToBack, parseSheetView, planGaps, sheetTable, swapInPeriod } from './teamSheetEdit';
+import { applyKeepers, benchOf, frontToBack, keepersOf, parseSheetView, planGaps, sheetTable, swapInPeriod } from './teamSheetEdit';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -24,7 +24,7 @@ const sheet = () =>
     coming: players,
     keepers: rotateKeepers(players, 4, periodLengthMs(50, 4), new Map()),
     subs: true,
-    fill: 'even',
+    fill: 'fair',
     season: new Map(),
   }).plan;
 
@@ -84,9 +84,10 @@ describe('the table (C15, Rob 5 Nov): positions down the side, periods across', 
 });
 
 describe('Formation or Table is a view choice on this phone (C13, D5)', () => {
-  it('reads Formation unless Table was chosen', () => {
+  it('reads the Pitch unless All quarters or Table was chosen', () => {
     expect(parseSheetView(null)).toBe('formation');
     expect(parseSheetView('table')).toBe('table');
+    expect(parseSheetView('all')).toBe('all');
     expect(parseSheetView('junk')).toBe('formation');
   });
 });
@@ -109,5 +110,25 @@ describe('match day: a child unticked who is in the plan is pointed out (D20)', 
     const plan = sheet();
     const only0 = Object.values(plan.periods[0].slots).find((id) => !plan.periods.slice(1).some((p) => Object.values(p.slots).includes(id) || p.subs.some((s) => s.onId === id)));
     if (only0) expect(planGaps(plan, new Set([only0]), name, 'Q', 1)).toEqual([]);
+  });
+});
+
+describe('the keepers go in goal from the start (Rob, 6 Nov)', () => {
+  it('an empty sheet gets each period’s keeper in goal, nothing else', () => {
+    const keepers = [ids[0], ids[1], ids[2], ids[3]];
+    const plan = applyKeepers(emptyPlan(4), format, keepers);
+    expect(keepersOf(plan, format)).toEqual(keepers);
+    for (const period of plan.periods) expect(Object.values(period.slots).filter(Boolean)).toHaveLength(1);
+  });
+
+  it('a keeper who was on the pitch swaps with whoever was in goal', () => {
+    const plan = sheet();
+    const goal = format.positions.find((p) => p.kind === 'goalkeeper')!;
+    const outfielder = Object.entries(plan.periods[0].slots).find(([pos, id]) => pos !== goal.id && id)![1]!;
+    const was = plan.periods[0].slots[goal.id]!;
+    const next = applyKeepers(plan, format, [outfielder, ...keepersOf(plan, format).slice(1)]);
+    expect(next.periods[0].slots[goal.id]).toBe(outfielder);
+    expect(Object.values(next.periods[0].slots)).toContain(was);
+    expect(projectPlan(next, format, 50, 4, players).problems).toEqual([]);
   });
 });

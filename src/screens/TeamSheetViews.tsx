@@ -1,15 +1,16 @@
 /**
- * The team sheet's two views — #277 C13–C18 (Dee's prototype; Rob, 5 Nov).
+ * The team sheet's overviews — #277 C13–C18 (Dee's prototype; Rob, 5 and
+ * 6 Nov). The real pitch, one quarter at a time, is on TeamSheetScreen.
  *
- * - **Formation:** every period at once, 2 × 2 in portrait and four in a row
- *   in landscape, each pitch with its bench below. ⤢ enlarges one period to
- *   the full pitch, where dragging works as on the Lineup (TeamSheetScreen).
+ * - **All quarters:** every period at once, 2 × 2 in portrait and four in a
+ *   row in landscape, each as white pills with its bench below. Open shows
+ *   that period on the full pitch, where dragging works as on the Lineup.
  * - **Table:** a row per position, front to back, then Bench rows; a column
  *   per period. The position column stays put when the table scrolls.
  *
  * In both: tap one child, then another in the same period, and they swap,
- * the bench included (C17). The choice of view is remembered on this phone
- * only (C13, D5). Every name and note is worked out from the plan each draw.
+ * the bench included; tap a child, then an empty place, and they go there
+ * (C17). Every name and note is worked out from the plan each draw.
  */
 
 import { useState } from 'react';
@@ -19,8 +20,7 @@ import type { Format, UUID } from '../types/index';
 import { formatSubTime } from '../app/matchClock';
 import { slotSpots } from '../app/pitchLayout';
 import type { MatchPlan } from '../app/matchPlan';
-import { benchOf, sheetTable, shortLabel, type SheetView } from '../app/teamSheetEdit';
-import { Segmented } from './controls';
+import { benchOf, sheetTable, shortLabel } from '../app/teamSheetEdit';
 import { colours, TOUCH_TARGET } from './theme';
 
 /** The table's column widths, in dp: a 320 dp phone shows the labels and most of four columns. */
@@ -34,9 +34,9 @@ export function TeamSheetViews({
   name,
   short,
   view,
-  onView,
   onSwap,
-  onEnlarge,
+  onPlace,
+  onOpen,
 }: {
   plan: MatchPlan;
   format: Format;
@@ -45,15 +45,23 @@ export function TeamSheetViews({
   name: (id: UUID) => string;
   /** "Q" or "H". */
   short: string;
-  view: SheetView;
-  onView: (view: SheetView) => void;
+  /** Side by side, or the table. */
+  view: 'formation' | 'table';
   onSwap: (periodIndex: number, a: UUID, b: UUID) => void;
-  onEnlarge: (periodIndex: number) => void;
+  /** A picked child onto an empty place. */
+  onPlace: (periodIndex: number, id: UUID, positionId: UUID) => void;
+  /** Show this period on the full pitch. */
+  onOpen: (periodIndex: number) => void;
 }) {
   // The first tap of a swap: which period, and who.
   const [picked, setPicked] = useState<{ period: number; id: UUID } | null>(null);
-  const tap = (period: number, id: UUID | null) => {
-    if (id === null) return;
+  const tap = (period: number, id: UUID | null, positionId: UUID | null = null) => {
+    if (id === null) {
+      // An empty place: the picked child goes there.
+      if (picked && picked.period === period && positionId) onPlace(period, picked.id, positionId);
+      setPicked(null);
+      return;
+    }
     if (picked && picked.period === period) {
       if (picked.id !== id) onSwap(period, picked.id, id);
       setPicked(null);
@@ -66,22 +74,13 @@ export function TeamSheetViews({
 
   return (
     <View>
-      <Segmented<SheetView>
-        name="View"
-        options={[
-          { value: 'formation', label: 'Formation' },
-          { value: 'table', label: 'Table' },
-        ]}
-        value={view}
-        onChange={(v) => v && onView(v)}
-      />
       <Text style={local.hint}>
         {picked
           ? `Now tap who they swap with, in the same ${noun}.`
           : `Tap one child, then another in the same ${noun}, to swap them, bench included.`}
       </Text>
       {view === 'formation' ? (
-        <Formation plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onEnlarge={onEnlarge} />
+        <Formation plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onOpen={onOpen} />
       ) : (
         <Table plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} />
       )}
@@ -89,7 +88,7 @@ export function TeamSheetViews({
   );
 }
 
-type Tap = (period: number, id: UUID | null) => void;
+type Tap = (period: number, id: UUID | null, positionId?: UUID | null) => void;
 type IsPicked = (period: number, id: UUID | null) => boolean;
 
 function Formation({
@@ -100,7 +99,7 @@ function Formation({
   short,
   tap,
   isPicked,
-  onEnlarge,
+  onOpen,
 }: {
   plan: MatchPlan;
   format: Format;
@@ -109,7 +108,7 @@ function Formation({
   short: string;
   tap: Tap;
   isPicked: IsPicked;
-  onEnlarge: (periodIndex: number) => void;
+  onOpen: (periodIndex: number) => void;
 }) {
   const { width, height } = useWindowDimensions();
   // C14: 2 × 2 in portrait, four in a row in landscape.
@@ -131,12 +130,12 @@ function Formation({
                 {sub ? <Text style={local.cardSub}>{` · ${name(sub.onId!)} on ${formatSubTime(sub.atMs)}`}</Text> : null}
               </Text>
               <Pressable
-                onPress={() => onEnlarge(p)}
+                onPress={() => onOpen(p)}
                 accessibilityRole="button"
-                accessibilityLabel={`Enlarge ${short}${p + 1}`}
+                accessibilityLabel={`Open ${short}${p + 1} on the pitch`}
                 style={local.enlarge}
               >
-                <Text style={local.enlargeText}>Enlarge</Text>
+                <Text style={local.enlargeText}>Open</Text>
               </Pressable>
             </View>
             <View style={local.pitch}>
@@ -148,7 +147,7 @@ function Formation({
                 return (
                   <Pressable
                     key={spot.positionId}
-                    onPress={() => tap(p, who)}
+                    onPress={() => tap(p, who, spot.positionId)}
                     accessibilityRole="button"
                     accessibilityLabel={`${short}${p + 1}, ${position.label}, ${who ? name(who) : 'empty'}${off ? `, off at ${formatSubTime(sub.atMs)}` : ''}`}
                     style={[local.chipHit, { width: `${chipPct}%`, left: `${spot.x * 100 - chipPct / 2}%`, top: `${spot.y * 100 - 9}%` }]}
@@ -236,7 +235,7 @@ function Table({
               {row.cells.map((cell, p) => (
                 <Pressable
                   key={p}
-                  onPress={() => tap(p, cell.playerId)}
+                  onPress={() => tap(p, cell.playerId, row.positionId)}
                   accessibilityRole="button"
                   accessibilityLabel={`${short}${p + 1}, ${row.label}, ${cell.playerId ? name(cell.playerId) : 'empty'}${cell.note ? `, ${cell.note}` : ''}`}
                   style={[local.cell, { width: CELL_W }, isPicked(p, cell.playerId) && local.chipPicked]}

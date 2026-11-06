@@ -13,7 +13,7 @@ import { Text } from './Text';
 import type { AvailabilityStatus, Player, UUID } from '../types/index';
 import { displayName } from '../app/squad';
 import { changedLabel, comingRows, comingSummary, nextComing, setComing, type Coming } from '../app/whosComing';
-import { BackLink, SavedTick, TopBar, useSavedTick } from './controls';
+import { BackLink, MainButton, MainFoot, SavedTick, TopBar, useSavedTick } from './controls';
 import { rows } from './controls/Rows';
 import { colours, screen } from './theme';
 
@@ -26,6 +26,7 @@ export function WhosComingScreen({
   changedAt,
   onChange,
   onBack,
+  onNext,
 }: {
   /** "Heart FC v Rovers". */
   title: string;
@@ -35,6 +36,8 @@ export function WhosComingScreen({
   changedAt: number | null;
   onChange: (next: [UUID, AvailabilityStatus][]) => void;
   onBack: () => void;
+  /** The next step, the team sheet (Rob, 6 Nov). */
+  onNext: () => void;
 }) {
   const tick = useSavedTick();
   const list = comingRows(availability, players);
@@ -77,6 +80,9 @@ export function WhosComingScreen({
         ))}
         <Text style={screen.hint}>On match day, Here today starts from this list.</Text>
       </ScrollView>
+      <MainFoot>
+        <MainButton label="Next: team sheet" onPress={onNext} />
+      </MainFoot>
     </View>
   );
 }

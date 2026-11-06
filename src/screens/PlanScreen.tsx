@@ -26,8 +26,8 @@
 
 import { NOT_IN_SHARE_SHORT } from '../app/fairShare';
 import { InfoTap } from './FiguresHelp';
-import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Format, Match, Player, UUID } from '../types/index';
@@ -58,8 +58,6 @@ import {
   BackLink,
   CheckLine,
   FormSheet,
-  MainButton,
-  MainFoot,
   RowNav,
   SavedTick,
   Segmented,
@@ -69,15 +67,11 @@ import {
 } from './controls';
 import { PitchView } from './PitchView';
 import { useEdgeScroll } from './useEdgeScroll';
-import { ActionSheet, SheetButton } from './Sheet';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { editSheet } from '../app/teamSheet';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { PLAN_IMAGE_WIDTH, planImage, shareFirstStep, type PlanImageLayout } from '../app/planImage';
-import { currentDistribution } from '../app/distribution';
-import { releasePlanImage, sharePlanImage } from '../app/planImageFile';
-import { PlanImageView } from './PlanImageView';
+import { SharePlanFoot } from './SharePlan';
 
 /** The sub sheet's draft (#264 V20): which sub (-1 for a new one), and its picks. */
 interface SubDraft {
@@ -148,40 +142,6 @@ export function PlanScreen({
   /** The sub sheet (#120, #264): a draft until Save. */
   const [subSheet, setSubSheet] = useState<SubDraft | null>(null);
   const tick = useSavedTick();
-
-  // Share plan (#165): which image is laid out off-screen for capture, if
-  // any, and whether the layout question is open.
-  const [shareAsk, setShareAsk] = useState(false);
-  const [shareLayout, setShareLayout] = useState<PlanImageLayout | null>(null);
-  const [shareNote, setShareNote] = useState<string | null>(null);
-  const imageRef = useRef<View>(null);
-  const captured = useRef(false);
-  // The capture lives only for the share; let it go when the plan closes.
-  useEffect(() => releasePlanImage, []);
-
-  const startShare = (layout: PlanImageLayout) => {
-    setShareAsk(false);
-    setShareNote(null);
-    captured.current = false;
-    setShareLayout(layout);
-  };
-  // Quarters offer 2×2 or four in a row; halves sit side by side either way.
-  // The store build alone skips the question (shareFirstStep, #226).
-  const askShare = () =>
-    shareFirstStep(periodCount, currentDistribution()) === 'ask' ? setShareAsk(true) : startShare('grid');
-  const onImageLayout = (e: LayoutChangeEvent) => {
-    if (captured.current || !shareLayout) return;
-    captured.current = true;
-    const { width, height } = e.nativeEvent.layout;
-    const target = PLAN_IMAGE_WIDTH[shareLayout];
-    // One frame after layout, so the capture sees what was drawn.
-    requestAnimationFrame(() => {
-      void sharePlanImage(imageRef, target, { width, height }).then((outcome) => {
-        setShareLayout(null);
-        if (!outcome.ok) setShareNote(outcome.reason);
-      });
-    });
-  };
 
   const period = plan.periods[periodIndex];
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
@@ -397,33 +357,16 @@ export function PlanScreen({
         </Text>
       </ScrollView>
 
-      {/* #264 V26: Share plan is the screen's one job, pinned at the bottom (label kept: SHARE_PLAN). */}
-      <MainFoot>
-        <MainButton label="Share plan" onPress={askShare} disabled={shareLayout !== null} />
-        <Text style={screen.hint}>
-          {shareNote ??
-            'One picture of every ' +
-              noun.toLowerCase() +
-              ' and its subs, for parents. No minutes, and nobody marked absent.'}
-        </Text>
-      </MainFoot>
-
-      {/* The image being shared (#165): laid out off-screen, captured, gone. */}
-      {shareLayout && (
-        <View style={local.offscreen} pointerEvents="none">
-          <PlanImageView
-            ref={imageRef}
-            layout={shareLayout}
-            onLayout={onImageLayout}
-            image={planImage({ match, squadName, format, plan, players, absent })}
-          />
-        </View>
-      )}
-
-      <ActionSheet visible={shareAsk} title="Share plan" onClose={() => setShareAsk(false)}>
-        <SheetButton label="2 × 2, best on a phone" strong onPress={() => startShare('grid')} />
-        <SheetButton label="Four in a row" onPress={() => startShare('row')} />
-      </ActionSheet>
+      <SharePlanFoot
+        match={match}
+        squadName={squadName}
+        format={format}
+        plan={plan}
+        players={players}
+        absent={absent ?? new Set()}
+        periodCount={periodCount}
+        noun={noun}
+      />
 
       {names && (
         <PositionNameSheet
@@ -528,7 +471,6 @@ const local = StyleSheet.create({
   shareRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
   shareText: { flex: 1 },
   // Far off to the left: laid out and drawn for the capture, never seen.
-  offscreen: { position: 'absolute', left: -10000, top: 0 },
   note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false, marginBottom: 4 },
   flagged: { alignSelf: 'stretch', color: colours.warn, fontSize: 13, includeFontPadding: false, marginTop: 2 },
   problem: {

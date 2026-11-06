@@ -35,7 +35,12 @@ export interface SeasonInput {
   owedMs: number | null;
 }
 
-export type Fill = 'even' | 'shuffle';
+/**
+ * Fill the rest (Rob, 6 Nov): Fairly rotates positions; Using positions puts
+ * each child in their preferred area (`Player.prefers`) where the minutes
+ * allow. Either way the minutes come first (invariant 3).
+ */
+export type Fill = 'fair' | 'positions';
 
 export interface BuildInput {
   format: Format;
@@ -48,9 +53,13 @@ export interface BuildInput {
   /** Place one mid-period sub per period (B9), or none. */
   subs: boolean;
   fill: Fill;
-  /** Shuffle's seed: a new one per tap. Ignored for Even. */
-  seed?: number;
   season: ReadonlyMap<UUID, SeasonInput>;
+  /**
+   * What is already on the sheet (Rob, 6 Nov: "place people", then fill the
+   * rest). Every child placed stays where they are, a keeper in goal included,
+   * and a period with a sub keeps it. Only the empty places are filled.
+   */
+  existing?: MatchPlan;
 }
 
 export interface BuiltSheet {
@@ -115,6 +124,13 @@ function shuffled<T>(items: readonly T[], next: () => number): T[] {
   return out;
 }
 
+/** What a period already holds before the fill: who plays it all, who half (a sub's pair), and whether it has its sub. */
+interface Fixed {
+  full: UUID[];
+  half: UUID[];
+  hasSub: boolean;
+}
+
 /** One period's time, in half-periods: who is full (2), who starts and comes off, who comes on. */
 interface PeriodTime {
   keeper: UUID | null;
@@ -133,7 +149,8 @@ function allocate(
   keepers: readonly (UUID | null)[],
   outfieldSlots: number,
   useSubs: boolean,
-  season: ReadonlyMap<UUID, SeasonInput>
+  season: ReadonlyMap<UUID, SeasonInput>,
+  fixed: readonly Fixed[]
 ): { periods: PeriodTime[]; halves: Map<UUID, number> } {
   const rank = new Map(order.map((id, i) => [id, i]));
   const periodCount = keepers.length;
@@ -149,15 +166,21 @@ function allocate(
 
   keepers.forEach((keeper, p) => {
     if (keeper !== null) halves.set(keeper, halves.get(keeper)! + 2);
+    // Already on the sheet: their time counts, and they are not moved.
+    const here = fixed[p];
+    for (const id of here.full) halves.set(id, halves.get(id)! + 2);
+    for (const id of here.half) halves.set(id, halves.get(id)! + 1);
+    const placed = new Set([...here.full, ...here.half]);
+    const slotsLeft = outfieldSlots - here.full.length - (here.hasSub ? 1 : 0);
     const left = periodCount - p;
     const need = (id: UUID) => target.get(id)! - halves.get(id)!;
     // Most need first; a child whose need cannot wait (it fills every half
     // left) is never left out. Then the order.
     const candidates = ids
-      .filter((id) => id !== keeper)
+      .filter((id) => id !== keeper && !placed.has(id))
       .sort((a, b) => need(b) - need(a) || rank.get(a)! - rank.get(b)!);
-    const subs = useSubs && candidates.length > outfieldSlots;
-    const fullCount = Math.min(candidates.length, subs ? outfieldSlots - 1 : outfieldSlots);
+    const subs = useSubs && !here.hasSub && slotsLeft >= 1 && candidates.length > slotsLeft;
+    const fullCount = Math.max(0, Math.min(candidates.length, subs ? slotsLeft - 1 : slotsLeft));
     // A child who needs an odd number of halves takes a single when one is going.
     let full: UUID[];
     let singles: UUID[] = [];
@@ -196,9 +219,9 @@ const spread = (values: Iterable<number>) => {
   return all.length === 0 ? 0 : Math.max(...all) - Math.min(...all);
 };
 
-/** How many orders the search tries (D4: fast; Even stays deterministic). */
+/** How many orders the search tries (D4: fast, and the same answer every time). */
 const TRIES = 300;
-/** Even's fixed seed. */
+/** The search's fixed seed. */
 const EVEN_SEED = 277;
 
 /** Positions, the keeper's first, then outfield front to back by sort order. */
@@ -212,21 +235,40 @@ function positionsOf(format: Format): { keeper: Position | null; outfield: Posit
 
 /** Make the team sheet (B11). */
 export function buildTeamSheet(input: BuildInput): BuiltSheet {
-  const { format, totalMinutes, periodCount, coming, keepers, subs, fill, season } = input;
+  const { format, totalMinutes, periodCount, coming, keepers, subs, fill, season, existing } = input;
   const periodMs = periodLengthMs(totalMinutes, periodCount);
   const atMs = defaultSwapTimeMs(periodMs);
   const ids = coming.map((p) => p.id);
+  const isComing = new Set(ids);
+  const prefers = new Map(coming.map((p) => [p.id, p.prefers ?? null]));
   const { keeper: goal, outfield } = positionsOf(format);
-  const periodKeepers = Array.from({ length: periodCount }, (_, i) =>
-    goal && keepers[i] && ids.includes(keepers[i]!) ? keepers[i]! : null
-  );
 
-  const next = random(fill === 'even' ? EVEN_SEED : (input.seed ?? EVEN_SEED));
-  const first = fill === 'even' ? ids : shuffled(ids, next);
+  // What is already on the sheet, period by period: kept as it is.
+  const before = Array.from({ length: periodCount }, (_, p) => existing?.periods[p]);
+  const fixed: Fixed[] = before.map((period) => {
+    const sub = period?.subs.find((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId));
+    const inSlots = outfield
+      .map((pos) => period?.slots[pos.id] ?? null)
+      .filter((id): id is UUID => id !== null && isComing.has(id));
+    return {
+      full: inSlots.filter((id) => id !== sub?.offId),
+      half: sub ? [sub.offId!, sub.onId!] : [],
+      hasSub: sub !== undefined,
+    };
+  });
+  const periodKeepers = Array.from({ length: periodCount }, (_, i) => {
+    const placed = goal ? (before[i]?.slots[goal.id] ?? null) : null;
+    if (placed && isComing.has(placed)) return placed;
+    return goal && keepers[i] && isComing.has(keepers[i]!) ? keepers[i]! : null;
+  });
+
+  // The search: the same rule tried with ties broken in other orders, the
+  // smallest spread kept. A fixed seed, so the answer is the same every time.
+  const next = random(EVEN_SEED);
   let best: { periods: PeriodTime[]; halves: Map<UUID, number> } | null = null;
   for (let t = 0; t < TRIES && ids.length > 0; t++) {
-    const order = t === 0 ? first : shuffled(ids, next);
-    const tried = allocate(ids, order, periodKeepers, outfield.length, subs, season);
+    const order = t === 0 ? ids : shuffled(ids, next);
+    const tried = allocate(ids, order, periodKeepers, outfield.length, subs, season, fixed);
     if (!best || spread(tried.halves.values()) < spread(best.halves.values())) best = tried;
     if (spread(best.halves.values()) <= 1) break;
   }
@@ -238,25 +280,50 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
     const slots: Record<UUID, UUID | null> = {};
     for (const position of format.positions) slots[position.id] = null;
     if (goal && time.keeper) slots[goal.id] = time.keeper;
-    // Positions rotate (B10): each starter takes the place one on from where
-    // they last played; new faces fill what is left, in squad order.
-    const starters = [...time.full, ...(time.off ? [time.off] : [])].sort((a, b) => ids.indexOf(a) - ids.indexOf(b));
     const taken = new Set<number>();
-    const returning = starters.filter((id) => lastPlace.has(id));
-    const fresh = starters.filter((id) => !lastPlace.has(id));
-    for (const id of [...returning, ...fresh].slice(0, outfield.length)) {
-      let i = lastPlace.has(id) ? (lastPlace.get(id)! + 1) % outfield.length : 0;
-      while (taken.has(i)) i = (i + 1) % outfield.length;
+    // Children already placed stay exactly where they are.
+    outfield.forEach((pos, i) => {
+      const who = before[p]?.slots[pos.id] ?? null;
+      if (who && isComing.has(who)) {
+        slots[pos.id] = who;
+        taken.add(i);
+        lastPlace.set(who, i);
+      }
+    });
+    // The rest: Fairly rotates each child one place on from where they last
+    // played (B10); Using positions takes a free place in their preferred
+    // area first (Rob, 6 Nov), else rotates.
+    const starters = [...time.full, ...(time.off ? [time.off] : [])].sort((a, b) => ids.indexOf(a) - ids.indexOf(b));
+    const free = () => outfield.map((_, i) => i).filter((i) => !taken.has(i));
+    const ordered =
+      fill === 'positions'
+        ? [...starters.filter((id) => prefers.get(id)), ...starters.filter((id) => !prefers.get(id))]
+        : [...starters.filter((id) => lastPlace.has(id)), ...starters.filter((id) => !lastPlace.has(id))];
+    for (const id of ordered) {
+      const open = free();
+      if (open.length === 0) break;
+      const unit = prefers.get(id);
+      const inArea = fill === 'positions' && unit ? open.filter((i) => outfield[i].unit === unit) : [];
+      let i: number;
+      if (inArea.length > 0) {
+        // In their area, still moving on from where they last played.
+        const from = lastPlace.get(id) ?? -1;
+        i = inArea.find((x) => x > from) ?? inArea[0];
+      } else {
+        i = lastPlace.has(id) ? (lastPlace.get(id)! + 1) % outfield.length : open[0];
+        while (taken.has(i)) i = (i + 1) % outfield.length;
+      }
       taken.add(i);
       lastPlace.set(id, i);
       slots[outfield[i].id] = id;
     }
+    const kept = before[p]?.subs.filter((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId)) ?? [];
     const period: PlannedPeriod = {
       slots,
-      subs: time.off && time.on ? [{ offId: time.off, onId: time.on, atMs }] : [],
+      subs: kept.length > 0 ? kept : time.off && time.on ? [{ offId: time.off, onId: time.on, atMs }] : [],
     };
     // The child who comes on takes the place; they rotate from it next time.
-    if (time.off && time.on) lastPlace.set(time.on, lastPlace.get(time.off)!);
+    for (const s of period.subs) if (s.offId && s.onId && lastPlace.has(s.offId)) lastPlace.set(s.onId, lastPlace.get(s.offId)!);
     plan.periods.push(period);
   }
 

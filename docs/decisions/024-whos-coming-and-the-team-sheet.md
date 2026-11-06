@@ -44,8 +44,11 @@ never stored. A child with no owed figure counts as 0.
 
 **D4. The best spread, in pure TypeScript.** `src/app/teamSheetBuilder.ts`
 hands out time in half-periods (whole periods with no subs). A seeded search
-over tie orders keeps the smallest spread. Even uses a fixed seed and Shuffle
-a new one per tap. A test checks, by exhaustive search, that no plan with a
+over tie orders keeps the smallest spread, with a fixed seed, so the answer is
+the same every time. It fills only the empty places: children already on the
+sheet stay where they are (Rob, 6 Nov). **Using positions** then seats each
+child in their preferred area where a free place allows; it never changes who
+plays how long (invariant 3). Shuffle was dropped (Rob, 6 Nov). A test checks, by exhaustive search, that no plan with a
 smaller spread exists for 5–8 children at 5-a-side and 7–10 at 7-a-side.
 
 **D5. Formation or Table is a view setting** under its own phone key
@@ -68,8 +71,8 @@ across. Nothing here ties planning to the match-day phone.
   answer nobody gave. `unconfirmed` models the gap and stays out of the record.
 - **A keeper fairness figure** ("share of goal"). Rejected by invariant 3 and
   Rob's 1 Nov ruling: keeping is shared by rotation, as a suggestion input only.
-- **A random fill.** Rejected for the default (P3): Even gives the same answer
-  every time, and Shuffle stays one tap away.
+- **A random fill.** Rejected (P3, then Rob 6 Nov): the fill gives the same
+  answer every time, and Shuffle was dropped for Fairly and Using positions.
 - **A new plan model for the sheet.** Rejected (D6): one sub per period fits
   today's plan, so every screen that reads a plan keeps working.
 

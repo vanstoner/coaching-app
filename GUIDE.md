@@ -99,40 +99,29 @@ arrive through the week. The card shows the count, like "9 coming · 2 can't
 
 ## 4. Plan the match
 
-The quickest way is the **Team sheet**. On a fixture under **Coming up**, tap
-**Team sheet**. Four choices sit on one screen, each with a sensible default:
+Tap **Next: team sheet** at the bottom of Who's coming (or **Team sheet** on
+the fixture's card). It is one screen, top to bottom:
 
-1. **Who's coming**: the list above.
-2. **Keepers**: **Rotate for me** shares goal round, starting with whoever
+1. **Keepers**: **Rotate for me** shares goal round, starting with whoever
    has been in goal least this season (never a child marked Not in goal). Or
-   **I'll choose** a keeper for each period.
-3. **Mid-quarter subs**: **Place them** puts one sub in each period, halfway:
-   whoever has played most comes off for whoever has played least. Or
-   **None**.
-4. **Everyone else**: **Even** gives everyone equal time with positions
-   rotated, the same answer every time. **Shuffle** gives a different mix.
+   **I'll choose** a keeper for each quarter. They go straight into goal.
+2. **Mid-quarter subs**: **Place them** puts one sub in each quarter,
+   halfway: whoever has played most comes off for whoever has played least.
+   Or **None**.
+3. **Place anyone you want to**: the pitch for each quarter, Q1 to Q4. Drag
+   a child from the bench onto a position, or tap them and then the
+   position. Skip it if you like. **All quarters** and **Table** show every
+   quarter at once.
+4. **Fill the rest**: **Fairly** gives everyone equal time with positions
+   rotated. **Using positions** gives equal time first, then puts each child
+   in their area from the Squad tab (Defence, Midfield or Attack) where it
+   can. Anyone you placed stays where you put them. **Start again** clears
+   everything except the keepers.
+5. Tweak: tap one child, then another in the same quarter, to swap them.
+   **Undo** is in the message that appears. Each child's minutes and the
+   fair share are underneath.
 
-Tap **Make the team sheet**. You see every period at once as **Formation**
-(tap ⤢ to make one big, where you can drag) or as a **Table** of positions
-and periods. Tap one child, then another in the same period, to swap them;
-**Undo** is in the message that appears. Each child's minutes and the fair
-share are underneath.
-
-To work period by period instead, tap **Plan this match** (or **Edit the
-plan** once you've started one), or **Edit quarter by quarter** on the Team
-sheet.
-
-- For each quarter or half, put the children on the pitch and on the bench.
-  Each child's **projected minutes** for the match show as you go, so you can
-  see before kick-off whether anyone is short.
-- Tap **Add a sub** to plan a substitution. It starts at the middle of the
-  period. Change its time, and who comes off, in the sheet. Leave who comes
-  off as **Whoever is on longest** and the app picks on the day.
-- **Same as quarter 1** (or half 1) copies the period before, to save typing.
-- **Share plan** makes one picture of the plan for parents: positions, every
-  sub and its time, and the bench. It shows no minutes and doesn't say who is
-  unavailable. Choose **2 × 2, best on a phone** or **Four in a row**, then
-  send it from your phone's share sheet.
+Then tap **Share plan** at the bottom to send parents the picture.
 
 A plan is only a plan: it never moves a minute. What counts is what actually
 happens on the day.

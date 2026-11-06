@@ -21,7 +21,7 @@ const none = new Map<UUID, SeasonInput>();
 function build(
   shape: ShapeCode,
   n: number,
-  opts: { periods?: number; minutes?: number; subs?: boolean; fill?: 'even' | 'shuffle'; seed?: number; season?: Map<UUID, SeasonInput>; players?: Player[]; format?: ReturnType<typeof makeFormat> } = {}
+  opts: { periods?: number; minutes?: number; subs?: boolean; fill?: 'fair' | 'positions'; season?: Map<UUID, SeasonInput>; players?: Player[]; format?: ReturnType<typeof makeFormat> } = {}
 ) {
   const format = opts.format ?? makeFormat(shape);
   const players = opts.players ?? squadOf(n);
@@ -36,8 +36,7 @@ function build(
     coming: players,
     keepers,
     subs: opts.subs ?? true,
-    fill: opts.fill ?? 'even',
-    seed: opts.seed,
+    fill: opts.fill ?? 'fair',
     season,
   });
   return { ...built, format, players, keepers, periods };
@@ -130,8 +129,8 @@ describe('no plan with a smaller spread exists (D4), checked by exhaustive searc
   }
 });
 
-describe('Even is the same every time; Shuffle varies (B10, P3)', () => {
-  it('Even gives the identical plan twice', () => {
+describe('Fill the rest (Rob, 6 Nov): the same answer every time, around what is placed', () => {
+  it('Fairly gives the identical plan twice', () => {
     const players = squadOf(10);
     const format = makeFormat('2-3-1');
     const a = build('2-3-1', 10, { players, format });
@@ -139,13 +138,72 @@ describe('Even is the same every time; Shuffle varies (B10, P3)', () => {
     expect(a.plan).toEqual(b.plan);
   });
 
-  it('Shuffle keeps the same fairness, and another seed gives another plan', () => {
-    const players = squadOf(10);
+  it('children already placed stay where they are, and the empty places are filled', () => {
+    const players = squadOf(9);
     const format = makeFormat('2-3-1');
-    const even = build('2-3-1', 10, { players, format });
-    const plans = [1, 2, 3, 4, 5].map((seed) => build('2-3-1', 10, { players, format, fill: 'shuffle', seed }));
-    for (const p of plans) expect(p.rangeMs).toBe(even.rangeMs);
-    expect(new Set(plans.map((p) => JSON.stringify(p.plan))).size).toBeGreaterThan(1);
+    const first = build('2-3-1', 9, { players, format });
+    // The coach places two children in Q2 by hand, on an otherwise empty sheet.
+    const [p1, p2] = format.positions.filter((x) => x.kind !== 'goalkeeper');
+    const goal = format.positions.find((x) => x.kind === 'goalkeeper')!;
+    const existing = { periods: first.plan.periods.map(() => ({ slots: {} as Record<UUID, UUID | null>, subs: [] })) };
+    existing.periods[1].slots[p1.id] = players[7].id;
+    existing.periods[1].slots[p2.id] = players[8].id;
+    const filled = buildTeamSheet({
+      format,
+      totalMinutes: 50,
+      periodCount: 4,
+      coming: players,
+      keepers: first.keepers,
+      subs: true,
+      fill: 'fair',
+      season: none,
+      existing,
+    });
+    expect(filled.plan.periods[1].slots[p1.id]).toBe(players[7].id);
+    expect(filled.plan.periods[1].slots[p2.id]).toBe(players[8].id);
+    expect(filled.plan.periods.every((p) => Object.values(p.slots).every((id) => id !== null))).toBe(true);
+    expect(filled.plan.periods[1].slots[goal.id]).toBe(first.keepers[1]);
+    // Neither child placed by hand is taken off at the sub.
+    for (const s of filled.plan.periods[1].subs) expect([players[7].id, players[8].id]).not.toContain(s.offId);
+    expect(projectPlan(filled.plan, format, 50, 4, players).problems).toEqual([]);
+  });
+
+  it('a sheet already full is left exactly as it is', () => {
+    const players = squadOf(9);
+    const format = makeFormat('2-3-1');
+    const first = build('2-3-1', 9, { players, format });
+    const again = buildTeamSheet({
+      format,
+      totalMinutes: 50,
+      periodCount: 4,
+      coming: players,
+      keepers: first.keepers,
+      subs: true,
+      fill: 'fair',
+      season: none,
+      existing: first.plan,
+    });
+    expect(again.plan).toEqual(first.plan);
+  });
+
+  it('Using positions puts children in their preferred area where the minutes allow, with the same minutes as Fairly', () => {
+    const format = makeFormat('2-3-1');
+    const players = squadOf(9).map((p, i) => ({ ...p, prefers: (['DEF', 'MID', 'ATT'] as const)[i % 3] }));
+    const fair = build('2-3-1', 9, { players, format });
+    const pos = build('2-3-1', 9, { players, format, fill: 'positions' });
+    expect([...pos.minutes.values()].sort()).toEqual([...fair.minutes.values()].sort());
+    expect(pos.rangeMs).toBe(fair.rangeMs);
+    const unitOf = new Map(format.positions.map((x) => [x.id, x.unit]));
+    const inArea = (plan: typeof pos.plan) =>
+      plan.periods.reduce(
+        (n, period) =>
+          n +
+          (Object.entries(period.slots) as [UUID, UUID | null][]).filter(
+            ([at, id]) => id && unitOf.get(at) !== 'GK' && players.find((p) => p.id === id)?.prefers === unitOf.get(at)
+          ).length,
+        0
+      );
+    expect(inArea(pos.plan)).toBeGreaterThan(inArea(fair.plan));
   });
 
   it('is fast: 16 children and 4 periods well under 100 ms (D4)', () => {

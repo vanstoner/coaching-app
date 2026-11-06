@@ -1,57 +1,55 @@
 /**
- * Build the team sheet — #277 B6–B12, C (Dee's prototype; Rob's P1–P5).
+ * The team sheet — #277, in Rob's order (6 Nov, "approve flow"):
  *
- * Four steps on one screen (P1), each a default the coach can change:
- * Who's coming, Keepers, Mid-quarter subs, Everyone else. Make the team sheet
- * fills every period's plan from them (`buildTeamSheet`). The sheet is the
- * match's ordinary plan (B12, D6): it moves no minute, and the Plan screen,
- * Share plan and the clock read it as before. Make it again asks first, and
- * comes with Undo.
+ *   keepers → mid-quarter subs → place anyone you want → fill the rest
+ *   (Fairly, or Using positions) → tweak → Share plan.
  *
- * Below the steps: the sheet itself, as Formation or Table (C13–C15), and
- * the fair share, the range and each child's minutes (C16), every figure
- * worked out from the plan each time it draws (invariant 1).
+ * One screen. The quarters show from the start with the keepers in goal and
+ * everyone else on the bench. The pitch is the real pitch, one quarter at a
+ * time, with drag and tap as on the Lineup (Rob: "pitch view need to remain
+ * awesome"); All quarters and the Table show them together.
+ *
+ * The sheet is the match's ordinary plan (B12, D6): it moves no minute
+ * (invariant 1), and the clock and the Lineup read it as before. Every
+ * figure under it is worked out from the plan each time it draws.
  */
 
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
-import type { AvailabilityStatus, Format, Player, UUID } from '../types/index';
+import type { AvailabilityStatus, Format, Match, Player, UUID } from '../types/index';
 import { displayName } from '../app/squad';
-import { formatClock, periodNoun } from '../app/matchClock';
-import { periodLengthMs, planFor, planHasContent, projectPlan, type MatchPlan } from '../app/matchPlan';
+import { formatClock, formatSubTime, periodNoun } from '../app/matchClock';
+import { emptyPlan, periodLengthMs, planFor, planHasContent, projectPlan, setPeriodSlots, type MatchPlan } from '../app/matchPlan';
 import { comingRows, comingSummary } from '../app/whosComing';
 import { buildTeamSheet, rotateKeepers, type Fill, type SeasonKeeping } from '../app/teamSheetBuilder';
-import { benchOf, swapInPeriod, type SheetView } from '../app/teamSheetEdit';
+import { applyKeepers, benchOf, keepersOf, swapInPeriod, type SheetView } from '../app/teamSheetEdit';
 import { editSheet } from '../app/teamSheet';
-import { setPeriodSlots } from '../app/matchPlan';
-import { PitchView } from './PitchView';
-import { TeamSheetViews } from './TeamSheetViews';
-import { useEdgeScroll } from './useEdgeScroll';
 import {
   Action,
+  ActionRow,
   BackLink,
-  FormSheet,
   GroupLabel,
   ListSheet,
-  MainButton,
   RowNav,
   SavedTick,
   Segmented,
-  SheetNote,
   TopBar,
   useSavedTick,
 } from './controls';
+import { PitchView } from './PitchView';
+import { SharePlanFoot } from './SharePlan';
+import { TeamSheetViews } from './TeamSheetViews';
+import { useEdgeScroll } from './useEdgeScroll';
 import { colours, screen } from './theme';
 
 /** C16: more than this under the fair share is marked, in neutral text. */
 export const SHORT_MS = 3 * 60_000;
 
 export function TeamSheetScreen({
-  title,
+  match,
+  squadName,
   format,
-  totalMinutes,
-  periodCount,
   players,
   availability,
   plan: stored,
@@ -65,84 +63,84 @@ export function TeamSheetScreen({
   onUndo,
   onBack,
 }: {
-  /** "Heart FC v Rovers". */
-  title: string;
+  match: Match;
+  squadName: string;
   format: Format;
-  totalMinutes: number;
-  periodCount: number;
   /** The whole squad, in squad order. */
   players: Player[];
   availability: [UUID, AvailabilityStatus][] | undefined;
   plan: MatchPlan | undefined;
   season: ReadonlyMap<UUID, SeasonKeeping>;
-  /** Formation or Table, as last chosen on this phone (C13). */
+  /** Pitch, All quarters or Table, as last chosen on this phone (C13). */
   view: SheetView;
   onView: (view: SheetView) => void;
   onChange: (plan: MatchPlan) => void;
   onComing: () => void;
   onSquad: () => void;
-  /** The Plan screen, period by period: Share plan, subs, Same as previous (B12). */
+  /** The Plan screen: sub times and who comes off, period by period (B12). */
   onEditPeriods: () => void;
   /** A toast with Undo, as elsewhere. */
   onUndo: (text: string, undo: () => void) => void;
   onBack: () => void;
 }) {
   const tick = useSavedTick();
+  const periodCount = match.quarterCount;
   const noun = periodNoun(periodCount);
   const short = noun === 'Quarter' ? 'Q' : 'H';
-  const periodMs = periodLengthMs(totalMinutes, periodCount);
+  const periodMs = periodLengthMs(match.totalMinutes, periodCount);
   const rows = comingRows(availability, players);
   const coming = rows.filter((r) => r.coming === 'coming').map((r) => r.player);
-  const name = (id: UUID | null) => (id ? displayName(players.find((p) => p.id === id) ?? { firstName: '?', displaySuffix: null }) : 'Nobody');
+  const comingIds = coming.map((p) => p.id);
+  const absent = new Set(rows.filter((r) => r.coming !== 'coming').map((r) => r.player.id));
+  const name = (id: UUID | null) =>
+    id ? displayName(players.find((p) => p.id === id) ?? { firstName: '?', displaySuffix: null }) : 'Nobody';
+
+  const rotated = rotateKeepers(coming, periodCount, periodMs, season);
+  // The sheet as it stands: the stored plan, or, before anything is saved,
+  // the empty quarters with the rotation's keepers in goal. Nothing is saved
+  // until the coach changes something.
+  const made = planHasContent(stored);
+  const sheet = made ? planFor(stored, periodCount) : applyKeepers(emptyPlan(periodCount), format, rotated);
+  const keepers = keepersOf(sheet, format);
 
   const [keeperMode, setKeeperMode] = useState<'rotate' | 'choose'>('rotate');
   const [subs, setSubs] = useState(true);
-  const [fill, setFill] = useState<Fill>('even');
-  const rotated = rotateKeepers(coming, periodCount, periodMs, season);
-  const [chosen, setChosen] = useState<(UUID | null)[] | null>(null);
-  const keepers = keeperMode === 'rotate' || chosen === null ? rotated : chosen;
+  const [fill, setFill] = useState<Fill>('fair');
   const [picking, setPicking] = useState<number | null>(null);
-  const [asking, setAsking] = useState(false);
-  /** Shuffle's seed: a new one each make, never the clock (#95). */
-  const [shuffles, setShuffles] = useState(1);
-
-  const plan = planFor(stored, periodCount);
-  const made = planHasContent(stored);
-  const comingIds = coming.map((p) => p.id);
-
-  // C14: ⤢ enlarges one period to the full pitch, where dragging works (P4).
-  const [enlarged, setEnlarged] = useState<number | null>(null);
+  const [quarter, setQuarter] = useState(0);
   const [pick, setPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
   // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
   const edge = useEdgeScroll(dragging);
 
-  /** C17: a swap, with Undo in the toast, as elsewhere. */
-  const swap = (periodIndex: number, a: UUID, b: UUID) => {
-    const before = plan;
-    onChange(swapInPeriod(plan, periodIndex, a, b));
+  const save = (next: MatchPlan) => {
+    onChange(next);
     tick.mark();
-    onUndo(`Swapped ${name(a)} and ${name(b)}`, () => onChange(before));
   };
-
-  const make = () => {
+  /** A change that comes with Undo in the toast, as elsewhere. */
+  const undoable = (next: MatchPlan, text: string) => {
     const before = stored;
-    const built = buildTeamSheet({
-      format,
-      totalMinutes,
-      periodCount,
-      coming,
-      keepers,
-      subs,
-      fill,
-      seed: shuffles,
-      season,
-    });
-    onChange(built.plan);
-    setShuffles((n) => n + 1);
-    tick.mark();
-    if (before && planHasContent(before)) onUndo('Team sheet made again', () => onChange(before));
+    save(next);
+    onUndo(text, () => onChange(before ?? emptyPlan(periodCount)));
   };
+  const swap = (p: number, a: UUID, b: UUID) => undoable(swapInPeriod(sheet, p, a, b), `Swapped ${name(a)} and ${name(b)}`);
+
+  const fillRest = () =>
+    undoable(
+      buildTeamSheet({
+        format,
+        totalMinutes: match.totalMinutes,
+        periodCount,
+        coming,
+        keepers,
+        subs,
+        fill,
+        season,
+        existing: sheet,
+      }).plan,
+      'Filled the rest'
+    );
+  const startAgain = () => undoable(applyKeepers(emptyPlan(periodCount), format, keepers), 'Started again: keepers kept');
 
   // B8: one neutral line, only with a coming child marked Not in goal.
   const never = coming.filter((p) => p.keeper === 'never').map(displayName);
@@ -154,13 +152,18 @@ export function TeamSheetScreen({
         } in goal. Fewer on that list shares keeping more fairly.`;
   const eligible = coming.filter((p) => p.keeper !== 'never');
 
+  // How many places are still empty, across the match.
+  const outfieldCount = format.positions.length;
+  const empty = sheet.periods.reduce((n, p) => n + outfieldCount - Object.values(p.slots).filter(Boolean).length, 0);
+
   // C16: the fair share, the range and each child's minutes, least first.
-  const projection = made
-    ? projectPlan(plan, format, totalMinutes, periodCount, coming, null, new Set())
-    : null;
+  const projection = made ? projectPlan(sheet, format, match.totalMinutes, periodCount, coming, null, new Set()) : null;
   const minutes = projection ? [...projection.rows].sort((a, b) => a.pitchMs - b.pitchMs) : [];
   const low = minutes.length ? minutes[0].pitchMs : 0;
   const high = minutes.length ? minutes[minutes.length - 1].pitchMs : 0;
+
+  const period = sheet.periods[quarter];
+  const sub = period.subs.find((s) => s.onId && s.offId);
 
   return (
     <View style={screen.flex}>
@@ -171,13 +174,11 @@ export function TeamSheetScreen({
           right={<SavedTick visible={tick.visible} />}
         />
         <Text style={screen.caption} numberOfLines={1}>
-          {title}
+          {`${squadName} v ${match.opponent || 'Opponent TBC'}`}
         </Text>
-
-        <GroupLabel>1. Who's coming</GroupLabel>
         <RowNav label="Who's coming" value={comingSummary(rows)} onPress={onComing} first />
 
-        <GroupLabel>2. Keepers</GroupLabel>
+        <GroupLabel>1. Keepers</GroupLabel>
         <Segmented<'rotate' | 'choose'>
           name="Keepers"
           options={[
@@ -188,7 +189,7 @@ export function TeamSheetScreen({
           onChange={(v) => {
             if (!v) return;
             setKeeperMode(v);
-            if (v === 'choose' && chosen === null) setChosen(rotated);
+            if (v === 'rotate') save(applyKeepers(sheet, format, rotated));
           }}
         />
         {keepers.map((id, i) => {
@@ -213,7 +214,7 @@ export function TeamSheetScreen({
           </View>
         )}
 
-        <GroupLabel>{`3. Mid-${noun.toLowerCase()} subs`}</GroupLabel>
+        <GroupLabel>{`2. Mid-${noun.toLowerCase()} subs`}</GroupLabel>
         <Segmented<boolean>
           name={`Mid-${noun.toLowerCase()} subs`}
           options={[
@@ -229,61 +230,46 @@ export function TeamSheetScreen({
             : `Everyone plays whole ${noun.toLowerCase()}s.`}
         </Text>
 
-        <GroupLabel>4. Everyone else</GroupLabel>
-        <Segmented<Fill>
-          name="Everyone else"
-          options={[
-            { value: 'even', label: 'Even' },
-            { value: 'shuffle', label: 'Shuffle' },
-          ]}
-          value={fill}
-          onChange={(v) => v && setFill(v)}
-        />
+        <GroupLabel>3. Place anyone you want to</GroupLabel>
         <Text style={screen.hint}>
-          {fill === 'even'
-            ? 'Equal time, positions rotated: the same answer every time.'
-            : 'Equal time, positions rotated: a different mix each time.'}
+          Drag a child onto the pitch, or tap them and then a place. Or skip this and fill it all.
         </Text>
-
-        <View style={local.make}>
-          <MainButton
-            label={made ? 'Make it again' : 'Make the team sheet'}
-            onPress={() => (made ? setAsking(true) : make())}
-            disabled={coming.length === 0}
-          />
-        </View>
-
-        {made && enlarged === null && (
-          <TeamSheetViews
-            plan={plan}
-            format={format}
-            coming={comingIds}
-            name={(id) => name(id)}
-            short={short}
-            view={view}
-            onView={onView}
-            onSwap={swap}
-            onEnlarge={setEnlarged}
-          />
-        )}
-        {made && enlarged !== null && (
+        <Segmented<SheetView>
+          name="View"
+          options={[
+            { value: 'formation', label: 'Pitch' },
+            { value: 'all', label: `All ${noun.toLowerCase()}s` },
+            { value: 'table', label: 'Table' },
+          ]}
+          value={view}
+          onChange={(v) => v && onView(v)}
+        />
+        {view === 'formation' && (
           <View>
-            <View style={local.enlargedHead}>
-              <BackLink label="All of them" onPress={() => setEnlarged(null)} />
-              <Text style={local.enlargedTitle}>{`${noun} ${enlarged + 1}`}</Text>
-            </View>
+            <Segmented<number>
+              name={noun}
+              options={sheet.periods.map((_, i) => ({ value: i, label: `${short}${i + 1}`, accessibilityLabel: `${noun} ${i + 1}` }))}
+              value={quarter}
+              onChange={(v) => {
+                if (v === null) return;
+                setQuarter(v);
+                setPick(null);
+              }}
+            />
+            <Text style={local.subLine} numberOfLines={1}>
+              {sub ? `${name(sub.onId)} on for ${name(sub.offId)} at ${formatSubTime(sub.atMs)}` : ' '}
+            </Text>
             <PitchView
               format={format}
-              sheet={plan.periods[enlarged].slots}
-              bench={benchOf(plan.periods[enlarged], comingIds)}
+              sheet={period.slots}
+              bench={benchOf(period, comingIds)}
               nameOf={(id) => name(id)}
               selected={pick}
               onSelect={setPick}
               onDragging={setDragging}
               {...edge.pitchProps}
               onMove={(id, target) => {
-                const period = plan.periods[enlarged];
-                // C17: onto someone, it is a swap and the sub follows the place;
+                // Onto someone it is a swap, and a sub follows its place (C17);
                 // onto an empty place or the bench, an ordinary move.
                 const other =
                   target.kind === 'player'
@@ -291,37 +277,85 @@ export function TeamSheetScreen({
                     : target.kind === 'slot'
                       ? (period.slots[target.positionId] ?? null)
                       : null;
-                if (other) swap(enlarged, id, other);
-                else onChange(setPeriodSlots(plan, enlarged, editSheet(period.slots, id, target)));
+                if (other) swap(quarter, id, other);
+                else save(setPeriodSlots(sheet, quarter, editSheet(period.slots, id, target)));
               }}
             />
           </View>
         )}
-        {made && (
-          <>
-            {projection && (
-              <View>
-                <GroupLabel>Minutes</GroupLabel>
-                <Text style={local.share}>
-                  {`Fair share ${formatClock(projection.fairShareMs)} · ${formatClock(low)}–${formatClock(high)}`}
+        {view !== 'formation' && (
+          <TeamSheetViews
+            plan={sheet}
+            format={format}
+            coming={comingIds}
+            name={(id) => name(id)}
+            short={short}
+            view={view === 'all' ? 'formation' : 'table'}
+            onSwap={swap}
+            onPlace={(p, id, positionId) =>
+              save(setPeriodSlots(sheet, p, editSheet(sheet.periods[p].slots, id, { kind: 'slot', positionId })))
+            }
+            onOpen={(p) => {
+              setQuarter(p);
+              onView('formation');
+            }}
+          />
+        )}
+
+        <GroupLabel>4. Fill the rest</GroupLabel>
+        <Segmented<Fill>
+          name="Fill the rest"
+          options={[
+            { value: 'fair', label: 'Fairly' },
+            { value: 'positions', label: 'Using positions' },
+          ]}
+          value={fill}
+          onChange={(v) => v && setFill(v)}
+        />
+        <Text style={screen.hint}>
+          {fill === 'fair'
+            ? 'Equal time for everyone, positions rotated. Anyone you placed stays put.'
+            : 'Equal time first, then each child in their area from the Squad tab where the minutes allow. Anyone you placed stays put.'}
+        </Text>
+        <ActionRow>
+          <Action label={empty > 0 ? 'Fill the rest' : 'Fill again'} onPress={fillRest} disabled={coming.length === 0 || empty === 0} />
+          {made && <Action label="Start again" onPress={startAgain} quiet />}
+        </ActionRow>
+
+        {projection && (
+          <View>
+            <GroupLabel>5. Minutes</GroupLabel>
+            <Text style={local.share}>
+              {`Fair share ${formatClock(projection.fairShareMs)} · ${formatClock(low)}–${formatClock(high)}`}
+            </Text>
+            {minutes.map((row) => (
+              <View key={row.playerId} style={local.minuteRow}>
+                <Text style={local.minuteName} numberOfLines={1}>
+                  {row.name}
                 </Text>
-                {minutes.map((row) => (
-                  <View key={row.playerId} style={local.minuteRow}>
-                    <Text style={local.minuteName} numberOfLines={1}>
-                      {row.name}
-                    </Text>
-                    <Text style={[local.minuteTime, projection.fairShareMs - row.pitchMs > SHORT_MS && local.minuteShort]}>
-                      {formatClock(row.pitchMs)}
-                      {projection.fairShareMs - row.pitchMs > SHORT_MS ? ' · short' : ''}
-                    </Text>
-                  </View>
-                ))}
+                <Text style={[local.minuteTime, projection.fairShareMs - row.pitchMs > SHORT_MS && local.minuteShort]}>
+                  {formatClock(row.pitchMs)}
+                  {projection.fairShareMs - row.pitchMs > SHORT_MS ? ' · short' : ''}
+                </Text>
               </View>
-            )}
-            <RowNav label={`Edit ${noun.toLowerCase()} by ${noun.toLowerCase()}`} detail="Subs, Share plan" onPress={onEditPeriods} first />
-          </>
+            ))}
+            <RowNav label="Sub times and who comes off" detail={`${noun} by ${noun.toLowerCase()}`} onPress={onEditPeriods} first />
+          </View>
         )}
       </ScrollView>
+
+      {/* Rob, 6 Nov: "I make final tweaks and share". */}
+      <SharePlanFoot
+        match={match}
+        squadName={squadName}
+        format={format}
+        plan={sheet}
+        players={players}
+        absent={absent}
+        periodCount={periodCount}
+        noun={noun}
+        disabled={!made}
+      />
 
       <ListSheet
         visible={picking !== null}
@@ -335,24 +369,11 @@ export function TeamSheetScreen({
           if (picking === null) return;
           const next = [...keepers];
           next[picking] = id;
-          setChosen(next);
+          save(applyKeepers(sheet, format, next));
           setPicking(null);
         }}
         onCancel={() => setPicking(null)}
       />
-
-      <FormSheet
-        visible={asking}
-        title="Make the team sheet again?"
-        saveLabel="Make it again"
-        onCancel={() => setAsking(false)}
-        onSave={() => {
-          setAsking(false);
-          make();
-        }}
-      >
-        <SheetNote>It replaces the sheet you have now. You can undo it straight after.</SheetNote>
-      </FormSheet>
     </View>
   );
 }
@@ -362,13 +383,11 @@ const local = StyleSheet.create({
   keeperPeriod: { color: colours.inkMuted, fontSize: 14, width: 36, includeFontPadding: false, flexShrink: 0 },
   keeperName: { color: colours.ink, fontSize: 16, includeFontPadding: false, flexShrink: 1 },
   keeperDetail: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginLeft: 8, flexShrink: 0 },
-  make: { marginTop: 16, marginBottom: 8 },
+  subLine: { color: colours.inkMuted, fontSize: 13, includeFontPadding: false, marginVertical: 6 },
   share: { color: colours.ink, fontSize: 15, includeFontPadding: false, marginBottom: 6 },
   minuteRow: { flexDirection: 'row', alignItems: 'center', minHeight: 28 },
   minuteName: { flex: 1, color: colours.ink, fontSize: 15, includeFontPadding: false },
   minuteTime: { color: colours.inkMuted, fontSize: 15, includeFontPadding: false, flexShrink: 0 },
   // #261 AC7: neutral, never the warning colour.
   minuteShort: { color: colours.ink },
-  enlargedHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  enlargedTitle: { color: colours.ink, fontSize: 16, fontWeight: '600', includeFontPadding: false },
 });

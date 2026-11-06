@@ -57,21 +57,34 @@ describe('Build the team sheet (#277 B6–B12)', () => {
     expect(card).not.toContain("'Plan this match'");
   });
 
-  it('the four steps are on one screen, in the coach’s order (B6, P1)', () => {
-    const order = ["1. Who's coming", '2. Keepers', '3. Mid-', '4. Everyone else'].map((t) => sheet.indexOf(t));
+  it('one screen in Rob’s order: keepers, subs, place, fill, minutes, then Share plan (6 Nov)', () => {
+    const order = ['1. Keepers', '2. Mid-', '3. Place anyone you want to', '4. Fill the rest', '5. Minutes', '<SharePlanFoot'].map((t) =>
+      sheet.indexOf(t)
+    );
     expect(order.every((i) => i > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('the defaults are Rotate for me, Place them and Even (B6, P3)', () => {
+  it('the defaults are Rotate for me, Place them and Fairly; Shuffle is gone', () => {
     expect(sheet).toContain("useState<'rotate' | 'choose'>('rotate')");
     expect(sheet).toContain('const [subs, setSubs] = useState(true);');
-    expect(sheet).toContain("useState<Fill>('even')");
+    expect(sheet).toContain("useState<Fill>('fair')");
+    expect(sheet).not.toContain('Shuffle');
   });
 
-  it('Make it again asks first and comes with Undo (B12)', () => {
-    expect(sheet).toContain("onPress={() => (made ? setAsking(true) : make())}");
-    expect(sheet).toMatch(/onUndo\('Team sheet made again', \(\) => onChange\(before\)\)/);
+  it('the quarters show from the start with the keepers in goal, nothing saved until a change', () => {
+    expect(sheet).toContain('const sheet = made ? planFor(stored, periodCount) : applyKeepers(emptyPlan(periodCount), format, rotated);');
+  });
+
+  it('Fill the rest keeps what is placed; Start again keeps the keepers; both with Undo', () => {
+    expect(sheet).toMatch(/buildTeamSheet\(\{[\s\S]*?existing: sheet,[\s\S]*?\}\)\.plan,\s*'Filled the rest'/);
+    expect(sheet).toContain("undoable(applyKeepers(emptyPlan(periodCount), format, keepers), 'Started again: keepers kept')");
+    expect(sheet).toMatch(/onUndo\(text, \(\) => onChange\(before \?\? emptyPlan\(periodCount\)\)\)/);
+  });
+
+  it('Who’s coming flows on with Next: team sheet (6 Nov)', () => {
+    expect(src('WhosComingScreen.tsx')).toContain('<MainButton label="Next: team sheet" onPress={onNext} />');
+    expect(app).toMatch(/onNext=\{\(\) => \{\s*setSheetId\(comingMatch\.match\.id\);\s*setStep\('teamSheet'\);/);
   });
 
   it('it saves to the match’s ordinary plan (B12, D6)', () => {
@@ -84,33 +97,35 @@ describe('Build the team sheet (#277 B6–B12)', () => {
   });
 });
 
-describe('the sheet: Formation and Table (#277 C13–C18)', () => {
+describe('the sheet: Pitch, All quarters and Table (#277 C13–C18; Rob, 6 Nov)', () => {
   const views = src('TeamSheetViews.tsx');
   const sheet = src('TeamSheetScreen.tsx');
 
-  it('Formation | Table, remembered on this phone and cleared by Forget everything (C13, D5)', () => {
-    expect(views).toContain("{ value: 'formation', label: 'Formation' }");
-    expect(views).toContain("{ value: 'table', label: 'Table' }");
+  it('Pitch | All quarters | Table, remembered on this phone and cleared by Forget everything (C13, D5)', () => {
+    expect(sheet).toContain("{ value: 'formation', label: 'Pitch' }");
+    expect(sheet).toContain("{ value: 'table', label: 'Table' }");
     expect(app).toContain('void store.setItem(SHEET_VIEW_KEY, v)');
     expect(readFileSync(join(__dirname, '../app/storage/forget.ts'), 'utf-8')).toContain('SHEET_VIEW_KEY,');
   });
 
-  it('Formation is 2 × 2 in portrait and four in a row in landscape, with ⤢ to enlarge (C14)', () => {
-    expect(views).toContain('width > height ? Math.min(4, plan.periods.length) : Math.min(2, plan.periods.length)');
-    expect(views).toContain('onPress={() => onEnlarge(p)}');
+  it('the Pitch is the real pitch, one quarter at a time, with drag and edge scrolling ("remain awesome")', () => {
+    expect(sheet).toMatch(/view === 'formation' && \([\s\S]*?<PitchView[\s\S]*?onDragging=\{setDragging\}[\s\S]*?\{\.\.\.edge\.pitchProps\}/);
   });
 
-  it('the enlarged period is the full pitch, where dragging works (C17, P4)', () => {
-    expect(sheet).toMatch(/enlarged !== null && \([\s\S]*?<PitchView[\s\S]*?onDragging=\{setDragging\}/);
+  it('All quarters is 2 × 2 in portrait and four in a row in landscape; Open shows one on the pitch', () => {
+    expect(views).toContain('width > height ? Math.min(4, plan.periods.length) : Math.min(2, plan.periods.length)');
+    expect(views).toContain('onPress={() => onOpen(p)}');
+    expect(views).not.toMatch(/[⤢⇄]/);
   });
 
   it('the Table keeps the position column still while the periods scroll (C15)', () => {
     expect(views).toMatch(/<View style=\{\{ width: LABEL_W \}\}>[\s\S]*?<ScrollView horizontal/);
   });
 
-  it('a second tap in the same period swaps, with Undo (C17)', () => {
+  it('a second tap swaps, or places a picked child in an empty spot; swaps come with Undo (C17)', () => {
     expect(views).toContain('if (picked.id !== id) onSwap(period, picked.id, id);');
-    expect(sheet).toMatch(/onUndo\(`Swapped \$\{name\(a\)\} and \$\{name\(b\)\}`, \(\) => onChange\(before\)\)/);
+    expect(views).toContain('if (picked && picked.period === period && positionId) onPlace(period, picked.id, positionId);');
+    expect(sheet).toMatch(/undoable\(swapInPeriod\(sheet, p, a, b\), `Swapped \$\{name\(a\)\} and \$\{name\(b\)\}`\)/);
   });
 
   it('every target is at least a touch target tall (C18)', () => {
