@@ -28,6 +28,7 @@ export function SharePlanFoot({
   periodCount,
   noun,
   disabled = false,
+  note,
 }: {
   match: Match;
   squadName: string;
@@ -40,6 +41,8 @@ export function SharePlanFoot({
   /** "Quarter" or "Half". */
   noun: string;
   disabled?: boolean;
+  /** In place of the usual line under the button, e.g. "Fill every place first". */
+  note?: string;
 }) {
   const [shareAsk, setShareAsk] = useState(false);
   const [shareLayout, setShareLayout] = useState<PlanImageLayout | null>(null);
@@ -79,7 +82,7 @@ export function SharePlanFoot({
       <MainFoot>
         <MainButton label="Share plan" onPress={askShare} disabled={disabled || shareLayout !== null} />
         <Text style={screen.hint}>
-          {shareNote ??
+          {note ?? shareNote ??
             'One picture of every ' +
               noun.toLowerCase() +
               ' and its subs, for parents. No minutes, and nobody marked absent.'}

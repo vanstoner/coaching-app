@@ -20,7 +20,7 @@ import type { Format, UUID } from '../types/index';
 import { formatSubTime } from '../app/matchClock';
 import { slotSpots } from '../app/pitchLayout';
 import type { MatchPlan } from '../app/matchPlan';
-import { benchOf, sheetTable, shortLabel } from '../app/teamSheetEdit';
+import { benchOf, canRearrange, isPinned, sheetTable, shortLabel } from '../app/teamSheetEdit';
 import { colours, TOUCH_TARGET } from './theme';
 
 /** The table's column widths, in dp: a 320 dp phone shows the labels and most of four columns. */
@@ -37,6 +37,7 @@ export function TeamSheetViews({
   onSwap,
   onPlace,
   onOpen,
+  onRearrange,
 }: {
   plan: MatchPlan;
   format: Format;
@@ -52,6 +53,8 @@ export function TeamSheetViews({
   onPlace: (periodIndex: number, id: UUID, positionId: UUID) => void;
   /** Show this period on the full pitch. */
   onOpen: (periodIndex: number) => void;
+  /** ⟳ Rearrange one period: same children, new places (Rob, 6 Nov). */
+  onRearrange: (periodIndex: number) => void;
 }) {
   // The first tap of a swap: which period, and who.
   const [picked, setPicked] = useState<{ period: number; id: UUID } | null>(null);
@@ -80,9 +83,9 @@ export function TeamSheetViews({
           : `Tap one child, then another in the same ${noun}, to swap them, bench included.`}
       </Text>
       {view === 'formation' ? (
-        <Formation plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onOpen={onOpen} />
+        <Formation plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onOpen={onOpen} onRearrange={onRearrange} />
       ) : (
-        <Table plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} />
+        <Table plan={plan} format={format} coming={coming} name={name} short={short} tap={tap} isPicked={isPicked} onRearrange={onRearrange} />
       )}
     </View>
   );
@@ -100,6 +103,7 @@ function Formation({
   tap,
   isPicked,
   onOpen,
+  onRearrange,
 }: {
   plan: MatchPlan;
   format: Format;
@@ -109,6 +113,7 @@ function Formation({
   tap: Tap;
   isPicked: IsPicked;
   onOpen: (periodIndex: number) => void;
+  onRearrange: (periodIndex: number) => void;
 }) {
   const { width, height } = useWindowDimensions();
   // C14: 2 × 2 in portrait, four in a row in landscape.
@@ -117,72 +122,105 @@ function Formation({
   // A row of four (11-a-side) takes narrower chips, so none overlap.
   const widest = Math.max(1, ...[...new Set(spots.map((s) => s.y))].map((y) => spots.filter((s) => s.y === y).length));
   const chipPct = widest >= 4 ? 24 : 32;
+  // One bench row per quarter (mock v2): as many names as fit, then "+n",
+  // which opens that quarter on the full pitch where the whole bench shows.
+  const cardWidth = (width - 36) / perRow - 6;
+  const chipWidth = (n: string) => n.length * 7 + 22;
+  const benchRow = (bench: UUID[]) => {
+    let used = 0;
+    const shown: UUID[] = [];
+    for (const id of bench) {
+      const w = chipWidth(name(id)) + 4;
+      const room = cardWidth - (shown.length + 1 < bench.length ? 40 : 0);
+      if (used + w > room) break;
+      shown.push(id);
+      used += w;
+    }
+    return { shown, more: bench.length - shown.length };
+  };
   return (
     <View style={local.grid}>
       {plan.periods.map((period, p) => {
-        const sub = period.subs.find((s) => s.onId && s.offId);
+        const subs = period.subs.filter((s) => s.onId && s.offId);
+        const offAt = (id: UUID | null) => subs.find((s) => id !== null && s.offId === id);
         const bench = benchOf(period, coming);
+        const row = benchRow(bench);
         return (
           <View key={p} style={[local.card, { width: `${100 / perRow}%` }]}>
             <View style={local.cardHead}>
               <Text style={local.cardTitle} numberOfLines={1}>
                 {`${short}${p + 1}`}
-                {sub ? <Text style={local.cardSub}>{` · ${name(sub.onId!)} on ${formatSubTime(sub.atMs)}`}</Text> : null}
+                {subs.length ? <Text style={local.cardSub}>{` · ${subs.length} ${subs.length === 1 ? 'sub' : 'subs'}`}</Text> : null}
               </Text>
               <Pressable
-                onPress={() => onOpen(p)}
+                onPress={() => onRearrange(p)}
+                disabled={!canRearrange(period, format)}
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${short}${p + 1} on the pitch`}
-                style={local.enlarge}
+                accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
+                style={({ pressed }) => [local.rearrange, !canRearrange(period, format) && local.off, pressed && local.pressed]}
               >
-                <Text style={local.enlargeText}>Open</Text>
+                <Text style={local.rearrangeText}>⟳ Rearrange</Text>
               </Pressable>
             </View>
             <View style={local.pitch}>
               {spots.map((spot) => {
                 const who = period.slots[spot.positionId] ?? null;
                 const position = format.positions.find((x) => x.id === spot.positionId)!;
-                const off = sub && who === sub.offId;
+                const offSub = offAt(who);
                 const keeper = position.kind === 'goalkeeper';
                 return (
                   <Pressable
                     key={spot.positionId}
                     onPress={() => tap(p, who, spot.positionId)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${short}${p + 1}, ${position.label}, ${who ? name(who) : 'empty'}${off ? `, off at ${formatSubTime(sub.atMs)}` : ''}`}
+                    accessibilityLabel={`${short}${p + 1}, ${position.label}, ${who ? name(who) : 'empty'}${offSub ? `, off at ${formatSubTime(offSub.atMs)}` : ''}`}
                     style={[local.chipHit, { width: `${chipPct}%`, left: `${spot.x * 100 - chipPct / 2}%`, top: `${spot.y * 100 - 9}%` }]}
                   >
                     <View style={[local.chip, keeper && local.chipKeeper, isPicked(p, who) && local.chipPicked]}>
+                      {!keeper && isPinned(period, spot.positionId) && <View style={local.mark} />}
                       <Text style={local.chipName} numberOfLines={1} ellipsizeMode="tail">
                         {who ? name(who) : '–'}
                       </Text>
                       <Text style={local.chipRole} numberOfLines={1}>
-                        {off ? `${shortLabel(position)} · off ${formatSubTime(sub.atMs)}` : shortLabel(position)}
+                        {offSub ? 'off' : shortLabel(position)}
                       </Text>
                     </View>
                   </Pressable>
                 );
               })}
             </View>
-            <Text style={local.benchLabelSmall}>Bench</Text>
+            {/* The bench, small: one row on a plank; whoever comes on in gold (mock v2). */}
             <View style={local.bench}>
-              {bench.length === 0 && <Text style={local.benchNone}>Nobody</Text>}
-              {bench.map((id) => (
+              {bench.length === 0 && <Text style={local.benchNone}>Nobody on the bench</Text>}
+              {row.shown.map((id) => (
                 <Pressable
                   key={id}
                   onPress={() => tap(p, id)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${short}${p + 1}, bench, ${name(id)}${sub && sub.onId === id ? `, on at ${formatSubTime(sub.atMs)}` : ''}`}
+                  accessibilityLabel={`${short}${p + 1}, bench, ${name(id)}${subs.some((x) => x.onId === id) ? ', comes on at the sub' : ''}`}
                   style={local.benchHit}
                 >
-                  <View style={[local.benchChip, isPicked(p, id) && local.chipPicked]}>
+                  <View style={[local.benchChip, subs.some((x) => x.onId === id) && local.benchGold, isPicked(p, id) && local.chipPicked]}>
                     <Text style={local.benchName} numberOfLines={1}>
                       {name(id)}
                     </Text>
                   </View>
                 </Pressable>
               ))}
+              {row.more > 0 && (
+                <Pressable
+                  onPress={() => onOpen(p)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${row.more} more on the bench: open ${short}${p + 1} on the pitch`}
+                  style={local.benchHit}
+                >
+                  <View style={[local.benchChip, local.moreChip]}>
+                    <Text style={local.moreText}>{`+${row.more}`}</Text>
+                  </View>
+                </Pressable>
+              )}
             </View>
+            <View style={local.plank} />
           </View>
         );
       })}
@@ -198,6 +236,7 @@ function Table({
   short,
   tap,
   isPicked,
+  onRearrange,
 }: {
   plan: MatchPlan;
   format: Format;
@@ -206,6 +245,7 @@ function Table({
   short: string;
   tap: Tap;
   isPicked: IsPicked;
+  onRearrange: (periodIndex: number) => void;
 }) {
   const rows = sheetTable(plan, format, coming, name);
   return (
@@ -225,9 +265,16 @@ function Table({
         <View>
           <View style={local.headRow}>
             {plan.periods.map((_, p) => (
-              <View key={p} style={[local.headCell, { width: CELL_W }]}>
-                <Text style={local.head}>{`${short}${p + 1}`}</Text>
-              </View>
+              <Pressable
+                key={p}
+                onPress={() => onRearrange(p)}
+                disabled={!canRearrange(plan.periods[p], format)}
+                accessibilityRole="button"
+                accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
+                style={[local.headCell, { width: CELL_W }]}
+              >
+                <Text style={local.head}>{`${short}${p + 1} ⟳`}</Text>
+              </Pressable>
             ))}
           </View>
           {rows.map((row, r) => (
@@ -292,12 +339,30 @@ const local = StyleSheet.create({
   chipPicked: { borderColor: colours.warn },
   chipName: { alignSelf: 'stretch', textAlign: 'center', color: '#0b3d2e', fontSize: 12, fontWeight: '700', includeFontPadding: false, flexShrink: 0 },
   chipRole: { alignSelf: 'stretch', textAlign: 'center', color: '#3f6b5b', fontSize: 9, fontWeight: '600', includeFontPadding: false },
-  benchLabelSmall: { color: colours.inkMuted, fontSize: 11, letterSpacing: 1, marginTop: 6, includeFontPadding: false },
-  bench: { flexDirection: 'row', flexWrap: 'wrap' },
-  benchNone: { color: colours.inkFaint, fontSize: 12, paddingVertical: 8 },
-  benchHit: { width: '50%', minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: 2 },
-  benchChip: { borderRadius: 14, borderWidth: 2, borderColor: colours.line, borderStyle: 'dashed', paddingVertical: 4 },
-  benchName: { alignSelf: 'stretch', textAlign: 'center', color: colours.ink, fontSize: 12, includeFontPadding: false },
+  bench: { flexDirection: 'row', flexWrap: 'nowrap', overflow: 'hidden', marginTop: 4 },
+  benchNone: { color: colours.inkFaint, fontSize: 12, paddingVertical: 12 },
+  benchHit: { minHeight: TOUCH_TARGET, justifyContent: 'flex-end', paddingRight: 4, flexShrink: 0 },
+  benchChip: {
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    borderWidth: 1,
+    borderColor: colours.line,
+    backgroundColor: colours.pitchRaised,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  benchGold: { borderColor: colours.warn },
+  benchName: { color: colours.ink, fontSize: 12, includeFontPadding: false },
+  moreChip: { borderColor: colours.action },
+  moreText: { color: colours.action, fontSize: 12, fontWeight: '600', includeFontPadding: false },
+  plank: { height: 7, borderRadius: 3, backgroundColor: colours.wood, marginTop: -2, marginBottom: 8 },
+  rearrange: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 10, borderWidth: 1, borderColor: colours.line },
+  rearrangeText: { color: colours.action, fontSize: 12, fontWeight: '600', includeFontPadding: false },
+  off: { opacity: 0.35 },
+  pressed: { opacity: 0.6 },
+  mark: { position: 'absolute', top: 3, right: 5, width: 5, height: 5, borderRadius: 3, backgroundColor: colours.main },
   table: { flexDirection: 'row', marginTop: 4 },
   headRow: { flexDirection: 'row' },
   headCell: { height: 32, justifyContent: 'center' },

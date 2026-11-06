@@ -100,26 +100,25 @@ arrive through the week. The card shows the count, like "9 coming · 2 can't
 ## 4. Plan the match
 
 Tap **Next: team sheet** at the bottom of Who's coming (or **Team sheet** on
-the fixture's card). It is one screen, top to bottom:
+the fixture's card). It is one screen:
 
-1. **Keepers**: **Rotate for me** shares goal round, starting with whoever
-   has been in goal least this season (never a child marked Not in goal). Or
-   **I'll choose** a keeper for each quarter. They go straight into goal.
-2. **Mid-quarter subs**: **Place them** puts one sub in each quarter,
-   halfway: whoever has played most comes off for whoever has played least.
-   Or **None**.
-3. **Place anyone you want to**: the pitch for each quarter, Q1 to Q4. Drag
-   a child from the bench onto a position, or tap them and then the
-   position. Skip it if you like. **All quarters** and **Table** show every
-   quarter at once.
-4. **Fill the rest**: **Fairly** gives everyone equal time with positions
-   rotated. **Using positions** gives equal time first, then puts each child
-   in their area from the Squad tab (Defence, Midfield or Attack) where it
-   can. Anyone you placed stays where you put them. **Start again** clears
-   everything except the keepers.
-5. Tweak: tap one child, then another in the same quarter, to swap them.
-   **Undo** is in the message that appears. Each child's minutes and the
-   fair share are underneath.
+- **Keepers and subs** is already set for you. Tap it to change it.
+  **Automatic** puts a Main keeper in goal all match, else a Back-up, else
+  shares goal round, starting with whoever has been in goal least this
+  season. **I'll choose** gives you a button per quarter. **Subs** is how
+  many swaps each quarter at halfway; it starts at the fairest number for who
+  is coming, and you can step it up or down.
+- **Place anyone you want to**: on **Pitch**, drag a child from the bench
+  onto a position, or tap them and then the position. **All** shows every
+  quarter at once and **Table** lists them. A child you place gets a small
+  green dot.
+- **Fill the rest** fills every empty place fairly. **By position** puts
+  children in their area from the Squad tab where it can. Anyone with a green
+  dot stays put. **Reset** clears everything except the keepers.
+- **⟳ Rearrange** on a quarter tries a different line-up for that quarter:
+  the same children, so nobody's minutes change.
+- Tap two children in the same quarter to swap them. **Undo** is in the
+  message that appears. **Minutes** shows everyone's time and the fair share.
 
 Then tap **Share plan** at the bottom to send parents the picture.
 

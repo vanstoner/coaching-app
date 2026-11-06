@@ -108,6 +108,7 @@ export function Stepper({
   minusLabel,
   plusLabel,
   minusDisabled = false,
+  plusDisabled = false,
 }: {
   onMinus: () => void;
   onPlus: () => void;
@@ -116,6 +117,8 @@ export function Stepper({
   /** "30 seconds later". */
   plusLabel: string;
   minusDisabled?: boolean;
+  /** At the top of its range (the team sheet's subs: no more than the bench). */
+  plusDisabled?: boolean;
 }) {
   return (
     <View style={choice.stepper}>
@@ -133,11 +136,13 @@ export function Stepper({
       </Pressable>
       <Pressable
         onPress={onPlus}
+        disabled={plusDisabled}
         accessibilityRole="button"
         accessibilityLabel={plusLabel}
+        accessibilityState={{ disabled: plusDisabled }}
         style={({ pressed }) => [choice.stepHit, pressed && choice.pressed]}
       >
-        <View style={[choice.stepHalf, choice.stepRight]}>
+        <View style={[choice.stepHalf, choice.stepRight, plusDisabled && choice.stepDisabled]}>
           <Icon name="plus" size={20} color={colours.ink} />
         </View>
       </Pressable>

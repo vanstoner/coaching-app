@@ -46,8 +46,11 @@ never stored. A child with no owed figure counts as 0.
 **D4. The best spread, in pure TypeScript.** `src/app/teamSheetBuilder.ts`
 hands out time in half-periods (whole periods with no subs). A seeded search
 over tie orders keeps the smallest spread, with a fixed seed, so the answer is
-the same every time. It fills only the empty places: children already on the
-sheet stay where they are (Rob, 6 Nov). **Using positions** then seats each
+the same every time. It fills only the empty places: the keepers and places the
+coach filled by hand (`PlannedPeriod.pinned`) stay (Rob, 6 Nov). Subs are a
+number of pairs a period; `fairestSubs` gives the fewest with the fairest
+split, where the coach's stepper starts. ⟳ Rearrange moves children within
+one period only, so it never changes anyone's minutes. **Using positions** then seats each
 child in their preferred area where a free place allows; it never changes who
 plays how long (invariant 3). Shuffle was dropped (Rob, 6 Nov). A test checks, by exhaustive search, that no plan with a
 smaller spread exists for 5–8 children at 5-a-side and 7–10 at 7-a-side.

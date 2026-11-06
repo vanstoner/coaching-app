@@ -31,7 +31,7 @@ src/app/            pure rules, each with a *.test.ts beside it
 src/app/storage/    the storage modules: teams, session, ledger store, backup, forget, device key
 src/screens/        React components; take props, hold only view state
 src/screens/controls/  the one control vocabulary every screen draws from (#264): Row ›, Section
-                    heading (the twisty), Segmented, list sheets, Stepper, Action, Main button,
+                    heading (the twisty; open, a shaded bordered panel, Rob 6 Nov), Segmented, list sheets, Stepper, Action, Main button,
                     Field row, ✓ Saved / Not saved yet, Back, Cancel/Save sheets, Danger
 .github/            CI, APK/IPA builds, releases, store listing
 ```

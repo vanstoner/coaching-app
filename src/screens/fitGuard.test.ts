@@ -64,7 +64,7 @@ describe('four in a row at 360dp (#249 F29, H34)', () => {
   });
 
   it('the name in a pill is one line that ends in "…", never clipped mid-letter', () => {
-    expect(src('PitchView.tsx')).toMatch(/<Text style=\{\[s\.name, onBench && s\.benchName\]\} numberOfLines=\{1\} ellipsizeMode="tail">/);
+    expect(src('PitchView.tsx')).toMatch(/<Text style=\{\[s\.name, onBench && s\.benchName\]\} numberOfLines=\{1\} ellipsizeMode="tail" adjustsFontSizeToFit minimumFontScale=\{0\.75\}>/);
   });
 
   it('the plan picture is captured at its measured height, never a constant', () => {

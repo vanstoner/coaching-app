@@ -55,6 +55,10 @@ export interface PitchViewProps {
   nameOf: (id: UUID) => string;
   /** The small line under a name: minutes, usually. */
   detailOf?: (id: UUID) => string;
+  /** Children the coach placed by hand on the team sheet: a green dot (#277). */
+  markedIds?: ReadonlySet<UUID>;
+  /** Bench children who come on at the sub: a gold outline (#277). */
+  goldIds?: ReadonlySet<UUID>;
   /** The pill picked by a first tap, waiting for where it goes. */
   selected: UUID | null;
   onSelect: (id: UUID | null) => void;
@@ -239,14 +243,17 @@ export function PitchView(props: PitchViewProps) {
           { width: onBench ? undefined : pillWidth },
           onBench && s.benchPill,
           keeper && s.keeperPill,
+          onBench && props.goldIds?.has(id) && s.goldPill,
           selected === id && s.selectedPill,
           dragging && s.dimmed,
         ]}
       >
-        {/* One line, ending in "…" when too long, never clipped mid-letter (#249 F29). */}
-        <Text style={[s.name, onBench && s.benchName]} numberOfLines={1} ellipsizeMode="tail">
+        {/* One line, ending in "…" when too long, never clipped mid-letter (#249 F29).
+            #277 (Rob, 6 Nov): a long name shrinks a little first, to 3/4 size. */}
+        <Text style={[s.name, onBench && s.benchName]} numberOfLines={1} ellipsizeMode="tail" adjustsFontSizeToFit minimumFontScale={0.75}>
           {nameOf(id)}
         </Text>
+        {props.markedIds?.has(id) && <View style={s.markDot} accessibilityLabel="placed by you" />}
         {detailOf && (
           <Text style={[s.detail, onBench && s.benchDetail]} numberOfLines={1}>
             {detailOf(id)}
@@ -346,6 +353,13 @@ export function PitchView(props: PitchViewProps) {
               {pill(id, false, true)}
             </View>
           ))}
+        </View>
+      )}
+      {/* The plank the subs sit on, and its legs (Rob, 6 Nov). */}
+      {!props.hideBench && (
+        <View style={s.plank} pointerEvents="none">
+          <View style={[s.leg, s.legLeft]} />
+          <View style={[s.leg, s.legRight]} />
         </View>
       )}
 
@@ -458,13 +472,15 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignSelf: 'stretch',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colours.line,
-    borderRadius: 12,
-    padding: 6,
-    minHeight: PILL_HEIGHT + 14,
+    paddingHorizontal: 2,
+    minHeight: PILL_HEIGHT + 8,
   },
+  plank: { alignSelf: 'stretch', height: 10, borderRadius: 4, backgroundColor: colours.wood, marginTop: -2, marginBottom: 12 },
+  leg: { position: 'absolute', top: 10, width: 8, height: 10, backgroundColor: colours.wood, opacity: 0.75 },
+  legLeft: { left: '12%' },
+  legRight: { right: '12%' },
+  goldPill: { borderColor: colours.warn, borderWidth: 2 },
+  markDot: { position: 'absolute', top: 6, right: 10, width: 7, height: 7, borderRadius: 4, backgroundColor: colours.main },
   // Rob, 4 October: "make it clear the subs bench is a subs bench".
   benchLabel: {
     alignSelf: 'stretch',
