@@ -41,6 +41,9 @@ export interface MatchEngineConfig {
 // Exceptions
 // ============================================================================
 
+/** #255 (ADR-026 D1): Rob's three boxes, the most extra slots a power play opens. */
+export const MAX_EXTRA_SLOTS = 3;
+
 export class MatchEngineError extends Error {
   constructor(message: string) {
     super(message);
@@ -498,6 +501,115 @@ export class MatchEngine {
     });
   }
 
+  // ========================================================================
+  // Power play (#255, ADR-026 D1, D2)
+  // ========================================================================
+
+  /**
+   * The extra slots open in a running quarter: open Appearances at a position
+   * the format does not have. Never stored; folded from the intervals (D1).
+   */
+  openExtraSlots(state: MatchState, quarter: Quarter, format: Format): Appearance[] {
+    const base = new Set(format.positions.map((p) => p.id));
+    return state.appearances
+      .filter((a) => a.quarterId === quarter.id && a.endElapsedMs === null && !base.has(a.positionId))
+      .sort((a, b) => a.startElapsedMs - b.startElapsedMs);
+  }
+
+  /**
+   * D2: a child on the bench and available comes on in a new extra outfield
+   * slot, with nobody coming off. Refused while the quarter is not running,
+   * with 3 extra slots open, or for a child not on the bench.
+   */
+  addExtraPlayer(state: MatchState, quarter: Quarter, playerId: UUID, unit: PositionUnit, format: Format): void {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(`Cannot add a player in quarter ${quarter.index}; status is ${quarter.status} (expected running)`);
+    }
+    if (this.openExtraSlots(state, quarter, format).length >= MAX_EXTRA_SLOTS) {
+      throw new MatchEngineError(`Cannot add a player; ${MAX_EXTRA_SLOTS} extra slots are already open`);
+    }
+    if (unit === 'GK') throw new MatchEngineError('An extra slot is never a goalkeeper');
+    if (state.playerAvailability.get(playerId) !== 'available') {
+      throw new MatchEngineError(`Cannot add ${playerId}; they are not available`);
+    }
+    const on = state.appearances.some((a) => a.quarterId === quarter.id && a.playerId === playerId && a.endElapsedMs === null);
+    if (on) throw new MatchEngineError(`Cannot add ${playerId}; they are already on the pitch`);
+
+    // Validation complete. Nothing above writes to state.
+    const matchElapsedMs = this.getMatchElapsedMs(state);
+    state.appearances.push({
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      playerId,
+      // The match's own slot, not the shape's (D1): no format position has it.
+      positionId: uuid(),
+      positionKind: 'outfield',
+      positionUnit: unit,
+      startElapsedMs: matchElapsedMs,
+      endElapsedMs: null,
+      endReason: null,
+      corrected: false,
+      correctionNote: null,
+    });
+    const benchStint = state.benchStints.find(
+      (b) => b.quarterId === quarter.id && b.playerId === playerId && b.endElapsedMs === null
+    );
+    if (benchStint) benchStint.endElapsedMs = matchElapsedMs;
+  }
+
+  /**
+   * D2, D7: any child on the pitch comes off with nobody coming on, and one
+   * extra slot closes. If the child was in a base slot, the child in the
+   * newest extra slot moves into it as a position change, so the base slots
+   * are always filled (the slot keeps its kind and unit). Refused with no
+   * extra slot open, or for a child not on the pitch.
+   */
+  removeExtraPlayer(state: MatchState, quarter: Quarter, playerId: UUID, format: Format): void {
+    if (quarter.status !== 'running') {
+      throw new MatchEngineError(`Cannot take a player off in quarter ${quarter.index}; status is ${quarter.status} (expected running)`);
+    }
+    const extras = this.openExtraSlots(state, quarter, format);
+    if (extras.length === 0) throw new MatchEngineError('No extra slot is open');
+    const leaving = state.appearances.find(
+      (a) => a.quarterId === quarter.id && a.playerId === playerId && a.endElapsedMs === null
+    );
+    if (!leaving) throw new MatchEngineError(`Cannot take ${playerId} off; they are not on the pitch`);
+    const inExtra = extras.some((a) => a.id === leaving.id);
+    const mover = inExtra ? null : extras[extras.length - 1];
+
+    // Validation complete. Nothing above writes to state.
+    const matchElapsedMs = this.getMatchElapsedMs(state);
+    leaving.endElapsedMs = matchElapsedMs;
+    leaving.endReason = 'substitution';
+    if (mover) {
+      mover.endElapsedMs = matchElapsedMs;
+      mover.endReason = 'position_change';
+      state.appearances.push({
+        id: uuid(),
+        matchId: state.match.id,
+        quarterId: quarter.id,
+        playerId: mover.playerId,
+        positionId: leaving.positionId,
+        positionKind: leaving.positionKind,
+        positionUnit: leaving.positionUnit,
+        startElapsedMs: matchElapsedMs,
+        endElapsedMs: null,
+        endReason: null,
+        corrected: false,
+        correctionNote: null,
+      });
+    }
+    state.benchStints.push({
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      playerId,
+      startElapsedMs: matchElapsedMs,
+      endElapsedMs: null,
+    });
+  }
+
   /**
    * The last thing the coach recorded in a quarter, in quarter-elapsed ms:
    * a substitution, a position swap, or a goal, save or goal conceded that
@@ -699,6 +811,30 @@ export class MatchEngine {
   }
 
   /**
+   * #255 (ADR-026 D4): the opposition used a power play. One event, credited
+   * to no one, at its match time; no count, no end, no formation change. Any
+   * time after kick-off, a break included (C22).
+   */
+  recordTheirPowerPlay(state: MatchState, quarter: Quarter): MatchEvent {
+    if (quarter.status === 'pending') {
+      throw new MatchEngineError(`Cannot record their power play in quarter ${quarter.index}; it has not started`);
+    }
+    const event: MatchEvent = {
+      id: uuid(),
+      matchId: state.match.id,
+      quarterId: quarter.id,
+      kind: 'opp_power_play',
+      playerId: null,
+      atElapsedMs: this.getMatchElapsedMs(state),
+      recordedAt: this.now().toISOString(),
+      refersTo: null,
+      note: null,
+    };
+    (state.events ??= []).push(event);
+    return event;
+  }
+
+  /**
    * A coach's own tally (#198), added in Settings: while a period runs, for a
    * player on the pitch, or for the team (`playerId` null). Never in the
    * score, the minutes or fairness.
@@ -821,9 +957,12 @@ export class MatchEngine {
     const actualQuarterElapsedMs = this.getQuarterElapsedMs(quarter);
     const expectedMs = actualQuarterElapsedMs * format.onFieldCount;
 
+    // #255 (ADR-026 D2): the identity is the base slots' total; extra slots
+    // add their own open time on top, so they are left out of this sum.
+    const base = new Set(format.positions.map((p) => p.id));
     let actualMs = 0;
     for (const appearance of state.appearances) {
-      if (appearance.quarterId === quarter.id && appearance.endElapsedMs !== null) {
+      if (appearance.quarterId === quarter.id && appearance.endElapsedMs !== null && base.has(appearance.positionId)) {
         actualMs += appearance.endElapsedMs - appearance.startElapsedMs;
       }
     }

@@ -272,6 +272,11 @@ export interface Ledger {
   eventTypes: LedgerEventType[];
   /** The team's seasons (#243, ADR-022 D5), oldest first. None: one implicit first season. */
   seasons: LedgerSeason[];
+  /**
+   * #255 (ADR-026 D5): each season's power play rule, the goal difference for
+   * each extra player (0 to 3 steps), latest record wins. Absent: no prompts.
+   */
+  powerPlayRules: Map<UUID, number[]>;
   /** Set on a view of one season (`ledgerForSeason`); never on the ledger itself, never stored. */
   viewSeason?: UUID;
 }
@@ -362,6 +367,7 @@ const FIELDS: Record<string, readonly string[]> = {
   exclusion: ['type', 'matchId', 'excluded', 'note'],
   'match-kind': ['type', 'matchId', 'kind', 'note'],
   'format-count': ['type', 'matchId', 'counted', 'note'],
+  'power-play-rule': ['type', 'season', 'steps', 'note'],
   season: ['type', 'id', 'name', 'startedAt', 'mainSide', 'ageGroup', 'level', 'lens', 'note'],
   ...SETUP_FIELDS,
 };
@@ -383,6 +389,7 @@ const FILE_FIELDS = [
   'awardTypes',
   'eventTypes',
   'seasons',
+  'powerPlayRules',
   'viewSeason',
   'summary',
 ] as const;
@@ -466,7 +473,7 @@ function foldView(
   entries: LedgerEntry[]
 ): Pick<
   Ledger,
-  'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes' | 'seasons'
+  'squad' | 'players' | 'matches' | 'fixtures' | 'profiles' | 'settings' | 'awardTypes' | 'eventTypes' | 'seasons' | 'powerPlayRules'
 > {
   let squad: Ledger['squad'] = { id: '' as UUID, name: '' };
   const players: LedgerPlayer[] = [];
@@ -485,6 +492,7 @@ function foldView(
   const eventTypes = new Map<UUID, LedgerEventType>();
   const seasons = new Map<UUID, LedgerSeason>();
   const formatCounts = new Map<UUID, { counted: boolean; note: string | null }>();
+  const powerPlayRules = new Map<UUID, number[]>();
   const push = <T>(m: Map<UUID, T[]>, id: UUID, v: T) => {
     const list = m.get(id);
     if (list) list.push(v);
@@ -601,6 +609,12 @@ function foldView(
           });
         }
         break;
+      case 'power-play-rule':
+        if (typeof r.season === 'string' && Array.isArray(r.steps)) {
+          const steps = (r.steps as unknown[]).filter((x): x is number => typeof x === 'number' && Number.isInteger(x) && x > 0);
+          powerPlayRules.set(r.season as UUID, validPowerPlaySteps(steps) ? steps : []);
+        }
+        break;
       case 'season': {
         const s = toSeason(r);
         if (s) seasons.set(s.id, s);
@@ -663,6 +677,7 @@ function foldView(
     awardTypes: [...awardTypes.values()],
     eventTypes: [...eventTypes.values()],
     seasons: [...seasons.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+    powerPlayRules,
   };
 }
 
@@ -1330,6 +1345,24 @@ export function markReconstructed(ledger: Ledger, matchId: UUID, source: string,
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'origin', matchId, how: 'reconstructed', source, note: note.trim() }], now),
   };
+}
+
+/** ADR-026 D5: 0 to 3 whole goal differences, each larger than the one before. */
+export function validPowerPlaySteps(steps: readonly number[]): boolean {
+  return steps.length <= 3 && steps.every((s, i) => Number.isInteger(s) && s >= 1 && (i === 0 || s > steps[i - 1]));
+}
+
+/**
+ * #255 (ADR-026 D5): a season's power play rule, its own `power-play-rule`
+ * record keyed by the season, latest wins; never a field on `season`, so an
+ * older build that saves the season cannot drop it. No steps: no prompts.
+ */
+export function setPowerPlayRule(ledger: Ledger, seasonId: UUID, steps: number[], now: Date): CorrectionResult {
+  if (!isWritable(ledger)) return READ_ONLY;
+  if (!validPowerPlaySteps(steps)) return { ok: false, reason: 'Each box must be more than the one before.' };
+  const was = ledger.powerPlayRules.get(seasonId) ?? null;
+  if (was && was.length === steps.length && was.every((s, i) => s === steps[i])) return { ok: true, ledger };
+  return { ok: true, ledger: appendRecords(ledger, [{ type: 'power-play-rule', season: seasonId, steps, note: null }], now) };
 }
 
 /**

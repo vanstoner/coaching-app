@@ -119,6 +119,10 @@ export function keyOf(record: LedgerRecord): string | null {
       return `exclusion:${String(record.matchId)}`;
     case 'format-count':
       return `format-count:${String(record.matchId)}`;
+    // #255 (ADR-026 D5): one rule per season, latest wins. An older build has
+    // no key for it, so it carries the record in the chain and never folds it.
+    case 'power-play-rule':
+      return `power-play-rule:${String(record.season)}`;
     case 'match-kind':
       return `match-kind:${String(record.matchId)}`;
     // ADR-021 D2 (#195–#199). An older build has no key for these, so it
