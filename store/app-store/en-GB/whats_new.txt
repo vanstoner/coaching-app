@@ -1,8 +1,6 @@
-New in 2.3.0:
+New in 2.4.0:
 
-• Who's coming: mark each child Coming, Can't or Not heard during the week
-• Team sheet: keepers, subs, place anyone you like, then fill the rest fairly or by position, and share
-• See every quarter at once, or as a table, and tap two names to swap
-• Nobody recorded it? Play a match out as planned, marked reconstructed
-• Home is your list of matches: tap one to play it
-• Small phones: the whole pitch fits, and dragging near the edge scrolls
+• Team talk: a countdown between quarters, and a buzz when the next one is due
+• Started late? Start from when it was due, and nobody loses the time
+• The team sheet remembers your keepers, subs and positions choices
+• If something goes wrong on a screen, the app stays open and your data is safe
