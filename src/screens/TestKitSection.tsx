@@ -8,6 +8,7 @@
 import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { Action } from './controls';
+import { armRecoveryTest } from '../app/recovery';
 import { colours } from './theme';
 
 export function TestKitSection({
@@ -38,6 +39,11 @@ export function TestKitSection({
         a keeper.
       </Text>
       <Action label="Time signing on this phone" onPress={onTimeSigning} />
+      {/* #176 C11: QA sees the recovery screen on a phone. Beta builds only, as the whole kit. */}
+      <Action label="Make the next screen fail" onPress={armRecoveryTest} />
+      <Text style={local.hint}>
+        Shows the Something went wrong screen once, to check it. Nothing is changed or deleted.
+      </Text>
       {message !== '' && <Text style={local.hint}>{message}</Text>}
     </View>
   );

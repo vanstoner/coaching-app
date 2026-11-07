@@ -258,6 +258,7 @@ import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
+import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
 import { mergeCurrentMatch } from './src/app/persistence';
@@ -3157,7 +3158,16 @@ function TeamApp({
       <TableSortProvider store={store} remember>
         <View style={screen.column}>
           {testBanner}
-          {body}
+          {/* #176: a screen that throws while drawing shows the recovery screen, not a closed app. */}
+          <RecoveryBoundary
+            key={effectiveStep}
+            where={heldTest ? 'test' : 'team'}
+            onMain={() => goToTab(heldTest ? 'settings' : 'home')}
+            onExport={ledger ? () => void exportMinutes() : undefined}
+          >
+            <RecoveryProbe />
+            {body}
+          </RecoveryBoundary>
           {toast && <Toast key={toast.id} text={toast.text} onUndo={toast.onUndo ?? null} />}
         </View>
       </TableSortProvider>
@@ -3180,6 +3190,8 @@ export default function App() {
   const root = useMemo(() => createDeviceStore(), []);
   const [opened, setOpened] = useState<OpenedTeams | null>(null);
   const [summaries, setSummaries] = useState<TeamSummary[]>([]);
+  // #176: bumped by the recovery screen's Try again, to draw the shell afresh.
+  const [shellTry, setShellTry] = useState(0);
   const [sheet, setSheet] = useState<'switch' | 'remove' | null>(null);
   const [adding, setAdding] = useState(false);
   /** The team just added, opened for the first time with its name and season. */
@@ -3333,10 +3345,16 @@ export default function App() {
     void removeTeam(root, teamId, appNow()).then(show);
   }, [root, teamId, show]);
 
+  // #176 C9: outside a team's screens, one button, Try again, draws the shell
+  // afresh from storage; nothing stored is touched.
   const frame = (body: ReactNode) => (
     <SafeAreaProvider>
       <SafeAreaView style={screen.safe}>
-        <View style={screen.column}>{body}</View>
+        <View style={screen.column}>
+          <RecoveryBoundary key={shellTry} where="shell" onMain={() => setShellTry((n) => n + 1)}>
+            {body}
+          </RecoveryBoundary>
+        </View>
         <StatusBar style="light" />
       </SafeAreaView>
     </SafeAreaProvider>
@@ -3394,8 +3412,11 @@ export default function App() {
   // would take half the screen. The sheets are Modals, outside the layout.
   return (
     <SafeAreaProvider>
+      {/* #176: a throw while a team is set up (outside any one screen) gets the
+          shell's Try again, which opens the team afresh from storage. */}
+      <RecoveryBoundary key={`shell-${shellTry}`} where="shell" onMain={() => setShellTry((n) => n + 1)}>
       <TeamApp
-        key={teamId ?? 'read-only'}
+        key={`${teamId ?? 'read-only'}-${shellTry}`}
         store={store}
         forgetAll={forgetAll}
         readOnlyReason={opened.kind === 'read-only' ? opened.reason : null}
@@ -3443,6 +3464,7 @@ export default function App() {
         resumeOnOpen={switched}
         notice={restoreNotice}
       />
+      </RecoveryBoundary>
       <TeamSwitcher
           visible={sheet === 'switch'}
           teams={summaries}
