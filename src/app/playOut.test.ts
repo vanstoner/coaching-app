@@ -83,7 +83,7 @@ describe('Play out as planned (#280)', () => {
   it('refuses a plan with an empty place, or someone not marked Coming', () => {
     const { stored, plan } = fixture(players.slice(0, 9).map((p) => p.id));
     const gap = { periods: plan.periods.map((p, i) => (i === 1 ? { ...p, slots: { ...p.slots, [format.positions[1].id]: null } } : p)) };
-    expect(playOutRefusal(stored, gap, format, players)).toMatch(/empty place in period 2/);
+    expect(playOutRefusal(stored, gap, format, players)).toMatch(/empty place in Quarter 2/);
     const onList = Object.values(plan.periods[0].slots)[1]!;
     const away = { ...stored, availability: stored.availability.map(([id, s]) => [id, id === onList ? 'unavailable' : s] as [UUID, typeof s]) };
     expect(playOutRefusal(away, plan, format, players)).toMatch(/not marked Coming/);
@@ -123,7 +123,7 @@ describe('Play out as planned (#280)', () => {
     // The child coming on is put in a position by hand, over someone who was not coming off.
     const [pos] = (Object.entries(p0.slots) as [UUID, UUID][]).find(([, id]) => id !== sub.offId)!;
     const stale = { periods: plan.periods.map((p, i) => (i === 0 ? { ...p, slots: { ...p.slots, [pos]: sub.onId } } : p)) };
-    expect(playOutRefusal(stored, stale, format, players)).toMatch(/A sub in period 1 no longer fits/);
+    expect(playOutRefusal(stored, stale, format, players)).toMatch(/A sub in Quarter 1 no longer fits/);
     expect(() => playOutAsPlanned({ stored, format, plan: stale, players, start: kickoff })).toThrow();
   });
 });
@@ -137,5 +137,8 @@ describe('the Home card says why a match cannot be played out, and nothing is wr
     expect(fn).toMatch(/try \{\s*out = playOutAsPlanned/);
     const card = readFileSync(new URL('../screens/FixturesScreen.tsx', import.meta.url), 'utf8');
     expect(card).toMatch(/Play out as planned: \$\{playable\.get\(match\.id\)\}/);
+    // D10: two bench children tapped in turn swap nothing, so a sub never changes hands.
+    const sheetSrc = readFileSync(new URL('../screens/TeamSheetScreen.tsx', import.meta.url), 'utf8');
+    expect(sheetSrc).toMatch(/if \(other && !onPitch\(id\) && !onPitch\(other\)\) return;/);
   });
 });

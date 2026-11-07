@@ -398,6 +398,9 @@ export function TeamSheetScreen({
                     : target.kind === 'slot'
                       ? (period.slots[target.positionId] ?? null)
                       : null;
+                const onPitch = (x: UUID) => Object.values(period.slots).includes(x);
+                // Two on the bench: nothing to swap, and a sub must not change hands (QA on #279, D10).
+                if (other && !onPitch(id) && !onPitch(other)) return;
                 if (other) swap(quarter, id, other);
                 else byHand(quarter, setPeriodSlots(sheet, quarter, editSheet(period.slots, id, target)), `${name(id)} moved`);
               }}

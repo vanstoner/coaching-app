@@ -21,6 +21,7 @@ import type { MatchState } from '../engine/MatchEngine';
 import type { Format, Player, UUID } from '../types/index';
 import { availabilityForOpening } from './matchLifecycle';
 import { periodLengthMs, planFor, type MatchPlan } from './matchPlan';
+import { periodNoun } from './matchClock';
 import type { SavedMatch } from './persistence';
 import { toTeamSheet } from './teamSheet';
 import { markReconstructed, recordMatches, type Ledger } from './ledger';
@@ -29,11 +30,12 @@ import { markReconstructed, recordMatches, type Ledger } from './ledger';
 export function playOutRefusal(stored: SavedMatch, plan: MatchPlan | undefined, format: Format, players: Player[]): string | null {
   if (stored.quarters.some((q) => q.status !== 'pending')) return 'This match has already kicked off.';
   const periods = planFor(plan, stored.match.quarterCount).periods;
+  const noun = periodNoun(stored.match.quarterCount);
   const available = availabilityForOpening(stored, players);
   for (const [i, period] of periods.entries()) {
     for (const pos of format.positions) {
       const who = period.slots[pos.id] ?? null;
-      if (!who) return `The team sheet has an empty place in period ${i + 1}.`;
+      if (!who) return `The team sheet has an empty place in ${noun} ${i + 1}.`;
       if (available.get(who) !== 'available') return 'Someone on the team sheet is not marked Coming.';
     }
     for (const s of period.subs) {
@@ -46,7 +48,7 @@ export function playOutRefusal(stored: SavedMatch, plan: MatchPlan | undefined, 
     const inOrder = period.subs.map((s, k) => ({ s, k })).sort((x, y) => x.s.atMs - y.s.atMs || x.k - y.k);
     for (const { s } of inOrder) {
       if (!s.onId || !s.offId) continue;
-      if (on.has(s.onId) || !on.has(s.offId)) return `A sub in period ${i + 1} no longer fits the team sheet. Open the sub and pick again.`;
+      if (on.has(s.onId) || !on.has(s.offId)) return `A sub in ${noun} ${i + 1} no longer fits the team sheet. Open the sub and pick again.`;
       on.delete(s.offId);
       on.add(s.onId);
     }

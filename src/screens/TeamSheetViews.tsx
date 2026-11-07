@@ -155,8 +155,7 @@ function Formation({
               <Pressable
                 onPress={() => onRearrange(p)}
                 disabled={!canRearrange(period, format)}
-                // 36 dp drawn, 48 dp to a thumb (#277 C13; QA on #279, D5).
-                hitSlop={{ top: 6, bottom: 6 }}
+                // 48 dp, drawn (#277 C13; QA on #279, D5: slop past the parent is ignored).
                 accessibilityRole="button"
                 accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
                 style={({ pressed }) => [local.rearrange, !canRearrange(period, format) && local.off, pressed && local.pressed]}
@@ -271,8 +270,7 @@ function Table({
                 key={p}
                 onPress={() => onRearrange(p)}
                 disabled={!canRearrange(plan.periods[p], format)}
-                // 32 dp drawn, 48 dp to a thumb (#277 C13; QA on #279, D5).
-                hitSlop={{ top: 8, bottom: 8 }}
+                // 48 dp, drawn (#277 C13; QA on #279, D5).
                 accessibilityRole="button"
                 accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
                 style={[local.headCell, { width: CELL_W }]}
@@ -362,14 +360,14 @@ const local = StyleSheet.create({
   moreChip: { borderColor: colours.action },
   moreText: { color: colours.action, fontSize: 12, fontWeight: '600', includeFontPadding: false },
   plank: { height: 7, borderRadius: 3, backgroundColor: colours.wood, marginTop: -2, marginBottom: 8 },
-  rearrange: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 10, borderWidth: 1, borderColor: colours.line },
+  rearrange: { minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 10, borderWidth: 1, borderColor: colours.line },
   rearrangeText: { color: colours.action, fontSize: 12, fontWeight: '600', includeFontPadding: false },
   off: { opacity: 0.35 },
   pressed: { opacity: 0.6 },
   mark: { position: 'absolute', top: 3, right: 5, width: 5, height: 5, borderRadius: 3, backgroundColor: colours.main },
   table: { flexDirection: 'row', marginTop: 4 },
   headRow: { flexDirection: 'row' },
-  headCell: { height: 32, justifyContent: 'center' },
+  headCell: { height: TOUCH_TARGET, justifyContent: 'center' },
   head: { color: colours.inkMuted, fontSize: 13, fontWeight: '600', textAlign: 'center', includeFontPadding: false },
   labelCell: { height: TOUCH_TARGET, justifyContent: 'center', borderTopWidth: 1, borderTopColor: colours.hair },
   label: { color: colours.saved, fontSize: 13, fontWeight: '600', includeFontPadding: false },

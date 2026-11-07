@@ -3064,7 +3064,10 @@ function TeamApp({
                 ledgerBlockedRef.current || !ledger
                   ? 'Player minutes cannot be written on this phone.'
                   : playOutRefusal(m, m.plan, m.format ?? format, players),
-              ])
+              ] as const)
+              // An undated fixture may still be in the making: offered once it
+              // can be, with no reason line all week (QA on #279, D3).
+              .filter(([id, why]) => why === null || real.some((m) => m.match.id === id && m.match.kickoffAt))
           )
         }
         onPlayOut={playOutFixture}
