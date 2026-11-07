@@ -35,7 +35,7 @@ A fixture stored before 2.3.0 reads every child as Coming.
 
 **D2. Keeper rotation is a suggestion input.** A Main keeper who is coming
 keeps every period; with none coming, a Back-up does (Rob, 6 Nov). Otherwise
-Rotate for me takes the eligible child with the least time in goal this season, folded from the
+Automatic (the Keepers choice; I'll choose sets one per period by hand) takes the eligible child with the least time in goal this season, folded from the
 record each time. It is never stored, never compared with a target and never
 shown as over or under. The step shows how many matches each keeper kept.
 
@@ -50,17 +50,17 @@ the same every time. It fills only the empty places: the keepers and places the
 coach filled by hand (`PlannedPeriod.pinned`) stay (Rob, 6 Nov). Subs are a
 number of pairs a period; `fairestSubs` gives the fewest with the fairest
 split, where the coach's stepper starts. ⟳ Rearrange moves children within
-one period only, so it never changes anyone's minutes. **Using positions** then seats each
+one period only, so it never changes anyone's minutes. **By position** then seats each
 child in their preferred area where a free place allows; it never changes who
 plays how long (invariant 3). Shuffle was dropped (Rob, 6 Nov). A test checks, by exhaustive search, that no plan with a
 smaller spread exists for 5–8 children at 5-a-side and 7–10 at 7-a-side.
 
-**D5. Formation or Table is a view setting** under its own phone key
-(`coaching-app/sheet-view/v1`). Forget everything removes it, and it is never
+**D5. The view (Pitch, All or Table; mock v2, Rob 6 Nov) is a view setting** under its own key
+(`coaching-app/sheet-view/v1`, per team, like the table sort). Forget everything removes it, and it is never
 in the record or a backup.
 
 **D6. The sheet is the existing plan** (`matches[].plan`): a lineup and planned
-subs per period. Make it again replaces it, with Undo. No new plan model.
+subs per period. **Reset** clears it to the keepers, with Undo; Fill the rest fills only the empty places. The one addition is `PlannedPeriod.pinned`, the places filled by hand (D4), intent like the rest. No new plan model.
 
 **D7. Planning and match day may split later (#258).** Who's coming and the
 sheet are per-fixture session data, the seam a shared plan would sync
@@ -76,9 +76,9 @@ across. Nothing here ties planning to the match-day phone.
 - **A keeper fairness figure** ("share of goal"). Rejected by invariant 3 and
   Rob's 1 Nov ruling: keeping is shared by rotation, as a suggestion input only.
 - **A random fill.** Rejected (P3, then Rob 6 Nov): the fill gives the same
-  answer every time, and Shuffle was dropped for Fairly and Using positions.
-- **A new plan model for the sheet.** Rejected (D6): one sub per period fits
-  today's plan, so every screen that reads a plan keeps working.
+  answer every time, and Shuffle was dropped for Fairly and By position.
+- **A new plan model for the sheet.** Rejected (D6): any number of subs a period
+  fits today's plan, so every screen that reads a plan keeps working.
 
 ## Consequences
 
