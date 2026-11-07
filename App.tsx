@@ -245,7 +245,7 @@ import {
 import { recordMatchPage, recordOnlyMatches } from './src/app/recordOnly';
 import { scoreFromEvents, scoreWithRecord, type Score } from './src/app/matchRecord';
 import { tallyButtons } from './src/app/tallies';
-import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, childrenInMatch } from './src/app/matchAwards';
+import { awardCardAtFullTime, awardPromptDue, awardRows, awardsOffered, childrenInMatch, giveAwards, type AwardPick } from './src/app/matchAwards';
 import { provenanceOf, provenances } from './src/app/provenance';
 import { ClockScreen } from './src/screens/ClockScreen';
 import { FixtureFormScreen, type FixtureDraft } from './src/screens/FixtureFormScreen';
@@ -1690,6 +1690,13 @@ function TeamApp({
       atFullTime: awardCardAtFullTime(l, match.state),
       onGive: (typeId: UUID, playerId: UUID, note: string) =>
         act((cur) => giveAward(cur, id, typeId, playerId, note, appNow())),
+      // #266: every pick in one save, all or nothing.
+      onGiveAll: (picks: AwardPick[]) => {
+        const n = picks.reduce((k, p) => k + p.playerIds.length, 0);
+        const refused = act((cur) => giveAwards(cur, id, picks, appNow()));
+        if (!refused) showToast(`${n} award${n === 1 ? '' : 's'} given`);
+        return refused;
+      },
       onTakeBack: (typeId: UUID, playerId: UUID, note: string) =>
         act((cur) => changeAward(cur, id, typeId, playerId, null, note, appNow())),
     };

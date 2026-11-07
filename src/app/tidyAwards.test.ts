@@ -24,7 +24,7 @@ import {
 } from './ledger';
 import * as released from './fixtures/reader-1.2.0/ledger';
 import { endMatch } from './matchClosing';
-import { awardPromptDue, awardRows, awardsLine, awardsOffered, childrenInMatch } from './matchAwards';
+import { awardPromptDue, awardRows, awardsLine, awardsOffered, childrenInMatch, giveAwards } from './matchAwards';
 import { recordMatchPage } from './recordOnly';
 import { makeFormat } from './shapes';
 import { makePlayer } from './squad';
@@ -167,8 +167,11 @@ describe('End match asks first (#228 AC19, AC22; Q5)', () => {
 
   it('not once every active award has a winner, so a coach who decided in Q1 is not asked again', () => {
     const f = toFullTime();
+    // #266 Q3 (Rob, 7 Nov, "Approve 1-8") replaces "while any award has no
+    // winner": End match asks only while none at all has been given, so one
+    // award left out is taken as deliberate.
     let l = ok(giveAward(f.ledger, f.state.match.id, POTW, ids[1], '', f.now()));
-    expect(awardPromptDue(l, f.state)).toBe(true);
+    expect(awardPromptDue(l, f.state)).toBe(false);
     l = ok(giveAward(l, f.state.match.id, ASSIST, ids[2], '', f.now()));
     expect(awardPromptDue(l, f.state)).toBe(false);
   });
@@ -191,9 +194,12 @@ describe('End match asks first (#228 AC19, AC22; Q5)', () => {
   it('the report asks only when due, and both End match and Give them later close it (source check)', () => {
     const src = readFileSync(join(__dirname, '..', 'screens', 'MatchSummaryScreen.tsx'), 'utf8');
     expect(src).toMatch(/onPress=\{\(\) => \(awards\?\.due \? setAskingAwards\(true\) : onEndMatch\(\)\)\}/);
-    const card = src.slice(src.indexOf('<AwardCard'), src.indexOf('</>\n            }'));
-    expect(card.match(/onPress=\{onEndMatch\}/g)?.length).toBe(2);
-    expect(card).toContain('Give them later');
+    // #266 C12: with nothing picked, End match without awards and Give them
+    // later both close it; with picks, both ask first ("Give the n picked?").
+    const card = src.slice(src.indexOf('<AwardCard'), src.lastIndexOf('</FormSheet>'));
+    expect(card).toContain('<MainButton label="End match without awards" onPress={onEndMatch} />');
+    expect(card).toContain('<Action label="Give them later" onPress={onEndMatch} align="center" />');
+    expect(card.match(/onPress=\{\(\) => setAskPicks\(true\)\}/g)?.length).toBe(2);
   });
 });
 
@@ -301,3 +307,50 @@ describe('Settings says where awards are given (#228 AC31, source check)', () =>
     expect(spec.split('\n').find((l) => l.startsWith('| Give / change an award |'))).toMatch(/End match asks first/);
   });
 });
+
+describe('awards in one Give (#266)', () => {
+  it('n picks give n records in one go; an award left with no pick is simply not given (C1, C4)', () => {
+    const f = toFullTime();
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: POTW, playerIds: [ids[0]], note: '' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.given).toBe(1);
+    const rows = awardRows(r.ledger, f.state.match.id, () => '');
+    expect(rows.find((x) => x.typeId === POTW)!.winners.map((w) => w.playerId)).toEqual([ids[0]]);
+    expect(rows.find((x) => x.typeId === ASSIST)!.winners).toEqual([]);
+  });
+
+  it('joint winners: one record per name, the one note on each (C5, C6)', () => {
+    const f = toFullTime();
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: ASSIST, playerIds: [ids[1], ids[2]], note: 'Both brilliant' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.given).toBe(2);
+    const awards = r.ledger.entries.flatMap((e) => e.records).filter((x) => x.type === 'award');
+    expect(awards).toHaveLength(2);
+    expect(awards.every((a) => (a as unknown as { note: string | null }).note === 'Both brilliant')).toBe(true);
+  });
+
+  it('all or nothing: one refusal writes nothing and gives the reason (C7)', () => {
+    const f = toFullTime();
+    const before = f.ledger;
+    const r = giveAwards(
+      before,
+      f.state.match.id,
+      [
+        { typeId: POTW, playerIds: [ids[0]], note: '' },
+        { typeId: 'no-such-award' as typeof POTW, playerIds: [ids[1]], note: '' },
+      ],
+      f.now()
+    );
+    expect(r.ok).toBe(false);
+    expect(awardRows(before, f.state.match.id, () => '').every((x) => x.winners.length === 0)).toBe(true);
+  });
+
+  it('End match asks from the record: none given asks, one given does not (C12)', () => {
+    const f = toFullTime();
+    expect(awardPromptDue(f.ledger, f.state)).toBe(true);
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: POTW, playerIds: [ids[0]], note: '' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(awardPromptDue(r.ledger, f.state)).toBe(false);
+  });
+});
+

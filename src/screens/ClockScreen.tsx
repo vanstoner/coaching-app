@@ -91,11 +91,11 @@ import { PitchView } from './PitchView';
 import { useEdgeScroll } from './useEdgeScroll';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
-import { AwardCard } from './AwardCard';
-import { awardsLine, type AwardRow } from '../app/matchAwards';
+import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
+import { awardsLine, type AwardPick, type AwardRow } from '../app/matchAwards';
 import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { Section } from './controls';
+import { Action, FormSheet, MainButton, Section, SheetNote } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
 
 /**
@@ -178,6 +178,8 @@ export function ClockScreen({
     atFullTime: boolean;
     childrenInMatch: { playerId: UUID; name: string }[];
     onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    /** #266: every pick at once, all or nothing; the reason when refused, else null. */
+    onGiveAll: (picks: AwardPick[]) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
   } | null;
   /** Take an event back, with its note (invariant 5). */
@@ -246,6 +248,23 @@ export function ClockScreen({
   const [awardsOpen, setAwardsOpen] = useState(false);
   /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
   const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
+  // #266: names picked, not yet given. Screen state only (C11).
+  const [awardPicks, setAwardPicks] = useState<Picks>({});
+  const [giveError, setGiveError] = useState('');
+  const [askPicks, setAskPicks] = useState<(() => void) | null>(null);
+  const picked = picksCount(awardPicks);
+  const giveAll = (then?: () => void) => {
+    if (!awards || picked === 0) return;
+    const refused = awards.onGiveAll(picksList(awardPicks));
+    if (refused) setGiveError(refused);
+    else {
+      setAwardPicks({});
+      setGiveError('');
+      then?.();
+    }
+  };
+  /** C10: with picks waiting, ask "Give the n picked?" before carrying on. */
+  const afterPicks = (then: () => void) => (picked > 0 ? setAskPicks(() => then) : then());
   /** #180: when the period ended, asked only when End comes past the margin. */
   const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
@@ -438,12 +457,22 @@ export function ClockScreen({
           <AwardCard
             rows={awards.rows}
             childrenInMatch={awards.childrenInMatch}
-            onGive={awards.onGive}
+            picks={awardPicks}
+            onPicks={setAwardPicks}
+            error={giveError}
             onTakeBack={awards.onTakeBack}
             footer={
-              <Pressable onPress={() => setFullTimeAwardsHidden(true)} style={screen.linkHit} accessibilityRole="button">
-                <Text style={screen.link}>Give them later</Text>
-              </Pressable>
+              <>
+                {/* #266 C3: Give at the card's foot, with the count; off with nothing picked. */}
+                <MainButton label={giveLabel(picked)} disabled={picked === 0} onPress={() => giveAll()} />
+                <Pressable
+                  onPress={() => afterPicks(() => setFullTimeAwardsHidden(true))}
+                  style={screen.linkHit}
+                  accessibilityRole="button"
+                >
+                  <Text style={screen.link}>Give them later</Text>
+                </Pressable>
+              </>
             }
           />
         )}
@@ -456,8 +485,11 @@ export function ClockScreen({
               <AwardCard
                 rows={awards.rows}
                 childrenInMatch={awards.childrenInMatch}
-                onGive={awards.onGive}
+                picks={awardPicks}
+                onPicks={setAwardPicks}
+                error={giveError}
                 onTakeBack={awards.onTakeBack}
+                footer={<Action label={giveLabel(picked)} onPress={() => giveAll()} align="center" />}
               />
             </Section>
           </>
@@ -797,6 +829,32 @@ export function ClockScreen({
         </View>
       )}
       <StatusBar style="light" />
+      {/* #266 C10: picks waiting when Give them later is tapped. */}
+      <FormSheet visible={askPicks !== null} title={`Give the ${picked} picked?`} onCancel={() => setAskPicks(null)}>
+        <SheetNote>
+          {(awards?.rows ?? [])
+            .filter((r) => (awardPicks[r.typeId]?.playerIds.length ?? 0) > 0)
+            .map((r) => `${r.name}: ${awardPicks[r.typeId]!.playerIds.map((id) => awards?.childrenInMatch.find((c) => c.playerId === id)?.name ?? '—').join(' and ')}`)
+            .join(' · ')}
+        </SheetNote>
+        <Action
+          label={`Give ${picked}`}
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            giveAll(() => then?.());
+          }}
+        />
+        <Action
+          label="Don't give"
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            setAwardPicks({});
+            then?.();
+          }}
+        />
+      </FormSheet>
     </View>
   );
 }

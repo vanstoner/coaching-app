@@ -20,7 +20,7 @@ import type { UUID } from '../types/index';
 import { displayName } from './squad';
 import { matchProgress, type QuarterLike } from './fixtures';
 import { canEndMatch } from './matchClosing';
-import { isWritable, type Ledger } from './ledger';
+import { giveAward, isWritable, type Ledger } from './ledger';
 import { isTestMatch } from './testMatches';
 
 export interface AwardRow {
@@ -74,7 +74,9 @@ export function awardsLine(rows: readonly AwardRow[]): string {
  */
 export function awardPromptDue(ledger: Ledger | null, state: LiveMatchLike): boolean {
   if (!canEndMatch(state) || !awardsOffered(ledger, state) || !ledger) return false;
-  return awardRows(ledger, state.match.id, () => '').some((r) => r.winners.length === 0);
+  // #266 Q3 (Rob, "Approve 1-8"): only while no award at all has been given.
+  // An award left out once others are given is taken as deliberate.
+  return awardRows(ledger, state.match.id, () => '').every((r) => r.winners.length === 0);
 }
 
 /**
@@ -96,3 +98,35 @@ export function childrenInMatch(
   const here = new Set(appearances.map((a) => a.playerId));
   return players.filter((p) => here.has(p.id)).map((p) => ({ playerId: p.id, name: displayName(p) }));
 }
+
+/** #266: the names picked under one award, and its one optional note. */
+export interface AwardPick {
+  typeId: UUID;
+  playerIds: UUID[];
+  note: string;
+}
+
+/**
+ * Give every pick at once (#266 C1, C7): one `award` record per name per
+ * award, the same record a single give writes. All or nothing: if any give
+ * is refused, the ledger is returned unchanged with that reason.
+ */
+export function giveAwards(
+  ledger: Ledger,
+  matchId: UUID,
+  picks: readonly AwardPick[],
+  now: Date
+): { ok: true; ledger: Ledger; given: number } | { ok: false; reason: string } {
+  let next = ledger;
+  let given = 0;
+  for (const pick of picks) {
+    for (const playerId of pick.playerIds) {
+      const r = giveAward(next, matchId, pick.typeId, playerId, pick.note, now);
+      if (!r.ok) return { ok: false, reason: r.reason };
+      next = r.ledger;
+      given += 1;
+    }
+  }
+  return { ok: true, ledger: next, given };
+}
+

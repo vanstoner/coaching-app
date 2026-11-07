@@ -24,8 +24,8 @@
 
 import { NOT_IN_SHARE_TEXT } from '../app/fairShare';
 import { InfoTap } from './FiguresHelp';
-import { AwardCard } from './AwardCard';
-import type { AwardRow } from '../app/matchAwards';
+import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
+import type { AwardPick, AwardRow } from '../app/matchAwards';
 import { useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
@@ -140,6 +140,8 @@ export function MatchSummaryScreen({
     childrenInMatch: { playerId: UUID; name: string }[];
     due: boolean;
     onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    /** #266: every pick at once, all or nothing; the reason when refused, else null. */
+    onGiveAll: (picks: AwardPick[]) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
   } | null;
   /** #243 AC8: an off-format match's card, drawn by the caller; null otherwise. */
@@ -150,6 +152,23 @@ export function MatchSummaryScreen({
 }) {
   /** #228 Q5: End match was tapped with an award still to give; the card asks first. */
   const [askingAwards, setAskingAwards] = useState(false);
+  // #266: names picked, not yet given (screen state only), and End match's ask.
+  const [awardPicks, setAwardPicks] = useState<Picks>({});
+  const [giveError, setGiveError] = useState('');
+  const [askPicks, setAskPicks] = useState(false);
+  const [givenHere, setGivenHere] = useState(false);
+  const picked = picksCount(awardPicks);
+  const giveAll = (then?: () => void) => {
+    if (!awards || picked === 0) return;
+    const refused = awards.onGiveAll(picksList(awardPicks));
+    if (refused) setGiveError(refused);
+    else {
+      setAwardPicks({});
+      setGiveError('');
+      setGivenHere(true);
+      then?.();
+    }
+  };
   // #208: the minutes table sorts by its numbers, Total most first by default.
   const minutesSort = useTableSort('reportMinutes');
   const [marking, setMarking] = useState<{ note: string; error: string } | null>(null);
@@ -502,17 +521,57 @@ export function MatchSummaryScreen({
           <AwardCard
             rows={awards.rows}
             childrenInMatch={awards.childrenInMatch}
-            onGive={awards.onGive}
+            picks={awardPicks}
+            onPicks={setAwardPicks}
+            error={giveError}
             onTakeBack={awards.onTakeBack}
             footer={
-              <>
-                <MainButton label="End match" onPress={onEndMatch} />
-                {/* #264: it ends the match, so it is an Action, not a way out. */}
-                <Action label="Give them later" onPress={onEndMatch} align="center" />
-              </>
+              givenHere ? (
+                <>
+                  {/* #266 C12: after a Give here, an award left out is taken as deliberate. */}
+                  <Text style={screen.hint}>An award left out is taken as deliberate: End match does not ask again.</Text>
+                  <MainButton label="End match" onPress={onEndMatch} />
+                </>
+              ) : picked > 0 ? (
+                <>
+                  <MainButton label={giveLabel(picked)} onPress={() => giveAll()} />
+                  <Action label="Give them later" onPress={() => setAskPicks(true)} align="center" />
+                  <Action label="End match" onPress={() => setAskPicks(true)} align="center" />
+                </>
+              ) : (
+                <>
+                  <MainButton label="End match without awards" onPress={onEndMatch} />
+                  {/* #264: it ends the match, so it is an Action, not a way out. */}
+                  <Action label="Give them later" onPress={onEndMatch} align="center" />
+                </>
+              )
             }
           />
         )}
+        {/* #266 C10: picks waiting when Give them later or End match is tapped. */}
+        <FormSheet visible={askPicks} title={`Give the ${picked} picked?`} onCancel={() => setAskPicks(false)}>
+          <SheetNote>
+            {(awards?.rows ?? [])
+              .filter((r) => (awardPicks[r.typeId]?.playerIds.length ?? 0) > 0)
+              .map((r) => `${r.name}: ${awardPicks[r.typeId]!.playerIds.map((id) => awards?.childrenInMatch.find((c) => c.playerId === id)?.name ?? '—').join(' and ')}`)
+              .join(' · ')}
+          </SheetNote>
+          <Action
+            label={`Give ${picked}`}
+            onPress={() => {
+              setAskPicks(false);
+              giveAll(() => onEndMatch?.());
+            }}
+          />
+          <Action
+            label="Don't give"
+            onPress={() => {
+              setAskPicks(false);
+              setAwardPicks({});
+              onEndMatch?.();
+            }}
+          />
+        </FormSheet>
       </ScrollView>
       {onEndMatch && !(askingAwards && awards) && (
         <MainFoot>

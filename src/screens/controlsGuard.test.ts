@@ -122,13 +122,15 @@ describe('Danger only where it is earned (#264 V33, Q1(a))', () => {
 
 describe('one Main button per screen (#264 V26)', () => {
   const TWO_ALLOWED: Record<string, string> = {
-    'MatchSummaryScreen.tsx': 'End match is pinned, or inside the awards card when it asks: never both at once',
+    'MatchSummaryScreen.tsx': 'End match is pinned, or inside the awards card when it asks, where #266 C12 shows one of End match without awards, Give n awards or (after a Give) End match: never two at once',
     'Teams.tsx': 'two screens in one file: Add a team and No teams on this phone yet',
     'LineupScreen.tsx': 'Start is pinned; the late Start sheet\'s "Yes, from …" is its own, over it while open (#283, Dee\'s prototype, Rob 7 Nov)',
   };
+  // More than two branches, each showing one Main button at a time.
+  const MAX_ALLOWED: Record<string, number> = { 'MatchSummaryScreen.tsx': 4 };
   it('no file draws more than one, outside the named exceptions', () => {
     const offenders = screenFiles
-      .filter((f) => (f.src.match(/<MainButton\b/g) ?? []).length > (f.name in TWO_ALLOWED ? 2 : 1))
+      .filter((f) => (f.src.match(/<MainButton\b/g) ?? []).length > (MAX_ALLOWED[f.name] ?? (f.name in TWO_ALLOWED ? 2 : 1)))
       .map((f) => f.name);
     expect(offenders).toEqual([]);
   });
