@@ -8,6 +8,10 @@ import {
   PILL_WIDTH_FRACTION,
   PITCH_ASPECT,
   dropTargetAt,
+  edgeScrollDirection,
+  EDGE_SCROLL_ZONE,
+  fitPitchHeight,
+  MIN_PITCH_HEIGHT,
   pillDetail,
   pillWidthFor,
   slotBox,
@@ -229,5 +233,76 @@ describe('9- and 11-a-side on a 360dp phone (#249 F24–F28, F31)', () => {
     for (const s of spots.filter((x) => x.unit === 'DEF')) {
       expect(dropTargetAt(s.x * W, s.y * H, pitch, spots, [], null)).toEqual({ kind: 'slot', positionId: s.positionId });
     }
+  });
+});
+
+/**
+ * #276: a coach on a small phone could only just drag a player to the top
+ * row. Test case 320 x 568 (criteria 1-2): the pitch is sized to show with
+ * the bench, a drop just past its top edge still lands on the top row, and a
+ * drag near the scrolling area's edges scrolls it.
+ */
+describe('small phones (#276)', () => {
+  it('the shortest pitch still keeps every row clear of the next, top row inside the pitch', () => {
+    for (const shape of ['2-3-1', '2-2-2', '1-2-1', '2-2', '3-3-2', '4-4-2'] as const) {
+      const format = makeFormat(shape);
+      const spots = slotSpots(format);
+      const width = 296;
+      const pill = pillWidthFor(format.onFieldCount, width);
+      const boxes = spots.map((s) => slotBox(s, width, MIN_PITCH_HEIGHT, pill));
+      for (const b of boxes) {
+        expect(b.y).toBeGreaterThanOrEqual(0);
+        expect(b.y + b.height).toBeLessThanOrEqual(MIN_PITCH_HEIGHT);
+      }
+      const rows = [...new Set(spots.map((s) => s.y))].sort((a, b) => a - b);
+      for (let i = 1; i < rows.length; i++) {
+        const above = slotBox({ x: 0.5, y: rows[i - 1] }, width, MIN_PITCH_HEIGHT, pill);
+        const below = slotBox({ x: 0.5, y: rows[i] }, width, MIN_PITCH_HEIGHT, pill);
+        expect(below.y).toBeGreaterThanOrEqual(above.y + above.height);
+      }
+    }
+  });
+
+  it('a 320-wide phone: natural height where it fits, else as short as fits, never below the floor', () => {
+    const width = 296; // 320 less the screen's 12dp gutters
+    expect(fitPitchHeight(width, null)).toBeCloseTo(width / PITCH_ASPECT);
+    expect(fitPitchHeight(width, 1000)).toBeCloseTo(width / PITCH_ASPECT);
+    expect(fitPitchHeight(width, 300)).toBe(300);
+    expect(fitPitchHeight(width, 120)).toBe(MIN_PITCH_HEIGHT);
+  });
+
+  it('a drop just above the top row, past the pitch edge, lands on the top row', () => {
+    const format = makeFormat('2-3-1');
+    const spots = slotSpots(format);
+    const pitch = { x: 0, y: 0, width: 296, height: MIN_PITCH_HEIGHT };
+    const top = spots.reduce((a, b) => (b.y < a.y ? b : a));
+    const t = dropTargetAt(top.x * pitch.width, -10, pitch, spots, [], null);
+    expect(t).toEqual({ kind: 'slot', positionId: top.positionId });
+  });
+
+  it('a drop at each edge of the pitch lands on the nearest position (within #249 F31\'s reach)', () => {
+    const format = makeFormat('2-3-1');
+    const spots = slotSpots(format);
+    const pitch = { x: 0, y: 0, width: 296, height: MIN_PITCH_HEIGHT };
+    const nearest = (px: number, py: number) =>
+      spots.reduce((a, b) =>
+        Math.hypot(px - b.x * pitch.width, py - b.y * pitch.height) < Math.hypot(px - a.x * pitch.width, py - a.y * pitch.height) ? b : a
+      );
+    for (const [px, py] of [
+      [148, -12], // top: just past the edge, the coach's case
+      [2, 0.4 * MIN_PITCH_HEIGHT], // left edge
+      [294, 0.4 * MIN_PITCH_HEIGHT], // right edge
+      [148, MIN_PITCH_HEIGHT - 2], // bottom edge
+    ] as const) {
+      expect(dropTargetAt(px, py, pitch, spots, [], null)).toEqual({ kind: 'slot', positionId: nearest(px, py).positionId });
+    }
+  });
+
+  it('a drag scrolls up near the top edge, down near the bottom, and not in between', () => {
+    expect(edgeScrollDirection(105, 100, 400)).toBe(-1);
+    expect(edgeScrollDirection(100 + EDGE_SCROLL_ZONE + 1, 100, 400)).toBe(0);
+    expect(edgeScrollDirection(300, 100, 400)).toBe(0);
+    expect(edgeScrollDirection(100 + 400 - 10, 100, 400)).toBe(1);
+    expect(edgeScrollDirection(300, 100, 0)).toBe(0); // not measured yet
   });
 });

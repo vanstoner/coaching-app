@@ -26,8 +26,8 @@
 
 import { NOT_IN_SHARE_SHORT } from '../app/fairShare';
 import { InfoTap } from './FiguresHelp';
-import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 
 import type { Format, Match, Player, UUID } from '../types/index';
@@ -35,59 +35,34 @@ import { displayName } from '../app/squad';
 import { formatClock, formatSubTime, periodNoun } from '../app/matchClock';
 import { plannedSubText, subsPlannedSummary } from '../app/plannedSubSheet';
 import {
-  addSwap,
-  benchSubIndex,
-  clampSwapTime,
   formatDelta,
-  newSubTimeMs,
-  SUB_STEP_MS,
   periodLengthMs,
   planFor,
   projectPlan,
-  removeSwap,
   sameAsPrevious,
-  swapChoices,
   setPeriodSlots,
-  updateSwap,
-  longestOnAt,
   type MatchPlan,
 } from '../app/matchPlan';
 import { opponentLabel } from '../app/fixtures';
 import {
   Action,
   BackLink,
-  CheckLine,
-  FormSheet,
-  MainButton,
-  MainFoot,
   RowNav,
   SavedTick,
   Segmented,
-  Stepper,
   TopBar,
   useSavedTick,
 } from './controls';
 import { PitchView } from './PitchView';
-import { ActionSheet, SheetButton } from './Sheet';
+import { PlannedSubPanel, subRequestFor, type SubRequest } from './PlannedSubPanel';
+import { useEdgeScroll } from './useEdgeScroll';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { editSheet } from '../app/teamSheet';
-import { colours, screen, TOUCH_TARGET } from './theme';
-import { PLAN_IMAGE_WIDTH, planImage, shareFirstStep, type PlanImageLayout } from '../app/planImage';
-import { currentDistribution } from '../app/distribution';
-import { releasePlanImage, sharePlanImage } from '../app/planImageFile';
-import { PlanImageView } from './PlanImageView';
+import { colours, screen } from './theme';
+import { SharePlanFoot } from './SharePlan';
 
 /** The sub sheet's draft (#264 V20): which sub (-1 for a new one), and its picks. */
-interface SubDraft {
-  swapIndex: number;
-  onId: UUID | null;
-  offId: UUID | null;
-  /** "Whoever is on longest" ticked: resolved to a name on Save (`longestOnAt`). */
-  longest: boolean;
-  atMs: number;
-}
-
 export function PlanScreen({
   match,
   format,
@@ -140,45 +115,13 @@ export function PlanScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+  // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
+  const edge = useEdgeScroll(dragging);
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
   /** The sub sheet (#120, #264): a draft until Save. */
-  const [subSheet, setSubSheet] = useState<SubDraft | null>(null);
+  const [subAsk, setSubAsk] = useState<SubRequest | null>(null);
   const tick = useSavedTick();
-
-  // Share plan (#165): which image is laid out off-screen for capture, if
-  // any, and whether the layout question is open.
-  const [shareAsk, setShareAsk] = useState(false);
-  const [shareLayout, setShareLayout] = useState<PlanImageLayout | null>(null);
-  const [shareNote, setShareNote] = useState<string | null>(null);
-  const imageRef = useRef<View>(null);
-  const captured = useRef(false);
-  // The capture lives only for the share; let it go when the plan closes.
-  useEffect(() => releasePlanImage, []);
-
-  const startShare = (layout: PlanImageLayout) => {
-    setShareAsk(false);
-    setShareNote(null);
-    captured.current = false;
-    setShareLayout(layout);
-  };
-  // Quarters offer 2×2 or four in a row; halves sit side by side either way.
-  // The store build alone skips the question (shareFirstStep, #226).
-  const askShare = () =>
-    shareFirstStep(periodCount, currentDistribution()) === 'ask' ? setShareAsk(true) : startShare('grid');
-  const onImageLayout = (e: LayoutChangeEvent) => {
-    if (captured.current || !shareLayout) return;
-    captured.current = true;
-    const { width, height } = e.nativeEvent.layout;
-    const target = PLAN_IMAGE_WIDTH[shareLayout];
-    // One frame after layout, so the capture sees what was drawn.
-    requestAnimationFrame(() => {
-      void sharePlanImage(imageRef, target, { width, height }).then((outcome) => {
-        setShareLayout(null);
-        if (!outcome.ok) setShareNote(outcome.reason);
-      });
-    });
-  };
 
   const period = plan.periods[periodIndex];
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
@@ -200,24 +143,16 @@ export function PlanScreen({
   const choosePeriod = (i: number) => {
     setPeriodIndex(i);
     setPitchPick(null);
-    setSubSheet(null);
+    setSubAsk(null);
   };
 
   const benchIds = players
     .map((p) => p.id)
     .filter((id) => !Object.values(period.slots).includes(id));
 
-  /** Open "name comes on" for an existing sub, a bench player, or a new sub (#264 V20). */
-  const openSub = (swapIndex: number, onId: UUID | null) => {
-    const swap = swapIndex === -1 ? null : period.subs[swapIndex];
-    setSubSheet({
-      swapIndex,
-      onId: swap ? swap.onId : onId,
-      offId: swap ? swap.offId : null,
-      longest: false,
-      atMs: swap ? swap.atMs : newSubTimeMs(periodMs),
-    });
-  };
+  /** Open an existing sub, or a new one (#264 V20). */
+  const openSub = (swapIndex: number, onId: UUID | null) =>
+    setSubAsk({ swapIndex, onId, offId: swapIndex === -1 ? null : period.subs[swapIndex].offId });
 
   // #120: a tap on a bench player opens their sub; a tap on a player in a
   // position selects them for tap-then-place, as before. Dragging is unchanged.
@@ -226,36 +161,7 @@ export function PlanScreen({
       setPitchPick(id);
       return;
     }
-    openSub(benchSubIndex(period, id), id);
-  };
-
-  /** Who the sheet's sub can bring on and take off at its time (`swapChoices`, match day 4). */
-  const sheetChoices = (() => {
-    if (!subSheet) return { on: [] as Player[], off: [] as Player[] };
-    const probe = { onId: subSheet.onId, offId: subSheet.offId, atMs: subSheet.atMs };
-    const subs =
-      subSheet.swapIndex === -1 ? [...period.subs, probe] : period.subs.map((s, i) => (i === subSheet.swapIndex ? probe : s));
-    const index = subSheet.swapIndex === -1 ? subs.length - 1 : subSheet.swapIndex;
-    const c = swapChoices({ ...period, subs }, index, players);
-    return { on: c.on, off: c.off.filter((p) => p.id !== subSheet.onId) };
-  })();
-
-  // QA on #260 (D12): who "whoever is on longest" is at the sheet's time, by the plan.
-  const longestId = subSheet
-    ? longestOnAt(period, subSheet.swapIndex, clampSwapTime(subSheet.atMs, periodMs), format)
-    : null;
-  const forId = subSheet ? (subSheet.longest ? longestId : subSheet.offId) : null;
-
-  const saveSub = () => {
-    if (!subSheet || forId === null) return;
-    const draft = { onId: subSheet.onId, offId: forId, atMs: clampSwapTime(subSheet.atMs, periodMs) };
-    if (subSheet.swapIndex === -1) {
-      const added = addSwap(plan, periodIndex, periodMs);
-      change(updateSwap(added, periodIndex, added.periods[periodIndex].subs.length - 1, draft));
-    } else {
-      change(updateSwap(plan, periodIndex, subSheet.swapIndex, draft));
-    }
-    setSubSheet(null);
+    setSubAsk(subRequestFor(period, id, false));
   };
 
   const flaggedPeriods = plan.periods
@@ -264,7 +170,7 @@ export function PlanScreen({
 
   return (
     <View style={screen.flex}>
-      <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
+      <ScrollView contentContainerStyle={screen.scroll} {...edge.scrollProps}>
         {/* #264: the way out top left; ✓ Saved right-justified on the top bar (Dee: the plan saves as one). */}
         <TopBar
           back={<BackLink label="Done" accessibilityLabel="Done" onPress={onBack} />}
@@ -311,7 +217,7 @@ export function PlanScreen({
         <Text style={screen.fieldLabel}>Starting</Text>
         <Text style={screen.hint}>
           {pitchPick
-            ? `Now tap where ${name(pitchPick)} goes, or tap them again to cancel.`
+            ? `Now tap where ${name(pitchPick)} goes, or tap them again to cancel. Or sub them off below.`
             : 'Drag a player into place, or tap one and then where they go. Tap a bench player to plan their sub.'}
         </Text>
         <PitchView
@@ -323,11 +229,22 @@ export function PlanScreen({
           onSelect={setPitchPick}
           onTapPlayer={tapPlayer}
           onDragging={setDragging}
+          {...edge.pitchProps}
           onMove={(id, target) =>
             change(setPeriodSlots(plan, periodIndex, editSheet(period.slots, id, target)))
           }
           onRenamePosition={names ? setRenaming : undefined}
         />
+        {/* Rob, 7 Nov: a child on the pitch can be subbed off from a tap too. */}
+        {pitchPick && Object.values(period.slots).includes(pitchPick) && (
+          <Action
+            label={`Sub ${name(pitchPick)} off`}
+            onPress={() => {
+              setSubAsk(subRequestFor(period, pitchPick, true));
+              setPitchPick(null);
+            }}
+          />
+        )}
         {names && (
           <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
         )}
@@ -393,33 +310,16 @@ export function PlanScreen({
         </Text>
       </ScrollView>
 
-      {/* #264 V26: Share plan is the screen's one job, pinned at the bottom (label kept: SHARE_PLAN). */}
-      <MainFoot>
-        <MainButton label="Share plan" onPress={askShare} disabled={shareLayout !== null} />
-        <Text style={screen.hint}>
-          {shareNote ??
-            'One picture of every ' +
-              noun.toLowerCase() +
-              ' and its subs, for parents. No minutes, and nobody marked absent.'}
-        </Text>
-      </MainFoot>
-
-      {/* The image being shared (#165): laid out off-screen, captured, gone. */}
-      {shareLayout && (
-        <View style={local.offscreen} pointerEvents="none">
-          <PlanImageView
-            ref={imageRef}
-            layout={shareLayout}
-            onLayout={onImageLayout}
-            image={planImage({ match, squadName, format, plan, players, absent })}
-          />
-        </View>
-      )}
-
-      <ActionSheet visible={shareAsk} title="Share plan" onClose={() => setShareAsk(false)}>
-        <SheetButton label="2 × 2, best on a phone" strong onPress={() => startShare('grid')} />
-        <SheetButton label="Four in a row" onPress={() => startShare('row')} />
-      </ActionSheet>
+      <SharePlanFoot
+        match={match}
+        squadName={squadName}
+        format={format}
+        plan={plan}
+        players={players}
+        absent={absent ?? new Set()}
+        periodCount={periodCount}
+        noun={noun}
+      />
 
       {names && (
         <PositionNameSheet
@@ -431,91 +331,19 @@ export function PlanScreen({
         />
       )}
 
-      {/* #264 V20, V21: "name comes on": At on the 15 s stepper (Q2), For as a list with a tick. */}
-      <FormSheet
-        visible={subSheet !== null}
-        title={subSheet?.onId ? `${name(subSheet.onId)} comes on` : 'A sub'}
-        onCancel={() => setSubSheet(null)}
-        onSave={saveSub}
-        // Save waits for who comes on and For (QA on #260, D12).
-        saveDisabled={subSheet === null || subSheet.onId === null || forId === null}
-      >
-        {subSheet && (
-          <>
-            {(subSheet.swapIndex !== -1 || subSheet.onId === null) && (
-              <>
-                <Text style={screen.fieldLabel}>Who comes on</Text>
-                {sheetChoices.on.map((p) => (
-                  <CheckLine
-                    key={p.id}
-                    label={displayName(p)}
-                    checked={subSheet.onId === p.id}
-                    onPress={() => setSubSheet({ ...subSheet, onId: p.id })}
-                  />
-                ))}
-              </>
-            )}
-            <View style={local.atRow}>
-              <Text style={local.atLabel}>At</Text>
-              <Text style={local.atValue} numberOfLines={1}>
-                {formatSubTime(subSheet.atMs)}
-              </Text>
-              <Stepper
-                minusLabel="15 seconds earlier"
-                plusLabel="15 seconds later"
-                onMinus={() =>
-                  setSubSheet({ ...subSheet, atMs: clampSwapTime(subSheet.atMs - SUB_STEP_MS, periodMs) })
-                }
-                onPlus={() =>
-                  setSubSheet({ ...subSheet, atMs: clampSwapTime(subSheet.atMs + SUB_STEP_MS, periodMs) })
-                }
-              />
-            </View>
-            <Text style={screen.fieldLabel}>For</Text>
-            {sheetChoices.off.length === 0 ? (
-              <Text style={local.note}>
-                Nobody is on the pitch yet this {noun.toLowerCase()}. Pick the starters first.
-              </Text>
-            ) : (
-              <>
-                {/* First, as on the lineup's planned-sub sheet (#264 V20). */}
-                <CheckLine
-                  label="Whoever is on longest"
-                  detail={longestId !== null ? name(longestId) : undefined}
-                  checked={subSheet.longest}
-                  onPress={() => setSubSheet({ ...subSheet, longest: true, offId: null })}
-                />
-                {sheetChoices.off.map((p) => (
-                  <CheckLine
-                    key={p.id}
-                    label={displayName(p)}
-                    checked={!subSheet.longest && subSheet.offId === p.id}
-                    onPress={() => setSubSheet({ ...subSheet, longest: false, offId: p.id })}
-                  />
-                ))}
-              </>
-            )}
-            {subSheet.swapIndex !== -1 && (
-              <Action
-                label="Remove this sub"
-                onPress={() => {
-                  change(removeSwap(plan, periodIndex, subSheet.swapIndex));
-                  setSubSheet(null);
-                }}
-              />
-            )}
-            {subSheet.onId !== null && benchIds.includes(subSheet.onId) && (
-              <Action
-                label="Put in the starting lineup…"
-                onPress={() => {
-                  setPitchPick(subSheet.onId);
-                  setSubSheet(null);
-                }}
-              />
-            )}
-          </>
-        )}
-      </FormSheet>
+      <PlannedSubPanel
+        request={subAsk}
+        plan={plan}
+        periodIndex={periodIndex}
+        periodMs={periodMs}
+        format={format}
+        players={players}
+        noun={noun}
+        name={(id) => name(id)}
+        onChange={change}
+        onClose={() => setSubAsk(null)}
+        onPutInLineup={setPitchPick}
+      />
     </View>
   );
 }
@@ -524,7 +352,6 @@ const local = StyleSheet.create({
   shareRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
   shareText: { flex: 1 },
   // Far off to the left: laid out and drawn for the capture, never seen.
-  offscreen: { position: 'absolute', left: -10000, top: 0 },
   note: { color: colours.inkFaint, fontSize: 14, includeFontPadding: false, marginBottom: 4 },
   flagged: { alignSelf: 'stretch', color: colours.warn, fontSize: 13, includeFontPadding: false, marginTop: 2 },
   problem: {
@@ -558,22 +385,4 @@ const local = StyleSheet.create({
     textAlign: 'right',
   },
   faint: { color: colours.inkFaint },
-  atRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: TOUCH_TARGET,
-    borderBottomWidth: 1,
-    borderBottomColor: colours.hair,
-  },
-  atLabel: { flex: 1, color: colours.ink, fontSize: 16, includeFontPadding: false },
-  // A fixed width: "6:15" and "12:30" share the slot (theme.ts).
-  atValue: {
-    width: 68,
-    flexShrink: 0,
-    textAlign: 'right',
-    paddingRight: 8,
-    color: colours.ink,
-    fontSize: 16,
-    includeFontPadding: false,
-  },
 });

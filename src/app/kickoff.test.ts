@@ -6,6 +6,8 @@ import {
   daysInMonth,
   kickoffIso,
   nextSaturday,
+  PAST_DAYS,
+  pickableDays,
   sameDay,
   upcomingMonths,
   upcomingSaturdays,
@@ -87,5 +89,36 @@ describe('pick, do not type — #80', () => {
   it('builds the kick-off from a day and a time, in local time', () => {
     const d = new Date(kickoffIso(new Date(2026, 9, 10), '10:30'));
     expect([d.getDate(), d.getHours(), d.getMinutes()]).toEqual([10, 10, 30]);
+  });
+});
+
+describe('Other date reaches back for a match already played (#280, Rob 7 Nov)', () => {
+  const SAT = new Date(2026, 10, 7, 9, 10);
+  const days = pickableDays(SAT);
+
+  it('today and the coming days first, as before', () => {
+    expect(days[0]).toEqual({ day: new Date(2026, 10, 7), past: false });
+    expect(days.filter((d) => !d.past).every((d) => d.day.getTime() >= new Date(2026, 10, 7).getTime())).toBe(true);
+  });
+
+  it('then twelve weeks back, most recent first, marked past', () => {
+    const past = days.filter((d) => d.past);
+    expect(past).toHaveLength(PAST_DAYS);
+    expect(past[0].day).toEqual(new Date(2026, 10, 6));
+    expect(past.some((d) => sameDay(d.day, new Date(2026, 9, 24)))).toBe(true); // two Saturdays ago
+    expect(past[past.length - 1].day).toEqual(new Date(2026, 7, 15));
+    expect(days.findIndex((d) => d.past)).toBe(days.filter((d) => !d.past).length);
+  });
+});
+
+describe('Other date asks Coming or Past (#280, Rob 7 Nov: one row, not more clutter)', () => {
+  it('one Other date row; its sheet switches between the coming days and the past twelve weeks', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../screens/FixtureFormScreen.tsx', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/label="Already played"/);
+    expect(src).toMatch(/<RowNav\s+label="Other date"/);
+    expect(src).toMatch(/\{ value: 'coming', label: 'Coming' \}/);
+    expect(src).toMatch(/\{ value: 'past', label: 'Past' \}/);
+    expect(src).toMatch(/\(when === 'past' \? pastDays : comingDays\)\.map/);
   });
 });

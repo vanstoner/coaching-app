@@ -22,6 +22,7 @@ import { LEDGER_HEAD_KEY, LEDGER_STORAGE_KEY, LEDGER_V1_STORAGE_KEY } from './le
 import { STORAGE_KEY, inTurn, type KeyValueStore } from '../persistence';
 import { LAST_BACKUP_KEY, SETTINGS_SECTIONS_KEY } from '../settingsSections';
 import { TABLE_SORT_KEY } from '../tableSort';
+import { SHEET_VIEW_KEY } from '../teamSheetEdit';
 import { TEST_CLOCK_KEY } from '../testKit';
 
 /** Every key this app writes starts with this. */
@@ -34,6 +35,8 @@ const KNOWN = [
   LEDGER_HEAD_KEY,
   LEDGER_V1_STORAGE_KEY,
   TABLE_SORT_KEY,
+  // #277 C13: Formation or Table.
+  SHEET_VIEW_KEY,
   GETTING_STARTED_KEY,
   // #263 AC5, AC10: which Settings sections are open, and the last backup.
   SETTINGS_SECTIONS_KEY,

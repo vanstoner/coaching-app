@@ -220,11 +220,20 @@ describe('"Whoever is on longest" on the Plan (#264 V20; QA on #260, D12)', () =
     expect(longestOnAt(keeperOnly, -1, MIN, format)).toBeNull();
   });
 
-  it('the Plan’s For list offers it first, and Save waits for For', () => {
-    const screen = readFileSync(join(__dirname, '..', 'screens', 'PlanScreen.tsx'), 'utf-8');
+  it('the Plan’s For list offers it first, and Save waits for For (now the shared PlannedSubPanel)', () => {
+    const screen = readFileSync(join(__dirname, '..', 'screens', 'PlannedSubPanel.tsx'), 'utf-8');
     const forList = screen.slice(screen.indexOf('<Text style={screen.fieldLabel}>For</Text>'));
     expect(forList.indexOf('label="Whoever is on longest"')).toBeGreaterThan(-1);
-    expect(forList.indexOf('label="Whoever is on longest"')).toBeLessThan(forList.indexOf('sheetChoices.off.map'));
-    expect(screen).toMatch(/saveDisabled=\{subSheet === null \|\| subSheet\.onId === null \|\| forId === null\}/);
+    expect(forList.indexOf('label="Whoever is on longest"')).toBeLessThan(forList.indexOf('choices.off.map'));
+    expect(screen).toMatch(/saveDisabled=\{draft === null \|\| draft\.onId === null \|\| forId === null\}/);
+  });
+
+  it('a sub is made from a tap on the Plan and the Team sheet alike (Rob, 7 Nov)', () => {
+    for (const file of ['PlanScreen.tsx', 'TeamSheetScreen.tsx']) {
+      const src = readFileSync(join(__dirname, '..', 'screens', file), 'utf-8');
+      expect(src, file).toMatch(/<PlannedSubPanel/);
+      expect(src, file).toMatch(/subRequestFor\(period, \w+, false\)/); // a bench child: their sub on
+      expect(src, file).toMatch(/label=\{`Sub \$\{name\(\w+\)\} off`\}/); // a child on the pitch: sub off
+    }
   });
 });

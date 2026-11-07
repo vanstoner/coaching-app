@@ -877,8 +877,10 @@ function structureRecord(record: MatchRecord): LedgerRecord | null {
 }
 
 function availabilityOf(record: MatchRecord): [UUID, AvailabilityStatus][] {
-  if (record.playerAvailability) return [...record.playerAvailability.entries()];
-  return record.availability ?? [];
+  const all = record.playerAvailability ? [...record.playerAvailability.entries()] : (record.availability ?? []);
+  // #277 (ADR-024 D1): "Not heard" is planning, never the record. A child still
+  // unconfirmed at kick-off was unticked on Here today, so is recorded absent.
+  return all.map(([id, status]) => [id, status === 'unconfirmed' ? 'absent' : status]);
 }
 
 const kickedOff = (record: MatchRecord) =>
@@ -1310,6 +1312,23 @@ export function setMatchExcluded(
   return {
     ok: true,
     ledger: appendRecords(ledger, [{ type: 'exclusion', matchId, excluded, note: trimmed }], now),
+  };
+}
+
+/**
+ * #280 (Rob, 7 Nov): a coach's statement that a match was played out from its
+ * plan, not recorded live. An `origin` record (ADR-021's table: `how`,
+ * `source`, `note`), appended and never edited (invariant 5); provenance then
+ * reads the match as reconstructed, so the existing toggle can leave it out.
+ */
+export function markReconstructed(ledger: Ledger, matchId: UUID, source: string, note: string, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) {
+    return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  }
+  if (!ledger.matches.some((m) => m.id === matchId)) return { ok: false, reason: 'That match is not in the ledger.' };
+  return {
+    ok: true,
+    ledger: appendRecords(ledger, [{ type: 'origin', matchId, how: 'reconstructed', source, note: note.trim() }], now),
   };
 }
 

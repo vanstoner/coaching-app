@@ -31,12 +31,11 @@ import { COMPETITIONS, competitionLabel } from '../app/fixtures';
 import {
   KICKOFF_TIMES,
   dayLabel,
-  daysInMonth,
   kickoffIso,
   sameDay,
   startOfDay,
   toTimeInput,
-  upcomingMonths,
+  pickableDays,
   upcomingSaturdays,
 } from '../app/kickoff';
 import { PERIOD_COUNT_CHOICES, periodNounPlural } from '../app/matchClock';
@@ -46,7 +45,9 @@ import { pitchAndRefereeLine } from '../app/pitch';
 import { canSaveForm, formReducer, initialFormPhase, leaveNeedsAsking } from '../app/saveState';
 import {
   BackLink,
+  CheckLine,
   FieldRow,
+  FormSheet,
   FormStatus,
   LeaveAsk,
   ListSheet,
@@ -54,6 +55,7 @@ import {
   MainFoot,
   RowNav,
   Section,
+  Segmented,
   SegmentedRow,
   TopBar,
 } from './controls';
@@ -289,10 +291,14 @@ function KickoffField({
   // AC4: a saved day that is not one of the coming Saturdays still shows,
   // on the Other date row, rather than as a blank.
   const offList = day !== null && !saturdays.some((s) => sameDay(s, day));
+  // #280 (Rob, 7 Nov): Other date asks Coming or Past, and lists those days:
+  // one row, so a match already played is found without adding clutter.
+  const isPast = day !== null && day.getTime() < startOfDay(now).getTime();
+  const [when, setWhen] = useState<'coming' | 'past'>(isPast ? 'past' : 'coming');
   const times = KICKOFF_TIMES.includes(time) ? KICKOFF_TIMES : [...KICKOFF_TIMES, time].sort();
-  const allDays = upcomingMonths(now).flatMap(([y, m]) =>
-    Array.from({ length: daysInMonth(y, m) }, (_, i) => new Date(y, m, i + 1))
-  ).filter((d) => d.getTime() >= startOfDay(now).getTime());
+  const allDays = pickableDays(now);
+  const comingDays = allDays.filter((d) => !d.past);
+  const pastDays = allDays.filter((d) => d.past);
 
   const pick = (d: Date | null, t: string) => {
     setDay(d);
@@ -310,21 +316,40 @@ function KickoffField({
         allowClear
         onChange={(t) => pick(t === null ? null : new Date(t), time)}
       />
-      <RowNav label="Other date" value={offList ? dayLabel(day!) : ''} onPress={() => setSheet('day')} />
+      <RowNav
+        label="Other date"
+        value={offList ? dayLabel(day!) : ''}
+        onPress={() => {
+          setWhen(isPast ? 'past' : 'coming');
+          setSheet('day');
+        }}
+      />
       <RowNav label="Kick-off time" value={time} onPress={() => setSheet('time')} />
       <Text style={local.hint}>{day ? `${dayLabel(day)} at ${time}` : 'No date yet — you can add it later.'}</Text>
 
-      <ListSheet
-        visible={sheet === 'day'}
-        title="Other date"
-        items={allDays.map((d) => ({ value: d.getTime(), label: dayLabel(d) }))}
-        value={day ? day.getTime() : null}
-        onPick={(t) => {
-          pick(new Date(t), time);
-          setSheet(null);
-        }}
-        onCancel={() => setSheet(null)}
-      />
+      <FormSheet visible={sheet === 'day'} title="Other date" onCancel={() => setSheet(null)}>
+        <Segmented<'coming' | 'past'>
+          name="Coming or past"
+          options={[
+            { value: 'coming', label: 'Coming' },
+            { value: 'past', label: 'Past' },
+          ]}
+          value={when}
+          onChange={(v) => v && setWhen(v)}
+        />
+        {(when === 'past' ? pastDays : comingDays).map(({ day: d }) => (
+          <CheckLine
+            key={d.getTime()}
+            label={dayLabel(d)}
+            checked={day !== null && day.getTime() === d.getTime()}
+            onPress={() => {
+              pick(d, time);
+              setSheet(null);
+            }}
+          />
+        ))}
+        {when === 'past' && <Text style={local.hint}>The last twelve weeks, most recent first: for a match nobody recorded.</Text>}
+      </FormSheet>
       <ListSheet
         visible={sheet === 'time'}
         title="Kick-off time"

@@ -4,7 +4,7 @@
  * that makes the text fit.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -64,7 +64,7 @@ describe('four in a row at 360dp (#249 F29, H34)', () => {
   });
 
   it('the name in a pill is one line that ends in "…", never clipped mid-letter', () => {
-    expect(src('PitchView.tsx')).toMatch(/<Text style=\{\[s\.name, onBench && s\.benchName\]\} numberOfLines=\{1\} ellipsizeMode="tail">/);
+    expect(src('PitchView.tsx')).toMatch(/<Text style=\{\[s\.name, onBench && s\.benchName\]\} numberOfLines=\{1\} ellipsizeMode="tail" adjustsFontSizeToFit minimumFontScale=\{0\.75\}>/);
   });
 
   it('the plan picture is captured at its measured height, never a constant', () => {
@@ -73,5 +73,23 @@ describe('four in a row at 360dp (#249 F29, H34)', () => {
     const view = src('PlanImageView.tsx');
     expect(view).not.toMatch(/style=\{\[local\.paper, \{[^}]*height/);
     expect(view).toMatch(/planSlotBox\(slot, layout, colWidth, pitchHeight, image\.slotWidth\)/);
+  });
+});
+
+describe('dragging near the edge scrolls on every screen with a pitch (#276)', () => {
+  // Rob, 5 Nov: the plan screen did not scroll when a bench player was dragged
+  // up, because only the lineup screen had edge scrolling. Every screen that
+  // draws a PitchView now takes it from the one hook.
+  const screens = ['LineupScreen.tsx', 'PlanScreen.tsx', 'ClockScreen.tsx', 'TeamSheetScreen.tsx'];
+  it('each screen that draws a pitch is that list', () => {
+    const drawing = readdirSync(__dirname).filter((f) => f.endsWith('.tsx') && src(f).includes('<PitchView'));
+    expect(drawing.sort()).toEqual([...screens].sort());
+  });
+  it.each(screens)('%s scrolls through useEdgeScroll and passes it to the pitch', (f) => {
+    const s = src(f);
+    expect(s).toContain('const edge = useEdgeScroll(dragging);');
+    expect(s).toMatch(/<ScrollView [^>]*\{\.\.\.edge\.scrollProps\}>/);
+    expect(s).toContain('{...edge.pitchProps}');
+    expect(s).not.toMatch(/<ScrollView[^>]*scrollEnabled=\{!dragging\}/);
   });
 });

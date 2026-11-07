@@ -11,6 +11,10 @@
  * width open or closed, so nothing moves when the tick comes and goes. A
  * closed section's body is not drawn at all, so nothing in it can be focused
  * or tapped (#263 AC15).
+ *
+ * **An open section sits in one shaded, bordered panel**, the pitch's raised
+ * green and border, so where it ends is plain (Rob, 6 Nov, everywhere). A
+ * closed one stays a plain row.
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -54,13 +58,13 @@ export function Section({
   accessibilityLabel?: string;
 }) {
   return (
-    <View style={section.wrap}>
+    <View style={[section.wrap, open && section.panel]}>
       <Pressable
         onPress={onToggle}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={accessibilityLabel ?? [title, summary].filter(Boolean).join(', ')}
-        style={({ pressed }) => [section.head, tall && section.tall, pressed && section.pressed]}
+        style={({ pressed }) => [section.head, tall && section.tall, open && section.headOpen, pressed && section.pressed]}
       >
         <View style={section.twistySlot}>
           <Icon
@@ -174,6 +178,16 @@ const section = StyleSheet.create({
     borderBottomColor: colours.hair,
   },
   tall: { minHeight: 60 },
+  // Rob, 6 Nov: the open section's extent, shaded and bordered as the pitch is.
+  panel: {
+    backgroundColor: colours.pitchRaised,
+    borderWidth: 2,
+    borderColor: colours.line,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    marginVertical: 6,
+  },
+  headOpen: { borderBottomColor: colours.hair },
   pressed: { opacity: 0.6 },
   twistySlot: { width: 28, height: 24, alignItems: 'flex-start', justifyContent: 'center', flexShrink: 0 },
   turned: { transform: [{ rotate: '90deg' }] },

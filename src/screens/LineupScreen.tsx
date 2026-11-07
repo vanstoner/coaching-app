@@ -55,6 +55,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEdgeScroll } from './useEdgeScroll';
 import { Text } from './Text';
 import { StatusBar } from 'expo-status-bar';
 
@@ -124,6 +125,7 @@ export function LineupScreen({
   onStart,
   onLeave,
   onPlanRest,
+  planGaps = [],
   attendance,
   names,
 }: {
@@ -140,6 +142,8 @@ export function LineupScreen({
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
   onPlanRest?: () => void;
+  /** #277 D20: who is in the plan but not here today, and where. Never re-planned for the coach. */
+  planGaps?: string[];
   /** Rename this match's positions (#166): before kick-off and between periods. */
   names?: PositionNaming;
   /**
@@ -193,6 +197,9 @@ export function LineupScreen({
   /** The pitch's first tap, waiting for where that player goes (#83). */
   const [pitchPick, setPitchPick] = useState<UUID | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
+  const edge = useEdgeScroll(dragging);
   /** The position whose name is being changed (#166). */
   const [renaming, setRenaming] = useState<UUID | null>(null);
   /** Kept so `apply` reads as before; the old inline pickers are now sheets. */
@@ -305,13 +312,16 @@ export function LineupScreen({
           {noun} {quarter?.index ?? 1} of {state.match.quarterCount}
           {shape ? ` · ${shape}` : ''}
         </Text>
-        {pitch}
-
-        <ScrollView style={screen.list} scrollEnabled={!dragging}>
+        <ScrollView style={screen.list} {...edge.scrollProps}>
           {/* #83: the shape drawn as a pitch. Drag a player, or tap one and
               then where they go. Before kick-off this edits the sheet only. */}
           <Text style={screen.fieldLabel}>On the pitch</Text>
           {hasPlan && <Text style={local.fromPlan}>From your plan. Change anything.</Text>}
+          {planGaps.map((line) => (
+            <Text key={line} style={screen.hint}>
+              {line}
+            </Text>
+          ))}
           <Text style={screen.hint}>
             {pitchPick
               ? `Now tap where ${nameOf.get(pitchPick) ?? ''} goes, or tap them again to cancel.`
@@ -336,6 +346,7 @@ export function LineupScreen({
             onDragging={setDragging}
             onMove={(id, target) => setSheet(editSheet(sheet, id, target))}
             onRenamePosition={names ? setRenaming : undefined}
+            {...edge.pitchProps}
           />
           {names && (
             <Text style={screen.hint}>Tap a gold position name to rename it for this match.</Text>
@@ -399,6 +410,9 @@ export function LineupScreen({
               </Text>
             </>
           )}
+
+          {/* #276: Pitch and referee sits below the pitch, so a small phone shows the whole pitch. */}
+          {pitch}
 
           <ActionRow>
             {hasPlan && <Action label="Use plan" onPress={() => replaceWith(fromPlan(), 'Lineup set from the plan')} />}

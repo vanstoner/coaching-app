@@ -188,20 +188,28 @@ interface MatchEvent {
 
 ## Availability
 
-`'available' | 'absent' | 'injured' | 'unavailable'`, per match, keyed by
-player. Editable freely before kick-off; afterwards only via a late arrival or
-a noted correction. The ledger snapshots it at kick-off (ADR-014 §4).
+`'available' | 'absent' | 'injured' | 'unavailable' | 'unconfirmed'`, per
+match, keyed by player. Editable freely before kick-off; afterwards only via a
+late arrival or a noted correction. The ledger snapshots it at kick-off
+(ADR-014 §4).
+
+Before kick-off it is **Who's coming** (#277, ADR-024 D1): Coming =
+`available`, Can't = `unavailable`, Not heard = `unconfirmed`. `unconfirmed`
+lives in the session only: the kick-off snapshot records it as `absent`, so the
+record never holds it. `comingChangedAt` (session) is when the list last
+changed.
 
 ## Plans (intent, never minutes)
 
 ```ts
 interface MatchPlan     { periods: PlannedPeriod[] }
-interface PlannedPeriod { slots: Record<UUID /*positionId*/, UUID | null /*playerId*/>; subs: PlannedSwap[] }
+interface PlannedPeriod { slots: Record<UUID /*positionId*/, UUID | null /*playerId*/>; subs: PlannedSwap[];
+                          pinned?: UUID[] /*positionIds filled by hand on the Team sheet: Fill and Rearrange keep them (#277)*/ }
 interface PlannedSwap   { onId: UUID | null; offId: UUID | null; atMs: number }
 interface PlannedSub    { playerId: UUID; atMs: number; forPlayerId: UUID | null; done: boolean }  // live reminders
 ```
 
-A plan only pre-fills the lineup. The running period's subs are saved as
+A plan only pre-fills the lineup. The Team sheet (#277, ADR-024 D6) writes this same plan: no new model. The running period's subs are saved as
 `periodSubs` so a relaunch restores reminders (#139).
 
 ## Persisted documents
@@ -229,6 +237,7 @@ interface SavedMatch {
   match: Match; quarters: Quarter[]; appearances: Appearance[]; benchStints: BenchStint[];
   availability: [UUID, AvailabilityStatus][];
   format?: Format; plan?: MatchPlan; archived?: boolean; events?: MatchEvent[]; periodSubs?: PeriodSubs;
+  comingChangedAt?: number;                 // #277 A4: when Who's coming last changed, epoch ms; planning, never the record
 }
 ```
 
@@ -248,7 +257,7 @@ interface Ledger {                          // key coaching-app/ledger/v2
 //             | exclusion (ADR-020) | device (#193) | match-kind (#194)
 //             | fixture | profile | settings (#195, ADR-021 D2)
 //             | season | format-count (2.0.0: #243, ADR-022 D5; Rob's ruling 8A)
-//             | origin (ADR-021 D2: read if a file carries one, never written by this build)
+//             | origin (ADR-021 D2: read if a file carries one; written by Play out as planned, #280)
 // player   { id, firstName, displaySuffix, active }   // #54: displaySuffix null for a one-word name
 // fixture  { id, kickoffAt, opponent, competition, totalMinutes, periodCount, shape, labels[],
 //            excludeFromStats, state: 'planned' | 'cancelled', archived, note,
@@ -329,9 +338,12 @@ interface Ledger {                          // key coaching-app/ledger/v2
   reconstructed`, derived in `provenance.ts` from entry signatures, entry
   times against the match window, corrected intervals, records added after
   the last period and any `origin` record. Never stored.
-- **Proposed, not built yet:** writing `origin` (ADR-021 D2): setting it by
-  hand waits until it is asked for (#199 ruling); one carried from a file is
-  read.
+- **Writing `origin`** (ADR-021 D2): **Play out as planned** (#280, 2.3.0)
+  appends `{ type: 'origin', how: 'reconstructed', source: 'plan', note }`
+  after recording a planned match it played on the planned kick-off clock
+  (`markReconstructed`, `src/app/playOut.ts`), so provenance reads it
+  reconstructed. Appended, never edited (invariant 5). One carried from a file
+  is read as before.
 
 - Ledger: append-only, each entry hashes its predecessor; recording is
   idempotent by id; an import extends the chain or is refused, never merged.

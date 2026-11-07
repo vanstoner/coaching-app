@@ -1,0 +1,292 @@
+{
+  "squad": {
+    "players": 10,
+    "sessionMatches": 11,
+    "ledgerMatches": 9,
+    "ledgerPlayers": 10,
+    "ledgerEntries": 51,
+    "countedMatches": 9
+  },
+  "matches": {
+    "00000000-0000-4000-8000-000000000014": {
+      "opponent": "Test Rovers",
+      "status": "planned",
+      "us": 0,
+      "them": 0
+    },
+    "00000000-0000-4000-8000-000000000019": {
+      "opponent": "Sample Town",
+      "status": "planned",
+      "us": 0,
+      "them": 0
+    },
+    "00000000-0000-4000-8000-00000000001e": {
+      "opponent": "Mock Albion",
+      "status": "completed",
+      "us": 3,
+      "them": 1
+    },
+    "00000000-0000-4000-8000-00000000005e": {
+      "opponent": "Practice Park",
+      "status": "completed",
+      "us": 1,
+      "them": 2
+    },
+    "00000000-0000-4000-8000-00000000009b": {
+      "opponent": "Example Wanderers",
+      "status": "completed",
+      "us": 2,
+      "them": 2
+    },
+    "00000000-0000-4000-8000-0000000000bc": {
+      "opponent": "Dummy Athletic",
+      "status": "completed",
+      "us": 0,
+      "them": 1
+    },
+    "00000000-0000-4000-8000-0000000000f6": {
+      "opponent": "Trial Town",
+      "status": "completed",
+      "us": 4,
+      "them": 0
+    },
+    "00000000-0000-4000-8000-000000000128": {
+      "opponent": "Fixture Forest",
+      "status": "completed",
+      "us": 2,
+      "them": 3
+    },
+    "00000000-0000-4000-8000-000000000168": {
+      "opponent": "Demo Dynamos",
+      "status": "completed",
+      "us": 1,
+      "them": 1
+    },
+    "00000000-0000-4000-8000-0000000001a4": {
+      "opponent": "Placeholder City",
+      "status": "completed",
+      "us": 3,
+      "them": 2
+    },
+    "00000000-0000-4000-8000-0000000001ca": {
+      "opponent": "Sample United",
+      "status": "completed",
+      "us": 2,
+      "them": 1
+    }
+  },
+  "session": {
+    "Ava": {
+      "totalMs": 24000000,
+      "goalkeeperMs": 18000000,
+      "outfieldMs": 6000000,
+      "appearances": 32,
+      "matchesPlayed": 8,
+      "goals": 3,
+      "saves": 17,
+      "conceded": 7
+    },
+    "Ben": {
+      "totalMs": 13650000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 13650000,
+      "appearances": 22,
+      "matchesPlayed": 6,
+      "goals": 3,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Cal": {
+      "totalMs": 18750000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18750000,
+      "appearances": 27,
+      "matchesPlayed": 8,
+      "goals": 1,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Dee": {
+      "totalMs": 18150000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18150000,
+      "appearances": 26,
+      "matchesPlayed": 8,
+      "goals": 2,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Eli": {
+      "totalMs": 21450000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 21450000,
+      "appearances": 30,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Fay": {
+      "totalMs": 18300000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18300000,
+      "appearances": 25,
+      "matchesPlayed": 8,
+      "goals": 5,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Gus": {
+      "totalMs": 18000000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18000000,
+      "appearances": 29,
+      "matchesPlayed": 8,
+      "goals": 0,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Hal": {
+      "totalMs": 24000000,
+      "goalkeeperMs": 9000000,
+      "outfieldMs": 15000000,
+      "appearances": 35,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "saves": 13,
+      "conceded": 6
+    },
+    "Ivy": {
+      "totalMs": 19650000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 19650000,
+      "appearances": 30,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "saves": 0,
+      "conceded": 0
+    },
+    "Jo": {
+      "totalMs": 13050000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 13050000,
+      "appearances": 19,
+      "matchesPlayed": 6,
+      "goals": 1,
+      "saves": 0,
+      "conceded": 0
+    }
+  },
+  "ledger": {
+    "Ava": {
+      "totalMs": 24000000,
+      "goalkeeperMs": 18000000,
+      "outfieldMs": 6000000,
+      "intervals": 32,
+      "matchesPlayed": 8,
+      "goals": 3,
+      "attended": 8,
+      "missed": 1,
+      "averageMs": 3000000
+    },
+    "Ben": {
+      "totalMs": 13650000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 13650000,
+      "intervals": 22,
+      "matchesPlayed": 6,
+      "goals": 3,
+      "attended": 6,
+      "missed": 3,
+      "averageMs": 2275000
+    },
+    "Cal": {
+      "totalMs": 18750000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18750000,
+      "intervals": 27,
+      "matchesPlayed": 8,
+      "goals": 1,
+      "attended": 8,
+      "missed": 1,
+      "averageMs": 2343750
+    },
+    "Dee": {
+      "totalMs": 18150000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18150000,
+      "intervals": 26,
+      "matchesPlayed": 8,
+      "goals": 2,
+      "attended": 8,
+      "missed": 1,
+      "averageMs": 2268750
+    },
+    "Eli": {
+      "totalMs": 21450000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 21450000,
+      "intervals": 30,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "attended": 9,
+      "missed": 0,
+      "averageMs": 2383333
+    },
+    "Fay": {
+      "totalMs": 18300000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18300000,
+      "intervals": 25,
+      "matchesPlayed": 8,
+      "goals": 5,
+      "attended": 8,
+      "missed": 1,
+      "averageMs": 2287500
+    },
+    "Gus": {
+      "totalMs": 18000000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 18000000,
+      "intervals": 29,
+      "matchesPlayed": 8,
+      "goals": 0,
+      "attended": 8,
+      "missed": 1,
+      "averageMs": 2250000
+    },
+    "Hal": {
+      "totalMs": 24000000,
+      "goalkeeperMs": 9000000,
+      "outfieldMs": 15000000,
+      "intervals": 35,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "attended": 9,
+      "missed": 0,
+      "averageMs": 2666667
+    },
+    "Ivy": {
+      "totalMs": 19650000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 19650000,
+      "intervals": 30,
+      "matchesPlayed": 9,
+      "goals": 1,
+      "attended": 9,
+      "missed": 0,
+      "averageMs": 2183333
+    },
+    "Jo": {
+      "totalMs": 13050000,
+      "goalkeeperMs": 0,
+      "outfieldMs": 13050000,
+      "intervals": 19,
+      "matchesPlayed": 6,
+      "goals": 1,
+      "attended": 6,
+      "missed": 3,
+      "averageMs": 2175000
+    }
+  }
+}

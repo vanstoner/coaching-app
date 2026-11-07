@@ -88,6 +88,7 @@ import { ScoreBand } from './ScoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { periodEndChoices, type PeriodEndChoices } from '../app/periodEnd';
 import { PitchView } from './PitchView';
+import { useEdgeScroll } from './useEdgeScroll';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
 import { AwardCard } from './AwardCard';
@@ -228,6 +229,8 @@ export function ClockScreen({
   /** The goal just recorded, while asking who set it up (#185 AC3). */
   const [assistFor, setAssistFor] = useState<MatchEvent | null>(null);
   const [dragging, setDragging] = useState(false);
+  // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
+  const edge = useEdgeScroll(dragging);
   /** Who comes off each prompted sub, when the coach has changed the suggestion. */
   const [offChoice, setOffChoice] = useState<Record<string, UUID>>({});
   /** The row of a shared prompt panel whose choices are open (#203 C2). */
@@ -399,7 +402,7 @@ export function ClockScreen({
     <View style={screen.safe}>
       {/* #174: keeps the withdraw note above the keyboard on Android too. */}
       <KeyboardAvoidingView style={screen.flex} behavior="padding">
-      <ScrollView contentContainerStyle={screen.scroll} scrollEnabled={!dragging}>
+      <ScrollView contentContainerStyle={screen.scroll} {...edge.scrollProps}>
         {/* #228 (Dee's clutter fix 1): period, time left, clock and score in one strip. */}
         {/* #252: the score left the strip for the band below; its label says it once (AC4, AC12). */}
         <View style={local.strip} accessibilityLabel={`${squadName || PLACEHOLDER_SQUAD_NAME} v ${opponentLabel(state.match)}`}>
@@ -512,6 +515,7 @@ export function ClockScreen({
               onSelect={setSelected}
               onTapPlayer={(id) => setSheetFor(id)}
               onDragging={setDragging}
+              {...edge.pitchProps}
               onMove={(id, target) => {
                 const m = liveMove(sheet, id, target);
                 if (m) doMove(m);

@@ -381,7 +381,12 @@ export interface PlayerSeasonTotals {
 // Availability
 // ============================================================================
 
-export type AvailabilityStatus = 'available' | 'absent' | 'injured' | 'unavailable';
+/**
+ * `unconfirmed` (#277, ADR-024 D1): "Not heard" on Who's coming, before a
+ * match only. It lives in the session; the record never receives it, because
+ * the kick-off snapshot resolves it as unticked (`absent`) in `ledger.ts`.
+ */
+export type AvailabilityStatus = 'available' | 'absent' | 'injured' | 'unavailable' | 'unconfirmed';
 
 export interface Availability {
   matchId: UUID;

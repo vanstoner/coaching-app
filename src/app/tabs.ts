@@ -48,7 +48,11 @@ export type Step =
   /** Start a new season (#243 AC4). Full screen, Cancel exits. */
   | 'seasonStart'
   /** A past season, read-only (#243 AC6). Full screen, Back exits. */
-  | 'seasonPast';
+  | 'seasonPast'
+  /** Who's coming to a fixture (#277 A). Full screen, Done exits. */
+  | 'coming'
+  /** Build the team sheet (#277 B, C). Full screen, Done exits. */
+  | 'teamSheet';
 
 export type Tab = 'home' | 'squad' | 'settings';
 

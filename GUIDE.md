@@ -49,7 +49,7 @@ The first time you open the app it says **No teams on this phone yet**.
   the app offers to clear the made-up team.
 
 Home then shows a **Getting started** line with three steps: add your squad,
-add your next match, and press Play now at kick-off. Each step ticks itself
+add your next match, and open it at kick-off. Each step ticks itself
 off, and the line goes away when all three are done.
 
 <img src="store/app-store/screenshots/iphone/08-start.png" alt="Getting started: ready for Saturday in three steps" width="260">
@@ -89,27 +89,42 @@ On **Home**, tap **+ Fixture**.
   own phone's match screens.
 - Tap **Save fixture**. It appears under **Coming up** on Home.
 
-No time to plan? On match day just tap **Play now**. It starts a match from
-your defaults, with no form to fill in.
+**Who's coming**: on the fixture's card, tap **Who's coming**. Everyone
+starts as **Coming**. Tap a name to change it: Coming, then **Can't**, then
+**Not heard**, then back. It saves as you tap, so come back to it as replies
+arrive through the week. The card shows the count, like "9 coming · 2 can't
+· 1 not heard".
 
 <img src="store/app-store/screenshots/iphone/07-five.png" alt="Fixtures in your format and match length" width="260">
 
 ## 4. Plan the match
 
-On a fixture under **Coming up**, tap **Plan this match** (or **Edit the
-plan** once you've started one).
+Tap **Next: team sheet** at the bottom of Who's coming (or **Team sheet** on
+the fixture's card). It is one screen:
 
-- For each quarter or half, put the children on the pitch and on the bench.
-  Each child's **projected minutes** for the match show as you go, so you can
-  see before kick-off whether anyone is short.
-- Tap **Add a sub** to plan a substitution. It starts at the middle of the
-  period. Change its time, and who comes off, in the sheet. Leave who comes
-  off as **Whoever is on longest** and the app picks on the day.
-- **Same as quarter 1** (or half 1) copies the period before, to save typing.
-- **Share plan** makes one picture of the plan for parents: positions, every
-  sub and its time, and the bench. It shows no minutes and doesn't say who is
-  unavailable. Choose **2 × 2, best on a phone** or **Four in a row**, then
-  send it from your phone's share sheet.
+- **Keepers and subs** is already set for you. Tap it to change it.
+  **Automatic** puts a Main keeper in goal all match, else a Back-up, else
+  shares goal round, starting with whoever has been in goal least this
+  season. **I'll choose** gives you a button per quarter. **Subs** is how
+  many swaps each quarter at halfway; it starts at the fairest number for who
+  is coming, and you can step it up or down.
+- **Place anyone you want to**: on **Pitch**, drag a child from the bench
+  onto a position, or tap them and then the position. **All** shows every
+  quarter at once and **Table** lists them. A child you place gets a small
+  green dot.
+- **Fill the rest** fills every empty place fairly. **By position** puts
+  children in their area from the Squad tab where it can. Anyone with a green
+  dot stays put. **Reset** clears everything except the keepers.
+- **⟳ Rearrange** on a quarter tries a different line-up for that quarter:
+  the same children, so nobody's minutes change.
+- Tap two children on the pitch in the same quarter to swap them. **Undo** is in the
+  message that appears.
+- **Subs by hand:** once a quarter is full, tap a child on the bench to plan them coming on, or tap a
+  child on the pitch and then **Sub … off**. Pick who, and when, to the 15
+  seconds. It works the same on the team sheet and on the Plan. **Fill the
+  rest** plans the subs again, so make your own after it. **Minutes** shows everyone's time and the fair share.
+
+Then tap **Share plan** at the bottom to send parents the picture.
 
 A plan is only a plan: it never moves a minute. What counts is what actually
 happens on the day.
@@ -118,10 +133,11 @@ happens on the day.
 
 ## 5. On the day: the lineup
 
-Open the match from Home (or tap **Play now**). You arrive on the lineup for
-the first period.
+At kick-off, tap the match on Home. You arrive on the lineup for the first period, filled from
+your plan.
 
-- **Here today**: untick anyone who isn't there. They can't be picked, and the
+- **Here today** starts from Who's coming: untick anyone who isn't there. If
+  they are in the plan, the lineup says which periods, so you can change them. They can't be picked, and the
   app knows they missed the match. Someone turns up late? Between periods,
   **Arrived late?** adds them.
 - **Use plan** fills the pitch from your plan. **Use suggestion** fills it
@@ -180,6 +196,17 @@ the match's fair share.
   out of the averages. You can count it again later.
 
 <img src="store/app-store/screenshots/iphone/04-report.png" alt="The match report: every result, every minute" width="260">
+
+**Nobody recorded it?** If you couldn't be there and nobody ran the clock, a
+fixture whose kick-off has passed and whose team sheet fills every place offers
+**Play out as planned**. It asks first, then records the match as the sheet
+planned it: the children marked Coming were there, everyone else absent, no
+score. It goes in Played marked **reconstructed**, so the Squad tab can leave it
+out of the figures. The app then opens the match's page in the record: add
+the score with **Add goal / conceded (time unknown)** and the awards with
+**Add award**, each with a note such as "Match report". For a match you never put in the app, add the fixture
+with **Other date** › **Past**, under Kick-off: it lists the last twelve weeks.
+If a fixture can't be played out, its card says why.
 
 ## 8. Is everyone getting a fair share?
 

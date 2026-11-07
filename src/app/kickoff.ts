@@ -83,6 +83,23 @@ export function upcomingMonths(from: Date, count = 6): [number, number][] {
   });
 }
 
+/** How far back Other date reaches, for a match already played (#280). */
+export const PAST_DAYS = 84;
+
+/**
+ * The days Other date offers: today and every day of the coming months, then
+ * the last twelve weeks, most recent first (#280, Rob 7 Nov: a match played
+ * two weeks ago, nobody recorded it, can still be put in and played out).
+ */
+export function pickableDays(now: Date, months = 6): { day: Date; past: boolean }[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const coming = upcomingMonths(now, months)
+    .flatMap(([y, m]) => Array.from({ length: daysInMonth(y, m) }, (_, i) => new Date(y, m, i + 1)))
+    .filter((d) => d.getTime() >= today.getTime());
+  const past = Array.from({ length: PAST_DAYS }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1 - i));
+  return [...coming.map((day) => ({ day, past: false })), ...past.map((day) => ({ day, past: true }))];
+}
+
 export function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }

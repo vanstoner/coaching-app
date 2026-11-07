@@ -61,10 +61,12 @@ describe('fix 1: the clock strip', () => {
 
 describe('fix 2: Home (source check)', () => {
   const src = read('src', 'screens', 'FixturesScreen.tsx');
-  it('Play now and + Fixture share one row; the hint under Play now is gone', () => {
+  // Rob, 5 Nov ("approve drop play now") overturned #228's Play now beside + Fixture:
+  // Home is the list of matches, so + Fixture is the one Main button.
+  it('+ Fixture is the one button at the top; Play now is gone; the hint stays gone', () => {
     const row = src.slice(src.indexOf('<View style={local.startRow}>'), src.indexOf('{rows.length === 0'));
-    expect(row).toContain('Play now');
-    expect(row).toContain('+ Fixture');
+    expect(row).not.toContain('Play now');
+    expect(row).toContain('<MainButton label="+ Fixture"');
     expect(row).toContain('accessibilityLabel="Add a fixture"');
     expect(src).not.toMatch(/An unplanned kickabout/);
   });

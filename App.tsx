@@ -41,7 +41,7 @@ import {
 } from './src/app/fixtures';
 import { savedToast } from './src/app/saveState';
 import { isOffFormat, seasonSide, sideOf } from './src/app/analysis';
-import { currentQuarter, periodNounPlural } from './src/app/matchClock';
+import { currentQuarter, periodNoun, periodNounPlural } from './src/app/matchClock';
 import {
   DEFAULT_QUARTER_COUNT,
   DEFAULT_TOTAL_MINUTES,
@@ -256,6 +256,14 @@ import { LineupScreen } from './src/screens/LineupScreen';
 import { MatchSummaryScreen } from './src/screens/MatchSummaryScreen';
 import { MatchAnalysisScreen } from './src/screens/MatchAnalysisScreen';
 import { PlanScreen } from './src/screens/PlanScreen';
+import { WhosComingScreen } from './src/screens/WhosComingScreen';
+import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
+import { seasonInputs } from './src/app/teamSheetBuilder';
+import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
+import { mergeCurrentMatch } from './src/app/persistence';
+import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
+import { squadViews } from './src/app/squadViews';
+import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
 import {
   adoptPositionNames,
@@ -437,13 +445,6 @@ function TeamApp({
     const handle = setTimeout(() => setToast(null), toast.ms);
     return () => clearTimeout(handle);
   }, [toast]);
-  /** The card's third step points at Play now for a moment. */
-  const [pointAtPlayNow, setPointAtPlayNow] = useState(false);
-  useEffect(() => {
-    if (!pointAtPlayNow) return;
-    const handle = setTimeout(() => setPointAtPlayNow(false), 2_400);
-    return () => clearTimeout(handle);
-  }, [pointAtPlayNow]);
   /** Squad opened to add the squad: the name box is ready. */
   const [focusName, setFocusName] = useState(false);
   /** Whether every step was done at the last draw, to say so once when they all are (AC2). */
@@ -513,6 +514,14 @@ function TeamApp({
 
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
+  /** The fixture whose Who's coming is open (#277 A). */
+  const [comingId, setComingId] = useState<UUID | null>(null);
+  /** Where Who's coming returns to: Home, or the team sheet it was opened from. */
+  const [comingReturn, setComingReturn] = useState<Step>('fixtures');
+  /** The fixture whose team sheet is open (#277 B). */
+  const [sheetId, setSheetId] = useState<UUID | null>(null);
+  /** #277 C13 (ADR-024 D5): a view choice on this phone, never the record. */
+  const [sheetView, setSheetView] = useState<SheetView>('formation');
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -636,6 +645,8 @@ function TeamApp({
       // #218: whether the coach closed Getting started on this phone.
       const closedRaw = await store.getItem(GETTING_STARTED_KEY).catch(() => null);
       const quietRaw = await store.getItem(SEASON_PROMPT_KEY).catch(() => null);
+      // #277 C13: Formation or Table, as last chosen on this phone.
+      setSheetView(parseSheetView(await store.getItem(SHEET_VIEW_KEY).catch(() => null)));
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -1094,6 +1105,55 @@ function TeamApp({
   // --- actions --------------------------------------------------------------
 
   /**
+   * #280 (Rob, 7 Nov): play out a fixture as its team sheet planned, for a
+   * match nobody recorded. Written to the record as a live match writes it,
+   * then marked reconstructed; the fixture becomes a played match.
+   */
+  const playOutFixture = useCallback(
+    (matchId: UUID) => {
+      const stored = matches.find((m) => m.match.id === matchId);
+      if (!stored) return;
+      const fmt = stored.format ?? format;
+      // QA on #279 (D2): with no record to write, nothing is played out.
+      if (!ledgerRef.current || ledgerBlockedRef.current) {
+        showToast('Player minutes cannot be written on this phone.');
+        return;
+      }
+      const refusal = playOutRefusal(stored, stored.plan, fmt, players);
+      if (refusal) {
+        showToast(refusal);
+        return;
+      }
+      // An undated match is taken to have ended now (QA on #279, D9), so no
+      // recorded time is in the future.
+      const kick = stored.match.kickoffAt ? Date.parse(stored.match.kickoffAt) : NaN;
+      const start = Number.isFinite(kick) ? new Date(kick) : new Date(appNow().getTime() - stored.match.totalMinutes * 60_000);
+      let out: ReturnType<typeof playOutAsPlanned>;
+      try {
+        out = playOutAsPlanned({ stored, format: fmt, plan: stored.plan!, players, start });
+      } catch {
+        // The refusal above should catch every sheet the engine refuses (D1);
+        // if one slips through, say so and write nothing.
+        showToast('This team sheet could not be played out. Check its subs and try again.');
+        return;
+      }
+      // A fixture held but not kicked off is let go of first.
+      if (match && match.state.match.id === matchId) setMatch(null);
+      commitLedger(recordPlayedOut(ledgerRef.current, out, fmt, players, squadName, appNow()));
+      const next = mergeCurrentMatch(matches, out.played, fmt);
+      setMatches(next);
+      persist({ matches: next });
+      // Rob, 7 Nov: the score and the awards come next, so land on the
+      // match's page in the record, where both are added.
+      setRecordId(matchId);
+      setRecordReturn('fixtures');
+      setStep('record');
+      showToast('Played out as planned, marked reconstructed. Add the score and awards here.');
+    },
+    [matches, format, players, match, commitLedger, persist, squadName, showToast]
+  );
+
+  /**
    * Save a planned fixture, built by the one match builder (#99 AC1): the
    * draft's length, period count and shape are copied onto it (#70), and
    * today's squad is recorded as available (#64).
@@ -1185,6 +1245,25 @@ function TeamApp({
       persist({ matches: next });
     },
     [matches, persist, planning]
+  );
+
+  /**
+   * Who's coming changed (#277 A2). The stored copy takes the list and the
+   * time; a held match not yet kicked off takes it too, so the Lineup's Here
+   * today starts from it (A5). After kick-off the list is history and the
+   * screen is not offered.
+   */
+  const saveComing = useCallback(
+    (matchId: UUID, availability: [UUID, AvailabilityStatus][]) => {
+      const at = appNow().getTime();
+      const next = matches.map((m) => (m.match.id === matchId ? { ...m, availability, comingChangedAt: at } : m));
+      setMatches(next);
+      const held = match && match.state.match.id === matchId && beforeKickoff(match.state) ? match : null;
+      if (held) for (const [id, status] of availability) held.engine.setAvailability(held.state, id, status);
+      persist({ matches: next });
+      if (held) setMatch({ ...held });
+    },
+    [matches, match, persist]
   );
 
   /**
@@ -1317,17 +1396,6 @@ function TeamApp({
     setStep('lineup');
   }, [squadId, format, totalMinutes, periodCount, squad, releaseMatch, newSeasonId]);
 
-  const playNow = useCallback(() => {
-    if (squadReadiness(squad, format.onFieldCount).ready) {
-      beginMatch(false);
-      return;
-    }
-    // Not enough players yet. The squad editor, then the lineup — never the
-    // fixture form, which is the thing Play now exists to skip.
-    setSquadErrand('match');
-    setMatchRoute(PLAY_NOW_ROUTE);
-    setStep('squad');
-  }, [squad, format, beginMatch]);
 
   const resume = useCallback(() => {
     if (!pending) return;
@@ -2202,7 +2270,6 @@ function TeamApp({
       } else if (key === 'match') {
         setStep('fixtureForm');
       } else {
-        setPointAtPlayNow(true);
         showToast(PLAY_NOW_TOAST);
       }
     },
@@ -2358,6 +2425,25 @@ function TeamApp({
       );
     }
 
+    const comingMatch = effectiveStep === 'coming' ? matches.find((m) => m.match.id === comingId) : undefined;
+    if (comingMatch) {
+      return (
+        <WhosComingScreen
+          title={`${squadName} v ${opponentLabel(comingMatch.match)}`}
+          players={squad}
+          availability={comingMatch.availability}
+          changedAt={comingMatch.comingChangedAt ?? null}
+          onChange={(list) => saveComing(comingMatch.match.id, list)}
+          onBack={() => setStep(comingReturn)}
+          // Rob, 6 Nov: Who's coming flows straight on to the team sheet.
+          onNext={() => {
+            setSheetId(comingMatch.match.id);
+            setStep('teamSheet');
+          }}
+        />
+      );
+    }
+
     if (effectiveStep === 'plan' && planning) {
       // The held match's quarters, not the stored copy's, which may be stale.
       const planQuarters =
@@ -2391,6 +2477,43 @@ function TeamApp({
 
     // Each match's kick-off, for ruling E: who was in the squad for it.
     const kickoffs = () => kickoffTimes(withLiveMatch(real, liveReal));
+
+    // #277 B: the team sheet, for a fixture not yet kicked off.
+    const sheetMatch = effectiveStep === 'teamSheet' ? matches.find((m) => m.match.id === sheetId) : undefined;
+    if (sheetMatch) {
+      const views = squadViews(seasonView, players, { kickoffs: kickoffs() });
+      return (
+        <TeamSheetScreen
+          match={sheetMatch.match}
+          squadName={squadName}
+          format={sheetMatch.format ?? format}
+          players={squad}
+          availability={sheetMatch.availability}
+          plan={sheetMatch.plan}
+          season={seasonInputs(views.matches, views.owed)}
+          onChange={(plan) => savePlan(sheetMatch.match.id, plan)}
+          view={sheetView}
+          onView={(v) => {
+            setSheetView(v);
+            // A view choice: losing it costs a tap, so a failed write is let go.
+            void store.setItem(SHEET_VIEW_KEY, v).catch(() => undefined);
+          }}
+          onComing={() => {
+            setComingId(sheetMatch.match.id);
+            setComingReturn('teamSheet');
+            setStep('coming');
+          }}
+          onSquad={() => goToTab('squad')}
+          onEditPeriods={() => {
+            setPlanningId(sheetMatch.match.id);
+            setPlanReturn('teamSheet');
+            setStep('plan');
+          }}
+          onUndo={(text, undo) => showToast(text, undo)}
+          onBack={() => setStep('fixtures')}
+        />
+      );
+    }
 
     if (effectiveStep === 'seasonStart' && ledger) {
       // AC4: the last season's format, unless the team's default fits it
@@ -2826,6 +2949,14 @@ function TeamApp({
               (currentQuarter(match.state)?.index ?? 1) - 1
             ]
           }
+          // #277 D20: anyone unticked who the plan still places, from this period on.
+          planGaps={planGaps(
+            matches.find((m) => m.match.id === match.state.match.id)?.plan,
+            absentIds(match.state),
+            (id) => displayName(players.find((p) => p.id === id) ?? { firstName: '?', displaySuffix: null }),
+            periodNoun(match.state.match.quarterCount) === 'Quarter' ? 'Q' : 'H',
+            (currentQuarter(match.state)?.index ?? 1) - 1
+          )}
           onStart={startQuarter}
           onLeave={leaveMatch}
           onPlanRest={planTheRest}
@@ -2906,11 +3037,40 @@ function TeamApp({
           setStep('record');
         }}
         onAdd={() => setStep('fixtureForm')}
-        onPlan={(id) => {
-          setPlanningId(id);
-          setStep('plan');
-        }}
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
+        // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
+        coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
+        onComing={(id) => {
+          setComingId(id);
+          setComingReturn('fixtures');
+          setStep('coming');
+        }}
+        onTeamSheet={(id) => {
+          setSheetId(id);
+          setStep('teamSheet');
+        }}
+        // #280: a fixture past its kick-off (or undated), never started, with a
+        // team sheet: offered, or why not (QA on #279, D3).
+        playable={
+          new Map(
+            real
+              .filter((m) => {
+                const kick = m.match.kickoffAt ? Date.parse(m.match.kickoffAt) : NaN;
+                const past = !Number.isFinite(kick) || kick < appNow().getTime();
+                return past && m.match.status === 'planned' && planHasContent(m.plan);
+              })
+              .map((m) => [
+                m.match.id,
+                ledgerBlockedRef.current || !ledger
+                  ? 'Player minutes cannot be written on this phone.'
+                  : playOutRefusal(m, m.plan, m.format ?? format, players),
+              ] as const)
+              // An undated fixture may still be in the making: offered once it
+              // can be, with no reason line all week (QA on #279, D3).
+              .filter(([id, why]) => why === null || real.some((m) => m.match.id === id && m.match.kickoffAt))
+          )
+        }
+        onPlayOut={playOutFixture}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked
           // off a moment ago must not still be offered for deletion.
@@ -2936,7 +3096,6 @@ function TeamApp({
           showingArchived: showArchived,
           onToggleArchived: () => setShowArchived((v) => !v),
         }}
-        onPlayNow={liveReal && matchIsUnderway(liveReal.state.quarters) ? null : playNow}
         buildLabel={currentBuildLabel()}
         notice={sessionMessage}
         // #218: the made-up team's line (Q6) and Getting started (AC1, AC2).
@@ -2964,7 +3123,6 @@ function TeamApp({
           </>
         }
         nothingPlayed={nextButton}
-        highlightPlayNow={pointAtPlayNow}
       />
     );
   })();

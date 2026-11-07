@@ -74,6 +74,45 @@ export const SLOT_LABEL_HEIGHT = 15;
 export const PITCH_ASPECT = 3 / 3.8;
 
 /**
+ * #276: the shortest pitch that still draws every row clear of the next. Rows
+ * sit at ROW_Y; the tightest pair (DEF 0.65, GK 0.88) is 0.23 of the pitch
+ * apart and must hold a position name and a pill (SLOT_LABEL_HEIGHT +
+ * PILL_HEIGHT), and the top row's name must stay inside the pitch.
+ */
+export const MIN_PITCH_HEIGHT = Math.ceil((SLOT_LABEL_HEIGHT + PILL_HEIGHT) / (ROW_Y.GK - ROW_Y.DEF));
+
+/**
+ * #276: the pitch's height on a phone. Its natural height (width over
+ * PITCH_ASPECT), unless that leaves the bench below the fold of the
+ * scrolling area: then as short as fits, never below MIN_PITCH_HEIGHT.
+ * `room` is the scrolling area's height less what must show beside the
+ * pitch (the bench strip); null before the screen has measured it.
+ */
+export function fitPitchHeight(width: number, room: number | null): number {
+  const natural = width / PITCH_ASPECT;
+  if (room === null) return natural;
+  return Math.min(natural, Math.max(MIN_PITCH_HEIGHT, room));
+}
+
+/** #276: how near a scrolling area's top or bottom edge a drag scrolls it. */
+export const EDGE_SCROLL_ZONE = 48;
+/** How far one tick of edge scrolling moves, in dp. */
+export const EDGE_SCROLL_STEP = 12;
+
+/**
+ * #276: while a player is dragged, which way the screen should scroll: -1 up
+ * when the finger is within EDGE_SCROLL_ZONE of the area's top, 1 down near
+ * its bottom, 0 otherwise. `top` and `height` are the scrolling area's, in
+ * the same window coordinates as `pageY`.
+ */
+export function edgeScrollDirection(pageY: number, top: number, height: number): -1 | 0 | 1 {
+  if (height <= 0) return 0;
+  if (pageY < top + EDGE_SCROLL_ZONE) return -1;
+  if (pageY > top + height - EDGE_SCROLL_ZONE) return 1;
+  return 0;
+}
+
+/**
  * How wide a pill is on a pitch `pitchWidth` across: 72dp when the format
  * has 11 on the pitch, otherwise today's max(96dp, 28 % of the pitch) (#249
  * F24, F25). The drag ghost and the empty-slot outline use the same width.
@@ -159,7 +198,11 @@ export function dropTargetAt(
 ): DropTarget | null {
   for (const b of benchPills) if (inside(px, py, b.rect)) return { kind: 'player', playerId: b.playerId };
   if (bench && inside(px, py, bench)) return { kind: 'bench' };
-  if (!inside(px, py, pitch)) return null;
+  // #276: a finger a little past the pitch's edge, above the top row most of
+  // all, still means the nearest position: the reach below decides.
+  const margin = PILL_HEIGHT / 2;
+  const grown = { x: pitch.x - margin, y: pitch.y - margin, width: pitch.width + 2 * margin, height: pitch.height + 2 * margin };
+  if (!inside(px, py, grown)) return null;
   const reach = pitch.width * 0.2;
   let best: { id: UUID; d: number } | null = null;
   for (const s of spots) {

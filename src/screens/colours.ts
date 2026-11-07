@@ -63,6 +63,8 @@ export const colours = {
    * outline (4.97:1) to mark their boundary.
    */
   main: '#12855a',
+  /** The subs bench's plank (Rob, 6 Nov: the bench should look like a bench). Decoration only. */
+  wood: '#9a7a4c',
   /** ✓ Saved and "Not saved yet". */
   saved: '#ffd166',
   /** A row's divider in a grouped list. Decoration, not a control edge. */

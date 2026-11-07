@@ -39,7 +39,7 @@ export const SHOW_AGAIN = 'Show Getting started again';
 
 export const CLOSED_TOAST = 'Getting started closed.';
 export const ALL_DONE_TOAST = 'All three steps done. You are ready for Saturday.';
-export const PLAY_NOW_TOAST = 'Press Play now when the game kicks off.';
+export const PLAY_NOW_TOAST = "At kick-off, tap the match on Home: it opens on the lineup.";
 export const FORGOTTEN_TOAST = 'Everything forgotten. This phone is like a fresh install.';
 /** How long the Undo after closing the card is offered (Q4). */
 export const UNDO_MS = 5_000;
@@ -48,7 +48,7 @@ export const TOAST_MS = 3_500;
 
 /** Home with no matches at all (Q3). The buttons it means are just above it. */
 export const NO_MATCHES_YET =
-  "No matches yet. Add Saturday's match with the button above, or press Play now when a game starts.";
+  "No matches yet. Add Saturday's match with + Fixture above, then tap it at kick-off.";
 /** Played, before the first match has been played (Q3). */
 export const NOTHING_PLAYED_YET =
   "Nothing played yet. When you end a match it moves here, with everyone's minutes.";
@@ -141,7 +141,7 @@ export function startSteps(phone: PhoneContents): StartStep[] {
     },
     {
       key: 'play',
-      name: 'Press Play now at kick-off',
+      name: 'Open the match at kick-off',
       detail: playDone ? 'Done' : 'The app keeps time and says who comes off next',
       done: playDone,
     },

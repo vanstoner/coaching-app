@@ -100,6 +100,7 @@ describe('screens use the shared controls (#264 E6)', () => {
     'Sheet.tsx': 'the action sheet, unchanged (Dee: menus keep their look)',
     'TabBar.tsx': 'V1 and V3 only (table B)',
     'TableSort.tsx': 'V1 and V3 only (table B)',
+    'TeamSheetViews.tsx': 'content: the quarters as small pitches and the table, each name a target (#277)',
   };
 
   it('every other file that draws a Pressable imports the controls', () => {

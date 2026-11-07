@@ -31,7 +31,7 @@ src/app/            pure rules, each with a *.test.ts beside it
 src/app/storage/    the storage modules: teams, session, ledger store, backup, forget, device key
 src/screens/        React components; take props, hold only view state
 src/screens/controls/  the one control vocabulary every screen draws from (#264): Row ›, Section
-                    heading (the twisty), Segmented, list sheets, Stepper, Action, Main button,
+                    heading (the twisty; open, a shaded bordered panel, Rob 6 Nov), Segmented, list sheets, Stepper, Action, Main button,
                     Field row, ✓ Saved / Not saved yet, Back, Cancel/Save sheets, Danger
 .github/            CI, APK/IPA builds, releases, store listing
 ```
@@ -121,6 +121,7 @@ the root, and the move into teams leaves them alone (`PHONE_KEYS`).
 | `coaching-app/table-sort/v1` | Each analytics table's chosen sort, a view choice on this phone (#208) | `TableSortProvider` | Never in the record; removed by Forget everything |
 | `coaching-app/settings-sections/v1` (root) | `{"open":[…]}`: which Settings sections are open, a view choice on this phone (#263 AC5); Danger zone is never stored | `SettingsScreen` | Never in the record; removed by Forget everything |
 | `coaching-app/last-backup/v1` (root) | When Back up this app last made its file and handed it on, in ms, for the Backup heading (#263 AC10) | `App.tsx` (`backUpApp`) | Never in the record or a backup file, untouched by a restore; removed by Forget everything |
+| `coaching-app/sheet-view/v1` | The Team sheet's view, Pitch, All or Table, a view choice (#277, ADR-024 D5) | `App.tsx` | Never in the record; removed by Forget everything |
 | `coaching-app/season-prompt/v1` | When "Not yet" on the new-season prompt quiets it until (#243 Q2), a view choice | `App.tsx` | Never in the record; removed by Forget everything |
 | `coaching-app/teams/v1` (root) | The team index (ADR-022 D2) | `storage/teams.ts` | `version` 1; a damaged index is rebuilt from the teams' keys |
 | `coaching-app/before-teams/…` (root) | The phone's keys as 1.x left them, set aside by the move into teams (D3). A key found at the root later goes under `before-teams/later/<iso>/…`, never over them | `openTeams` | Removed by Forget everything |
@@ -148,7 +149,8 @@ stateDiagram-v2
     state "Tuesday · tab bar" as T {
         fixtures --> fixtureForm: Add
         fixtureForm --> fixtures: Save / Cancel
-        fixtures --> plan: Plan
+        fixtures --> coming: Who's coming (#277)
+        fixtures --> teamSheet: Team sheet (#277)
         fixtures --> squad: Getting started, Add your squad (#218)
         squad --> plan: empty squad view, next step (#218)
         squad --> fixtureForm: empty squad view, next step (#218)
@@ -156,9 +158,16 @@ stateDiagram-v2
         squad
         settings
     }
-    fixtures --> squad: Play now, too few players (errand=match)
+    coming --> teamSheet: Next: team sheet
+    coming --> fixtures: Done
+    teamSheet --> coming: Who's coming
+    teamSheet --> plan: Sub times and who comes off
+    plan --> teamSheet: Done (planReturn)
+    teamSheet --> fixtures: Done
+    fixtures --> squad: Open, too few players (errand=match)
     squad --> lineup: Start
-    fixtures --> lineup: Open / Play now
+    fixtures --> lineup: Open
+    fixtures --> record: Play out as planned (#280)
     fixtures --> playing: Open (period running)
     fixtures --> summary: Open (played)
     lineup --> playing: Start period
