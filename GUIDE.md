@@ -193,6 +193,13 @@ the match's fair share.
 
 <img src="store/app-store/screenshots/iphone/04-report.png" alt="The match report: every result, every minute" width="260">
 
+**Nobody recorded it?** If you couldn't be there and nobody ran the clock, a
+fixture whose kick-off has passed and whose team sheet fills every place offers
+**Play out as planned**. It asks first, then records the match as the sheet
+planned it: the children marked Coming were there, everyone else absent, no
+score. It goes in Played marked **reconstructed**, so the Squad tab can leave it
+out of the figures.
+
 ## 8. Is everyone getting a fair share?
 
 **Fairness is total time on the pitch, in goal and outfield together.**

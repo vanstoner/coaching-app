@@ -516,4 +516,4 @@ analysis, iOS". Entries are added as each release ships.
   bottom of the screen scrolls it (on the lineup, the plan and the clock),
   and a drop just past the pitch's top edge still lands on the top row.
   Rob's beta check found the plan screen did not scroll; it now shares the
-  lineup's edge scrolling. Shipping with #277 and #278 in 2.3.0 (Rob, 5 Nov). Release 2.2.0 is frozen as a fixture (#167).
+  lineup's edge scrolling. Shipping with #277 and #278 in 2.3.0 (Rob, 5 Nov). **Play out as planned** (#280, Rob 7 Nov: "In want it in 2.3"): a fixture nobody recorded, past its kick-off with a full team sheet, can be written to the record as its sheet planned it, after a confirm, and shows in Played as reconstructed. Release 2.2.0 is frozen as a fixture (#167).

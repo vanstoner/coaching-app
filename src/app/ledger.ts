@@ -1316,6 +1316,23 @@ export function setMatchExcluded(
 }
 
 /**
+ * #280 (Rob, 7 Nov): a coach's statement that a match was played out from its
+ * plan, not recorded live. An `origin` record (ADR-021's table: `how`,
+ * `source`, `note`), appended and never edited (invariant 5); provenance then
+ * reads the match as reconstructed, so the existing toggle can leave it out.
+ */
+export function markReconstructed(ledger: Ledger, matchId: UUID, source: string, note: string, now: Date): CorrectionResult {
+  if (!isWritable(ledger)) {
+    return { ok: false, reason: 'This ledger was written by a newer version of the app.' };
+  }
+  if (!ledger.matches.some((m) => m.id === matchId)) return { ok: false, reason: 'That match is not in the ledger.' };
+  return {
+    ok: true,
+    ledger: appendRecords(ledger, [{ type: 'origin', matchId, how: 'reconstructed', source, note: note.trim() }], now),
+  };
+}
+
+/**
  * Count an off-format match in the season's figures, or leave it out again
  * (#243 AC8, Q6; Rob's ruling 8A): a `format-count` record of its own, with
  * a mandatory note (invariant 5). It never changes what an `exclusion`

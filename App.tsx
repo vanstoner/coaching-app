@@ -259,6 +259,8 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { seasonInputs } from './src/app/teamSheetBuilder';
+import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
+import { mergeCurrentMatch } from './src/app/persistence';
 import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
 import { comingRows, comingSummary } from './src/app/whosComing';
@@ -1101,6 +1103,42 @@ function TeamApp({
   );
 
   // --- actions --------------------------------------------------------------
+
+  /**
+   * #280 (Rob, 7 Nov): play out a fixture as its team sheet planned, for a
+   * match nobody recorded. Written to the record as a live match writes it,
+   * then marked reconstructed; the fixture becomes a played match.
+   */
+  const playOutFixture = useCallback(
+    (matchId: UUID) => {
+      const stored = matches.find((m) => m.match.id === matchId);
+      if (!stored) return;
+      const fmt = stored.format ?? format;
+      const refusal = playOutRefusal(stored, stored.plan, fmt, players);
+      if (refusal) {
+        showToast(refusal);
+        return;
+      }
+      // A fixture held but not kicked off is let go of first.
+      if (match && match.state.match.id === matchId) setMatch(null);
+      const kick = stored.match.kickoffAt ? Date.parse(stored.match.kickoffAt) : NaN;
+      const out = playOutAsPlanned({
+        stored,
+        format: fmt,
+        plan: stored.plan!,
+        players,
+        start: Number.isFinite(kick) ? new Date(kick) : appNow(),
+      });
+      if (ledgerRef.current && !ledgerBlockedRef.current) {
+        commitLedger(recordPlayedOut(ledgerRef.current, out, fmt, players, squadName, appNow()));
+      }
+      const next = mergeCurrentMatch(matches, out.played, fmt);
+      setMatches(next);
+      persist({ matches: next });
+      showToast(`Played out as planned: v ${opponentLabel(stored.match)} is in Played, marked reconstructed`);
+    },
+    [matches, format, players, match, commitLedger, persist, squadName, showToast]
+  );
 
   /**
    * Save a planned fixture, built by the one match builder (#99 AC1): the
@@ -2998,6 +3036,19 @@ function TeamApp({
           setSheetId(id);
           setStep('teamSheet');
         }}
+        // #280: a fixture past its kick-off, never started, with a full team sheet.
+        playable={
+          new Set(
+            real
+              .filter((m) => {
+                const kick = m.match.kickoffAt ? Date.parse(m.match.kickoffAt) : NaN;
+                const past = !Number.isFinite(kick) || kick < appNow().getTime();
+                return past && playOutRefusal(m, m.plan, m.format ?? format, players) === null;
+              })
+              .map((m) => m.match.id)
+          )
+        }
+        onPlayOut={playOutFixture}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked
           // off a moment ago must not still be offered for deletion.

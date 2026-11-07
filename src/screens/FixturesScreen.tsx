@@ -58,6 +58,8 @@ export function FixturesScreen({
   coming,
   onComing,
   onTeamSheet,
+  playable,
+  onPlayOut,
   housekeeping,
   buildLabel,
   progress,
@@ -88,6 +90,9 @@ export function FixturesScreen({
   onComing: (matchId: UUID) => void;
   /** #277 B6: the fixture's Team sheet. */
   onTeamSheet: (matchId: UUID) => void;
+  /** #280: fixtures that can be played out as planned, and doing it. */
+  playable: ReadonlySet<UUID>;
+  onPlayOut: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
   buildLabel: string;
@@ -121,7 +126,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -218,6 +223,8 @@ interface CardActions {
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
   onTeamSheet: (matchId: UUID) => void;
+  playable: ReadonlySet<UUID>;
+  onPlayOut: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
@@ -336,6 +343,8 @@ function FixtureCard({
   coming,
   onComing,
   onTeamSheet,
+  playable,
+  onPlayOut,
   housekeeping,
   scores,
   periods,
@@ -445,6 +454,17 @@ function FixtureCard({
           accessibilityLabel={`Team sheet for ${opponent}${planned ? ', made' : ''}`}
           onPress={() => onTeamSheet(match.id)}
           first={!coming.has(match.id)}
+        />
+      )}
+
+      {/* #280: nobody recorded it live, so the plan is written to the record as
+          reconstructed. It writes to the record, so it asks first. */}
+      {match.status === 'planned' && playable.has(match.id) && (
+        <Danger
+          label="Play out as planned"
+          confirmLabel="Record it as reconstructed"
+          keepLabel="Keep"
+          onConfirm={() => onPlayOut(match.id)}
         />
       )}
 
