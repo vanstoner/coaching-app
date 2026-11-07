@@ -118,7 +118,11 @@ the fixture's card). It is one screen:
 - **⟳ Rearrange** on a quarter tries a different line-up for that quarter:
   the same children, so nobody's minutes change.
 - Tap two children in the same quarter to swap them. **Undo** is in the
-  message that appears. **Minutes** shows everyone's time and the fair share.
+  message that appears.
+- **Subs by hand:** tap a child on the bench to plan them coming on, or tap a
+  child on the pitch and then **Sub … off**. Pick who, and when, to the 15
+  seconds. It works the same on the team sheet and on the Plan. **Fill the
+  rest** plans the subs again, so make your own after it. **Minutes** shows everyone's time and the fair share.
 
 Then tap **Share plan** at the bottom to send parents the picture.
 

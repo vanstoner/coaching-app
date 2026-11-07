@@ -46,8 +46,9 @@ import {
   type SheetView,
 } from '../app/teamSheetEdit';
 import { editSheet } from '../app/teamSheet';
-import { BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, Stepper, TopBar, useSavedTick } from './controls';
+import { Action, BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, Stepper, TopBar, useSavedTick } from './controls';
 import { PitchView } from './PitchView';
+import { PlannedSubPanel, subRequestFor, type SubRequest } from './PlannedSubPanel';
 import { SharePlanFoot } from './SharePlan';
 import { TeamSheetViews } from './TeamSheetViews';
 import { useEdgeScroll } from './useEdgeScroll';
@@ -119,6 +120,8 @@ export function TeamSheetScreen({
   const [picking, setPicking] = useState<number | null>(null);
   const [quarter, setQuarter] = useState(0);
   const [pick, setPick] = useState<UUID | null>(null);
+  // Rob, 7 Nov: a sub made from a tap, as on the Plan (PlannedSubPanel).
+  const [subAsk, setSubAsk] = useState<SubRequest | null>(null);
   const [dragging, setDragging] = useState(false);
   const [turn, setTurn] = useState(1);
   // #276: drag near the scrolling area's edge to scroll it; the pitch fits with the bench.
@@ -299,7 +302,7 @@ export function TeamSheetScreen({
         </Section>
 
         <View style={local.views}>
-          <Text style={[screen.fieldLabel, local.viewsLabel]}>{made ? 'Tap two to swap' : 'Place anyone you want to'}</Text>
+          <Text style={[screen.fieldLabel, local.viewsLabel]}>{made ? 'Tap two to swap, the bench to sub' : 'Place anyone you want to'}</Text>
           <View style={local.viewControl}>
             <Segmented<SheetView>
               name="View"
@@ -337,7 +340,7 @@ export function TeamSheetScreen({
             <View style={local.qbar}>
               <Text style={local.subLine} numberOfLines={2}>
                 {subsHere.length
-                  ? `${subsHere.map((s) => `${name(s.onId)} for ${name(s.offId)}`).join(', ')} at ${subAt}`
+                  ? subsHere.map((s) => `${name(s.onId)} for ${name(s.offId)} at ${formatSubTime(s.atMs)}`).join(', ')
                   : subs
                     ? `Subs at ${subAt} are placed when you fill`
                     : `No subs this ${noun.toLowerCase()}`}
@@ -359,8 +362,9 @@ export function TeamSheetScreen({
               nameOf={(id) => name(id)}
               detailOf={(id) => {
                 const on = subsHere.find((s) => s.onId === id);
-                if (on) return `on at ${subAt} for ${name(on.offId)}`;
-                if (subsHere.some((s) => s.offId === id)) return `off at ${subAt}`;
+                if (on) return `on at ${formatSubTime(on.atMs)} for ${name(on.offId)}`;
+                const off = subsHere.find((s) => s.offId === id);
+                if (off) return `off at ${formatSubTime(off.atMs)}`;
                 // Rob, 7 Nov: the running total to the end of this quarter, not the whole match.
                 return made ? formatClock(soFar.get(id) ?? 0) : '';
               }}
@@ -374,6 +378,12 @@ export function TeamSheetScreen({
               goldIds={new Set(subsHere.map((s) => s.onId!))}
               selected={pick}
               onSelect={setPick}
+              // A bench child opens their sub; a child on the pitch is picked
+              // up, to swap or to sub off (Rob, 7 Nov).
+              onTapPlayer={(id) => {
+                if (Object.values(period.slots).includes(id)) setPick(id);
+                else setSubAsk(subRequestFor(period, id, false));
+              }}
               onDragging={setDragging}
               {...edge.pitchProps}
               onMove={(id, target) => {
@@ -389,6 +399,15 @@ export function TeamSheetScreen({
                 else byHand(quarter, setPeriodSlots(sheet, quarter, editSheet(period.slots, id, target)), `${name(id)} moved`);
               }}
             />
+            {pick && Object.values(period.slots).includes(pick) && (
+              <Action
+                label={`Sub ${name(pick)} off`}
+                onPress={() => {
+                  setSubAsk(subRequestFor(period, pick, true));
+                  setPick(null);
+                }}
+              />
+            )}
           </View>
         )}
         {view !== 'formation' && (
@@ -484,6 +503,20 @@ export function TeamSheetScreen({
       </ScrollView>
 
       {/* Rob, 6 Nov: "I make final tweaks and share". Off until every place is filled. */}
+      <PlannedSubPanel
+        request={subAsk}
+        plan={sheet}
+        periodIndex={quarter}
+        periodMs={periodMs}
+        format={format}
+        players={coming}
+        noun={noun}
+        name={(id) => name(id)}
+        onChange={(next) => undoable(next, 'Sub planned')}
+        onClose={() => setSubAsk(null)}
+        onPutInLineup={setPick}
+      />
+
       <SharePlanFoot
         match={match}
         squadName={squadName}

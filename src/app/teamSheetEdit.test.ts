@@ -9,7 +9,7 @@ import { displayName, makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { emptyPlan, periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { applyKeepers, benchOf, canRearrange, frontToBack, isPinned, keepPinned, keepersOf, minutesThrough, parseSheetView, pinPlaces, planGaps, rearrangePeriod, sheetTable, swapInPeriod } from './teamSheetEdit';
+import { applyKeepers, benchOf, canRearrange, frontToBack, isPinned, keepPinned, keepersOf, minutesThrough, parseSheetView, pinPlaces, planGaps, rearrangePeriod, sheetTable, subRequestFor, swapInPeriod } from './teamSheetEdit';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -206,5 +206,22 @@ describe('the number under a name is the running total to the end of that quarte
       const after = minutesThrough(plan, p, format, 50, 4, players);
       for (const [id, ms] of after) expect(ms).toBeGreaterThanOrEqual(before.get(id)!);
     }
+  });
+});
+
+describe('the sub a tap opens (Rob, 7 Nov: tap a placed child and sub them)', () => {
+  it('a child on the pitch: their sub off, else a new one taking them off', () => {
+    const period = sheet().periods[0];
+    const sub = period.subs[0];
+    expect(subRequestFor(period, sub.offId!, true)).toEqual({ swapIndex: 0, onId: sub.onId, offId: sub.offId });
+    const stays = Object.values(period.slots).find((id) => id && !period.subs.some((s) => s.offId === id))!;
+    expect(subRequestFor(period, stays, true)).toEqual({ swapIndex: -1, onId: null, offId: stays });
+  });
+  it('a bench child: their sub on, else a new one bringing them on', () => {
+    const period = sheet().periods[0];
+    const sub = period.subs[0];
+    expect(subRequestFor(period, sub.onId!, false)).toEqual({ swapIndex: 0, onId: sub.onId, offId: sub.offId });
+    const sitter = benchOf(period, ids).find((id) => id !== sub.onId)!;
+    expect(subRequestFor(period, sitter, false)).toEqual({ swapIndex: -1, onId: sitter, offId: null });
   });
 });

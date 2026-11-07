@@ -13,7 +13,7 @@
 
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
 import { formatSubTime } from './matchClock';
-import { projectPlan, type MatchPlan, type PlannedPeriod } from './matchPlan';
+import { benchSubIndex, projectPlan, type MatchPlan, type PlannedPeriod } from './matchPlan';
 import type { Player } from '../types/index';
 
 /**
@@ -276,4 +276,30 @@ export function minutesThrough(
   const upTo: MatchPlan = { periods: plan.periods.map((p, i) => (i <= periodIndex ? p : { slots: {}, subs: [] })) };
   const rows = projectPlan(upTo, format, totalMinutes, periodCount, players).rows;
   return new Map(rows.map((r) => [r.playerId, r.pitchMs]));
+}
+
+/** Which sub to open: an existing one (`swapIndex`), or a new one (-1) with who is known. */
+export interface SubRequest {
+  swapIndex: number;
+  onId: UUID | null;
+  offId: UUID | null;
+}
+
+/**
+ * The sub a tap opens. A bench child: their earliest sub on, else a new one
+ * bringing them on. A child on the pitch: their earliest sub off, else a new
+ * one taking them off.
+ */
+export function subRequestFor(period: PlannedPeriod, id: UUID, onPitch: boolean): SubRequest {
+  if (!onPitch) {
+    const i = benchSubIndex(period, id);
+    return i === -1 ? { swapIndex: -1, onId: id, offId: null } : { swapIndex: i, onId: id, offId: period.subs[i].offId };
+  }
+  let found = -1;
+  period.subs.forEach((s, i) => {
+    if (s.offId === id && (found === -1 || s.atMs < period.subs[found].atMs)) found = i;
+  });
+  return found === -1
+    ? { swapIndex: -1, onId: null, offId: id }
+    : { swapIndex: found, onId: period.subs[found].onId, offId: id };
 }
