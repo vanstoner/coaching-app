@@ -44,6 +44,9 @@ describe('Something went wrong (#176)', () => {
     expect(app).toMatch(/<RecoveryBoundary\s+key=\{effectiveStep\}\s+where=\{heldTest \? 'test' : 'team'\}/);
     expect(app).toMatch(/<RecoveryProbe \/>\s*\{body\}/);
     expect(app).toMatch(/<RecoveryBoundary key=\{shellTry\} where="shell"/);
-    expect(read('../screens/TestKitSection.tsx')).toContain('label="Make the next screen fail" onPress={armRecoveryTest}');
+    // Rob, 7 Nov ("does nothing"): it fails at once, inside the team's boundary.
+    const kit = read('../screens/TestKitSection.tsx');
+    expect(kit).toContain('label="Show the Something went wrong screen" onPress={() => setFailing(true)}');
+    expect(kit).toContain('{failing && <FailNow />}');
   });
 });

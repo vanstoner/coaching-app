@@ -23,6 +23,11 @@ export function RecoveryProbe(): null {
   return null;
 }
 
+/** #176 C11: drawn by the Test kit to fail at once, so the recovery screen shows straight away. */
+export function FailNow(): null {
+  throw new Error('Test kit: this screen fails');
+}
+
 interface Props {
   where: RecoveryWhere;
   /** Go to Home, Go to Settings, or (the shell) Try again. */
