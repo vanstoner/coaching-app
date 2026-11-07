@@ -140,8 +140,10 @@ margin falls past two steps at once, the prompt asks for each.
 
 **Harder:**
 - The engine's identity, `startQuarter`'s check and the lineup grow a second
-  term. The pitch and plan image must draw up to 3 extra pills (Dee, then a
-  `fitGuard` case at 360dp, with 11-a-side plus 3 the widest).
+  term. The pitch draws up to 3 extra pills in a **Power play** row under
+  the pitch, not on the grass: at 11-a-side a row of four leaves no room
+  for one more, and the gap between rows is shorter than a pill. A
+  `fitGuard` case checks the row at 360dp, with 11-a-side plus 3 the widest.
 - The sub cue and the plan's "next sub" must read the open set, not the
   format's size.
 

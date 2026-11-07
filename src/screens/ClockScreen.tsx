@@ -173,6 +173,8 @@ export function ClockScreen({
     onAdd: (playerId: UUID, unit: 'ATT' | 'MID' | 'DEF') => boolean;
     onRemove: (playerId: UUID) => boolean;
     onTheirs: () => MatchEvent | null;
+    /** Season owed time per child, for ties in the add list (ADR-026 D3, ADR-024 D3). Asked only while the add cue shows. */
+    owedMs?: () => ReadonlyMap<UUID, number>;
   };
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
@@ -311,7 +313,14 @@ export function ClockScreen({
   const allowance = powerPlayAllowance(state.events, ppSteps);
   const cue = running ? powerPlayCue(allowance, extras.length) : null;
   const pitchMsOf = new Map(minutes.map((m) => [m.playerId, m.totalMs]));
-  const ppBench = timeNeededOrder(bench.filter((id) => state.playerAvailability.get(id) === 'available'), pitchMsOf);
+  const ppBench =
+    cue?.kind === 'add' || ppAdd !== null
+      ? timeNeededOrder(
+          bench.filter((id) => state.playerAvailability.get(id) === 'available'),
+          pitchMsOf,
+          powerPlay?.owedMs?.()
+        )
+      : [];
   const ppOff = mostTimeFirst(onPitch.map((m) => m.playerId), keeper, pitchMsOf);
   const offerTheirs = powerPlay !== undefined && theirPowerPlayOffered(state.events, ppSteps) && !theyUsedPowerPlay(state.events);
 
@@ -428,6 +437,16 @@ export function ClockScreen({
     }
     const label = tallies.find((t) => t.kind === kind)?.label ?? 'Tally';
     offerUndo(team ? `${label} (team)` : `${label}: ${nameOf(id)}`, () => onWithdraw(event.id, UNDO_NOTE));
+  };
+
+  /** #255 D4: their power play is one event, credited to no one; Undo withdraws it like any tap. */
+  const theirs = () => {
+    const event = powerPlay?.onTheirs() ?? null;
+    if (!event) {
+      setNotice('That could not be recorded.');
+      return;
+    }
+    offerUndo('Their power play', () => onWithdraw(event.id, UNDO_NOTE));
   };
 
   /** Withdrawing the goal takes its assist with it (#185 AC5), so Undo stays one tap. */
@@ -589,9 +608,7 @@ export function ClockScreen({
               <Action
                 label="They used a power play"
                 align="center"
-                onPress={() => {
-                  if (powerPlay?.onTheirs()) setNotice('Their power play: noted');
-                }}
+                onPress={theirs}
               />
             )}
             {powerPlay && theyUsedPowerPlay(state.events) && (
@@ -717,6 +734,12 @@ export function ClockScreen({
           </>
         )}
 
+        {/* #255 C22 (ADR-026 D4): the score band offers it, but the coach can note it at any time. */}
+        {powerPlay && ppSteps.length > 0 && !offerTheirs && !view.isMatchOver && !theyUsedPowerPlay(state.events) && (
+          <Pressable onPress={theirs} accessibilityRole="button" style={screen.linkHit}>
+            <Text style={screen.link}>They used a power play</Text>
+          </Pressable>
+        )}
         {onPlanRest && !view.isMatchOver && (
           <Pressable onPress={onPlanRest} style={screen.linkHit}>
             <Text style={screen.link}>Plan the rest of the match</Text>

@@ -12,6 +12,7 @@ import { makeFormat } from './shapes';
 import { emptyLedger, setPowerPlayRule } from './ledger';
 import {
   mostTimeFirst,
+  owedMsOf,
   powerPlayAllowance,
   powerPlayCue,
   powerPlayLine,
@@ -166,7 +167,29 @@ describe('the power play screens (#255)', () => {
     expect(seasons).toContain("['1st extra', '2nd extra', '3rd extra']");
     const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
     expect(app).toContain('setPowerPlayRule(l, season.id, steps, appNow())');
-    expect(app).toMatch(/powerPlay=\{powerPlayActs\(/);
+    expect(app).toMatch(/\.\.\.powerPlayActs\(/);
+    // C22: noted at any time while a rule is set, not only when offered; Undo withdraws it.
+    expect(clock).toMatch(/ppSteps\.length > 0 && !offerTheirs && !view\.isMatchOver[\s\S]{0,200}onPress=\{theirs\}[\s\S]{0,160}They used a power play/);
+    expect(clock).toContain("offerUndo('Their power play', () => onWithdraw(event.id, UNDO_NOTE))");
+    // Ties in the add list go by the season's owed time (C8), asked only while adding.
+    expect(app).toContain('owedMs: () => owedMsOf(squadViews(');
+    expect(clock).toMatch(/cue\?\.kind === 'add' \|\| ppAdd !== null\s*\? timeNeededOrder\([\s\S]{0,160}powerPlay\?\.owedMs\?\.\(\)/);
   });
 });
 
+describe('owed time for the add list (ADR-026 D3, ADR-024 D3)', () => {
+  it('turns owed minutes into milliseconds and leaves out a keeper or fill-in', () => {
+    const [a, b, c] = [uuid(), uuid(), uuid()];
+    const owed = owedMsOf([
+      { playerId: a, owed: 6 },
+      { playerId: b, owed: null },
+      { playerId: c, owed: -3 },
+    ]);
+    expect([...owed]).toEqual([
+      [a, 360_000],
+      [c, -180_000],
+    ]);
+    // Level on pitch time: the child owed most comes first, then squad order.
+    expect(timeNeededOrder([c, b, a], new Map(), owed)).toEqual([a, b, c]);
+  });
+});

@@ -43,7 +43,7 @@ import {
   slotBox,
   slotSpots,
   type DropTarget,
-  type Rect, extraSpots } from '../app/pitchLayout';
+  type Rect, EXTRA_GAP, EXTRA_RING } from '../app/pitchLayout';
 import type { Sheet } from '../app/teamSheet';
 import { colours } from './theme';
 
@@ -289,19 +289,6 @@ export function PitchView(props: PitchViewProps) {
         <View style={s.box} />
         <Text style={s.attacking}>Attacking this way ↑</Text>
         {pitch.width > 0 &&
-          (props.extras ?? []).map((extra, i) => {
-            const who = sheet[extra.positionId] ?? null;
-            if (!who) return null;
-            const spot = extraSpots((props.extras ?? []).map((e) => e.unit))[i];
-            const box = slotBox(spot, pitch.width, pitch.height, pillWidth);
-            return (
-              <View key={extra.positionId} style={[s.slot, { width: box.width, left: box.x, top: box.y }]}>
-                <Text style={[s.slotLabel, s.extraLabel]} numberOfLines={1}>{`+ ${extra.unit}`}</Text>
-                <View style={s.extraRing}>{pill(who, false, false)}</View>
-              </View>
-            );
-          })}
-        {pitch.width > 0 &&
           spots.map((spot) => {
             const who = sheet[spot.positionId] ?? null;
             const box = slotBox(spot, pitch.width, pitch.height, pillWidth);
@@ -349,6 +336,25 @@ export function PitchView(props: PitchViewProps) {
           })}
       </View>
 
+      {/* #255 (ADR-026 D1): the extra players, in their own row under the pitch.
+          Never on the grass: at 11-a-side there is no room there for one more pill. */}
+      {(props.extras ?? []).some((e) => sheet[e.positionId]) && (
+        <View style={s.extraStrip} accessibilityLabel="Power play">
+          <Text style={[s.benchLabel, s.extraLabel]}>Power play</Text>
+          <View style={s.extraRow}>
+            {(props.extras ?? []).map((extra) => {
+              const who = sheet[extra.positionId] ?? null;
+              if (!who) return null;
+              return (
+                <View key={extra.positionId} style={s.extraSlot}>
+                  <Text style={[s.slotLabel, s.extraLabel]} numberOfLines={1}>{`+ ${extra.unit}`}</Text>
+                  <View style={s.extraRing}>{pill(who, false, false)}</View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
       {!props.hideBench && (
         <Text style={s.benchLabel}>Subs bench</Text>
       )}
@@ -442,7 +448,10 @@ const s = StyleSheet.create({
   },
   slot: { position: 'absolute', alignItems: 'center' },
   extraLabel: { color: colours.urgent },
-  extraRing: { borderRadius: 999, borderWidth: 3, borderColor: colours.urgent },
+  extraRing: { borderRadius: 999, borderWidth: EXTRA_RING, borderColor: colours.urgent },
+  extraStrip: { marginTop: 8 },
+  extraRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: EXTRA_GAP },
+  extraSlot: { alignItems: 'center' },
   slotLabel: {
     color: colours.warn,
     fontSize: 11,

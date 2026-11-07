@@ -270,6 +270,7 @@ import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/pla
 import { mergeCurrentMatch } from './src/app/persistence';
 import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetSettings, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
+import { owedMsOf } from './src/app/powerPlay';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
 import {
@@ -3168,7 +3169,10 @@ function TeamApp({
           onLiveMove={liveMove}
           onRecord={recordEvent}
           // #255 (ADR-026 D5): the current season's rule; a test match uses it too (C27).
-          powerPlay={powerPlayActs(ledger ? (ledger.powerPlayRules.get(currentSeason(ledger).id) ?? []) : [])}
+          powerPlay={{
+            ...powerPlayActs(ledger ? (ledger.powerPlayRules.get(currentSeason(ledger).id) ?? []) : []),
+            owedMs: () => owedMsOf(squadViews(seasonView, players, { kickoffs: kickoffs() }).owed),
+          }}
           onRecordAssist={recordAssist}
           tallies={tallyButtons(ledger?.eventTypes ?? [])}
           onRecordTally={recordTally}

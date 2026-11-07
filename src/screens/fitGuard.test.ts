@@ -102,3 +102,21 @@ describe('a pitch fitted to a short screen keeps its full width (Rob, 7 Nov, tea
   });
 });
 
+
+describe('a power play at 360dp (#255, ADR-026: 11-a-side plus 3 is the widest)', () => {
+  it('three extra pills fit one row under the pitch in every format, ring and gaps included', async () => {
+    const { extraRowWidth } = await import('../app/pitchLayout');
+    const W = 324; // the pitch on a 360dp phone, as pitchLayout.test.ts measures it
+    for (const onField of [5, 7, 9, 11]) {
+      expect(extraRowWidth(3, onField, W), `${onField}-a-side plus 3`).toBeLessThanOrEqual(W);
+    }
+  });
+
+  it('PitchView draws the extras in that row, never on the grass, with the same ring and gap', () => {
+    const pitch = src('PitchView.tsx');
+    expect(pitch).not.toMatch(/extraSpots|EXTRA_AT/);
+    expect(pitch).toMatch(/<View style=\{s\.extraStrip\} accessibilityLabel="Power play">/);
+    expect(pitch).toContain("extraRing: { borderRadius: 999, borderWidth: EXTRA_RING,");
+    expect(pitch).toContain("gap: EXTRA_GAP");
+  });
+});

@@ -74,6 +74,11 @@ export function powerPlayCue(allowance: number, extrasOn: number): PowerPlayCue 
   return null;
 }
 
+/** The season's owed minutes as milliseconds, for ties in time-needed order; a keeper or fill-in (null) is left out. */
+export function owedMsOf(rows: readonly { playerId: UUID; owed: number | null }[]): Map<UUID, number> {
+  return new Map(rows.filter((r) => r.owed !== null).map((r) => [r.playerId, (r.owed as number) * 60_000]));
+}
+
 /** Bench children, least pitch time in this match first, ties by owed time, then squad order (C8). */
 export function timeNeededOrder(
   bench: readonly UUID[],
