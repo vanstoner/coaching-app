@@ -282,14 +282,19 @@ function KickoffField({
 
   const [day, setDay] = useState<Date | null>(valid ? startOfDay(parsed!) : null);
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
-  const [sheet, setSheet] = useState<'day' | 'time' | null>(null);
+  const [sheet, setSheet] = useState<'day' | 'past' | 'time' | null>(null);
   const [now] = useState(() => appNow());
   const saturdays = upcomingSaturdays(now, DAY_SEGMENTS);
   // AC4: a saved day that is not one of the coming Saturdays still shows,
   // on the Other date row, rather than as a blank.
   const offList = day !== null && !saturdays.some((s) => sameDay(s, day));
+  // #280 (Rob, 7 Nov): a match already played has its own row, not the foot
+  // of a six-month list, so a coach finds it.
+  const isPast = day !== null && day.getTime() < startOfDay(now).getTime();
   const times = KICKOFF_TIMES.includes(time) ? KICKOFF_TIMES : [...KICKOFF_TIMES, time].sort();
   const allDays = pickableDays(now);
+  const comingDays = allDays.filter((d) => !d.past);
+  const pastDays = allDays.filter((d) => d.past);
 
   const pick = (d: Date | null, t: string) => {
     setDay(d);
@@ -307,20 +312,33 @@ function KickoffField({
         allowClear
         onChange={(t) => pick(t === null ? null : new Date(t), time)}
       />
-      <RowNav label="Other date" value={offList ? dayLabel(day!) : ''} onPress={() => setSheet('day')} />
+      <RowNav label="Other date" value={offList && !isPast ? dayLabel(day!) : ''} onPress={() => setSheet('day')} />
+      <RowNav label="Already played" value={isPast ? dayLabel(day!) : ''} onPress={() => setSheet('past')} />
       <RowNav label="Kick-off time" value={time} onPress={() => setSheet('time')} />
       <Text style={local.hint}>{day ? `${dayLabel(day)} at ${time}` : 'No date yet — you can add it later.'}</Text>
 
       <ListSheet
         visible={sheet === 'day'}
         title="Other date"
-        items={allDays.map(({ day: d, past }) => ({ value: d.getTime(), label: dayLabel(d), detail: past ? 'Past' : undefined }))}
+        items={comingDays.map(({ day: d }) => ({ value: d.getTime(), label: dayLabel(d) }))}
         value={day ? day.getTime() : null}
         onPick={(t) => {
           pick(new Date(t), time);
           setSheet(null);
         }}
         onCancel={() => setSheet(null)}
+      />
+      <ListSheet
+        visible={sheet === 'past'}
+        title="Already played"
+        items={pastDays.map(({ day: d }) => ({ value: d.getTime(), label: dayLabel(d) }))}
+        value={day ? day.getTime() : null}
+        onPick={(t) => {
+          pick(new Date(t), time);
+          setSheet(null);
+        }}
+        onCancel={() => setSheet(null)}
+        footer={<Text style={local.hint}>The last twelve weeks, most recent first: for a match nobody recorded.</Text>}
       />
       <ListSheet
         visible={sheet === 'time'}

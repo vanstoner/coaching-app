@@ -110,3 +110,13 @@ describe('Other date reaches back for a match already played (#280, Rob 7 Nov)',
     expect(days.findIndex((d) => d.past)).toBe(days.filter((d) => !d.past).length);
   });
 });
+
+describe('a past day has its own row (#280, Rob 7 Nov: "past date still not available")', () => {
+  it('the kick-off field offers Already played, listing past days only', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../screens/FixtureFormScreen.tsx', import.meta.url), 'utf8');
+    expect(src).toMatch(/<RowNav label="Already played"/);
+    expect(src).toMatch(/items=\{pastDays\.map/);
+    expect(src).toMatch(/items=\{comingDays\.map/);
+  });
+});
