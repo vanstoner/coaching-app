@@ -91,11 +91,12 @@ import { PitchView } from './PitchView';
 import { useEdgeScroll } from './useEdgeScroll';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
+import { mostTimeFirst, powerPlayAllowance, powerPlayCue, theirPowerPlayOffered, theyUsedPowerPlay, timeNeededOrder } from '../app/powerPlay';
 import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
 import { awardsLine, type AwardPick, type AwardRow } from '../app/matchAwards';
 import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { Action, FormSheet, MainButton, Section, SheetNote } from './controls';
+import { Action, CheckLine, FormSheet, MainButton, Section, Segmented, SheetNote } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
 
 /**
@@ -126,6 +127,7 @@ export function ClockScreen({
   onChangePlan,
   onLiveMove,
   onRecord,
+  powerPlay,
   onRecordAssist,
   tallies = [],
   onRecordTally,
@@ -162,6 +164,16 @@ export function ClockScreen({
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
   /** A goal, save, goal conceded, tackle, corner or free kick won. Null if the engine refused it. */
   onRecord: (kind: TapEventKind, playerId: UUID) => MatchEvent | null;
+  /**
+   * #255 power play (ADR-026): this season's rule, and the three acts. Each
+   * returns false (or null) if the engine refused it. Absent: no power play.
+   */
+  powerPlay?: {
+    steps: number[];
+    onAdd: (playerId: UUID, unit: 'ATT' | 'MID' | 'DEF') => boolean;
+    onRemove: (playerId: UUID) => boolean;
+    onTheirs: () => MatchEvent | null;
+  };
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
   /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
@@ -248,6 +260,9 @@ export function ClockScreen({
   const [awardsOpen, setAwardsOpen] = useState(false);
   /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
   const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
+  // #255: the Add a player and Power play over sheets.
+  const [ppAdd, setPpAdd] = useState<{ playerId: UUID | null; unit: 'ATT' | 'MID' | 'DEF' } | null>(null);
+  const [ppOffPick, setPpOffPick] = useState<UUID | null | undefined>(undefined);
   // #266: names picked, not yet given. Screen state only (C11).
   const [awardPicks, setAwardPicks] = useState<Picks>({});
   const [giveError, setGiveError] = useState('');
@@ -288,6 +303,17 @@ export function ClockScreen({
   const onIds = new Set(Object.values(sheet).filter((v): v is UUID => v !== null));
   const bench = players.filter((p) => !onIds.has(p.id)).map((p) => p.id);
   const outfieldOn = onPitch.map((m) => m.playerId).filter((id) => id !== keeper);
+
+  // #255: the power play, worked out on this paint from the intervals and the
+  // standing events (ADR-026 D1, D3). Nothing about it is stored.
+  const extras = running && quarter ? engine.openExtraSlots(state, quarter, format) : [];
+  const ppSteps = powerPlay?.steps ?? [];
+  const allowance = powerPlayAllowance(state.events, ppSteps);
+  const cue = running ? powerPlayCue(allowance, extras.length) : null;
+  const pitchMsOf = new Map(minutes.map((m) => [m.playerId, m.totalMs]));
+  const ppBench = timeNeededOrder(bench.filter((id) => state.playerAvailability.get(id) === 'available'), pitchMsOf);
+  const ppOff = mostTimeFirst(onPitch.map((m) => m.playerId), keeper, pitchMsOf);
+  const offerTheirs = powerPlay !== undefined && theirPowerPlayOffered(state.events, ppSteps) && !theyUsedPowerPlay(state.events);
 
   // Read from the anchors on this paint, and everything below follows from
   // it: a phone that slept shows the right band on waking (#203 AC5).
@@ -537,9 +563,44 @@ export function ClockScreen({
             )}
             {/* #252 AC1: in play the score is a band across the top of the formation box. */}
             <ScoreBand text={band.text} label={band.label} onPitch />
+            {/* #255 C6, C9, C17, C21: the power play under the score; the digits still take no tap. */}
+            {extras.length > 0 && (
+              <Text style={local.ppLine}>{`${format.onFieldCount + extras.length} v ${format.onFieldCount} · power play`}</Text>
+            )}
+            {cue?.kind === 'add' && (
+              <Pressable
+                onPress={() => setPpAdd({ playerId: ppBench[0] ?? null, unit: 'MID' })}
+                accessibilityRole="button"
+                style={({ pressed }) => [local.ppCue, pressed && screen.buttonPressed]}
+              >
+                <Text style={local.ppCueText}>Power play: add a player ›</Text>
+              </Pressable>
+            )}
+            {cue?.kind === 'over' && (
+              <Pressable
+                onPress={() => setPpOffPick(ppOff[0] ?? null)}
+                accessibilityRole="button"
+                style={({ pressed }) => [local.ppCue, local.ppOver, pressed && screen.buttonPressed]}
+              >
+                <Text style={[local.ppCueText, local.ppOverText]}>Power play over: who comes off? ›</Text>
+              </Pressable>
+            )}
+            {offerTheirs && (
+              <Action
+                label="They used a power play"
+                align="center"
+                onPress={() => {
+                  if (powerPlay?.onTheirs()) setNotice('Their power play: noted');
+                }}
+              />
+            )}
+            {powerPlay && theyUsedPowerPlay(state.events) && (
+              <Text style={local.ppLine}>{`${opponentLabel(state.match)} used a power play`}</Text>
+            )}
             <PitchView
               format={format}
               sheet={sheet}
+              extras={extras.map((a) => ({ positionId: a.positionId, unit: (a.positionUnit ?? 'MID') as 'ATT' | 'MID' | 'DEF' }))}
               bench={bench}
               nameOf={nameOf}
               detailOf={(id) => pillDetail(minutesOf.get(id), id === keeper)}
@@ -829,6 +890,72 @@ export function ClockScreen({
         </View>
       )}
       <StatusBar style="light" />
+      {/* #255 C8, C12: Add a player, least time on the pitch first; Midfield by default. */}
+      <FormSheet visible={ppAdd !== null} title="Add a player" onCancel={() => setPpAdd(null)}>
+        {ppAdd && (
+          <>
+            <SheetNote>{`Behind by ${ppSteps[Math.max(0, allowance - 1)] ?? ''}: you may have ${allowance} extra. Least time on the pitch first.`}</SheetNote>
+            {ppBench.length === 0 && <Text style={screen.hint}>Nobody on the bench.</Text>}
+            {ppBench.map((id, i) => (
+              <CheckLine
+                key={id}
+                label={nameOf(id)}
+                detail={`${formatClock(pitchMsOf.get(id) ?? 0)} on${i === 0 ? ' · needs the most time' : ''}`}
+                checked={ppAdd.playerId === id}
+                onPress={() => setPpAdd({ ...ppAdd, playerId: id })}
+              />
+            ))}
+            <Text style={screen.fieldLabel}>Where</Text>
+            <Segmented<'DEF' | 'MID' | 'ATT'>
+              name="Where"
+              options={[
+                { value: 'DEF', label: 'Defence' },
+                { value: 'MID', label: 'Midfield' },
+                { value: 'ATT', label: 'Attack' },
+              ]}
+              value={ppAdd.unit}
+              onChange={(u) => u && setPpAdd({ ...ppAdd, unit: u })}
+            />
+            <MainButton
+              label={ppAdd.playerId ? `Add ${nameOf(ppAdd.playerId)}` : 'Add'}
+              disabled={ppAdd.playerId === null}
+              onPress={() => {
+                const id = ppAdd.playerId;
+                if (!id || !powerPlay) return;
+                setPpAdd(null);
+                if (powerPlay.onAdd(id, ppAdd.unit)) setNotice(`${nameOf(id)} on: ${format.onFieldCount + extras.length + 1} v ${format.onFieldCount}`);
+              }}
+            />
+            <Text style={screen.hint}>Outfield only. Up to 3 extra.</Text>
+          </>
+        )}
+      </FormSheet>
+
+      {/* #255 C17–C20: the margin closed; the coach chooses who comes off. Nothing comes off by itself. */}
+      <FormSheet visible={ppOffPick !== undefined} title="Power play over" onCancel={() => setPpOffPick(undefined)}>
+        <SheetNote>{`One extra player comes off. Anyone on the pitch can. Most time on the pitch first.`}</SheetNote>
+        {ppOff.map((id) => (
+          <CheckLine
+            key={id}
+            label={nameOf(id)}
+            detail={`${formatClock(pitchMsOf.get(id) ?? 0)} on${extras.some((a) => a.playerId === id) ? ' · came on for the power play' : ''}`}
+            checked={ppOffPick === id}
+            onPress={() => setPpOffPick(id)}
+          />
+        ))}
+        <MainButton
+          label={ppOffPick ? `Take ${nameOf(ppOffPick)} off` : 'Take off'}
+          disabled={!ppOffPick}
+          onPress={() => {
+            const id = ppOffPick;
+            if (!id || !powerPlay) return;
+            setPpOffPick(undefined);
+            if (powerPlay.onRemove(id)) setNotice(`${nameOf(id)} off: ${format.onFieldCount + extras.length - 1} v ${format.onFieldCount}`);
+          }}
+        />
+        <Action label="Not now" onPress={() => setPpOffPick(undefined)} />
+      </FormSheet>
+
       {/* #266 C10: picks waiting when Give them later is tapped. */}
       <FormSheet visible={askPicks !== null} title={`Give the ${picked} picked?`} onCancel={() => setAskPicks(null)}>
         <SheetNote>
@@ -860,6 +987,19 @@ export function ClockScreen({
 }
 
 const local = StyleSheet.create({
+  ppLine: { alignSelf: 'stretch', textAlign: 'center', color: colours.inkMuted, fontSize: 14, marginVertical: 4, includeFontPadding: false },
+  ppCue: {
+    alignSelf: 'stretch',
+    minHeight: TOUCH_TARGET,
+    borderRadius: 10,
+    backgroundColor: colours.urgent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 6,
+  },
+  ppOver: { backgroundColor: colours.late },
+  ppCueText: { alignSelf: 'stretch', textAlign: 'center', color: colours.urgentInk, fontSize: 16, fontWeight: '700', includeFontPadding: false },
+  ppOverText: { color: colours.ink },
   strip: {
     flexDirection: 'row',
     alignItems: 'center',

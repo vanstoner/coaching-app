@@ -260,6 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
 import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
+import { setPowerPlayRule } from './src/app/ledger';
 import { ARCHIVED_RECORDS_KEY, parseArchivedRecords } from './src/app/recordOnly';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
@@ -2137,6 +2138,47 @@ function TeamApp({
     [match, persist]
   );
 
+  /** #255 power play: the engine's three acts, saved like any other. False/null when refused. */
+  const powerPlayActs = useCallback(
+    (steps: number[]) => ({
+      steps,
+      onAdd: (playerId: UUID, unit: 'ATT' | 'MID' | 'DEF') => {
+        const quarter = match ? currentQuarter(match.state) : null;
+        if (!match || !quarter) return false;
+        try {
+          match.engine.addExtraPlayer(match.state, quarter, playerId, unit, match.format);
+          persist();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      onRemove: (playerId: UUID) => {
+        const quarter = match ? currentQuarter(match.state) : null;
+        if (!match || !quarter) return false;
+        try {
+          match.engine.removeExtraPlayer(match.state, quarter, playerId, match.format);
+          persist();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      onTheirs: () => {
+        const quarter = match ? currentQuarter(match.state) : null;
+        if (!match || !quarter) return null;
+        try {
+          const e = match.engine.recordTheirPowerPlay(match.state, quarter);
+          persist();
+          return e;
+        } catch {
+          return null;
+        }
+      },
+    }),
+    [match, persist]
+  );
+
   /** A coach's own tally (#198). Null when the engine refuses it. */
   const recordTally = useCallback(
     (kind: TallyKind, playerId: UUID | null): MatchEvent | null => {
@@ -2731,6 +2773,10 @@ function TeamApp({
                 firstName={seasonNameFor(new Date(seasonBegan(season, seasonView ?? { matches: [] }) ?? appNow().getTime()))}
                 onConfirmFirst={confirmFirstSeason}
                 onSetMainSide={setSeasonSide}
+                powerPlay={{
+                  steps: ledger.powerPlayRules.get(season.id) ?? [],
+                  onSave: (steps) => applyToLedger((l) => setPowerPlayRule(l, season.id, steps, appNow())),
+                }}
                 onStart={() => setStep('seasonStart')}
                 onOpenPast={(id) => {
                   setPastSeasonId(id);
@@ -3037,6 +3083,8 @@ function TeamApp({
           onChangePlan={changeSubPlan}
           onLiveMove={liveMove}
           onRecord={recordEvent}
+          // #255 (ADR-026 D5): the current season's rule; a test match uses it too (C27).
+          powerPlay={powerPlayActs(ledger ? (ledger.powerPlayRules.get(currentSeason(ledger).id) ?? []) : [])}
           onRecordAssist={recordAssist}
           tallies={tallyButtons(ledger?.eventTypes ?? [])}
           onRecordTally={recordTally}

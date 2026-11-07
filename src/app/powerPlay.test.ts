@@ -151,3 +151,22 @@ describe('the season rule (ADR-026 D5)', () => {
     expect(setPowerPlayRule(ledger, season, [6, 4], new Date()).ok).toBe(false);
   });
 });
+
+describe('the power play screens (#255)', () => {
+  it('the clock shows the cue under the score, the two sheets, and their power play; the season has three boxes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const clock = readFileSync(new URL('../screens/ClockScreen.tsx', import.meta.url), 'utf8');
+    expect(clock).toContain('Power play: add a player ›');
+    expect(clock).toContain('Power play over: who comes off? ›');
+    expect(clock).toContain('label="They used a power play"');
+    expect(clock).toMatch(/title="Add a player"/);
+    expect(clock).toMatch(/\{ value: 'MID', label: 'Midfield' \}/);
+    expect(clock).toMatch(/setPpAdd\(\{ playerId: ppBench\[0\] \?\? null, unit: 'MID' \}\)/);
+    const seasons = readFileSync(new URL('../screens/Seasons.tsx', import.meta.url), 'utf8');
+    expect(seasons).toContain("['1st extra', '2nd extra', '3rd extra']");
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('setPowerPlayRule(l, season.id, steps, appNow())');
+    expect(app).toMatch(/powerPlay=\{powerPlayActs\(/);
+  });
+});
+

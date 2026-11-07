@@ -225,3 +225,23 @@ export function pillDetail(
   const total = formatClock((minutes?.outfieldMs ?? 0) + (minutes?.goalkeeperMs ?? 0));
   return inGoal ? `GK ${total}` : total;
 }
+
+/**
+ * #255 (ADR-026 D1; Dee's prototype): where a power play's extra slots sit,
+ * in the gaps of their unit's row: up to 3, one place per extra in a unit.
+ */
+const EXTRA_AT: Record<'ATT' | 'MID' | 'DEF', { x: number; y: number }[]> = {
+  ATT: [{ x: 0.8, y: 0.24 }, { x: 0.2, y: 0.24 }, { x: 0.5, y: 0.31 }],
+  MID: [{ x: 0.34, y: 0.57 }, { x: 0.66, y: 0.57 }, { x: 0.5, y: 0.57 }],
+  DEF: [{ x: 0.5, y: 0.8 }, { x: 0.1, y: 0.82 }, { x: 0.9, y: 0.82 }],
+};
+
+export function extraSpots(units: readonly ('ATT' | 'MID' | 'DEF')[]): { x: number; y: number }[] {
+  const used: Record<string, number> = {};
+  return units.map((u) => {
+    const k = used[u] ?? 0;
+    used[u] = k + 1;
+    return EXTRA_AT[u][Math.min(k, 2)];
+  });
+}
+

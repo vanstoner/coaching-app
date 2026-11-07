@@ -17,6 +17,7 @@
  * Text is never sized to itself and never changes weight between states.
  */
 
+import { powerPlayLine, readPowerPlayBoxes } from '../app/powerPlay';
 import { useReducer, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from './Text';
@@ -42,7 +43,7 @@ import {
   TopBar,
   useBackLeaves,
 } from './controls';
-import { colours, screen } from './theme';
+import { colours, screen, TOUCH_TARGET } from './theme';
 
 type Level = 'development' | 'competitive';
 
@@ -69,6 +70,7 @@ export function SeasonSection({
   onSetMainSide,
   onStart,
   onOpenPast,
+  powerPlay,
 }: {
   season: LedgerSeason;
   /** When it began, in ms, or null when not known. */
@@ -84,6 +86,8 @@ export function SeasonSection({
   onSetMainSide: (side: number) => string | null;
   onStart: () => void;
   onOpenPast: (id: LedgerSeason['id']) => void;
+  /** #255 (ADR-026 D5): this season's power play rule, saved as typed. */
+  powerPlay?: { steps: number[]; onSave: (steps: number[]) => string | null };
 }) {
   const unconfirmed = season.ageGroup === null && season.level === null;
   return (
@@ -104,6 +108,7 @@ export function SeasonSection({
         </View>
       )}
       {season.mainSide === null && <MainFormat sides={sides} onSet={onSetMainSide} />}
+      {powerPlay && <PowerPlayBoxes key={season.id} steps={powerPlay.steps} onSave={powerPlay.onSave} />}
       {/* #264: each opens another screen, so each is a Row ›. */}
       <RowNav label="Start a new season" onPress={onStart} />
       {past.length > 0 && (
@@ -220,6 +225,46 @@ export interface NewSeason {
   level: Level;
   shape: ShapeCode;
   side: number;
+}
+
+/**
+ * #255 (Rob, 7 Nov: "Goal difference needed for up to 3 players, 3 input
+ * boxes in a row"): saved as typed when valid; otherwise the reason, and
+ * that box marked (C1, C3, C4). Nothing is written until a box is filled.
+ */
+function PowerPlayBoxes({ steps, onSave }: { steps: number[]; onSave: (steps: number[]) => string | null }) {
+  const [boxes, setBoxes] = useState<string[]>([0, 1, 2].map((i) => (steps[i] === undefined ? '' : String(steps[i]))));
+  const [saved, setSaved] = useState(false);
+  const read = readPowerPlayBoxes(boxes);
+  const change = (i: number, raw: string) => {
+    const next = boxes.map((b, k) => (k === i ? raw.replace(/[^0-9]/g, '').slice(0, 2) : b));
+    setBoxes(next);
+    const r = readPowerPlayBoxes(next);
+    if (r.ok) setSaved(onSave(r.steps) === null);
+    else setSaved(false);
+  };
+  return (
+    <View style={local.ppBlock}>
+      <Text style={screen.fieldLabel}>{`Power play${saved ? ' · saved' : ''}`}</Text>
+      <Text style={local.cardHint}>Goals behind before you may add each extra outfield player. Leave a box empty for no more.</Text>
+      <View style={local.ppRow}>
+        {['1st extra', '2nd extra', '3rd extra'].map((label, i) => (
+          <View key={label} style={local.ppBox}>
+            <Text style={local.ppLabel}>{label}</Text>
+            <TextInput
+              value={boxes[i]}
+              onChangeText={(v) => change(i, v)}
+              keyboardType="number-pad"
+              maxLength={2}
+              accessibilityLabel={`Goal difference for the ${label} player`}
+              style={[local.ppInput, !read.ok && read.box === i && local.ppInputBad]}
+            />
+          </View>
+        ))}
+      </View>
+      <Text style={read.ok ? local.cardHint : local.ppError}>{read.ok ? powerPlayLine(read.steps) : read.reason}</Text>
+    </View>
+  );
 }
 
 /** Start a new season (AC4, AC6, AC7; Q1, Q4): one screen, copied from the last. */
@@ -565,6 +610,23 @@ export function OffFormatCard({
 }
 
 const local = StyleSheet.create({
+  ppBlock: { alignSelf: 'stretch', marginTop: 12 },
+  ppRow: { flexDirection: 'row', alignSelf: 'stretch', marginTop: 6 },
+  ppBox: { flex: 1, marginRight: 8 },
+  ppLabel: { color: colours.inkMuted, fontSize: 13, textAlign: 'center', marginBottom: 4, includeFontPadding: false },
+  ppInput: {
+    height: TOUCH_TARGET,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '600',
+    color: colours.ink,
+    backgroundColor: colours.pitch,
+    borderWidth: 1,
+    borderColor: colours.edge,
+    borderRadius: 10,
+  },
+  ppInputBad: { borderColor: colours.danger },
+  ppError: { color: colours.danger, fontSize: 14, marginTop: 6, includeFontPadding: false },
   block: { alignSelf: 'stretch' },
   card: {
     alignSelf: 'stretch',

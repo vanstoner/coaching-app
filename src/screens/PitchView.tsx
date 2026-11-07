@@ -43,14 +43,15 @@ import {
   slotBox,
   slotSpots,
   type DropTarget,
-  type Rect,
-} from '../app/pitchLayout';
+  type Rect, extraSpots } from '../app/pitchLayout';
 import type { Sheet } from '../app/teamSheet';
 import { colours } from './theme';
 
 export interface PitchViewProps {
   format: Format;
   sheet: Sheet;
+  /** #255: a power play's extra slots on the pitch, labelled "+ MID" with a sand ring. */
+  extras?: { positionId: UUID; unit: 'ATT' | 'MID' | 'DEF' }[];
   bench: UUID[];
   nameOf: (id: UUID) => string;
   /** The small line under a name: minutes, usually. */
@@ -288,6 +289,19 @@ export function PitchView(props: PitchViewProps) {
         <View style={s.box} />
         <Text style={s.attacking}>Attacking this way ↑</Text>
         {pitch.width > 0 &&
+          (props.extras ?? []).map((extra, i) => {
+            const who = sheet[extra.positionId] ?? null;
+            if (!who) return null;
+            const spot = extraSpots((props.extras ?? []).map((e) => e.unit))[i];
+            const box = slotBox(spot, pitch.width, pitch.height, pillWidth);
+            return (
+              <View key={extra.positionId} style={[s.slot, { width: box.width, left: box.x, top: box.y }]}>
+                <Text style={[s.slotLabel, s.extraLabel]} numberOfLines={1}>{`+ ${extra.unit}`}</Text>
+                <View style={s.extraRing}>{pill(who, false, false)}</View>
+              </View>
+            );
+          })}
+        {pitch.width > 0 &&
           spots.map((spot) => {
             const who = sheet[spot.positionId] ?? null;
             const box = slotBox(spot, pitch.width, pitch.height, pillWidth);
@@ -427,6 +441,8 @@ const s = StyleSheet.create({
     includeFontPadding: false,
   },
   slot: { position: 'absolute', alignItems: 'center' },
+  extraLabel: { color: colours.urgent },
+  extraRing: { borderRadius: 999, borderWidth: 3, borderColor: colours.urgent },
   slotLabel: {
     color: colours.warn,
     fontSize: 11,

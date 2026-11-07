@@ -127,7 +127,11 @@ describe('one Main button per screen (#264 V26)', () => {
     'LineupScreen.tsx': 'Start is pinned; the late Start sheet\'s "Yes, from …" is its own, over it while open (#283, Dee\'s prototype, Rob 7 Nov)',
   };
   // More than two branches, each showing one Main button at a time.
-  const MAX_ALLOWED: Record<string, number> = { 'MatchSummaryScreen.tsx': 4 };
+  const MAX_ALLOWED: Record<string, number> = {
+    'MatchSummaryScreen.tsx': 4,
+    // Give at full time; Add and Take off only in their power play sheets while a period runs (#255): never two at once.
+    'ClockScreen.tsx': 3,
+  };
   it('no file draws more than one, outside the named exceptions', () => {
     const offenders = screenFiles
       .filter((f) => (f.src.match(/<MainButton\b/g) ?? []).length > (MAX_ALLOWED[f.name] ?? (f.name in TWO_ALLOWED ? 2 : 1)))
