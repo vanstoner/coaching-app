@@ -155,6 +155,8 @@ function Formation({
               <Pressable
                 onPress={() => onRearrange(p)}
                 disabled={!canRearrange(period, format)}
+                // 36 dp drawn, 48 dp to a thumb (#277 C13; QA on #279, D5).
+                hitSlop={{ top: 6, bottom: 6 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
                 style={({ pressed }) => [local.rearrange, !canRearrange(period, format) && local.off, pressed && local.pressed]}
@@ -269,6 +271,8 @@ function Table({
                 key={p}
                 onPress={() => onRearrange(p)}
                 disabled={!canRearrange(plan.periods[p], format)}
+                // 32 dp drawn, 48 dp to a thumb (#277 C13; QA on #279, D5).
+                hitSlop={{ top: 8, bottom: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Rearrange ${short}${p + 1}: same children, new places`}
                 style={[local.headCell, { width: CELL_W }]}

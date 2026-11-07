@@ -205,7 +205,8 @@ score. It goes in Played marked **reconstructed**, so the Squad tab can leave it
 out of the figures. The app then opens the match's page in the record: add
 the score with **Add goal / conceded (time unknown)** and the awards with
 **Add award**, each with a note such as "Match report". For a match you never put in the app, add the fixture
-with **Already played**, under Kick-off: it lists the last twelve weeks.
+with **Other date** › **Past**, under Kick-off: it lists the last twelve weeks.
+If a fixture can't be played out, its card says why.
 
 ## 8. Is everyone getting a fair share?
 

@@ -111,12 +111,14 @@ describe('Other date reaches back for a match already played (#280, Rob 7 Nov)',
   });
 });
 
-describe('a past day has its own row (#280, Rob 7 Nov: "past date still not available")', () => {
-  it('the kick-off field offers Already played, listing past days only', async () => {
+describe('Other date asks Coming or Past (#280, Rob 7 Nov: one row, not more clutter)', () => {
+  it('one Other date row; its sheet switches between the coming days and the past twelve weeks', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('../screens/FixtureFormScreen.tsx', import.meta.url), 'utf8');
-    expect(src).toMatch(/<RowNav label="Already played"/);
-    expect(src).toMatch(/items=\{pastDays\.map/);
-    expect(src).toMatch(/items=\{comingDays\.map/);
+    expect(src).not.toMatch(/label="Already played"/);
+    expect(src).toMatch(/<RowNav\s+label="Other date"/);
+    expect(src).toMatch(/\{ value: 'coming', label: 'Coming' \}/);
+    expect(src).toMatch(/\{ value: 'past', label: 'Past' \}/);
+    expect(src).toMatch(/\(when === 'past' \? pastDays : comingDays\)\.map/);
   });
 });

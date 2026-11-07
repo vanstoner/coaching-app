@@ -90,8 +90,8 @@ export function FixturesScreen({
   onComing: (matchId: UUID) => void;
   /** #277 B6: the fixture's Team sheet. */
   onTeamSheet: (matchId: UUID) => void;
-  /** #280: fixtures that can be played out as planned, and doing it. */
-  playable: ReadonlySet<UUID>;
+  /** #280: fixtures that could be played out as planned: null when it can be, else why not. */
+  playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
@@ -223,7 +223,7 @@ interface CardActions {
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
   onTeamSheet: (matchId: UUID) => void;
-  playable: ReadonlySet<UUID>;
+  playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
@@ -459,7 +459,10 @@ function FixtureCard({
 
       {/* #280: nobody recorded it live, so the plan is written to the record as
           reconstructed. It writes to the record, so it asks first. */}
-      {match.status === 'planned' && playable.has(match.id) && (
+      {match.status === 'planned' && playable.has(match.id) && playable.get(match.id) !== null && (
+        <Text style={local.playOutWhy}>{`Play out as planned: ${playable.get(match.id)}`}</Text>
+      )}
+      {match.status === 'planned' && playable.has(match.id) && playable.get(match.id) === null && (
         <Danger
           label="Play out as planned"
           confirmLabel="Record it as reconstructed"
@@ -482,6 +485,7 @@ function FixtureCard({
 }
 
 const local = StyleSheet.create({
+  playOutWhy: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginTop: 8 },
   startRow: { alignSelf: 'stretch', marginTop: 14 },
   section: { alignSelf: 'stretch' },
   emptyUnderLabel: { marginTop: 4 },

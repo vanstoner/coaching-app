@@ -39,6 +39,17 @@ export function playOutRefusal(stored: SavedMatch, plan: MatchPlan | undefined, 
     for (const s of period.subs) {
       if (s.onId && available.get(s.onId) !== 'available') return 'Someone on the team sheet is not marked Coming.';
     }
+    // QA on #279 (D1): a sub left out of date by a move by hand, e.g. its
+    // child placed in a position, would stop the engine part way. Walk the
+    // subs in time order as the engine will.
+    const on = new Set(Object.values(period.slots).filter((id): id is UUID => id !== null));
+    const inOrder = period.subs.map((s, k) => ({ s, k })).sort((x, y) => x.s.atMs - y.s.atMs || x.k - y.k);
+    for (const { s } of inOrder) {
+      if (!s.onId || !s.offId) continue;
+      if (on.has(s.onId) || !on.has(s.offId)) return `A sub in period ${i + 1} no longer fits the team sheet. Open the sub and pick again.`;
+      on.delete(s.offId);
+      on.add(s.onId);
+    }
   }
   return null;
 }

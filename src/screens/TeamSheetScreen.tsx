@@ -381,7 +381,10 @@ export function TeamSheetScreen({
               // A bench child opens their sub; a child on the pitch is picked
               // up, to swap or to sub off (Rob, 7 Nov).
               onTapPlayer={(id) => {
-                if (Object.values(period.slots).includes(id)) setPick(id);
+                // Until every place is filled, a bench tap picks the child up to
+                // place them (#277 C7; QA on #279, D6); after, it opens their sub.
+                const full = format.positions.every((pos) => (period.slots[pos.id] ?? null) !== null);
+                if (Object.values(period.slots).includes(id) || !full) setPick(id);
                 else setSubAsk(subRequestFor(period, id, false));
               }}
               onDragging={setDragging}

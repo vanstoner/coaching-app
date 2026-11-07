@@ -115,4 +115,27 @@ describe('Play out as planned (#280)', () => {
     expect(page.awards.map((a) => a.playerId)).toEqual([players[3].id]);
     expect(provenances(ledger).get(id)?.state).toBe('reconstructed');
   });
+
+  it('refuses a sub left out of date by a move by hand, rather than stopping part way (QA on #279, D1)', () => {
+    const { stored, plan } = fixture(players.map((p) => p.id));
+    const p0 = plan.periods[0];
+    const sub = p0.subs[0];
+    // The child coming on is put in a position by hand, over someone who was not coming off.
+    const [pos] = (Object.entries(p0.slots) as [UUID, UUID][]).find(([, id]) => id !== sub.offId)!;
+    const stale = { periods: plan.periods.map((p, i) => (i === 0 ? { ...p, slots: { ...p.slots, [pos]: sub.onId } } : p)) };
+    expect(playOutRefusal(stored, stale, format, players)).toMatch(/A sub in period 1 no longer fits/);
+    expect(() => playOutAsPlanned({ stored, format, plan: stale, players, start: kickoff })).toThrow();
+  });
+});
+
+describe('the Home card says why a match cannot be played out, and nothing is written without a record (QA on #279, D2, D3)', () => {
+  it('App offers the reason, refuses a blocked record first, and survives the engine refusing', async () => {
+    const { readFileSync } = await import('node:fs');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    const fn = app.slice(app.indexOf('const playOutFixture'), app.indexOf('const playOutFixture') + 3000);
+    expect(fn.indexOf('ledgerBlockedRef.current')).toBeLessThan(fn.indexOf('playOutAsPlanned('));
+    expect(fn).toMatch(/try \{\s*out = playOutAsPlanned/);
+    const card = readFileSync(new URL('../screens/FixturesScreen.tsx', import.meta.url), 'utf8');
+    expect(card).toMatch(/Play out as planned: \$\{playable\.get\(match\.id\)\}/);
+  });
 });

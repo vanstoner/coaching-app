@@ -139,6 +139,8 @@ export function PlannedSubPanel({
           {askOn && (
             <>
               <Text style={screen.fieldLabel}>Who comes on</Text>
+              {/* QA on #279 (D7): say why Save stays off. */}
+              {choices.on.length === 0 && <Text style={local.note}>Nobody is on the bench at that time.</Text>}
               {choices.on.map((p) => (
                 <CheckLine key={p.id} label={displayName(p)} checked={draft.onId === p.id} onPress={() => setDraft({ ...draft, onId: p.id })} />
               ))}

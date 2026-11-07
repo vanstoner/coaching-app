@@ -1114,36 +1114,41 @@ function TeamApp({
       const stored = matches.find((m) => m.match.id === matchId);
       if (!stored) return;
       const fmt = stored.format ?? format;
+      // QA on #279 (D2): with no record to write, nothing is played out.
+      if (!ledgerRef.current || ledgerBlockedRef.current) {
+        showToast('Player minutes cannot be written on this phone.');
+        return;
+      }
       const refusal = playOutRefusal(stored, stored.plan, fmt, players);
       if (refusal) {
         showToast(refusal);
         return;
       }
+      // An undated match is taken to have ended now (QA on #279, D9), so no
+      // recorded time is in the future.
+      const kick = stored.match.kickoffAt ? Date.parse(stored.match.kickoffAt) : NaN;
+      const start = Number.isFinite(kick) ? new Date(kick) : new Date(appNow().getTime() - stored.match.totalMinutes * 60_000);
+      let out: ReturnType<typeof playOutAsPlanned>;
+      try {
+        out = playOutAsPlanned({ stored, format: fmt, plan: stored.plan!, players, start });
+      } catch {
+        // The refusal above should catch every sheet the engine refuses (D1);
+        // if one slips through, say so and write nothing.
+        showToast('This team sheet could not be played out. Check its subs and try again.');
+        return;
+      }
       // A fixture held but not kicked off is let go of first.
       if (match && match.state.match.id === matchId) setMatch(null);
-      const kick = stored.match.kickoffAt ? Date.parse(stored.match.kickoffAt) : NaN;
-      const out = playOutAsPlanned({
-        stored,
-        format: fmt,
-        plan: stored.plan!,
-        players,
-        start: Number.isFinite(kick) ? new Date(kick) : appNow(),
-      });
-      const written = ledgerRef.current !== null && !ledgerBlockedRef.current;
-      if (written) commitLedger(recordPlayedOut(ledgerRef.current!, out, fmt, players, squadName, appNow()));
+      commitLedger(recordPlayedOut(ledgerRef.current, out, fmt, players, squadName, appNow()));
       const next = mergeCurrentMatch(matches, out.played, fmt);
       setMatches(next);
       persist({ matches: next });
-      if (written) {
-        // Rob, 7 Nov: the score and the awards come next, so land on the
-        // match's page in the record, where both are added.
-        setRecordId(matchId);
-        setRecordReturn('fixtures');
-        setStep('record');
-        showToast('Played out as planned, marked reconstructed. Add the score and awards here.');
-      } else {
-        showToast(`Played out as planned: v ${opponentLabel(stored.match)} is in Played, marked reconstructed`);
-      }
+      // Rob, 7 Nov: the score and the awards come next, so land on the
+      // match's page in the record, where both are added.
+      setRecordId(matchId);
+      setRecordReturn('fixtures');
+      setStep('record');
+      showToast('Played out as planned, marked reconstructed. Add the score and awards here.');
     },
     [matches, format, players, match, commitLedger, persist, squadName, showToast]
   );
@@ -3044,16 +3049,22 @@ function TeamApp({
           setSheetId(id);
           setStep('teamSheet');
         }}
-        // #280: a fixture past its kick-off, never started, with a full team sheet.
+        // #280: a fixture past its kick-off (or undated), never started, with a
+        // team sheet: offered, or why not (QA on #279, D3).
         playable={
-          new Set(
+          new Map(
             real
               .filter((m) => {
                 const kick = m.match.kickoffAt ? Date.parse(m.match.kickoffAt) : NaN;
                 const past = !Number.isFinite(kick) || kick < appNow().getTime();
-                return past && playOutRefusal(m, m.plan, m.format ?? format, players) === null;
+                return past && m.match.status === 'planned' && planHasContent(m.plan);
               })
-              .map((m) => m.match.id)
+              .map((m) => [
+                m.match.id,
+                ledgerBlockedRef.current || !ledger
+                  ? 'Player minutes cannot be written on this phone.'
+                  : playOutRefusal(m, m.plan, m.format ?? format, players),
+              ])
           )
         }
         onPlayOut={playOutFixture}
