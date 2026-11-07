@@ -44,6 +44,8 @@ import {
   rearrangePeriod,
   swapInPeriod,
   type SheetView,
+  subsShown,
+  type SheetSettings,
 } from '../app/teamSheetEdit';
 import { editSheet } from '../app/teamSheet';
 import { Action, BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, Stepper, TopBar, useSavedTick } from './controls';
@@ -61,6 +63,8 @@ export function TeamSheetScreen({
   players,
   availability,
   plan: stored,
+  settings,
+  onSettings,
   season,
   view,
   onView,
@@ -78,6 +82,9 @@ export function TeamSheetScreen({
   players: Player[];
   availability: [UUID, AvailabilityStatus][] | undefined;
   plan: MatchPlan | undefined;
+  /** #284: Keepers, Subs and Positions as the coach last set them for this fixture. */
+  settings: SheetSettings | undefined;
+  onSettings: (settings: SheetSettings) => void;
   season: ReadonlyMap<UUID, SeasonKeeping>;
   /** Pitch, All or Table, as last chosen on this phone (C13). */
   view: SheetView;
@@ -114,9 +121,17 @@ export function TeamSheetScreen({
 
   const [setupOpen, setSetupOpen] = useState(false);
   const [minutesOpen, setMinutesOpen] = useState(false);
-  const [keeperMode, setKeeperMode] = useState<'auto' | 'choose'>('auto');
-  const [subsChosen, setSubsChosen] = useState<number | null>(null);
-  const [fill, setFill] = useState<Fill>('fair');
+  // #284: reopening shows what the sheet was made with. Opening writes
+  // nothing; a change is saved at once, as every other sheet change.
+  const keeperMode = settings?.keepers ?? 'auto';
+  const fill: Fill = settings?.fill ?? 'fair';
+  const choose = (patch: SheetSettings) => {
+    onSettings({ ...settings, ...patch });
+    tick.mark();
+  };
+  const setKeeperMode = (keepers: 'auto' | 'choose') => choose({ keepers });
+  const setSubsChosen = (subs: number) => choose({ subs });
+  const setFill = (f: Fill) => choose({ fill: f });
   const [picking, setPicking] = useState<number | null>(null);
   const [quarter, setQuarter] = useState(0);
   const [pick, setPick] = useState<UUID | null>(null);
@@ -131,7 +146,7 @@ export function TeamSheetScreen({
   const outfield = format.positions.filter((p) => p.kind !== 'goalkeeper').length;
   const benchSize = Math.max(0, coming.length - outfield - 1);
   const fairest = fairestSubs({ format, totalMinutes: match.totalMinutes, periodCount, coming, keepers, fill, season });
-  const subs = Math.min(subsChosen ?? fairest, benchSize);
+  const subs = subsShown(settings, fairest, benchSize);
 
   const save = (next: MatchPlan) => {
     onChange(next);

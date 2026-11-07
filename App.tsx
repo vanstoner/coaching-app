@@ -261,7 +261,7 @@ import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
 import { mergeCurrentMatch } from './src/app/persistence';
-import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetView } from './src/app/teamSheetEdit';
+import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetSettings, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
@@ -1233,6 +1233,17 @@ function TeamApp({
    * Save a fixture's plan — #72. Called on every edit, so there is no Save
    * button to forget. A plan is intent: nothing here touches a minute.
    */
+  /** #284: the Team sheet's own choices, kept with the fixture (planning, never the record). */
+  const saveSheetSettings = useCallback(
+    (matchId: UUID, sheetSettings: SheetSettings) => {
+      if (!matches.some((m) => m.match.id === matchId)) return;
+      const next = matches.map((m) => (m.match.id === matchId ? { ...m, sheetSettings } : m));
+      setMatches(next);
+      persist({ matches: next });
+    },
+    [matches, persist]
+  );
+
   const savePlan = useCallback(
     (matchId: UUID, plan: MatchPlan) => {
       const stored = matches.some((m) => m.match.id === matchId);
@@ -2492,6 +2503,8 @@ function TeamApp({
           plan={sheetMatch.plan}
           season={seasonInputs(views.matches, views.owed)}
           onChange={(plan) => savePlan(sheetMatch.match.id, plan)}
+          settings={sheetMatch.sheetSettings}
+          onSettings={(s) => saveSheetSettings(sheetMatch.match.id, s)}
           view={sheetView}
           onView={(v) => {
             setSheetView(v);
