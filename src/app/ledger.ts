@@ -368,6 +368,8 @@ const FIELDS: Record<string, readonly string[]> = {
   'match-kind': ['type', 'matchId', 'kind', 'note'],
   'format-count': ['type', 'matchId', 'counted', 'note'],
   'power-play-rule': ['type', 'season', 'steps', 'note'],
+  received: ['type', 'matchId', 'device', 'entries'],
+  pack: ['type', 'fixtureId'],
   season: ['type', 'id', 'name', 'startedAt', 'mainSide', 'ageGroup', 'level', 'lens', 'note'],
   ...SETUP_FIELDS,
 };
@@ -757,7 +759,8 @@ function signing(
 }
 
 /** Append one entry holding `records`. Nothing to record, nothing appended. */
-function appendRecords(ledger: Ledger, changed: LedgerRecord[], now: Date): Ledger {
+/** Append records as one entry signed by this install (exported for #281 recorder files). */
+export function appendRecords(ledger: Ledger, changed: LedgerRecord[], now: Date): Ledger {
   if (changed.length === 0) return ledger;
   const last = ledger.entries[ledger.entries.length - 1] ?? null;
   const { records, seal } = signing(ledger.entries, changed);
