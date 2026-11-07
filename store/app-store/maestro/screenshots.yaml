@@ -75,14 +75,11 @@ env:
   PLAYED_MATCH: ".*Trial Town.*"
   # The match report's status line: proof the report, not Home, is on screen
   REPORT_OPEN: "Closed.*counts towards season averages"
-  FIVE_A_SIDE_CARD: "Open Practice Park, .*"
   PLANNED_CARD: "Open Mock Albion, .*"
   # 2.3.0: the card's plan row became "Team sheet"; quarter by quarter is inside it.
   EDIT_PLAN: "Team sheet for Mock Albion.*"
-  EDIT_BY_PERIOD: "Edit quarter by quarter.*"
-  # The line-up (LineupScreen.tsx) and the plan (PlanScreen.tsx)
-  LINEUP: "On the pitch"
-  PLAN_STARTING: "Starting"
+  # 07-sheet: the Team sheet's first section, proof the sheet is on screen
+  SHEET_OPEN: "Keepers and subs.*"
   SHARE_PLAN: "Share plan"
   # Settings › Danger zone (#263 AC17): its heading, then Forget everything,
   # confirmed inline. The heading's accessible name is its title and summary.
@@ -182,9 +179,8 @@ env:
 - waitForAnimationToEnd
 - takeScreenshot: 04-report
 
-# 07-five: the Practice Park card under Coming up opens the 1-2-1 + GK
-# line-up. Its lines are tapped by their label, "Open Practice Park, …";
-# "Who's coming" and "Team sheet" are separate elements below them.
+# 07-sheet (2.3.0, #277): the Mock Albion card's "Team sheet" opens the
+# sheet the kit planned, every place filled, on the Pitch view.
 - launchApp:
     stopApp: true
 - extendedWaitUntil:
@@ -196,14 +192,14 @@ env:
     commands:
       - tapOn: ${RESUME_TO_HOME}
 - extendedWaitUntil:
-    visible: ${FIVE_A_SIDE_CARD}
+    visible: ${PLANNED_CARD}
     timeout: 20000
-- tapOn: ${FIVE_A_SIDE_CARD}
+- tapOn: ${EDIT_PLAN}
 - extendedWaitUntil:
-    visible: ${LINEUP}
+    visible: ${SHEET_OPEN}
     timeout: 10000
 - waitForAnimationToEnd
-- takeScreenshot: 07-five
+- takeScreenshot: 07-sheet
 
 # 08-start: forget everything, add seven made-up first names, then Home
 # shows the one-line Getting started with step 1 done.
@@ -227,9 +223,32 @@ env:
 # (runs 40033174404, 40039113281) are gone. Danger zone always starts closed
 # (AC6), so tapping its heading unconditionally opens it, even after a
 # relaunch without clearState.
+# Run 42404259648 (iPad, 2.3.0): the open Season and Team panels are taller,
+# so the heading sat half under the build line at the foot; Maestro counted it
+# visible and the tap did not open it. Centre it first, and tap again if
+# Forget everything did not appear.
 - scrollUntilVisible:
     element: ${DANGER_ZONE}
+    centerElement: true
 - tapOn: ${DANGER_ZONE}
+- waitForAnimationToEnd
+# If it opened, Forget everything is found by scrolling down (it may sit
+# below the fold, so "not visible" alone does not mean closed). Only if
+# scrolling cannot find it is the heading tapped again.
+- scrollUntilVisible:
+    element: ${FORGET}
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      notVisible: ${FORGET}
+    commands:
+      - scrollUntilVisible:
+          element: ${DANGER_ZONE}
+          direction: UP
+          centerElement: true
+      - tapOn: ${DANGER_ZONE}
+      - waitForAnimationToEnd
 - takeScreenshot: diag-08a-forget-found
 # Run 40989556461: with the Danger zone open, Forget everything sat under the
 # tab bar, so the tap landed on Squad. Bring it to the middle first.
@@ -324,11 +343,11 @@ env:
 
 # --- launch 2: 03-plan, last --------------------------------------------------
 # A fresh seed (the forgotten season is back). Home, then the Mock Albion
-# card's "Team sheet" link (named for its opponent, so the label is unique),
-# then "Edit quarter by quarter" on the Team sheet (2.3.0). Share plan is below the plan's pitches, reached by swiping down
-# the screen's edge, never from the centre, where a pill would take the
-# gesture. In the store build Share plan makes the 2 × 2 at once: no
-# ActionSheet, whose buttons Maestro cannot find on iOS (run 9).
+# card's "Team sheet" link (named for its opponent, so the label is unique).
+# 2.3.0: Share plan is the Team sheet's Main button, pinned at the foot, and on
+# once every place is filled, as the kit's plan is. In the store build it
+# makes the 2 × 2 at once: no ActionSheet, whose buttons Maestro cannot find
+# on iOS (run 9).
 - launchApp:
     clearState: true
 - extendedWaitUntil:
@@ -343,39 +362,9 @@ env:
     visible: ${PLANNED_CARD}
     timeout: 20000
 - tapOn: ${EDIT_PLAN}
-- scrollUntilVisible:
-    element: ${EDIT_BY_PERIOD}
-    direction: DOWN
-- tapOn: ${EDIT_BY_PERIOD}
 - extendedWaitUntil:
-    visible: ${PLAN_STARTING}
+    visible: ${SHEET_OPEN}
     timeout: 10000
-# Run 40033174404, iPad: `while: notVisible` saw Share plan in the
-# hierarchy below the fold ("Add a sub" ends at 1381 of 1376), so the repeat
-# never swiped and the tap landed off the screen. So: five slow edge swipes,
-# always (past the end is harmless), then scrollUntilVisible as the check.
-# It only swipes, from the centre, if Share plan is still not fully in view.
-- repeat:
-    times: 5
-    commands:
-      # x outside the pitch, inside the scroll view: iPad 22% (227 of
-      # [216,234]), iPhone 2% (9 of [0,18]). Whole percents only.
-      - runFlow:
-          when:
-            true: ${DEVICE == "ipad"}
-          commands:
-            - swipe:
-                start: 22%,80%
-                end: 22%,35%
-                duration: 700
-      - runFlow:
-          when:
-            true: ${DEVICE != "ipad"}
-          commands:
-            - swipe:
-                start: 2%,80%
-                end: 2%,35%
-                duration: 700
 - scrollUntilVisible:
     element: ${SHARE_PLAN}
 - tapOn: ${SHARE_PLAN}
