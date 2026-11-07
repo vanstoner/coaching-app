@@ -20,6 +20,8 @@ const root = join(__dirname, '..', '..');
 
 /** Files where a bare status check is about ONE match or is deliberate. */
 const NOT_CROSS_GAME: Record<string, string> = {
+  // #281: whether a recorded match was finished before it is imported; one match, no figures.
+  'src/app/recorderFiles.ts': 'one match file, never a cross-game figure',
   'src/engine/MatchEngine.ts': 'the engine runs one match',
   'src/app/matchClosing.ts': 'closing one match',
   'src/app/matchAwards.ts': 'whether one match is still open for awards (#228)',
