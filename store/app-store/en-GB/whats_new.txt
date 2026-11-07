@@ -1,6 +1,8 @@
 New in 2.4.0:
 
-• Team talk: a countdown between quarters, and a buzz when the next one is due
-• Started late? Start from when it was due, and nobody loses the time
-• The team sheet remembers your keepers, subs and positions choices
-• If something goes wrong on a screen, the app stays open and your data is safe
+• Team talk: a countdown between quarters, and a buzz when the next is due
+• Power play: the score prompts you to add a player, least time first
+• Share match highlights with parents: the score, goals, awards and team stats
+• A friend can record a match on their phone and send it to you
+• Awards: pick the names, then one Give
+• Android Back goes back a screen; the team sheet remembers your choices
