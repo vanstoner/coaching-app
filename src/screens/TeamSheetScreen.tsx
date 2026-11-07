@@ -39,6 +39,7 @@ import {
   isPinned,
   keepPinned,
   keepersOf,
+  minutesThrough,
   pinPlaces,
   rearrangePeriod,
   swapInPeriod,
@@ -208,6 +209,7 @@ export function TeamSheetScreen({
   const minutesOf = (id: UUID) => projection?.rows.find((r) => r.playerId === id)?.pitchMs ?? 0;
 
   const period = sheet.periods[quarter];
+  const soFar = minutesThrough(sheet, quarter, format, match.totalMinutes, periodCount, coming);
   const subsHere = period.subs.filter((s) => s.onId && s.offId);
 
   return (
@@ -359,7 +361,8 @@ export function TeamSheetScreen({
                 const on = subsHere.find((s) => s.onId === id);
                 if (on) return `on at ${subAt} for ${name(on.offId)}`;
                 if (subsHere.some((s) => s.offId === id)) return `off at ${subAt}`;
-                return made ? formatClock(minutesOf(id)) : '';
+                // Rob, 7 Nov: the running total to the end of this quarter, not the whole match.
+                return made ? formatClock(soFar.get(id) ?? 0) : '';
               }}
               markedIds={
                 new Set(

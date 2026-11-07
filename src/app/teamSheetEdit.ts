@@ -13,7 +13,8 @@
 
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
 import { formatSubTime } from './matchClock';
-import type { MatchPlan, PlannedPeriod } from './matchPlan';
+import { projectPlan, type MatchPlan, type PlannedPeriod } from './matchPlan';
+import type { Player } from '../types/index';
 
 /**
  * The view a coach last chose, on this phone only (C13, D5): the real pitch
@@ -256,4 +257,23 @@ export function rearrangePeriod(
 /** Can this period be rearranged: at least two outfield places not filled by hand? */
 export function canRearrange(period: PlannedPeriod, format: Format): boolean {
   return format.positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
+}
+
+/**
+ * Each child's planned pitch time up to the end of one period (Rob, 7 Nov,
+ * "B"): the number under a name on the team sheet's pitch, so a coach working
+ * through the quarters sees who is falling behind so far. Worked out from the
+ * plan each draw (invariant 1); the whole match is in Minutes.
+ */
+export function minutesThrough(
+  plan: MatchPlan,
+  periodIndex: number,
+  format: Format,
+  totalMinutes: number,
+  periodCount: number,
+  players: Player[]
+): Map<UUID, number> {
+  const upTo: MatchPlan = { periods: plan.periods.map((p, i) => (i <= periodIndex ? p : { slots: {}, subs: [] })) };
+  const rows = projectPlan(upTo, format, totalMinutes, periodCount, players).rows;
+  return new Map(rows.map((r) => [r.playerId, r.pitchMs]));
 }

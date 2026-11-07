@@ -9,7 +9,7 @@ import { displayName, makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { emptyPlan, periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { applyKeepers, benchOf, canRearrange, frontToBack, isPinned, keepPinned, keepersOf, parseSheetView, pinPlaces, planGaps, rearrangePeriod, sheetTable, swapInPeriod } from './teamSheetEdit';
+import { applyKeepers, benchOf, canRearrange, frontToBack, isPinned, keepPinned, keepersOf, minutesThrough, parseSheetView, pinPlaces, planGaps, rearrangePeriod, sheetTable, swapInPeriod } from './teamSheetEdit';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -184,5 +184,27 @@ describe('placed by hand, Fill and ⟳ Rearrange (#277, Rob 6 Nov)', () => {
     const plan = pinPlaces(sheet(), 0, [outfieldIds()[0]]);
     const [a, b] = Object.values(plan.periods[0].slots).filter(Boolean) as UUID[];
     expect(swapInPeriod(plan, 0, a, b).periods[0].pinned).toEqual([outfieldIds()[0]]);
+  });
+});
+
+describe('the number under a name is the running total to the end of that quarter (Rob, 7 Nov)', () => {
+  it('Q1 shows Q1 alone, Q4 shows the whole match', () => {
+    const plan = sheet();
+    const q1 = minutesThrough(plan, 0, format, 50, 4, players);
+    const q4 = minutesThrough(plan, 3, format, 50, 4, players);
+    const whole = new Map(projectPlan(plan, format, 50, 4, players).rows.map((r) => [r.playerId, r.pitchMs]));
+    const goal = format.positions.find((p) => p.kind === 'goalkeeper')!.id;
+    expect(q1.get(plan.periods[0].slots[goal]!)).toBe(12.5 * 60_000);
+    expect(Math.max(...q1.values())).toBeLessThanOrEqual(12.5 * 60_000);
+    expect(q4).toEqual(whole);
+  });
+
+  it('only ever grows from one quarter to the next', () => {
+    const plan = sheet();
+    for (let p = 1; p < 4; p++) {
+      const before = minutesThrough(plan, p - 1, format, 50, 4, players);
+      const after = minutesThrough(plan, p, format, 50, 4, players);
+      for (const [id, ms] of after) expect(ms).toBeGreaterThanOrEqual(before.get(id)!);
+    }
   });
 });
