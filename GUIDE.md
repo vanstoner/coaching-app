@@ -95,7 +95,7 @@ starts as **Coming**. Tap a name to change it: Coming, then **Can't**, then
 arrive through the week. The card shows the count, like "9 coming · 2 can't
 · 1 not heard".
 
-<img src="store/app-store/screenshots/iphone/07-five.png" alt="Fixtures in your format and match length" width="260">
+<img src="store/app-store/screenshots/iphone/07-sheet.png" alt="The team sheet: keepers, subs and a fair fill" width="260">
 
 ## 4. Plan the match
 
