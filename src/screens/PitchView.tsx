@@ -273,11 +273,15 @@ export function PitchView(props: PitchViewProps) {
       style={s.root}
     >
       <View
-        style={[
-          s.pitch,
+        style={
           // #276: sized to the room on a small phone; the natural shape until measured.
-          props.room !== undefined && rootWidth > 0 && { aspectRatio: undefined, height: fitPitchHeight(rootWidth, props.room) },
-        ]}
+          // Two separate styles, never the shaped one with its ratio cleared:
+          // Android kept the ratio, so a shorter pitch came out narrower (Rob,
+          // 7 Nov, on the team talk's Lineup).
+          props.room !== undefined && rootWidth > 0
+            ? [s.pitchFrame, { width: rootWidth, height: fitPitchHeight(rootWidth, props.room) }]
+            : s.pitch
+        }
         onLayout={(e: LayoutChangeEvent) => setPitch(e.nativeEvent.layout)}
       >
         <View style={s.halfway} />
@@ -387,6 +391,14 @@ const s = StyleSheet.create({
   pitch: {
     alignSelf: 'stretch',
     aspectRatio: PITCH_ASPECT,
+    backgroundColor: '#13573f',
+    borderColor: colours.line,
+    borderWidth: 2,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  /** The same pitch with no ratio: its width and height are given (#276). */
+  pitchFrame: {
     backgroundColor: '#13573f',
     borderColor: colours.line,
     borderWidth: 2,

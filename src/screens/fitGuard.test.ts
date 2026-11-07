@@ -93,3 +93,12 @@ describe('dragging near the edge scrolls on every screen with a pitch (#276)', (
     expect(s).not.toMatch(/<ScrollView[^>]*scrollEnabled=\{!dragging\}/);
   });
 });
+
+describe('a pitch fitted to a short screen keeps its full width (Rob, 7 Nov, team talk Lineup)', () => {
+  it('never lays `aspectRatio: undefined` over the shaped style: Android keeps the ratio and narrows the pitch', () => {
+    const pitch = readFileSync(join(__dirname, 'PitchView.tsx'), 'utf-8');
+    expect(pitch).not.toMatch(/aspectRatio:\s*undefined/);
+    expect(pitch).toMatch(/\[s\.pitchFrame, \{ width: rootWidth, height: fitPitchHeight\(rootWidth, props\.room\) \}\]/);
+  });
+});
+
