@@ -24,6 +24,7 @@
 
 import { NOT_IN_SHARE_TEXT } from '../app/fairShare';
 import { InfoTap } from './FiguresHelp';
+import { ShareTexts } from './ShareTexts';
 import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
 import type { AwardPick, AwardRow } from '../app/matchAwards';
 import { useState, type ReactNode } from 'react';
@@ -87,6 +88,7 @@ export function MatchSummaryScreen({
   now,
   onAnalysis,
   onEndMatch,
+  share,
   onCorrectAttendance,
   onSetExcluded,
   onVoid,
@@ -110,6 +112,8 @@ export function MatchSummaryScreen({
   onAnalysis?: () => void;
   /** Close the match (ruling D). Absent when it cannot be closed. */
   onEndMatch?: () => void;
+  /** #282: the highlights for parents and the log for coaches, from the record; null before it is recorded. */
+  share?: { highlights: string | null; log: string | null };
   /** A noted attendance correction (ruling F): the reason if refused, else null. */
   onCorrectAttendance?: (playerId: UUID, status: AvailabilityStatus, note: string) => string | null;
   /**
@@ -575,7 +579,15 @@ export function MatchSummaryScreen({
       </ScrollView>
       {onEndMatch && !(askingAwards && awards) && (
         <MainFoot>
-          <MainButton label="End match" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
+          {share?.highlights ? (
+            <>
+              {/* #282 (Dee's prototype, Rob 7 Nov): Share is the Main button; End match moves under it. */}
+              <ShareTexts highlights={share.highlights} log={share.log} main />
+              <Action label="End match" align="center" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
+            </>
+          ) : (
+            <MainButton label="End match" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
+          )}
         </MainFoot>
       )}
       </KeyboardAvoidingView>

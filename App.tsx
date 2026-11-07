@@ -260,6 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
 import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
+import { highlightsText, matchLogText } from './src/app/highlights';
 import { setPowerPlayRule } from './src/app/ledger';
 import { ARCHIVED_RECORDS_KEY, parseArchivedRecords } from './src/app/recordOnly';
 import { seasonInputs } from './src/app/teamSheetBuilder';
@@ -2663,6 +2664,24 @@ function TeamApp({
       }
     }
 
+    /** #282: the highlights and the coaches' log for a match in the record, worked out on this draw. */
+    const shareFor = (matchId: UUID) => {
+      if (!viewLedger) return { highlights: null, log: null };
+      const nameOf = (id: UUID) => {
+        const p = viewLedger.players.find((x) => x.id === id) ?? players.find((x) => x.id === id);
+        return p ? displayName(p) : 'Unknown';
+      };
+      const trust = provenanceOf(viewLedger, matchId);
+      const input = {
+        ledger: viewLedger,
+        matchId,
+        teamName: squadName || 'Us',
+        nameOf,
+        provenance: trust?.state === 'reconstructed' ? 'Reconstructed after the match' : null,
+      };
+      return { highlights: highlightsText(input), log: matchLogText(input) };
+    };
+
     if (effectiveStep === 'record' && recordPage) {
       const back = recordReturn === 'summary' && match ? 'summary' : 'fixtures';
       return (
@@ -2675,6 +2694,7 @@ function TeamApp({
           backLabel={back === 'summary' ? 'Back to the report' : 'Back'}
           trust={provenanceOf(viewLedger, recordPage.match.id)}
           actions={ledgerBlockedRef.current ? null : recordActions(recordPage.match.id)}
+          share={shareFor(recordPage.match.id)}
         />
       );
     }
@@ -2704,6 +2724,7 @@ function TeamApp({
           }}
           trust={provenanceOf(viewLedger, match.state.match.id)}
           awards={liveAwards}
+          share={match.state.quarters.every((q) => q.status === 'ended') ? shareFor(match.state.match.id) : undefined}
           formatCard={formatCardFor(match.state.match.id)}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
