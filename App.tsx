@@ -259,6 +259,7 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
+import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
 import { mergeCurrentMatch } from './src/app/persistence';
@@ -523,6 +524,8 @@ function TeamApp({
   const [sheetId, setSheetId] = useState<UUID | null>(null);
   /** #277 C13 (ADR-024 D5): a view choice on this phone, never the record. */
   const [sheetView, setSheetView] = useState<SheetView>('formation');
+  // #283: the team talk's lengths, on this phone (Settings › Match defaults).
+  const [talkLengths, setTalkLengths] = useState<TalkLengths>(TALK_DEFAULT);
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -648,6 +651,7 @@ function TeamApp({
       const quietRaw = await store.getItem(SEASON_PROMPT_KEY).catch(() => null);
       // #277 C13: Formation or Table, as last chosen on this phone.
       setSheetView(parseSheetView(await store.getItem(SHEET_VIEW_KEY).catch(() => null)));
+      setTalkLengths(parseTalkLengths(await store.getItem(TEAM_TALK_KEY).catch(() => null)));
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -2029,7 +2033,7 @@ function TeamApp({
   );
 
   const startQuarter = useCallback(
-    (sheet: Sheet, plan: PlannedSub[]) => {
+    (sheet: Sheet, plan: PlannedSub[], startedAt?: Date) => {
       if (!match) return;
       const quarter = currentQuarter(match.state);
       if (!quarter) return;
@@ -2037,13 +2041,21 @@ function TeamApp({
       // the plan: the plan only filled the screen in (AC8).
       // Everyone in today's squad is in the kick-off snapshot (QA on #102).
       fillSquadAtKickoff(match.engine, match.state, squad);
-      match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
+      // #283: "from when it was due" passes the due moment; the engine refuses a
+      // bad one before writing anything, and then the period starts now.
+      try {
+        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format, startedAt);
+      } catch (e) {
+        if (!startedAt) throw e;
+        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
+        showToast('Started now: that start time had already passed the last period or not yet come');
+      }
       setSubPlan(plan);
       setStep('playing');
       // Named here: this save still holds the last period's plan (#139).
       persist({ periodSubs: periodSubsToSave(match.state.quarters, plan) });
     },
-    [match, persist, squad]
+    [match, persist, squad, showToast]
   );
 
   /**
@@ -2754,6 +2766,17 @@ function TeamApp({
             return saveSetting({ format: formatForShape(code, format) });
           }}
           buzzWhenSubDue={buzzWhenSubDue}
+          teamTalk={{
+            lengths: talkLengths,
+            onChange: (l) => {
+              setTalkLengths(l);
+              // A phone setting, like the sheet view: losing it costs a tap.
+              return store
+                .setItem(TEAM_TALK_KEY, JSON.stringify(l))
+                .then(() => true)
+                .catch(() => false);
+            },
+          }}
           onBuzzWhenSubDue={(on) => {
             setBuzzWhenSubDue(on);
             return saveSetting({ buzzWhenSubDue: on });
@@ -2972,6 +2995,7 @@ function TeamApp({
             (currentQuarter(match.state)?.index ?? 1) - 1
           )}
           onStart={startQuarter}
+          talk={{ lengths: talkLengths, buzz: buzzWhenSubDue }}
           onLeave={leaveMatch}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.

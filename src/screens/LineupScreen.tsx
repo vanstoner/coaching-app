@@ -93,6 +93,8 @@ import { bandCaption, scoreBand, showsScoreBand } from '../app/scoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { ScoreBand } from './ScoreBand';
 import { PitchView } from './PitchView';
+import { TeamTalkPanel, talkClock, talkMmss, useTalkTick } from './TeamTalkPanel';
+import { asksFromDue, teamTalkOf, type TalkLengths } from '../app/teamTalk';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { shapeOfFormat } from '../app/shapes';
@@ -128,6 +130,7 @@ export function LineupScreen({
   planGaps = [],
   attendance,
   names,
+  talk,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -137,7 +140,10 @@ export function LineupScreen({
   squadName: string;
   /** This period of the fixture's plan, if one was made (#72). */
   planned?: PlannedPeriod;
-  onStart: (sheet: Sheet, plan: PlannedSub[]) => void;
+  /** `startedAt`: #283's "from when it was due"; omitted, the period starts now. */
+  onStart: (sheet: Sheet, plan: PlannedSub[], startedAt?: Date) => void;
+  /** #283: the team talk's lengths and whether this phone buzzes. */
+  talk?: { lengths: TalkLengths; buzz: boolean };
   /** Back to Home. Does not kick off and does not end anything. */
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
@@ -166,6 +172,12 @@ export function LineupScreen({
   pitch?: ReactNode;
 }) {
   const quarter = currentQuarter(state);
+  // #283: the break this match is in, worked out from the last period's end on
+  // every paint, on this match's own clock (a test match's included).
+  const breakTalk = talk ? teamTalkOf(state.quarters, state.match.quarterCount, talk.lengths) : null;
+  useTalkTick(breakTalk !== null);
+  const nowMs = engine.clockNow().getTime();
+  const [lateAsk, setLateAsk] = useState(false);
   const minutes = useMemo(
     () => foldPlayerMinutes(engine, state, players),
     [engine, state, players]
@@ -253,6 +265,8 @@ export function LineupScreen({
   const selected = new Set(onPitch);
   const complete = sheetIsComplete(sheet, format);
   const noun = periodNoun(state.match.quarterCount);
+  const talkLabel = breakTalk ? `${noun === 'Quarter' ? 'Q' : noun === 'Half' ? 'H' : noun + ' '}${breakTalk.nextIndex}` : '';
+  const talkDue = breakTalk !== null && nowMs >= breakTalk.dueAtMs;
   const shape = shapeOfFormat(format);
   const positions = [...format.positions].sort((a, b) => a.sortOrder - b.sortOrder);
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
@@ -334,6 +348,9 @@ export function LineupScreen({
               caption={bandCaption(state.quarters, state.match.quarterCount)}
               onPitch
             />
+          )}
+          {breakTalk && talk && (
+            <TeamTalkPanel talk={breakTalk} nowMs={nowMs} label={talkLabel} buzz={talk.buzz} />
           )}
           <PitchView
             format={format}
@@ -429,11 +446,42 @@ export function LineupScreen({
           {goalkeeper === null ? ' · no goalkeeper chosen' : ''}
         </Text>
         <MainButton
-          label={`Start ${noun.toLowerCase()}`}
+          label={talkDue ? `${talkLabel} is due: Start` : `Start ${noun.toLowerCase()}`}
+          urgent={talkDue && complete}
           disabled={!complete}
-          onPress={() => onStart(sheet, plan)}
+          onPress={() => {
+            // #283 C4, C7: a late Start asks whether to start from when it was due.
+            if (breakTalk && asksFromDue(engine.clockNow().getTime(), breakTalk.dueAtMs, periodMs)) setLateAsk(true);
+            else onStart(sheet, plan);
+          }}
         />
       </View>
+
+      {/* #283 C4–C6: "from when it was due" uses a wall-clock anchor in the past (Ada's note). */}
+      <FormSheet visible={lateAsk && breakTalk !== null} title={`Start ${talkLabel} from when it was due?`} onCancel={() => setLateAsk(false)}>
+        {breakTalk && (
+          <>
+            <Text style={screen.hint}>
+              {`It was due at ${talkClock(breakTalk.dueAtMs)}, ${talkMmss(nowMs - breakTalk.dueAtMs)} ago. The children on the pitch get that time, and the clock shows it already run.`}
+            </Text>
+            <Text style={screen.hint}>Any change made during the gap can't be timed. Make it as a sub once the clock runs.</Text>
+            <MainButton
+              label={`Yes, from ${talkClock(breakTalk.dueAtMs)}`}
+              onPress={() => {
+                setLateAsk(false);
+                onStart(sheet, plan, new Date(breakTalk.dueAtMs));
+              }}
+            />
+            <Action
+              label="Start now"
+              onPress={() => {
+                setLateAsk(false);
+                onStart(sheet, plan);
+              }}
+            />
+          </>
+        )}
+      </FormSheet>
 
       <ListSheet
         visible={keeperSheet}

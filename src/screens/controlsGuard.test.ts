@@ -124,6 +124,7 @@ describe('one Main button per screen (#264 V26)', () => {
   const TWO_ALLOWED: Record<string, string> = {
     'MatchSummaryScreen.tsx': 'End match is pinned, or inside the awards card when it asks: never both at once',
     'Teams.tsx': 'two screens in one file: Add a team and No teams on this phone yet',
+    'LineupScreen.tsx': 'Start is pinned; the late Start sheet\'s "Yes, from …" is its own, over it while open (#283, Dee\'s prototype, Rob 7 Nov)',
   };
   it('no file draws more than one, outside the named exceptions', () => {
     const offenders = screenFiles

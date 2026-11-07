@@ -59,10 +59,12 @@ import {
   RowNav,
   Section,
   SegmentedRow,
+  Stepper,
   useSavedTicks,
 } from './controls';
+import { stepTalk, TALK_MAX_MS, TALK_MIN_MS, type TalkLengths } from '../app/teamTalk';
 import { ShapeCost, ShapeSheet } from './ShapeSheet';
-import { colours, screen } from './theme';
+import { colours, screen, TOUCH_TARGET } from './theme';
 
 /** A section another file draws: its body and its closed heading's summary (#263 AC9). */
 export interface SettingsPart {
@@ -119,6 +121,7 @@ export function SettingsScreen({
   onPeriodCount,
   onShape,
   buzzWhenSubDue,
+  teamTalk,
   onBuzzWhenSubDue,
   minutes,
   awards,
@@ -146,6 +149,8 @@ export function SettingsScreen({
   /** "Buzz when a sub is due" (#137). */
   buzzWhenSubDue: boolean;
   onBuzzWhenSubDue: (on: boolean) => Promise<boolean>;
+  /** #283: the team talk's lengths, on this phone; saved at once. */
+  teamTalk?: { lengths: TalkLengths; onChange: (lengths: TalkLengths) => Promise<boolean> };
   /** Player minutes: season, export, import (#75). Drawn by the caller. */
   minutes?: SettingsPart | null;
   /** Settings › Awards (#197). */
@@ -313,6 +318,42 @@ export function SettingsScreen({
               <Text style={local.hint}>
                 The phone buzzes once for each planned sub, 30 seconds before it is due, while the clock is on screen.
               </Text>
+              {teamTalk && (
+                <>
+                  <Text style={local.talkLabel}>Team talk</Text>
+                  {(
+                    [
+                      ['betweenMs', 'Between quarters'],
+                      ['halfMs', 'At half-time'],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const ms = teamTalk.lengths[key];
+                    const set = (d: 1 | -1) => {
+                      void tickWhenSaved(teamTalk.onChange({ ...teamTalk.lengths, [key]: stepTalk(ms, d) }), () =>
+                        ticks.mark('defaults')
+                      );
+                    };
+                    return (
+                      <View key={key} style={local.talkRow}>
+                        <Text style={local.talkName}>{label}</Text>
+                        <Text style={local.talkValue}>{`${Math.floor(ms / 60_000)}:${String((ms % 60_000) / 1000).padStart(2, '0')}`}</Text>
+                        <Stepper
+                          minusLabel={`${label}: 30 seconds shorter`}
+                          plusLabel={`${label}: 30 seconds longer`}
+                          onMinus={() => set(-1)}
+                          onPlus={() => set(1)}
+                          minusDisabled={ms <= TALK_MIN_MS}
+                          plusDisabled={ms >= TALK_MAX_MS}
+                        />
+                      </View>
+                    );
+                  })}
+                  <Text style={local.hint}>
+                    The lineup counts down from the end of each period and buzzes when the next is due, while the app is
+                    open. It never starts the clock. With halves, only half-time is used.
+                  </Text>
+                </>
+              )}
             </>
           )}
 
@@ -377,6 +418,10 @@ export function SettingsScreen({
 }
 
 const local = StyleSheet.create({
+  talkLabel: { alignSelf: 'stretch', color: colours.inkMuted, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', marginTop: 16, marginBottom: 4, includeFontPadding: false },
+  talkRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', minHeight: TOUCH_TARGET, borderBottomWidth: 1, borderBottomColor: colours.hair },
+  talkName: { flex: 1, color: colours.ink, fontSize: 16, includeFontPadding: false },
+  talkValue: { width: 56, flexShrink: 0, textAlign: 'right', paddingRight: 8, color: colours.ink, fontSize: 16, includeFontPadding: false, fontVariant: ['tabular-nums'] },
   caption: { alignSelf: 'stretch', color: colours.inkMuted, fontSize: 14, includeFontPadding: false, marginVertical: 8 },
   hint: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginTop: 6 },
 });

@@ -84,6 +84,11 @@ export class MatchEngine {
     this.config = config;
   }
 
+  /** This match's clock: the phone's, or a test match's own (#194, #283 C14). */
+  clockNow(): Date {
+    return this.now();
+  }
+
   private now(): Date {
     return this.config.nowFn?.() ?? new Date();
   }
@@ -258,7 +263,13 @@ export class MatchEngine {
     state: MatchState,
     quarter: Quarter,
     teamSheet: Map<UUID, UUID>, // positionId → playerId
-    format: Format
+    format: Format,
+    /**
+     * #283: start "from when it was due", a wall-clock moment in the past.
+     * Refused before the previous period ended or after now (invariant 2: it
+     * is still a wall-clock anchor, never a tick count). Omitted: now.
+     */
+    startedAt?: Date
   ): void {
     if (quarter.status !== 'pending') {
       throw new MatchEngineError(
@@ -318,11 +329,22 @@ export class MatchEngine {
       });
     }
 
+    const clockNow = this.now();
+    if (startedAt !== undefined) {
+      if (!Number.isFinite(startedAt.getTime()) || startedAt.getTime() > clockNow.getTime()) {
+        throw new MatchEngineError(`Cannot start quarter ${quarter.index} in the future`);
+      }
+      const endedAt = predecessor?.endedAt ? Date.parse(predecessor.endedAt) : NaN;
+      if (Number.isFinite(endedAt) && startedAt.getTime() < endedAt) {
+        throw new MatchEngineError(`Cannot start quarter ${quarter.index} before quarter ${predecessor!.index} ended`);
+      }
+    }
+
     // Validation complete. Nothing above writes to state. New checks belong
     // above this line; state is written only in the final block below.
 
     const matchElapsedMs = this.getMatchElapsedMs(state);
-    const now = this.now();
+    const now = startedAt ?? clockNow;
 
     // Build the new intervals, then apply every write together.
     const appearances: Appearance[] = assignments.map(
