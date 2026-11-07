@@ -140,5 +140,7 @@ describe('the Home card says why a match cannot be played out, and nothing is wr
     // D10: two bench children tapped in turn swap nothing, so a sub never changes hands.
     const sheetSrc = readFileSync(new URL('../screens/TeamSheetScreen.tsx', import.meta.url), 'utf8');
     expect(sheetSrc).toMatch(/if \(other && !onPitch\(id\) && !onPitch\(other\)\) return;/);
+    // D10b: the All and Table views reach the same swap, which refuses two bench children itself.
+    expect(sheetSrc).toMatch(/const swap = \(p: number, a: UUID, b: UUID\) => \{[\s\S]{0,250}if \(!on\.has\(a\) && !on\.has\(b\)\) return;/);
   });
 });

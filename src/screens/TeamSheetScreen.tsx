@@ -151,7 +151,13 @@ export function TeamSheetScreen({
     const changed = (Object.keys(after) as UUID[]).filter((pos) => before[pos] !== after[pos] && after[pos]);
     undoable(pinPlaces(next, p, changed), text);
   };
-  const swap = (p: number, a: UUID, b: UUID) => byHand(p, swapInPeriod(sheet, p, a, b), `Swapped ${name(a)} and ${name(b)}`);
+  const swap = (p: number, a: UUID, b: UUID) => {
+    // Two on the bench: nothing to swap, and a sub must not change hands, in
+    // any view (QA on #279, D10 and D10b).
+    const on = new Set(Object.values(sheet.periods[p].slots));
+    if (!on.has(a) && !on.has(b)) return;
+    byHand(p, swapInPeriod(sheet, p, a, b), `Swapped ${name(a)} and ${name(b)}`);
+  };
   const place = (p: number, id: UUID, positionId: UUID) =>
     byHand(p, setPeriodSlots(sheet, p, editSheet(sheet.periods[p].slots, id, { kind: 'slot', positionId })), `${name(id)} placed`);
 
