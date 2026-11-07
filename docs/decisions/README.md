@@ -54,6 +54,8 @@ state management does.
 | [022](./022-teams-and-seasons.md) | Teams are key prefixes, seasons live in each team's record, ADR-007 superseded | Accepted | 2026-10-25 |
 | [023](./023-formats-at-9-and-11.md) | Formats at 9 and 11 | Accepted | 2026-10-30 |
 | [024](./024-whos-coming-and-the-team-sheet.md) | Who's coming and the team sheet | Proposed | 2026-11-05 |
+| [025](./025-one-match-from-another-phone.md) | One match from another phone | Proposed | 2026-11-07 |
+| [026](./026-power-play.md) | Power play | Proposed | 2026-11-07 |
 
 ## Template
 
