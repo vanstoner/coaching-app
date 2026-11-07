@@ -198,7 +198,9 @@ fixture whose kick-off has passed and whose team sheet fills every place offers
 **Play out as planned**. It asks first, then records the match as the sheet
 planned it: the children marked Coming were there, everyone else absent, no
 score. It goes in Played marked **reconstructed**, so the Squad tab can leave it
-out of the figures.
+out of the figures. For a match you never put in the app, add the fixture with
+**Other date**: after the coming days it lists the last twelve weeks, marked
+Past.
 
 ## 8. Is everyone getting a fair share?
 

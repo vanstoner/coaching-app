@@ -31,12 +31,11 @@ import { COMPETITIONS, competitionLabel } from '../app/fixtures';
 import {
   KICKOFF_TIMES,
   dayLabel,
-  daysInMonth,
   kickoffIso,
   sameDay,
   startOfDay,
   toTimeInput,
-  upcomingMonths,
+  pickableDays,
   upcomingSaturdays,
 } from '../app/kickoff';
 import { PERIOD_COUNT_CHOICES, periodNounPlural } from '../app/matchClock';
@@ -290,9 +289,7 @@ function KickoffField({
   // on the Other date row, rather than as a blank.
   const offList = day !== null && !saturdays.some((s) => sameDay(s, day));
   const times = KICKOFF_TIMES.includes(time) ? KICKOFF_TIMES : [...KICKOFF_TIMES, time].sort();
-  const allDays = upcomingMonths(now).flatMap(([y, m]) =>
-    Array.from({ length: daysInMonth(y, m) }, (_, i) => new Date(y, m, i + 1))
-  ).filter((d) => d.getTime() >= startOfDay(now).getTime());
+  const allDays = pickableDays(now);
 
   const pick = (d: Date | null, t: string) => {
     setDay(d);
@@ -317,7 +314,7 @@ function KickoffField({
       <ListSheet
         visible={sheet === 'day'}
         title="Other date"
-        items={allDays.map((d) => ({ value: d.getTime(), label: dayLabel(d) }))}
+        items={allDays.map(({ day: d, past }) => ({ value: d.getTime(), label: dayLabel(d), detail: past ? 'Past' : undefined }))}
         value={day ? day.getTime() : null}
         onPick={(t) => {
           pick(new Date(t), time);
