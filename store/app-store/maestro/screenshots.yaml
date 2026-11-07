@@ -223,9 +223,32 @@ env:
 # (runs 40033174404, 40039113281) are gone. Danger zone always starts closed
 # (AC6), so tapping its heading unconditionally opens it, even after a
 # relaunch without clearState.
+# Run 42404259648 (iPad, 2.3.0): the open Season and Team panels are taller,
+# so the heading sat half under the build line at the foot; Maestro counted it
+# visible and the tap did not open it. Centre it first, and tap again if
+# Forget everything did not appear.
 - scrollUntilVisible:
     element: ${DANGER_ZONE}
+    centerElement: true
 - tapOn: ${DANGER_ZONE}
+- waitForAnimationToEnd
+# If it opened, Forget everything is found by scrolling down (it may sit
+# below the fold, so "not visible" alone does not mean closed). Only if
+# scrolling cannot find it is the heading tapped again.
+- scrollUntilVisible:
+    element: ${FORGET}
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      notVisible: ${FORGET}
+    commands:
+      - scrollUntilVisible:
+          element: ${DANGER_ZONE}
+          direction: UP
+          centerElement: true
+      - tapOn: ${DANGER_ZONE}
+      - waitForAnimationToEnd
 - takeScreenshot: diag-08a-forget-found
 # Run 40989556461: with the Danger zone open, Forget everything sat under the
 # tab bar, so the tap landed on Squad. Bring it to the middle first.
