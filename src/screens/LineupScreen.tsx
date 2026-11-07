@@ -93,6 +93,7 @@ import { bandCaption, scoreBand, showsScoreBand } from '../app/scoreBand';
 import { opponentLabel } from '../app/fixtures';
 import { ScoreBand } from './ScoreBand';
 import { PitchView } from './PitchView';
+import { isTestMatch } from '../app/testMatches';
 import { TeamTalkPanel, talkClock, talkMmss, useTalkTick } from './TeamTalkPanel';
 import { asksFromDue, teamTalkOf, type TalkLengths } from '../app/teamTalk';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
@@ -350,7 +351,7 @@ export function LineupScreen({
             />
           )}
           {breakTalk && talk && (
-            <TeamTalkPanel talk={breakTalk} nowMs={nowMs} label={talkLabel} buzz={talk.buzz} />
+            <TeamTalkPanel talk={breakTalk} nowMs={nowMs} label={talkLabel} buzz={talk.buzz} clockTimes={!isTestMatch(state.match)} />
           )}
           <PitchView
             format={format}
@@ -462,11 +463,11 @@ export function LineupScreen({
         {breakTalk && (
           <>
             <Text style={screen.hint}>
-              {`It was due at ${talkClock(breakTalk.dueAtMs)}, ${talkMmss(nowMs - breakTalk.dueAtMs)} ago. The children on the pitch get that time, and the clock shows it already run.`}
+              {`It was due ${isTestMatch(state.match) ? '' : `at ${talkClock(breakTalk.dueAtMs)}, `}${talkMmss(nowMs - breakTalk.dueAtMs)} ago. The children on the pitch get that time, and the clock shows it already run.`}
             </Text>
             <Text style={screen.hint}>Any change made during the gap can't be timed. Make it as a sub once the clock runs.</Text>
             <MainButton
-              label={`Yes, from ${talkClock(breakTalk.dueAtMs)}`}
+              label={isTestMatch(state.match) ? 'Yes, from when it was due' : `Yes, from ${talkClock(breakTalk.dueAtMs)}`}
               onPress={() => {
                 setLateAsk(false);
                 onStart(sheet, plan, new Date(breakTalk.dueAtMs));

@@ -34,7 +34,20 @@ export function useTalkTick(on: boolean): void {
   }, [on]);
 }
 
-export function TeamTalkPanel({ talk, nowMs, label, buzz }: { talk: TeamTalk; nowMs: number; label: string; buzz: boolean }) {
+export function TeamTalkPanel({
+  talk,
+  nowMs,
+  label,
+  buzz,
+  clockTimes = true,
+}: {
+  talk: TeamTalk;
+  nowMs: number;
+  label: string;
+  buzz: boolean;
+  /** Rob, 7 Nov: a test match's sped-up clock reads as a wrong time of day, so it shows durations only. */
+  clockTimes?: boolean;
+}) {
   const left = talk.dueAtMs - nowMs;
   const due = left <= 0;
   const late = -left;
@@ -60,8 +73,12 @@ export function TeamTalkPanel({ talk, nowMs, label, buzz }: { talk: TeamTalk; no
         {due
           ? late < 5000
             ? 'Buzz'
-            : `Due at ${clock(talk.dueAtMs)}, ${mmss(late)} ago`
-          : `${label} due at ${clock(talk.dueAtMs)}`}
+            : clockTimes
+              ? `Due at ${clock(talk.dueAtMs)}, ${mmss(late)} ago`
+              : `Due ${mmss(late)} ago`
+          : clockTimes
+            ? `${label} due at ${clock(talk.dueAtMs)}`
+            : `${label} due in ${mmss(left)}`}
       </Text>
     </View>
   );
