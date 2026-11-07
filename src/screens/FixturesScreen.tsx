@@ -60,6 +60,7 @@ export function FixturesScreen({
   onTeamSheet,
   playable,
   onPlayOut,
+  onShareForRecorder,
   housekeeping,
   buildLabel,
   progress,
@@ -93,6 +94,8 @@ export function FixturesScreen({
   /** #280: fixtures that could be played out as planned: null when it can be, else why not. */
   playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
+  /** #281: send the fixture to the adult recording it, before kick-off. */
+  onShareForRecorder?: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
   buildLabel: string;
@@ -126,7 +129,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, onShareForRecorder, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -227,6 +230,7 @@ interface CardActions {
   onTeamSheet: (matchId: UUID) => void;
   playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
+  onShareForRecorder?: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
@@ -331,6 +335,12 @@ function RecordCard({
       <Text style={tag ? (state === 'reconstructed' ? local.reconstructed : local.unsigned) : local.meta} numberOfLines={1}>
         {tag ? `${tag} · ` : ''}from the minutes record
       </Text>
+      {/* #281 (ADR-025 D6; Dee): mint, not sand, as it is trusted like the coach's own. */}
+      {match.elsewhere && (
+        <Text style={local.elsewhere} numberOfLines={1}>
+          Recorded on another phone
+        </Text>
+      )}
       {match.leftOut !== null && (
         <Text style={local.meta} numberOfLines={1}>
           Left out of the figures{match.leftOut ? ` · "${match.leftOut}"` : ''}
@@ -355,6 +365,7 @@ function FixtureCard({
   onTeamSheet,
   playable,
   onPlayOut,
+  onShareForRecorder,
   housekeeping,
   scores,
   periods,
@@ -467,6 +478,15 @@ function FixtureCard({
         />
       )}
 
+      {/* #281 (ADR-025): someone else runs the clock on their phone; before kick-off only. */}
+      {match.status === 'planned' && onShareForRecorder && (
+        <RowNav
+          label="Share for a recorder"
+          detail="Someone else runs the clock on their phone"
+          onPress={() => onShareForRecorder(match.id)}
+        />
+      )}
+
       {/* #280: nobody recorded it live, so the plan is written to the record as
           reconstructed. It writes to the record, so it asks first. */}
       {match.status === 'planned' && playable.has(match.id) && playable.get(match.id) !== null && (
@@ -495,6 +515,7 @@ function FixtureCard({
 }
 
 const local = StyleSheet.create({
+  elsewhere: { alignSelf: 'stretch', color: colours.action, fontSize: 13, marginTop: 4, includeFontPadding: false },
   playOutWhy: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginTop: 8 },
   startRow: { alignSelf: 'stretch', marginTop: 14 },
   section: { alignSelf: 'stretch' },

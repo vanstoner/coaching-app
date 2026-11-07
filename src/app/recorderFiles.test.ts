@@ -117,3 +117,17 @@ describe('importing the recorded match (ADR-025 D5)', () => {
     expect(importRecordedMatch(coach, unfinished.file, unfinished.ledger, false, new Date())).toMatchObject({ ok: false, reason: expect.stringMatching(/not been finished/) });
   });
 });
+
+describe('the coach\'s screens (#281)', () => {
+  it('a fixture card offers Share for a recorder; Import minutes file routes a recorded match to the import', async () => {
+    const { readFileSync } = await import('node:fs');
+    const card = readFileSync(new URL('../screens/FixturesScreen.tsx', import.meta.url), 'utf8');
+    expect(card).toContain('label="Share for a recorder"');
+    expect(card).toContain('Recorded on another phone');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('const routed = readRecorderFile(picked.text);');
+    expect(app).toContain('importRecordedMatch(ours, routed.file, routed.ledger, held, appNow())');
+    expect(app).toContain("send it only to the adult recording the match");
+  });
+});
+

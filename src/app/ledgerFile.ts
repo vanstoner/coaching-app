@@ -37,6 +37,23 @@ export async function exportLedgerFile(ledger: Ledger, now: Date): Promise<FileO
   }
 }
 
+/** #281: a recorder pack or a recorded match, through the same share path. */
+export async function exportJsonFile(name: string, text: string, dialogTitle: string): Promise<FileOutcome> {
+  try {
+    if (!(await Sharing.isAvailableAsync())) {
+      return { ok: false, reason: 'This phone cannot share files.' };
+    }
+    const file = new File(Paths.cache, name);
+    if (file.exists) file.delete();
+    file.create();
+    file.write(text);
+    await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle });
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'The file could not be written.' };
+  }
+}
+
 /** The app's backup (#192): the same share path, its own name and wording. */
 export async function exportBackupFile(text: string, now: Date): Promise<FileOutcome> {
   try {

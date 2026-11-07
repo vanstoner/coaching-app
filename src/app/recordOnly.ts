@@ -45,6 +45,8 @@ export interface RecordOnlyMatch {
   leftOut: string | null;
   /** Archived by the coach on the phone that played it (#76), carried by its `fixture` record (#195). */
   archived: boolean;
+  /** #281 (ADR-025 D6): carried in from another phone, from its `received` record. */
+  elsewhere?: boolean;
   /** #254: the pitch, as its `fixture` record holds it (read-only here; never a referee). */
   surface: string | null;
   condition: string | null;

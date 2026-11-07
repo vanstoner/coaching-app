@@ -216,7 +216,8 @@ import {
   type SquadMatching,
   type SquadOption,
 } from './src/app/squadMatch';
-import { exportBackupFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { exportBackupFile, exportJsonFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
+import { importRecordedMatch, makeRecorderPack, readRecorderFile, recordedElsewhere } from './src/app/recorderFiles';
 import { installDeviceSigner } from './src/app/storage/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
@@ -990,6 +991,34 @@ function TeamApp({
       return;
     }
     if (picked.text === null) return; // cancelled
+    // #281 (ADR-025 D1): one picker routes by kind; a recorded match is added
+    // to this team's fixture, a bare minutes file imports as before.
+    const routed = readRecorderFile(picked.text);
+    if (routed.kind === 'refused') {
+      setLedgerMessage(routed.reason);
+      return;
+    }
+    if (routed.kind === 'pack') {
+      setLedgerMessage('This is a recorder pack: open it on the phone of the adult recording the match.');
+      return;
+    }
+    if (routed.kind === 'match') {
+      const ours = ledgerRef.current ?? emptyLedger(squadId, squadName, appNow());
+      const held = match !== null && match.state.match.id === routed.file.fixtureId;
+      const r = importRecordedMatch(ours, routed.file, routed.ledger, held, appNow());
+      if (!r.ok) {
+        setLedgerMessage(r.reason);
+        return;
+      }
+      commitLedger(r.ledger);
+      // The match now lives in the record; the fixture's planning copy goes,
+      // so Played shows it from the record, marked recorded on another phone.
+      const next = matches.filter((m) => m.match.id !== r.matchId);
+      setMatches(next);
+      persist({ matches: next });
+      setLedgerMessage('Added to Played: recorded on another phone.');
+      return;
+    }
     const parsed = parseLedger(picked.text);
     if (!parsed.ok) {
       setLedgerMessage(parsed.reason);
@@ -1007,7 +1036,7 @@ function TeamApp({
       return;
     }
     applyImport(parsed.ledger, undefined);
-  }, [squadId, squadName, players, match, applyImport]);
+  }, [squadId, squadName, players, match, applyImport, commitLedger, matches, persist]);
 
   /** The coach's choice on the matching step (#195). */
   const chooseImport = useCallback(
@@ -2305,7 +2334,11 @@ function TeamApp({
   });
   const everyStepDone = allStepsDone(startProgress);
   const recordOnlyList = recordOnlyMatches(viewLedger, new Set(everyMatch.map((m) => m.match.id))).map((m) =>
-    archivedRecords.has(m.id) ? { ...m, archived: true } : m
+    ({
+      ...m,
+      archived: m.archived || archivedRecords.has(m.id),
+      elsewhere: viewLedger ? recordedElsewhere(viewLedger, m.id) : false,
+    })
   );
   /** Q3: nothing played yet, so empty Played and squad views say what comes next. */
   const firstTime = nothingPlayedYet(everyMatch, recordOnlyList.length);
@@ -2703,7 +2736,11 @@ function TeamApp({
         matchId,
         teamName: squadName || 'Us',
         nameOf,
-        provenance: trust?.state === 'reconstructed' ? 'Reconstructed after the match' : null,
+        provenance: recordedElsewhere(viewLedger, matchId)
+          ? 'Recorded on another phone'
+          : trust?.state === 'reconstructed'
+            ? 'Reconstructed after the match'
+            : null,
       };
       return { highlights: highlightsText(input), log: matchLogText(input) };
     };
@@ -3218,6 +3255,21 @@ function TeamApp({
           )
         }
         onPlayOut={playOutFixture}
+        onShareForRecorder={(id) => {
+          const l = ledgerRef.current;
+          const stored = matches.find((m) => m.match.id === id);
+          if (!l || !stored || !l.fixtures.some((f) => f.id === id)) {
+            showToast('This fixture is not saved in the record yet. Open it once, then try again.');
+            return;
+          }
+          // ADR-025 D2, D7: first names only, one squad, no history; the coach is told who it is for.
+          const pack = makeRecorderPack(l, id, stored.plan ?? null, stored.availability as [UUID, string][], appNow());
+          void exportJsonFile(
+            `recorder-pack-${(stored.match.opponent || 'match').replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.json`,
+            JSON.stringify(pack),
+            "It holds the children's first names: send it only to the adult recording the match"
+          ).then((r) => (r.ok ? undefined : showToast(r.reason)));
+        }}
         housekeeping={{
           // The live match's quarters, not the stored copy's: a fixture kicked
           // off a moment ago must not still be offered for deletion.
