@@ -112,3 +112,45 @@ export function tabForStep(step: Step, errand: SquadErrand = 'home'): Tab | null
 export function showsTabs(step: Step, errand: SquadErrand = 'home'): boolean {
   return tabForStep(step, errand) !== null;
 }
+
+/**
+ * #175 (Rob, "Approve 1-8": Squad and Settings go to Home; Back on Home leaves
+ * the app): what Android Back does on each step. Back only ever does what the
+ * screen's own way out does, never a Main button's or an Action's job.
+ * - `leave-app`: Android's default (Home, and the loading screen);
+ * - `home`: the Squad and Settings tabs go to Home;
+ * - `screen`: the screen's own Back, Done, Cancel or Leave;
+ * - `own`: the screen listens itself (it asks before discarding a form).
+ */
+export type BackAnswer = 'leave-app' | 'home' | 'screen' | 'own';
+
+export function backFrom(step: Step): BackAnswer {
+  switch (step) {
+    case 'fixtures':
+    case 'loading':
+      return 'leave-app';
+    case 'settings':
+    case 'squad':
+      return 'home';
+    case 'fixtureForm':
+    case 'seasonStart':
+      return 'own';
+    case 'resume':
+    case 'plan':
+    case 'summary':
+    case 'analysis':
+    case 'lineup':
+    case 'playing':
+    case 'record':
+    case 'seasonPast':
+    case 'coming':
+    case 'teamSheet':
+      return 'screen';
+    default: {
+      // A Step added without a Back answer fails to compile (C9).
+      const unknown: never = step;
+      return unknown;
+    }
+  }
+}
+

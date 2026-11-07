@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, BackHandler, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -260,6 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
 import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
+import { backFrom } from './src/app/tabs';
 import { highlightsText, matchLogText } from './src/app/highlights';
 import { setPowerPlayRule } from './src/app/ledger';
 import { ARCHIVED_RECORDS_KEY, parseArchivedRecords } from './src/app/recordOnly';
@@ -527,6 +528,7 @@ function TeamApp({
   const [sheetId, setSheetId] = useState<UUID | null>(null);
   /** #277 C13 (ADR-024 D5): a view choice on this phone, never the record. */
   const [sheetView, setSheetView] = useState<SheetView>('formation');
+  const backRef = useRef<(() => void) | null>(null);
   // #283: the team talk's lengths, on this phone (Settings › Match defaults).
   const [talkLengths, setTalkLengths] = useState<TalkLengths>(TALK_DEFAULT);
   // Rob, 7 Nov: matches from the record with no fixture here, archived on this
@@ -1065,6 +1067,24 @@ function TeamApp({
     },
     [players.length]
   );
+
+  // #175: one listener for Android Back. A screen that asks before discarding
+  // listens itself (`own`) and, mounting later, is asked first only when this
+  // one steps aside; the recovery screen's listener comes later still.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      const answer = backFrom(effectiveStep);
+      if (answer === 'leave-app' || answer === 'own') return false;
+      if (answer === 'home' || !backRef.current) {
+        // C8: a step whose screen is gone behaves as Home's tab.
+        goToTab('home');
+        return true;
+      }
+      backRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, [effectiveStep, goToTab]);
 
   /**
    * Home, without committing to anything.
@@ -2472,6 +2492,12 @@ function TeamApp({
     );
   };
 
+  // #175: the current screen's own way out, set as the screen is drawn, for Android Back.
+  backRef.current = null;
+  const exit = <F extends () => void>(f: F): F => {
+    backRef.current = f;
+    return f;
+  };
   const body = (() => {
     if (effectiveStep === 'loading') {
       return (
@@ -2482,7 +2508,7 @@ function TeamApp({
     }
 
     if (effectiveStep === 'resume' && pending) {
-      return <ResumeScreen saved={pending} onResume={resume} onLeave={leaveResume} />;
+      return <ResumeScreen saved={pending} onResume={resume} onLeave={exit(leaveResume)} />;
     }
 
     if (effectiveStep === 'fixtureForm') {
@@ -2515,7 +2541,7 @@ function TeamApp({
           availability={comingMatch.availability}
           changedAt={comingMatch.comingChangedAt ?? null}
           onChange={(list) => saveComing(comingMatch.match.id, list)}
-          onBack={() => setStep(comingReturn)}
+          onBack={exit(() => setStep(comingReturn))}
           // Rob, 6 Nov: Who's coming flows straight on to the team sheet.
           onNext={() => {
             setSheetId(comingMatch.match.id);
@@ -2550,7 +2576,7 @@ function TeamApp({
           squadName={squadName}
           plan={planning.plan}
           onChange={(plan) => savePlan(planning.match.id, plan)}
-          onBack={() => setStep(planReturn)}
+          onBack={exit(() => setStep(planReturn))}
           live={liveForPlan(planning)}
         />
       );
@@ -2593,7 +2619,7 @@ function TeamApp({
             setStep('plan');
           }}
           onUndo={(text, undo) => showToast(text, undo)}
-          onBack={() => setStep('fixtures')}
+          onBack={exit(() => setStep('fixtures'))}
         />
       );
     }
@@ -2658,7 +2684,7 @@ function TeamApp({
               />
             }
             matches={rows}
-            onBack={() => setStep('settings')}
+            onBack={exit(() => setStep('settings'))}
           />
         );
       }
@@ -2690,7 +2716,7 @@ function TeamApp({
           pitch={<PitchAndReferee match={viewLedger?.fixtures.find((f) => f.id === recordPage.match.id) ?? {}} onChange={null} />}
           page={recordPage}
           now={appNow()}
-          onBack={() => setStep(back)}
+          onBack={exit(() => setStep(back))}
           backLabel={back === 'summary' ? 'Back to the report' : 'Back'}
           trust={provenanceOf(viewLedger, recordPage.match.id)}
           actions={ledgerBlockedRef.current ? null : recordActions(recordPage.match.id)}
@@ -2731,7 +2757,7 @@ function TeamApp({
             setRecordReturn('summary');
             setStep('record');
           }}
-          onBack={() => {
+          onBack={exit(() => {
             // A finished match is history: it is safe to let go of, and
             // holding it would make Home think one is still current. Folded
             // into the list first, or the save that follows writes the copy
@@ -2739,7 +2765,7 @@ function TeamApp({
             releaseMatch(null);
             // A test match came from Settings and goes back there (#194).
             setStep(heldTest ? 'settings' : 'fixtures');
-          }}
+          })}
         />
       );
     }
@@ -2756,7 +2782,7 @@ function TeamApp({
           ledger={viewLedger && ledgerForSeason(viewLedger, seasonOfMatch(viewLedger, match.state.match.id))}
           kickoffs={kickoffs()}
           backLabel={analysisReturn === 'playing' ? 'Back to the clock' : 'Back to the report'}
-          onBack={() => setStep(analysisReturn)}
+          onBack={exit(() => setStep(analysisReturn))}
         />
       );
     }
@@ -3077,7 +3103,7 @@ function TeamApp({
           )}
           onStart={startQuarter}
           talk={{ lengths: talkLengths, buzz: buzzWhenSubDue }}
-          onLeave={leaveMatch}
+          onLeave={exit(leaveMatch)}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.
           names={
@@ -3113,7 +3139,7 @@ function TeamApp({
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
-          onLeave={leaveMatch}
+          onLeave={exit(leaveMatch)}
           onPlanRest={planTheRest}
           onAnalysis={() => {
             setAnalysisReturn('playing');
