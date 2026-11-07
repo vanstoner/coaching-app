@@ -176,7 +176,8 @@ export function TeamSheetScreen({
     }).plan;
     undoable(
       { periods: built.periods.map((period, i) => ({ ...period, pinned: start.periods[i].pinned })) },
-      'Filled: anyone you placed stayed put'
+      // Rob, 7 Nov ("subs wording"): Fill plans every sub again, and says so (QA on #279, D4).
+      'Filled: anyone you placed stayed put; subs planned again'
     );
   };
   const reset = () => undoable(applyKeepers(emptyPlan(periodCount), format, keepers), 'Reset: keepers kept');
