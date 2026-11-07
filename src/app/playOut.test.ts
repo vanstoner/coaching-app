@@ -10,7 +10,9 @@ import { makePlayer } from './squad';
 import { makeFormat } from './shapes';
 import { periodLengthMs, projectPlan } from './matchPlan';
 import { buildTeamSheet, rotateKeepers } from './teamSheetBuilder';
-import { emptyLedger } from './ledger';
+import { addUnknownTimeEvent, emptyLedger, giveAward } from './ledger';
+import type { Ledger } from './ledger';
+import { recordMatchPage } from './recordOnly';
 import { provenances } from './provenance';
 import { squadViews } from './squadViews';
 import type { SavedMatch } from './persistence';
@@ -91,5 +93,26 @@ describe('Play out as planned (#280)', () => {
     const { stored, plan } = fixture(players.slice(0, 9).map((p) => p.id));
     const started = { ...stored, quarters: stored.quarters.map((q, i) => (i === 0 ? { ...q, status: 'ended' as const } : q)) };
     expect(playOutRefusal(started, plan, format, players)).toMatch(/already kicked off/);
+  });
+
+  it('takes the score and the awards afterwards, on its page in the record (Rob, 7 Nov)', () => {
+    const { stored, plan } = fixture(players.slice(0, 9).map((p) => p.id));
+    const out = playOutAsPlanned({ stored, format, plan, players, start: kickoff });
+    let ledger: Ledger = recordPlayedOut(emptyLedger(squadId, 'Test FC', kickoff), out, format, players, 'Test FC', kickoff);
+    const id = out.played.match.id;
+    const step = (r: { ok: true; ledger: Ledger } | { ok: false; reason: string }) => {
+      if (!r.ok) throw new Error(r.reason);
+      ledger = r.ledger;
+    };
+    for (const scorer of [players[0], players[1], players[2]]) step(addUnknownTimeEvent(ledger, id, 'goal', scorer.id, 'Match report', kickoff));
+    for (let i = 0; i < 4; i++) step(addUnknownTimeEvent(ledger, id, 'conceded', null, 'Match report', kickoff));
+    expect(ledger.awardTypes.length).toBeGreaterThan(0);
+    step(giveAward(ledger, id, ledger.awardTypes[0].id, players[3].id, 'Match report', kickoff));
+    const page = recordMatchPage(ledger, id)!;
+    expect(page.goals).toHaveLength(3);
+    expect(page.conceded).toBe(4);
+    expect(page.result).toBe('L');
+    expect(page.awards.map((a) => a.playerId)).toEqual([players[3].id]);
+    expect(provenances(ledger).get(id)?.state).toBe('reconstructed');
   });
 });
