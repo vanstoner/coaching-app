@@ -260,6 +260,7 @@ import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
 import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
+import { ARCHIVED_RECORDS_KEY, parseArchivedRecords } from './src/app/recordOnly';
 import { seasonInputs } from './src/app/teamSheetBuilder';
 import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/playOut';
 import { mergeCurrentMatch } from './src/app/persistence';
@@ -526,6 +527,9 @@ function TeamApp({
   const [sheetView, setSheetView] = useState<SheetView>('formation');
   // #283: the team talk's lengths, on this phone (Settings › Match defaults).
   const [talkLengths, setTalkLengths] = useState<TalkLengths>(TALK_DEFAULT);
+  // Rob, 7 Nov: matches from the record with no fixture here, archived on this
+  // phone only, like a fixture's archive (#76 AC4: no record is written).
+  const [archivedRecords, setArchivedRecords] = useState<ReadonlySet<UUID>>(new Set());
   /** The record-only match open read-only (#195), on the 'record' step. */
   const [recordId, setRecordId] = useState<UUID | null>(null);
   /** Where Back on a match from the record goes: Home, or the match report it was opened from (#196). */
@@ -652,6 +656,7 @@ function TeamApp({
       // #277 C13: Formation or Table, as last chosen on this phone.
       setSheetView(parseSheetView(await store.getItem(SHEET_VIEW_KEY).catch(() => null)));
       setTalkLengths(parseTalkLengths(await store.getItem(TEAM_TALK_KEY).catch(() => null)));
+      setArchivedRecords(parseArchivedRecords(await store.getItem(ARCHIVED_RECORDS_KEY).catch(() => null)));
 
       // Read once, before any save can run: launch must never write over
       // the ledger with an empty one.
@@ -2236,7 +2241,9 @@ function TeamApp({
     ledgerMatches: recordedMatchCount(ledger),
   });
   const everyStepDone = allStepsDone(startProgress);
-  const recordOnlyList = recordOnlyMatches(viewLedger, new Set(everyMatch.map((m) => m.match.id)));
+  const recordOnlyList = recordOnlyMatches(viewLedger, new Set(everyMatch.map((m) => m.match.id))).map((m) =>
+    archivedRecords.has(m.id) ? { ...m, archived: true } : m
+  );
   /** Q3: nothing played yet, so empty Played and squad views say what comes next. */
   const firstTime = nothingPlayedYet(everyMatch, recordOnlyList.length);
   const nextUp = inBucket(
@@ -3137,6 +3144,13 @@ function TeamApp({
           ),
           archived: new Set(real.filter((m) => m.archived).map((m) => m.match.id)),
           onArchive: archiveFixture,
+          onArchiveRecord: (id, archived) => {
+            const next = new Set(archivedRecords);
+            if (archived) next.add(id);
+            else next.delete(id);
+            setArchivedRecords(next);
+            void store.setItem(ARCHIVED_RECORDS_KEY, JSON.stringify([...next])).catch(() => undefined);
+          },
           archivedCount: real.filter((m) => m.archived).length + recordOnlyList.filter((m) => m.archived).length,
           showingArchived: showArchived,
           onToggleArchived: () => setShowArchived((v) => !v),

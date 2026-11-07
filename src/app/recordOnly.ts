@@ -203,3 +203,20 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
     tallies: matchTalliesWithGoals(m.events, ledger.eventTypes, (id) => name(id)),
   };
 }
+
+/**
+ * Rob, 7 Nov ("Can't archive reconstructed"): a match from the record with no
+ * fixture on this phone can be archived here too. A view choice on this phone,
+ * never the record (#76 AC4); unreadable means none archived.
+ */
+export const ARCHIVED_RECORDS_KEY = 'coaching-app/archived-records/v1';
+
+export function parseArchivedRecords(raw: string | null): ReadonlySet<UUID> {
+  try {
+    const v: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(v) ? (v.filter((x) => typeof x === 'string') as UUID[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+

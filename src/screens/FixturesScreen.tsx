@@ -213,6 +213,8 @@ export interface Housekeeping {
   archivedCount: number;
   showingArchived: boolean;
   onToggleArchived: () => void;
+  /** A match from the record with no fixture here: archived on this phone only. */
+  onArchiveRecord?: (matchId: UUID, archived: boolean) => void;
 }
 
 interface CardActions {
@@ -280,6 +282,7 @@ function PlayedSection({
             now={actions.now}
             onOpen={onOpenRecord}
             state={actions.provenance.get(item.key) ?? 'reconstructed'}
+            onArchive={actions.housekeeping.onArchiveRecord}
           />
         )
       )}
@@ -298,11 +301,14 @@ function RecordCard({
   now,
   onOpen,
   state,
+  onArchive,
 }: {
   match: RecordOnlyMatch;
   now: Date;
   onOpen: (matchId: UUID) => void;
   state: Provenance;
+  /** Rob, 7 Nov ("Can't archive reconstructed"): hide it from Played, on this phone only. */
+  onArchive?: (matchId: UUID, archived: boolean) => void;
 }) {
   const competition = competitionLabel(match.competition);
   const tag = provenanceTag(state);
@@ -329,6 +335,10 @@ function RecordCard({
         <Text style={local.meta} numberOfLines={1}>
           Left out of the figures{match.leftOut ? ` · "${match.leftOut}"` : ''}
         </Text>
+      )}
+      {/* Archive can be undone, so it is an Action, not Danger. It writes no record (#76 AC4). */}
+      {onArchive && (
+        <Action label={match.archived ? 'Unarchive' : 'Archive'} onPress={() => onArchive(match.id, !match.archived)} />
       )}
     </Pressable>
   );
