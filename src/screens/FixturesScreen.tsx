@@ -83,7 +83,8 @@ export function FixturesScreen({
   onOpen: (matchId: UUID) => void;
   /** Only offered on a fixture that has never been kicked off. */
   onDelete: (matchId: UUID) => void;
-  onAdd: () => void;
+  /** Absent in a team borrowed for one match (#281, ADR-025 D3): it has its one fixture. */
+  onAdd?: () => void;
   /** Fixtures that already have something planned, so the link says so. */
   plannedIds: ReadonlySet<UUID>;
   /** #277 A1: each fixture's Who's coming summary. */
@@ -151,9 +152,11 @@ export function FixturesScreen({
 
         {/* Rob, 5 Nov ("approve drop play now"): Home is the list of matches, so a
             match is played by tapping its card. + Fixture is the one Main button. */}
-        <View style={local.startRow}>
-          <MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
-        </View>
+        {onAdd && (
+          <View style={local.startRow}>
+            <MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
+          </View>
+        )}
 
         {rows.length === 0 && recordOnly.length === 0 ? (
           housekeeping.archivedCount > 0 ? (

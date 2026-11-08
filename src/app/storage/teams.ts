@@ -385,6 +385,49 @@ export async function removeTeam(root: KeyValueStore, id: UUID, now: Date): Prom
   return next;
 }
 
+/**
+ * #281 (ADR-025 D7): remove a borrowed team for good. Unlike Remove, which
+ * sets a team aside, every key it holds is erased and it leaves the index:
+ * the original is on the coach's phone. Phone-wide keys are never touched.
+ * True when the store could list the team's keys and every removal worked.
+ */
+export async function eraseTeam(root: KeyValueStore, id: UUID): Promise<boolean> {
+  const prefix = `${TEAMS_PREFIX}${id}/`;
+  const next = await changeIndex(root, (i) => {
+    const teams = i.teams.filter((t) => t.id !== id);
+    const current = i.current === id ? (teams.find((t) => t.removedAt === null)?.id ?? null) : i.current;
+    return { ...i, teams, current };
+  });
+  if (!next) return false;
+  return inTurn(root, async () => {
+    let complete = true;
+    let listed: readonly string[] = [];
+    try {
+      if (root.allKeys) listed = await root.allKeys();
+      else complete = false;
+    } catch {
+      complete = false;
+    }
+    const known = [STORAGE_KEY, LEDGER_STORAGE_KEY, REMOVED_MARK].map((k) => teamKey(id, k));
+    for (const key of new Set([...known, ...listed.filter((k) => k.startsWith(prefix))])) {
+      if (!key.startsWith(prefix)) continue;
+      await root.removeItem(key).catch(() => {
+        complete = false;
+      });
+    }
+    return complete;
+  });
+}
+
+/** ADR-025 D7: a borrowed team's record holds a `pack` record; read from the stored JSON. */
+export function isBorrowedRecord(ledgerJson: unknown): boolean {
+  const entries = (ledgerJson as { entries?: unknown } | null)?.entries;
+  return (
+    Array.isArray(entries) &&
+    entries.some((e) => Array.isArray((e as { records?: unknown })?.records) && (e as { records: { type?: unknown }[] }).records.some((r) => r?.type === 'pack'))
+  );
+}
+
 /** Bring a set-aside team back, exactly as it was (AC9). It opens if no team is open. */
 export async function bringBackTeam(root: KeyValueStore, id: UUID): Promise<TeamIndex | null> {
   const next = await changeIndex(root, (i) => ({
@@ -462,11 +505,14 @@ export function teamsForBackup(
         const session = await store.getItem(STORAGE_KEY);
         const ledger = await store.getItem(LEDGER_STORAGE_KEY);
         if (session === null) throw new Error('no squad');
+        // ADR-025 D7: a team borrowed for one match is left out of this phone's backup.
+        const parsedLedger = ledger === null ? null : JSON.parse(ledger);
+        if (isBorrowedRecord(parsedLedger)) continue;
         parts.push({
           id: t.id,
           removed: t.removedAt !== null,
           session: JSON.parse(session),
-          ledger: ledger === null ? null : JSON.parse(ledger),
+          ledger: parsedLedger,
         });
       } catch {
         skipped.push(t.id);

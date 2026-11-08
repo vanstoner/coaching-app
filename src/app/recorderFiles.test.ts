@@ -13,6 +13,10 @@ import { appendRecords, emptyLedger, recordMatches, serialiseLedger, type Ledger
 import { fixtureRecord } from './ledgerSetup';
 import {
   ALREADY_IN_RECORD,
+  borrowedFor,
+  borrowedMatchFinished,
+  openPack,
+  sameChildren,
   importRecordedMatch,
   makeRecordedMatch,
   makeRecorderPack,
@@ -131,3 +135,88 @@ describe('the coach\'s screens (#281)', () => {
   });
 });
 
+describe("the recorder's phone (ADR-025 D3)", () => {
+  it('opens a pack as a borrowed team: its children, the one fixture, the plan and Who is coming', () => {
+    const { coach, state } = coachWithFixture();
+    const plan = { periods: [{ slots: {}, subs: [] }] };
+    const coming: [UUID, string][] = [[players[0].id, 'absent'], [players[1].id, 'available'], [uuid(), 'available'], [players[2].id, 'nonsense']];
+    const read = readRecorderFile(JSON.stringify(makeRecorderPack(coach, state.match.id, plan, coming, T0)));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+    const base = emptyLedger(uuid(), '', T0);
+    const opened = openPack(base, read.file, read.ledger, format, T0);
+    if (!opened.ok) throw new Error(opened.reason);
+    expect(borrowedFor(opened.ledger)).toBe(state.match.id);
+    expect(borrowedFor(coach)).toBeNull();
+    expect(opened.restored.squadName).toBe('Test FC');
+    expect(opened.restored.players.map((p) => p.id).sort()).toEqual(players.map((p) => p.id).sort());
+    expect(opened.matches.map((m) => m.match.id)).toEqual([state.match.id]);
+    const fixture = opened.matches[0];
+    expect(fixture.plan).toEqual(plan);
+    // A child the coach marked Can't stays so; a stranger or a status this build does not know is ignored.
+    expect(new Map(fixture.availability).get(players[0].id)).toBe('absent');
+    expect(new Map(fixture.availability).get(players[1].id)).toBe('available');
+    expect(fixture.availability.some(([id]) => !players.some((p) => p.id === id))).toBe(false);
+  });
+
+  it('a pack whose chain names another fixture is refused; a bad plan is left out', () => {
+    const { coach, state } = coachWithFixture();
+    const file = makeRecorderPack(coach, state.match.id, { nope: true }, [], T0);
+    const read = readRecorderFile(JSON.stringify({ ...file, fixtureId: uuid() }));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+    expect(openPack(emptyLedger(uuid(), '', T0), read.file, read.ledger, format, T0)).toMatchObject({ ok: false });
+    const good = readRecorderFile(JSON.stringify(file));
+    if (good.kind !== 'pack') throw new Error(good.kind);
+    const opened = openPack(emptyLedger(uuid(), '', T0), good.file, good.ledger, format, T0);
+    expect(opened.ok && opened.matches[0].plan).toBeFalsy();
+  });
+
+  it('round trip: recorded in the borrowed team, sent, and added on the coach phone', () => {
+    const { coach, state } = coachWithFixture();
+    const read = readRecorderFile(JSON.stringify(makeRecorderPack(coach, state.match.id, null, [], T0)));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+    const opened = openPack(emptyLedger(uuid(), '', T0), read.file, read.ledger, format, T0);
+    if (!opened.ok) throw new Error(opened.reason);
+    const borrowed = recordOnBorrowed(opened.ledger, state);
+    expect(borrowedMatchFinished(opened.ledger, state.match.id)).toBe(false);
+    expect(borrowedMatchFinished(borrowed, state.match.id)).toBe(true);
+    const back = readRecorderFile(JSON.stringify(makeRecordedMatch(borrowed, state.match.id, T0)));
+    if (back.kind !== 'match') throw new Error(back.kind);
+    const r = importRecordedMatch(coach, back.file, back.ledger, false, T0);
+    if (!r.ok) throw new Error(r.reason);
+    expect(recordedElsewhere(r.ledger, state.match.id)).toBe(true);
+    expect(r.ledger.matches.find((m) => m.id === state.match.id)?.intervals.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the recorder's screens (#281, ADR-025 D3, D4, D7)", () => {
+  it('a borrowed team may change who is here, never who exists or their names', () => {
+    const kids = players.slice(0, 3);
+    expect(sameChildren(kids, kids.map((p) => ({ ...p, keeper: 'prefers' as never })))).toBe(true);
+    expect(sameChildren(kids, [...kids, makePlayer(squadId, 'Zed')])).toBe(false);
+    expect(sameChildren(kids, kids.slice(1))).toBe(false);
+    expect(sameChildren(kids, kids.map((p, i) => (i === 0 ? { ...p, firstName: 'Avery' } : p)))).toBe(false);
+  });
+
+  it('App opens a pack as a borrowed team, offers Send and Remove on Fixtures, and erases it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    const teams = readFileSync(new URL('../screens/Teams.tsx', import.meta.url), 'utf8');
+    // D1: both pickers route a pack; the first screen too, for a recorder with no team.
+    expect(app).toContain('team.onOpenPack({ file: routed.file, ledger: routed.ledger });');
+    expect(app).toContain('return openPackTeam({ file: routed.file, ledger: routed.ledger });');
+    // D3: the new team adopts the pack on its first open; the demo seed never lands on it.
+    expect(app).toMatch(/if \(pack !== null && ledgerRef\.current\) \{\s*const opened = openPack\(/);
+    expect(app).toContain('if (initial === null && pack === null && shouldAutoSeed(');
+    // D3: one fixture, the coach's children, and no pack shared on from a borrowed team.
+    expect(app).toContain("onAdd={borrowedFixture === null ? () => setStep('fixtureForm') : undefined}");
+    expect(app).toContain('onShareForRecorder={borrowedFixture !== null ? undefined :');
+    expect(app).toMatch(/borrowedFixture === null\s*\? changeSquad/);
+    // D4: Send to the coach is the match file, once the match is finished.
+    expect(app).toContain('ready={borrowedMatchFinished(ledger, borrowedFixture)}');
+    expect(app).toContain('JSON.stringify(makeRecordedMatch(l, borrowedFixture, appNow()))');
+    // D7: removing erases, never sets aside.
+    expect(app).toContain('void eraseTeam(root, teamId)');
+    expect(app).toContain('onRemove={team.onErase}');
+    expect(teams).toContain("setAsking(!ready ? 'unsent' : sent ? 'remove' : 'check')");
+  });
+});

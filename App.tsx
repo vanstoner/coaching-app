@@ -91,6 +91,7 @@ import { createDeviceStore } from './src/app/storage/storage';
 import {
   addTeam,
   bringBackTeam,
+  eraseTeam,
   forgetEveryTeam,
   openTeam,
   openTeams,
@@ -135,7 +136,10 @@ import {
   type NewSeason,
   type PastMatchRow,
 } from './src/screens/Seasons';
-import { AddTeamScreen, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
+import { AddTeamScreen, BorrowedBanner, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
+
+/** #281 (ADR-025 D3): a recorder pack, read and verified, to open as a borrowed team. */
+type OpenedPack = { file: RecorderPack; ledger: Ledger };
 import type { KeyValueStore } from './src/app/persistence';
 import { TableSortProvider } from './src/screens/TableSort';
 import { periodsById, progressById, scoresById, withLiveMatch } from './src/app/liveMatch';
@@ -217,7 +221,18 @@ import {
   type SquadOption,
 } from './src/app/squadMatch';
 import { exportBackupFile, exportJsonFile, exportLedgerFile, pickLedgerFile } from './src/app/ledgerFile';
-import { importRecordedMatch, makeRecorderPack, readRecorderFile, recordedElsewhere } from './src/app/recorderFiles';
+import {
+  borrowedFor,
+  borrowedMatchFinished,
+  importRecordedMatch,
+  makeRecordedMatch,
+  makeRecorderPack,
+  openPack,
+  readRecorderFile,
+  recordedElsewhere,
+  sameChildren,
+  type RecorderPack,
+} from './src/app/recorderFiles';
 import { installDeviceSigner } from './src/app/storage/deviceKey';
 import { timeSigning } from './src/app/entrySigning';
 import { exportedMessage, importedMessage } from './src/app/ledgerAnchor';
@@ -390,6 +405,7 @@ function TeamApp({
   readOnlyReason = null,
   team = null,
   initial = null,
+  pack = null,
   resumeOnOpen = false,
   notice = null,
 }: {
@@ -412,9 +428,15 @@ function TeamApp({
     /** #224 AC7: every team on the phone in one backup file, and its restore (ADR-022 D4). */
     backupAll: () => Promise<{ text: string; skipped: number }>;
     restoreAll: (read: ReadTeamsBackup) => Promise<string[]>;
+    /** #281 (ADR-025 D3): open a recorder pack as a new, borrowed team. */
+    onOpenPack: (p: OpenedPack) => void;
+    /** #281 (ADR-025 D7): remove this borrowed team for good. */
+    onErase: () => void;
   } | null;
   /** #224 AC5: a team just added, with its name and first season, opened for the first time. */
   initial?: NewTeam | null;
+  /** #281: a team just made for a recorder pack, which its first open adopts (ADR-025 D3). */
+  pack?: OpenedPack | null;
   /** #224 T3: opened from the team list, so a match on goes straight to its clock, not the Resume screen. */
   resumeOnOpen?: boolean;
   /** Said once as the team opens: what a first-screen restore could not bring back (QA, c4516e3). */
@@ -553,6 +575,8 @@ function TeamApp({
   const [ledger, setLedger] = useState<Ledger | null>(null);
   /** What every screen sees: matches marked a test or void left out (#194). */
   const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
+  /** #281 (ADR-025 D3): the one fixture this team was borrowed for, or null for a team of one's own. */
+  const borrowedFixture = useMemo(() => borrowedFor(ledger), [ledger]);
   // #243 AC1, AC5 (ADR-022 D6): the season the team is in, and the figures
   // of that season alone. With no season started this is the whole record,
   // so every figure is as it was.
@@ -727,7 +751,7 @@ function TeamApp({
       // into the ledger here as it is played; the session goes on as if it
       // had been loaded, and the save after launch writes it.
       // The store build's seed also carries its screenshots' states (#226).
-      if (initial === null && shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
+      if (initial === null && pack === null && shouldAutoSeed(currentDistribution(), storeContents(saved, opened))) {
         const seeded = seedFor(currentDistribution())(
           saved,
           ledgerRef.current,
@@ -739,6 +763,41 @@ function TeamApp({
       }
 
       if (!saved) {
+        // #281 (ADR-025 D3): a team made for a recorder pack adopts the pack's
+        // chain and opens on its one fixture, with the coach's plan.
+        if (pack !== null && ledgerRef.current) {
+          const opened = openPack(ledgerRef.current, pack.file, pack.ledger, format, appNow());
+          if (opened.ok) {
+            const r = opened.restored;
+            commitLedger(opened.ledger);
+            setPlayers(r.players);
+            setSquadId(r.squadId);
+            setSquadName(r.squadName || PLACEHOLDER_SQUAD_NAME);
+            setMatches(opened.matches);
+            if (r.settings) {
+              setFormat(r.settings.format);
+              setTotalMinutes(r.settings.totalMinutes);
+              setPeriodCount(r.settings.periodCount);
+              setBuzzWhenSubDue(r.settings.buzzWhenSubDue);
+            }
+            void saveSessionIfWritable(
+              store,
+              sessionWritableRef.current,
+              sessionInput({
+                squadName: r.squadName || PLACEHOLDER_SQUAD_NAME,
+                squadId: r.squadId,
+                players: r.players,
+                matches: opened.matches,
+                ...(r.settings ?? {}),
+              })
+            );
+            showToast('Ready to record: the match is on Fixtures.');
+          } else {
+            showToast(opened.reason);
+          }
+          setStep('fixtures');
+          return;
+        }
         // #224 AC5: a team just added opens with its name, format and first
         // season; the rest is a fresh install's (AC4).
         if (initial !== null) {
@@ -1000,7 +1059,12 @@ function TeamApp({
       return;
     }
     if (routed.kind === 'pack') {
-      setLedgerMessage('This is a recorder pack: open it on the phone of the adult recording the match.');
+      // #281 (ADR-025 D3): a pack opens as a new, borrowed team beside this one.
+      if (!team) {
+        setLedgerMessage('A recorder pack opens as a team of its own, which this phone cannot add now.');
+        return;
+      }
+      team.onOpenPack({ file: routed.file, ledger: routed.ledger });
       return;
     }
     if (routed.kind === 'match') {
@@ -1037,7 +1101,7 @@ function TeamApp({
       return;
     }
     applyImport(parsed.ledger, undefined);
-  }, [squadId, squadName, players, match, applyImport, commitLedger, matches, persist]);
+  }, [squadId, squadName, players, match, applyImport, commitLedger, matches, persist, team]);
 
   /** The coach's choice on the matching step (#195). */
   const chooseImport = useCallback(
@@ -3084,7 +3148,15 @@ function TeamApp({
           ledger={seasonView}
           seasonName={ledger ? seasonName(season) : null}
           kickoffs={kickoffs()}
-          onPlayers={changeSquad}
+          // #281 (ADR-025 D3): a borrowed team's children are the coach's, ids and names; no adding or renaming.
+          onPlayers={
+            borrowedFixture === null
+              ? changeSquad
+              : (next: Player[]) => {
+                  if (sameChildren(players, next)) return changeSquad(next);
+                  showToast("This team is borrowed for one match, so its children are the coach's. Ask the coach to add or rename a child.");
+                }
+          }
           fairness={squadFairness}
           // #223 AC2: a fixture's own shape and Start, never the defaults.
           onFieldCount={forMatch ? routeFormat(matchRoute, match, matches, format).onFieldCount : format.onFieldCount}
@@ -3196,12 +3268,33 @@ function TeamApp({
         squadName={squadName}
         header={
           team ? (
-            <TeamChip
-              name={squadName}
-              badge={team.badge}
-              season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
-              onPress={team.onSwitch}
-            />
+            <>
+              <TeamChip
+                name={squadName}
+                badge={team.badge}
+                season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
+                onPress={team.onSwitch}
+              />
+              {/* #281 (ADR-025 D4, D7): a borrowed team sends its match to the coach, then goes. */}
+              {borrowedFixture !== null && (
+                <BorrowedBanner
+                  ready={borrowedMatchFinished(ledger, borrowedFixture)}
+                  onSend={async () => {
+                    const l = ledgerRef.current;
+                    if (!l) return false;
+                    const opponent = l.fixtures.find((f) => f.id === borrowedFixture)?.opponent || 'match';
+                    const r = await exportJsonFile(
+                      `recorded-match-${opponent.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.json`,
+                      JSON.stringify(makeRecordedMatch(l, borrowedFixture, appNow())),
+                      "It holds the children's first names: send it only to the coach"
+                    );
+                    if (!r.ok) showToast(r.reason);
+                    return r.ok;
+                  }}
+                  onRemove={team.onErase}
+                />
+              )}
+            </>
           ) : undefined
         }
         matches={listedFixtures(real, showArchived)
@@ -3224,7 +3317,8 @@ function TeamApp({
           setRecordReturn('fixtures');
           setStep('record');
         }}
-        onAdd={() => setStep('fixtureForm')}
+        // #281 (ADR-025 D3): a borrowed team has its one fixture.
+        onAdd={borrowedFixture === null ? () => setStep('fixtureForm') : undefined}
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
         coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
@@ -3259,7 +3353,7 @@ function TeamApp({
           )
         }
         onPlayOut={playOutFixture}
-        onShareForRecorder={(id) => {
+        onShareForRecorder={borrowedFixture !== null ? undefined : (id) => {
           const l = ledgerRef.current;
           const stored = matches.find((m) => m.match.id === id);
           if (!l || !stored || !l.fixtures.some((f) => f.id === id)) {
@@ -3392,6 +3486,8 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   /** The team just added, opened for the first time with its name and season. */
   const [initial, setInitial] = useState<NewTeam | null>(null);
+  /** #281: the recorder pack a team was just made for, adopted on its first open (ADR-025 D3). */
+  const [pack, setPack] = useState<OpenedPack | null>(null);
   /** Said by the team a first-screen restore opens, when part of the file could not be restored. */
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
 
@@ -3447,6 +3543,7 @@ export default function App() {
     // QA D1: close the team first, so nothing it saves can follow the forget.
     setRestoreNotice(null);
     setInitial(null);
+    setPack(null);
     setSwitched(false);
     setSummaries([]);
     setForgotten(true);
@@ -3460,6 +3557,7 @@ export default function App() {
       if (id === teamId) return;
       setRestoreNotice(null);
       setInitial(null);
+      setPack(null);
       setSwitched(true);
       void openTeam(root, id).then(show);
     },
@@ -3471,17 +3569,46 @@ export default function App() {
       const id = uuid();
       setRestoreNotice(null);
       setAdding(false);
+      setPack(null);
       setInitial(t);
       void addTeam(root, id, appNow()).then(show);
     },
     [root, show]
   );
 
+  /** #281 (ADR-025 D3): a recorder pack opens as a new team, borrowed for its one match. */
+  const openPackTeam = useCallback(
+    (p: OpenedPack) => {
+      setSheet(null);
+      setRestoreNotice(null);
+      setAdding(false);
+      setInitial(null);
+      setForgotten(false);
+      setSwitched(false);
+      setPack(p);
+      void addTeam(root, uuid(), appNow()).then(show);
+    },
+    [root, show]
+  );
+
+  /** #281 (ADR-025 D7): a borrowed team is erased, not set aside; the original is on the coach's phone. */
+  const eraseBorrowed = useCallback(() => {
+    if (teamId === null) return;
+    setPack(null);
+    setInitial(null);
+    setRestoreNotice(null);
+    void eraseTeam(root, teamId).then(async () => {
+      const index = parseTeamIndex(await root.getItem(TEAMS_INDEX_KEY).catch(() => null));
+      await show(index ?? { version: 1, current: null, teams: [] });
+    });
+  }, [root, teamId, show]);
+
   const bringBack = useCallback(
     (id: UUID) => {
       setSheet(null);
       setRestoreNotice(null);
       setInitial(null);
+      setPack(null);
       setSwitched(true);
       void bringBackTeam(root, id).then(show);
     },
@@ -3500,11 +3627,21 @@ export default function App() {
     const picked = await pickLedgerFile();
     if (!picked.ok) return setFirstRestore({ busy: false, message: picked.reason, pending: null });
     if (picked.text === null) return setFirstRestore({ busy: false, message: '', pending: null }); // cancelled
+    // #281 (ADR-025 D1): the one picker routes by kind; a recorder pack opens as a borrowed team.
+    const routed = readRecorderFile(picked.text);
+    if (routed.kind === 'refused') return setFirstRestore({ busy: false, message: routed.reason, pending: null });
+    if (routed.kind === 'match') {
+      return setFirstRestore({ busy: false, message: 'This is a recorded match: open it on the coach’s phone, in Settings › Import minutes file.', pending: null });
+    }
+    if (routed.kind === 'pack') {
+      setFirstRestore({ busy: false, message: '', pending: null });
+      return openPackTeam({ file: routed.file, ledger: routed.ledger });
+    }
     const read = readAnyBackup(picked.text);
     setFirstRestore(
       read.ok ? { busy: false, message: '', pending: read } : { busy: false, message: read.reason, pending: null }
     );
-  }, []);
+  }, [openPackTeam]);
 
   const restoreFirstBackup = useCallback(async () => {
     const read = firstRestore.pending;
@@ -3648,6 +3785,8 @@ export default function App() {
                   }
                   return problems;
                 },
+                onOpenPack: openPackTeam,
+                onErase: eraseBorrowed,
                 onRemove: () => {
                   // Its current name, as the coach will type it.
                   if (opened.kind === 'team') void teamSummaries(root, opened.index, readTeamRow).then(setSummaries);
@@ -3657,6 +3796,7 @@ export default function App() {
             : null
         }
         initial={initial}
+        pack={pack}
         resumeOnOpen={switched}
         notice={restoreNotice}
       />

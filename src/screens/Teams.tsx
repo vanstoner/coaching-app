@@ -408,6 +408,16 @@ export function NoTeamsScreen({
 }
 
 const local = StyleSheet.create({
+  borrowed: {
+    alignSelf: 'stretch',
+    padding: 12,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colours.warn,
+    backgroundColor: colours.pitchRaised,
+  },
+  borrowedText: { color: colours.ink, marginBottom: 6 },
   badge: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   badgeText: {
     alignSelf: 'stretch',
@@ -519,3 +529,56 @@ const local = StyleSheet.create({
   },
   emptyText: { color: colours.inkMuted, fontSize: 15, textAlign: 'center', includeFontPadding: false },
 });
+
+/** #281 (ADR-025 D3, D4, D7): the words on a team borrowed for one match. */
+export const BORROWED_RECORDING = 'Borrowed from the coach to record one match. At full time, send it to the coach from here.';
+export const BORROWED_READY = 'Borrowed for one match: send it to the coach, then remove it once the coach has it.';
+export const REMOVE_BORROWED_ASK = 'Remove this team from your phone?';
+export const REMOVE_UNSENT_WARNING = 'The match has not been sent to the coach. Removing the team loses it for good.';
+export const REMOVE_CHECK_SENT = 'Only remove it once the coach has the match. Removing the team loses it for good.';
+
+/**
+ * #281: the borrowed team's banner on Fixtures. Before full time it says
+ * what the team is for; once the match is finished it offers Send to the
+ * coach, then asks to remove the team. Removing erases it (ADR-025 D7);
+ * before sending it warns first. Nothing is removed without a tap.
+ */
+export function BorrowedBanner({
+  ready,
+  onSend,
+  onRemove,
+}: {
+  /** The borrowed fixture's match is finished, so it can be sent (D4). */
+  ready: boolean;
+  /** Shares the match file; resolves true once the share sheet took it. */
+  onSend: () => Promise<boolean>;
+  onRemove: () => void;
+}) {
+  const [asking, setAsking] = useState<'remove' | 'unsent' | 'check' | null>(null);
+  const [sent, setSent] = useState(false);
+  return (
+    <View style={local.borrowed} accessibilityLabel="Borrowed team">
+      <Text style={local.borrowedText}>{ready ? BORROWED_READY : BORROWED_RECORDING}</Text>
+      {ready && (
+        <Action
+          label="Send to the coach"
+          onPress={() =>
+            void onSend().then((ok) => {
+              if (!ok) return;
+              setSent(true);
+              setAsking('remove');
+            })
+          }
+        />
+      )}
+      {asking === null && <Action label="Remove this team" quiet onPress={() => setAsking(!ready ? 'unsent' : sent ? 'remove' : 'check')} />}
+      {asking !== null && (
+        <View>
+          <Text style={local.borrowedText}>{asking === 'remove' ? REMOVE_BORROWED_ASK : asking === 'check' ? REMOVE_CHECK_SENT : REMOVE_UNSENT_WARNING}</Text>
+          <Action label={asking === 'unsent' ? 'Remove anyway' : 'Remove'} onPress={onRemove} />
+          <Action label="Keep it for now" quiet onPress={() => setAsking(null)} />
+        </View>
+      )}
+    </View>
+  );
+}

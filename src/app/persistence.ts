@@ -674,7 +674,7 @@ function unionEvents(
   return [...byId.values()].sort((a, b) => a.atElapsedMs - b.atElapsedMs);
 }
 
-function isPlanShaped(plan: unknown): plan is MatchPlan {
+export function isPlanShaped(plan: unknown): plan is MatchPlan {
   if (typeof plan !== 'object' || plan === null) return false;
   const periods = (plan as { periods?: unknown }).periods;
   if (!Array.isArray(periods)) return false;

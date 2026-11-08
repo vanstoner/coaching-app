@@ -13,17 +13,20 @@
  * entries as evidence; it is refused, writing nothing, unless every rule holds.
  */
 
-import type { UUID } from '../types/index';
+import type { AvailabilityStatus, Format, UUID } from '../types/index';
 import {
   appendRecords,
   carryRecords,
   emptyLedger,
+  importLedger,
   isWritable,
   parseLedger,
   serialiseLedger,
   type Ledger,
 } from './ledger';
 import { keyOf, latestRecords, type LedgerEntry, type LedgerRecord } from './ledgerChain';
+import { isPlanShaped, type SavedMatch } from './persistence';
+import { restoreFromRecord, type Restored } from './recordRestore';
 
 export const PACK_KIND = 'coaching-app/recorder-pack';
 export const MATCH_KIND = 'coaching-app/recorded-match';
@@ -171,6 +174,73 @@ export function importRecordedMatch(
 /** D6: a match carried in from another phone, from its `received` record. */
 export function recordedElsewhere(ledger: Ledger, matchId: UUID): boolean {
   return latestRecords(ledger.entries).has(`received:${matchId}`);
+}
+
+/**
+ * D3: the fixture a borrowed team was lent for, from the pack record its
+ * chain holds; null for a team of one's own. A fact about where the record
+ * came from, never a setting.
+ */
+export function borrowedFor(ledger: Ledger | null | undefined): UUID | null {
+  if (!ledger) return null;
+  const r = latestRecords(ledger.entries).get('pack');
+  return r && typeof r.fixtureId === 'string' ? (r.fixtureId as UUID) : null;
+}
+
+const STATUSES = new Set<AvailabilityStatus>(['available', 'absent', 'injured', 'unavailable', 'unconfirmed']);
+
+/**
+ * D3: a pack opened on the recorder's phone. Its chain is adopted onto the
+ * new team's empty record as Import minutes file adopts one, the team is
+ * rebuilt from it (children, settings, the one fixture), and the fixture
+ * gets the coach's plan and Who's coming. Nothing else is invented.
+ */
+export function openPack(
+  base: Ledger,
+  pack: RecorderPack,
+  chain: Ledger,
+  defaults: Format,
+  now: Date
+): { ok: true; ledger: Ledger; restored: Restored; matches: SavedMatch[] } | { ok: false; reason: string } {
+  if (borrowedFor(chain) !== pack.fixtureId) return { ok: false, reason: 'This pack does not match its fixture. Ask the coach to share it again.' };
+  const report = importLedger(base, chain, undefined, now);
+  if (!report.ok) return { ok: false, reason: report.reason };
+  const restored = restoreFromRecord(report.ledger, base.squad.id, defaults, now);
+  const known = new Set(restored.players.map((p) => p.id));
+  const availability = (Array.isArray(pack.availability) ? pack.availability : []).filter(
+    (a): a is [UUID, AvailabilityStatus] =>
+      Array.isArray(a) && known.has(a[0] as UUID) && STATUSES.has(a[1] as AvailabilityStatus)
+  );
+  const plan = isPlanShaped(pack.plan) ? pack.plan : undefined;
+  const matches = restored.fixtures.map((m) =>
+    m.match.id !== pack.fixtureId
+      ? m
+      : {
+          ...m,
+          ...(plan ? { plan } : {}),
+          // Who's coming as the coach left it; a child the pack does not mention keeps the rebuilt default.
+          availability: m.availability.map(([id, status]): [UUID, AvailabilityStatus] => availability.find((a) => a[0] === id) ?? [id, status]),
+        }
+  );
+  if (!matches.some((m) => m.match.id === pack.fixtureId)) {
+    return { ok: false, reason: 'The fixture in this pack could not be opened on this phone. Update the app, then try again.' };
+  }
+  return { ok: true, ledger: report.ledger, restored, matches };
+}
+
+/** D4: Send to the coach appears once the borrowed fixture's match is finished. */
+export function borrowedMatchFinished(ledger: Ledger | null, fixtureId: UUID): boolean {
+  return ledger?.matches.some((m) => m.id === fixtureId && m.status === 'completed') ?? false;
+}
+
+/** D3: the same children, by id and name; a borrowed team may change who is here, never who exists. */
+export function sameChildren(
+  a: readonly { id: UUID; firstName: string; displaySuffix?: string | null }[],
+  b: readonly { id: UUID; firstName: string; displaySuffix?: string | null }[]
+): boolean {
+  const key = (p: { id: UUID; firstName: string; displaySuffix?: string | null }) => `${p.id}|${p.firstName}|${p.displaySuffix ?? ''}`;
+  const x = new Set(a.map(key));
+  return a.length === b.length && b.every((p) => x.has(key(p)));
 }
 
 export { keyOf };
