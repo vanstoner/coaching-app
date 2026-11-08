@@ -3,14 +3,16 @@
  * import with its refusals. Made-up names only.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
 import type { UUID } from '../types/index';
 import { makePlayer } from './squad';
 import { makeFormat } from './shapes';
-import { appendRecords, emptyLedger, recordMatches, serialiseLedger, type Ledger } from './ledger';
+import { addUnknownTimeEvent, appendRecords, emptyLedger, recordMatches, serialiseLedger, type Ledger } from './ledger';
 import { fixtureRecord } from './ledgerSetup';
+import { provenanceOf } from './provenance';
+import { setEntrySigner, signerFromSecret } from './entrySigning';
 import {
   ALREADY_IN_RECORD,
   borrowedFor,
@@ -218,5 +220,111 @@ describe("the recorder's screens (#281, ADR-025 D3, D4, D7)", () => {
     expect(app).toContain('void eraseTeam(root, teamId)');
     expect(app).toContain('onRemove={team.onErase}');
     expect(teams).toContain("setAsking(!ready ? 'unsent' : sent ? 'remove' : 'check')");
+  });
+});
+
+describe('how an imported match was recorded (ADR-025 D6)', () => {
+  function imported() {
+    const { coach, state } = coachWithFixture();
+    const read = readRecorderFile(JSON.stringify(makeRecorderPack(coach, state.match.id, null, [], T0)));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+    const opened = openPack(emptyLedger(uuid(), '', T0), read.file, read.ledger, format, T0);
+    if (!opened.ok) throw new Error(opened.reason);
+    const borrowed = recordOnBorrowed(opened.ledger, state);
+    const back = readRecorderFile(JSON.stringify(makeRecordedMatch(borrowed, state.match.id, T0)));
+    if (back.kind !== 'match') throw new Error(back.kind);
+    return { coach, state, borrowed, back };
+  }
+
+  it('is judged by the recorder entries, exactly as on the recording phone', () => {
+    const { coach, state, borrowed, back } = imported();
+    const r = importRecordedMatch(coach, back.file, back.ledger, false, T0);
+    if (!r.ok) throw new Error(r.reason);
+    const there = provenanceOf(borrowed, state.match.id);
+    const here = provenanceOf(r.ledger, state.match.id);
+    expect(here).toEqual(there);
+  });
+
+  it('a copy that differs from what the recorder signed is reconstructed, and says so', () => {
+    const { coach, state, back } = imported();
+    const r = importRecordedMatch(coach, back.file, back.ledger, false, T0);
+    if (!r.ok) throw new Error(r.reason);
+    // Tamper with one copied interval in the import entry, leaving the originals as signed.
+    const last = r.ledger.entries[r.ledger.entries.length - 1];
+    const forged = {
+      ...r.ledger,
+      entries: [
+        ...r.ledger.entries.slice(0, -1),
+        { ...last, records: last.records.map((x) => (x.type === 'interval' && x === last.records.find((y) => y.type === 'interval') ? { ...x, endMs: 1 } : x)) },
+      ],
+    };
+    const p = provenanceOf(forged, state.match.id);
+    expect(p?.state).toBe('reconstructed');
+    expect(p?.why).toContain('The copy differs from what the recording phone signed');
+  });
+
+  it('the recorder phone key comes with the import, once', () => {
+    const { coach, back } = imported();
+    const r = importRecordedMatch(coach, back.file, back.ledger, false, T0);
+    if (!r.ok) throw new Error(r.reason);
+    const device = r.ledger.entries.flatMap((e) => e.records).find((x) => x.type === 'received')?.device;
+    const keys = r.ledger.entries.flatMap((e) => e.records).filter((x) => x.type === 'device' && x.id === device);
+    expect(keys.length).toBeLessThanOrEqual(1);
+    if (typeof device === 'string') expect(keys.length).toBe(1);
+  });
+});
+
+describe('signed by two phones (ADR-025 D6, ruling 3)', () => {
+  const coachPhone = signerFromSecret('coach-phone', new Uint8Array(32).fill(3));
+  const recorderPhone = signerFromSecret('recorder-phone', new Uint8Array(32).fill(4));
+  afterEach(() => setEntrySigner(null));
+
+  it('recorded live on the recorder phone and imported unchanged is pristine; a goal added after is not', () => {
+    const kickoff = new Date('2026-11-08T10:00:00Z');
+    setEntrySigner(coachPhone);
+    const engine0 = new MatchEngine({ nowFn: () => T0 });
+    const planned = engine0.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 4, availablePlayerIds: players.map((p) => p.id) });
+    planned.match.opponent = 'Rovers';
+    planned.match.kickoffAt = kickoff.toISOString();
+    let coach = emptyLedger(squadId, 'Test FC', T0);
+    coach = appendRecords(coach, players.map((p) => ({ type: 'player', id: p.id, firstName: p.firstName, displaySuffix: null, active: true })), T0);
+    coach = appendRecords(coach, [fixtureRecord({ match: planned.match, format } as never)], T0);
+    const read = readRecorderFile(JSON.stringify(makeRecorderPack(coach, planned.match.id, null, [], T0)));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+
+    setEntrySigner(recorderPhone);
+    const opened = openPack(emptyLedger(uuid(), '', T0), read.file, read.ledger, format, T0);
+    if (!opened.ok) throw new Error(opened.reason);
+    let now = kickoff;
+    const engine = new MatchEngine({ nowFn: () => now });
+    const state = engine.createMatch(squadId, format.id, { totalMinutes: 50, quarterCount: 4, availablePlayerIds: players.map((p) => p.id) });
+    state.match = { ...state.match, id: planned.match.id, opponent: 'Rovers', kickoffAt: kickoff.toISOString() };
+    state.quarters.forEach((q) => (q.matchId = state.match.id));
+    const sheet = new Map<UUID, UUID>();
+    format.positions.forEach((p, i) => sheet.set(p.id, players[i].id));
+    let borrowed = opened.ledger;
+    for (const q of state.quarters) {
+      engine.startQuarter(state, q, sheet, format);
+      now = new Date(now.getTime() + 12.5 * 60_000);
+      engine.endQuarter(state, q);
+      borrowed = recordMatches(borrowed, [{ ...state, format }], players, 'Test FC', now);
+    }
+    engine.completeMatch(state);
+    borrowed = recordMatches(borrowed, [{ ...state, format }], players, 'Test FC', now);
+    expect(provenanceOf(borrowed, state.match.id)?.state).toBe('pristine');
+
+    setEntrySigner(coachPhone);
+    const back = readRecorderFile(JSON.stringify(makeRecordedMatch(borrowed, state.match.id, now)));
+    if (back.kind !== 'match') throw new Error(back.kind);
+    const later = new Date(now.getTime() + 2 * 24 * 3_600_000);
+    const r = importRecordedMatch(coach, back.file, back.ledger, false, later);
+    if (!r.ok) throw new Error(r.reason);
+    // Imported two days later on another phone, and still pristine: judged by what the recorder signed.
+    expect(provenanceOf(r.ledger, state.match.id)?.state).toBe('pristine');
+
+    // A goal the coach adds afterwards makes it reconstructed, exactly as on the coach's own phone.
+    const added = addUnknownTimeEvent(r.ledger, state.match.id, 'goal', players[0].id, 'Missed on the day', later);
+    if (!added.ok) throw new Error(added.reason);
+    expect(provenanceOf(added.ledger, state.match.id)?.state).toBe('reconstructed');
   });
 });

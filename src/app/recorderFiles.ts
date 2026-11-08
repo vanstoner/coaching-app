@@ -168,7 +168,11 @@ export function importRecordedMatch(
   const originals: LedgerEntry[] = recorded.entries.filter((e) => e.records.some((r) => playOf(r, matchId)));
   const device = originals.map((e) => (e as unknown as { device?: string }).device).find((d) => typeof d === 'string') ?? null;
   const received: LedgerRecord = { type: 'received', matchId, device, entries: originals as unknown as LedgerRecord[] };
-  return { ok: true, ledger: appendRecords(coach, [...copied, received], now), matchId };
+  // D5: the recorder's key, if the coach's chain does not publish it yet, so D6 can check what it signed.
+  const isKey = (r: LedgerRecord) => r.type === 'device' && r.id === device;
+  const published = coach.entries.some((e) => e.records.some(isKey));
+  const key = device && !published ? recorded.entries.flatMap((e) => e.records).find(isKey) : undefined;
+  return { ok: true, ledger: appendRecords(coach, [...(key ? [key] : []), ...copied, received], now), matchId };
 }
 
 /** D6: a match carried in from another phone, from its `received` record. */
