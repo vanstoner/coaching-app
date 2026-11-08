@@ -1787,6 +1787,19 @@ function TeamApp({
    * active award type, or no record this phone can write). The existing
    * award records (#197); the live match is recorded first if it is not yet.
    */
+  /** #266 C11: names picked on the Lineup or the clock and not given; screen state, counted here only for the toast. */
+  const picksWaiting = useRef(0);
+  const setPicksWaiting = useCallback((n: number) => {
+    picksWaiting.current = n;
+  }, []);
+  /** Leave and Back (#175) drop unsent picks, and say so (C11). */
+  const leaveWithPicks = () => {
+    const n = picksWaiting.current;
+    picksWaiting.current = 0;
+    if (n > 0) showToast(`Left: ${n} pick${n === 1 ? '' : 's'} not given`);
+    leaveMatch();
+  };
+
   const liveAwards = (() => {
     const l = ledgerBlockedRef.current ? null : ledger;
     if (!match || !l || !awardsOffered(l, match.state)) return null;
@@ -3224,7 +3237,9 @@ function TeamApp({
               ))?.lengths ?? talkLengths,
             buzz: buzzWhenSubDue,
           }}
-          onLeave={exit(leaveMatch)}
+          onLeave={exit(leaveWithPicks)}
+          awards={liveAwards}
+          onPicksCount={setPicksWaiting}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.
           names={
@@ -3263,7 +3278,8 @@ function TeamApp({
           onWithdraw={withdrawEvent}
           onEndQuarter={endQuarter}
           onFinish={() => setStep('summary')}
-          onLeave={exit(leaveMatch)}
+          onLeave={exit(leaveWithPicks)}
+          onPicksCount={setPicksWaiting}
           onPlanRest={planTheRest}
           onAnalysis={() => {
             setAnalysisReturn('playing');

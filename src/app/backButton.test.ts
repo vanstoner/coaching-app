@@ -31,7 +31,8 @@ describe('Android Back (#175)', () => {
   it('one listener in App, which only calls a screen\'s own exit or goes Home (C2, C6, C8)', () => {
     const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
     expect(app.match(/BackHandler\.addEventListener\('hardwareBackPress'/g)).toHaveLength(1);
-    expect(app).toContain('onLeave={exit(leaveMatch)}');
+    // #266 C11: leaving the Lineup or the clock says if picks were dropped, then leaves as before.
+    expect(app).toContain('onLeave={exit(leaveWithPicks)}');
     expect(app).toContain('onBack={exit(() => setStep(planReturn))}');
     const handler = app.slice(app.indexOf("BackHandler.addEventListener('hardwareBackPress'"), app.indexOf("BackHandler.addEventListener('hardwareBackPress'") + 500);
     expect(handler).not.toMatch(/endQuarter|completeMatch|persist\(|commitLedger/);

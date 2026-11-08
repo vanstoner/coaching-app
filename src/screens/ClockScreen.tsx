@@ -93,10 +93,10 @@ import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
 import { mostTimeFirst, powerPlayAllowance, powerPlayCue, theirPowerPlayOffered, theyUsedPowerPlay, timeNeededOrder } from '../app/powerPlay';
 import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
-import { awardsLine, type AwardPick, type AwardRow } from '../app/matchAwards';
+import type { AwardPick, AwardRow } from '../app/matchAwards';
 import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { Action, CheckLine, FormSheet, MainButton, Section, Segmented, SheetNote } from './controls';
+import { Action, CheckLine, FormSheet, MainButton, Segmented, SheetNote } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
 
 /**
@@ -133,6 +133,7 @@ export function ClockScreen({
   onRecordTally,
   awards = null,
   onWithdraw,
+  onPicksCount,
   onEndQuarter,
   onFinish,
   onLeave,
@@ -196,6 +197,8 @@ export function ClockScreen({
     onGiveAll: (picks: AwardPick[]) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
   } | null;
+  /** #266 C11: how many names are picked and not given, so leaving can say so. */
+  onPicksCount?: (n: number) => void;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -259,7 +262,6 @@ export function ClockScreen({
   /** #228: the child whose award sheet is open, from the tap sheet's "Give … an award". */
   const [awardFor, setAwardFor] = useState<UUID | null>(null);
   /** #228: the award card under the clock at a break between periods. */
-  const [awardsOpen, setAwardsOpen] = useState(false);
   /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
   const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
   // #255: the Add a player and Power play over sheets.
@@ -270,6 +272,7 @@ export function ClockScreen({
   const [giveError, setGiveError] = useState('');
   const [askPicks, setAskPicks] = useState<(() => void) | null>(null);
   const picked = picksCount(awardPicks);
+  useEffect(() => onPicksCount?.(picked), [picked, onPicksCount]);
   const giveAll = (then?: () => void) => {
     if (!awards || picked === 0) return;
     const refused = awards.onGiveAll(picksList(awardPicks));
@@ -522,23 +525,7 @@ export function ClockScreen({
           />
         )}
 
-        {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
-        {awards && !running && !view.isMatchOver && (
-          <>
-            {/* #264: the awards line takes the one twisty; closing it is the twisty, so Hide went. */}
-            <Section title={awardsLine(awards.rows)} open={awardsOpen} onToggle={() => setAwardsOpen((v) => !v)}>
-              <AwardCard
-                rows={awards.rows}
-                childrenInMatch={awards.childrenInMatch}
-                picks={awardPicks}
-                onPicks={setAwardPicks}
-                error={giveError}
-                onTakeBack={awards.onTakeBack}
-                footer={<Action label={giveLabel(picked)} onPress={() => giveAll()} align="center" />}
-              />
-            </Section>
-          </>
-        )}
+        {/* #266 C13 (Rob, Q1): at a break the award card is on the Lineup, not here. */}
 
         {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
         {running && (

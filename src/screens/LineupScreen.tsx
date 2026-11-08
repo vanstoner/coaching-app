@@ -96,6 +96,8 @@ import { PitchView } from './PitchView';
 import { isTestMatch } from '../app/testMatches';
 import { TeamTalkPanel, talkClock, talkMmss, useTalkTick } from './TeamTalkPanel';
 import { asksFromDue, teamTalkOf, type TalkLengths } from '../app/teamTalk';
+import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
+import { awardsLine, type AwardPick, type AwardRow } from '../app/matchAwards';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
 import { shapeOfFormat } from '../app/shapes';
@@ -132,6 +134,8 @@ export function LineupScreen({
   attendance,
   names,
   talk,
+  awards = null,
+  onPicksCount,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -171,6 +175,18 @@ export function LineupScreen({
   };
   /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
   pitch?: ReactNode;
+  /**
+   * #266 C13 (Rob, Q1): the award card at a break, on the Lineup. Null where
+   * awards are not offered (`awardsOffered`). Each act: the reason when refused, else null.
+   */
+  awards?: {
+    rows: AwardRow[];
+    childrenInMatch: { playerId: UUID; name: string }[];
+    onGiveAll: (picks: AwardPick[]) => string | null;
+    onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  } | null;
+  /** #266 C11: how many names are picked and not given, so leaving can say so. */
+  onPicksCount?: (n: number) => void;
 }) {
   const quarter = currentQuarter(state);
   // #283: the break this match is in, worked out from the last period's end on
@@ -179,6 +195,27 @@ export function LineupScreen({
   useTalkTick(breakTalk !== null);
   const nowMs = engine.clockNow().getTime();
   const [lateAsk, setLateAsk] = useState(false);
+  // #266: names picked at the break, not yet given. Screen state only (C11).
+  const atBreak = state.quarters.some((q) => q.status === 'ended');
+  const [awardsOpen, setAwardsOpen] = useState(false);
+  const [awardPicks, setAwardPicks] = useState<Picks>({});
+  const [giveError, setGiveError] = useState('');
+  const [askPicks, setAskPicks] = useState<(() => void) | null>(null);
+  const picked = picksCount(awardPicks);
+  useEffect(() => onPicksCount?.(picked), [picked, onPicksCount]);
+  const giveAll = (then?: () => void) => {
+    if (!awards || picked === 0) return;
+    const refused = awards.onGiveAll(picksList(awardPicks));
+    if (refused) {
+      // C7: the reason shows on the card, the picks stay; open it so it is seen.
+      setGiveError(refused);
+      setAwardsOpen(true);
+    } else {
+      setAwardPicks({});
+      setGiveError('');
+      then?.();
+    }
+  };
   const minutes = useMemo(
     () => foldPlayerMinutes(engine, state, players),
     [engine, state, players]
@@ -440,6 +477,26 @@ export function LineupScreen({
             />
           </ActionRow>
           {onPlanRest && <RowNav label="Plan the rest of the match" onPress={onPlanRest} />}
+
+          {/* #266 C13 (Rob, Q1): at a break the award card sits here, its Give a quiet full-width button,
+              because Start stays the Main button. Closed with picks waiting, it says so. */}
+          {awards && atBreak && (
+            <Section
+              title={!awardsOpen && picked > 0 ? `${picked} picked, not given yet` : awardsLine(awards.rows)}
+              open={awardsOpen}
+              onToggle={() => setAwardsOpen((v) => !v)}
+            >
+              <AwardCard
+                rows={awards.rows}
+                childrenInMatch={awards.childrenInMatch}
+                picks={awardPicks}
+                onPicks={setAwardPicks}
+                error={giveError}
+                onTakeBack={awards.onTakeBack}
+                footer={<Action label={giveLabel(picked)} onPress={() => giveAll()} align="center" />}
+              />
+            </Section>
+          )}
         </ScrollView>
 
         <Text style={[screen.caption, !complete && screen.overtime]}>
@@ -452,11 +509,43 @@ export function LineupScreen({
           disabled={!complete}
           onPress={() => {
             // #283 C4, C7: a late Start asks whether to start from when it was due.
-            if (breakTalk && asksFromDue(engine.clockNow().getTime(), breakTalk.dueAtMs, periodMs)) setLateAsk(true);
-            else onStart(sheet, plan);
+            const start = () => {
+              if (breakTalk && asksFromDue(engine.clockNow().getTime(), breakTalk.dueAtMs, periodMs)) setLateAsk(true);
+              else onStart(sheet, plan);
+            };
+            // #266 C10, #283 C17: names picked and not given are asked about first; the late Start follows.
+            if (picked > 0) setAskPicks(() => start);
+            else start();
           }}
         />
       </View>
+
+      {/* #266 C10: picks waiting when Start is tapped. Either answer carries on to Start. */}
+      <FormSheet visible={askPicks !== null} title={`Give the ${picked} picked?`} onCancel={() => setAskPicks(null)}>
+        <SheetNote>
+          {(awards?.rows ?? [])
+            .filter((r) => (awardPicks[r.typeId]?.playerIds.length ?? 0) > 0)
+            .map((r) => `${r.name}: ${awardPicks[r.typeId]!.playerIds.map((id) => awards?.childrenInMatch.find((c) => c.playerId === id)?.name ?? '—').join(' and ')}`)
+            .join(' · ')}
+        </SheetNote>
+        <Action
+          label={`Give ${picked}`}
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            giveAll(() => then?.());
+          }}
+        />
+        <Action
+          label="Don't give"
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            setAwardPicks({});
+            then?.();
+          }}
+        />
+      </FormSheet>
 
       {/* #283 C4–C6: "from when it was due" uses a wall-clock anchor in the past (Ada's note). */}
       <FormSheet visible={lateAsk && breakTalk !== null} title={`Start ${talkLabel} from when it was due?`} onCancel={() => setLateAsk(false)}>

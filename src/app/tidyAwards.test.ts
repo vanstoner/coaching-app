@@ -295,7 +295,11 @@ describe('a test match has no awards (#228 AC27, Q6)', () => {
     const clock = readFileSync(join(__dirname, '..', 'screens', 'ClockScreen.tsx'), 'utf8');
     // #264 V2: the › is an icon (`more`), not text.
     expect(clock).toMatch(/\{awards && \(\s*<SheetButton\s*label=\{`Give \$\{nameOf\(sheetFor\)\} an award`\}\s*more/);
-    expect(clock).toMatch(/\{awards && !running && !view\.isMatchOver && \(/);
+    // #266 C13 (Rob, Q1, 7 Nov): at a break the card is on the Lineup, no longer on the clock.
+    expect(clock).not.toMatch(/\{awards && !running && !view\.isMatchOver && \(/);
+    const lineup = readFileSync(join(__dirname, '..', 'screens', 'LineupScreen.tsx'), 'utf8');
+    expect(lineup).toMatch(/\{awards && atBreak && \(/);
+    expect(app).toMatch(/onLeave=\{exit\(leaveWithPicks\)\}\s*awards=\{liveAwards\}\s*onPicksCount=\{setPicksWaiting\}/);
   });
 });
 
@@ -354,3 +358,19 @@ describe('awards in one Give (#266)', () => {
   });
 });
 
+describe('awards at a break, on the Lineup (#266 C10, C11, C13; #283 C17)', () => {
+  it('Start asks about picks first, then the late Start; closed with picks it says so; Give is quiet', () => {
+    const lineup = readFileSync(join(__dirname, '..', 'screens', 'LineupScreen.tsx'), 'utf8');
+    expect(lineup).toMatch(/if \(picked > 0\) setAskPicks\(\(\) => start\);\s*else start\(\);/);
+    expect(lineup).toContain('title={`Give the ${picked} picked?`}');
+    expect(lineup).toContain("title={!awardsOpen && picked > 0 ? `${picked} picked, not given yet` : awardsLine(awards.rows)}");
+    expect(lineup).toMatch(/footer=\{<Action label=\{giveLabel\(picked\)\} onPress=\{\(\) => giveAll\(\)\} align="center" \/>\}/);
+  });
+
+  it('Leave and Back drop the picks and say "Left: n picks not given"; nothing is stored', () => {
+    const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf8');
+    expect(app).toContain("if (n > 0) showToast(`Left: ${n} pick${n === 1 ? '' : 's'} not given`);");
+    expect((app.match(/onPicksCount=\{setPicksWaiting\}/g) ?? []).length).toBe(2);
+    expect(app).toContain('const picksWaiting = useRef(0);');
+  });
+});
