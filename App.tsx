@@ -275,7 +275,7 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
-import { parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
+import { lengthsForBreak, parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
 import { backFrom } from './src/app/tabs';
 import { highlightsText, matchLogText } from './src/app/highlights';
 import { setPowerPlayRule } from './src/app/ledger';
@@ -555,6 +555,8 @@ function TeamApp({
   const backRef = useRef<(() => void) | null>(null);
   // #283: the team talk's lengths, on this phone (Settings › Match defaults).
   const [talkLengths, setTalkLengths] = useState<TalkLengths>(TALK_DEFAULT);
+  /** #283 C13: the lengths pinned when the current break began; memory only. */
+  const talkHeld = useRef<{ breakKey: string; lengths: TalkLengths } | null>(null);
   // Rob, 7 Nov: matches from the record with no fixture here, archived on this
   // phone only, like a fixture's archive (#76 AC4: no record is written).
   const [archivedRecords, setArchivedRecords] = useState<ReadonlySet<UUID>>(new Set());
@@ -3212,7 +3214,16 @@ function TeamApp({
             (currentQuarter(match.state)?.index ?? 1) - 1
           )}
           onStart={startQuarter}
-          talk={{ lengths: talkLengths, buzz: buzzWhenSubDue }}
+          talk={{
+            // #283 C13: the lengths set when this break began; a change now counts from the next break.
+            lengths: (talkHeld.current =
+              lengthsForBreak(
+                talkHeld.current,
+                [...match.state.quarters].reverse().find((q) => q.status === 'ended')?.id ?? null,
+                talkLengths
+              ))?.lengths ?? talkLengths,
+            buzz: buzzWhenSubDue,
+          }}
           onLeave={exit(leaveMatch)}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.

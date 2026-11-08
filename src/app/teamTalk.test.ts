@@ -8,7 +8,7 @@ import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
 import { makePlayer } from './squad';
 import { makeFormat } from './shapes';
-import { asksFromDue, parseTalkLengths, stepTalk, TALK_DEFAULT, teamTalkOf } from './teamTalk';
+import { asksFromDue, lengthsForBreak, parseTalkLengths, stepTalk, TALK_DEFAULT, teamTalkOf } from './teamTalk';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy'].map((n) => makePlayer(squadId, n));
@@ -116,3 +116,23 @@ describe('the team talk (#283)', () => {
   });
 });
 
+describe('which lengths a break uses (#283 C13)', () => {
+  it('pins the lengths when the break begins; a change during it counts from the next break', () => {
+    const longer = { betweenMs: 5 * 60_000, halfMs: 8 * 60_000 };
+    const q1 = lengthsForBreak(null, 'q1', TALK_DEFAULT);
+    expect(q1?.lengths).toEqual(TALK_DEFAULT);
+    // Settings changed during the break after Q1: the countdown keeps its lengths.
+    expect(lengthsForBreak(q1, 'q1', longer)?.lengths).toEqual(TALK_DEFAULT);
+    // The next break takes the new ones.
+    expect(lengthsForBreak(q1, 'q2', longer)?.lengths).toEqual(longer);
+    // Outside a break nothing is held.
+    expect(lengthsForBreak(q1, null, longer)).toBeNull();
+  });
+
+  it('App pins them on the Lineup by the period just ended, in memory only', async () => {
+    const { readFileSync } = await import('node:fs');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toMatch(/lengths: \(talkHeld\.current =\s*lengthsForBreak\(\s*talkHeld\.current,\s*\[\.\.\.match\.state\.quarters\]\.reverse\(\)\.find\(\(q\) => q\.status === 'ended'\)\?\.id \?\? null,\s*talkLengths/);
+    expect(app).toContain('const talkHeld = useRef<{ breakKey: string; lengths: TalkLengths } | null>(null);');
+  });
+});

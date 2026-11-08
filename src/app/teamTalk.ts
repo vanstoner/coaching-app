@@ -81,3 +81,18 @@ export function asksFromDue(nowMs: number, dueAtMs: number, periodMs: number): b
   const late = nowMs - dueAtMs;
   return late >= 1000 && late < periodMs;
 }
+
+/**
+ * C13: the lengths a break uses are the ones set when it began; a change
+ * made during it takes effect from the next break. `held` is what this
+ * screen last pinned; `breakKey` names the break (the period just ended),
+ * null outside one. Kept in memory only: lengths are settings, never record.
+ */
+export function lengthsForBreak(
+  held: { breakKey: string; lengths: TalkLengths } | null,
+  breakKey: string | null,
+  current: TalkLengths
+): { breakKey: string; lengths: TalkLengths } | null {
+  if (breakKey === null) return null;
+  return held && held.breakKey === breakKey ? held : { breakKey, lengths: current };
+}
