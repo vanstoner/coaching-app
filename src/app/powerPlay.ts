@@ -74,6 +74,17 @@ export function powerPlayCue(allowance: number, extrasOn: number): PowerPlayCue 
   return null;
 }
 
+/**
+ * #255 (Rob, 9 Nov, "approve 1"): Power play is the FA's optional
+ * mini-soccer law, "available through all mini soccer football formats 5v5
+ * and 7v7" (Mini-Soccer Handbook 2025/26; NEHYL the same). No prompts at 9-
+ * or 11-a-side, whatever the season's steps say.
+ */
+export const POWER_PLAY_MAX_SIDE = 7;
+export function powerPlayFormat(onFieldCount: number | null): boolean {
+  return onFieldCount === null || onFieldCount <= POWER_PLAY_MAX_SIDE;
+}
+
 /** The season's owed minutes as milliseconds, for ties in time-needed order; a keeper or fill-in (null) is left out. */
 export function owedMsOf(rows: readonly { playerId: UUID; owed: number | null }[]): Map<UUID, number> {
   return new Map(rows.filter((r) => r.owed !== null).map((r) => [r.playerId, (r.owed as number) * 60_000]));

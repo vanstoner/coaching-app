@@ -111,7 +111,11 @@ our lead reaches the season's first step; the coach can tap it at any time.
 each larger than the one before (the three boxes; an empty box ends the
 list). No steps, or no record, means no power play prompts for that season.
 Nothing is written for the coach and no default is guessed: Settings may show
-Rob's league (4, then 6) as a hint, written only when he saves. It is its own
+Rob's league (4, then 6) as a hint, written only when he saves. **Mini-soccer only** (Rob, 9 Nov, "approve 1"): the FA's Power Play is an
+optional law "available through all mini soccer football formats 5v5 and
+7v7" (Mini-Soccer Handbook 2025/26), and NEHYL says the same. A 9- or
+11-a-side match never prompts, whatever the steps, and Settings shows the
+boxes only for a 5- or 7-a-side season (or one whose main format is not set). It is its own
 record, never a field on `season`, so an older build that saves the season
 cannot drop it. The rule is not snapshot on the match: it only prompts, and
 the match records what the coach did, so a later edit rewrites no history.

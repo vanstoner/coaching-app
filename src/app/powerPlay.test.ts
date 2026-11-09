@@ -13,6 +13,7 @@ import { emptyLedger, setPowerPlayRule } from './ledger';
 import {
   mostTimeFirst,
   owedMsOf,
+  powerPlayFormat,
   powerPlayAllowance,
   powerPlayCue,
   powerPlayLine,
@@ -191,5 +192,22 @@ describe('owed time for the add list (ADR-026 D3, ADR-024 D3)', () => {
     ]);
     // Level on pitch time: the child owed most comes first, then squad order.
     expect(timeNeededOrder([c, b, a], new Map(), owed)).toEqual([a, b, c]);
+  });
+});
+
+describe('mini-soccer only (#255, Rob 9 Nov; FA Mini-Soccer Handbook, NEHYL)', () => {
+  it('5- and 7-a-side have a power play; 9- and 11-a-side never do', () => {
+    expect([5, 7, 9, 11].map(powerPlayFormat)).toEqual([true, true, false, false]);
+    // A season whose main format is not yet set still shows the boxes.
+    expect(powerPlayFormat(null)).toBe(true);
+  });
+
+  it('the clock gets no power play in a 9- or 11-a-side match, and Settings no boxes in such a season', async () => {
+    const { readFileSync } = await import('node:fs');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toMatch(/powerPlay=\{\s*powerPlayFormat\(match\.format\.onFieldCount\)\s*\?/);
+    expect(app).toMatch(/powerPlay=\{\s*powerPlayFormat\(season\.mainSide\)\s*\?/);
+    const seasons = readFileSync(new URL('../screens/Seasons.tsx', import.meta.url), 'utf8');
+    expect(seasons).toContain('Mini-soccer only (5v5, 7v7)');
   });
 });

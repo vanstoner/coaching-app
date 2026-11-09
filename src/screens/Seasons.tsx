@@ -246,7 +246,7 @@ function PowerPlayBoxes({ steps, onSave }: { steps: number[]; onSave: (steps: nu
   return (
     <View style={local.ppBlock}>
       <Text style={screen.fieldLabel}>{`Power play${saved ? ' · saved' : ''}`}</Text>
-      <Text style={local.cardHint}>Goals behind before you may add each extra outfield player. Leave a box empty for no more.</Text>
+      <Text style={local.cardHint}>Mini-soccer only (5v5, 7v7), as the FA's optional law. Goals behind before you may add each extra outfield player. Leave a box empty for no more.</Text>
       <View style={local.ppRow}>
         {['1st extra', '2nd extra', '3rd extra'].map((label, i) => (
           <View key={label} style={local.ppBox}>

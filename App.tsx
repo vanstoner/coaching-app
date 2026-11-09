@@ -285,7 +285,7 @@ import { playOutAsPlanned, playOutRefusal, recordPlayedOut } from './src/app/pla
 import { mergeCurrentMatch } from './src/app/persistence';
 import { parseSheetView, planGaps, SHEET_VIEW_KEY, type SheetSettings, type SheetView } from './src/app/teamSheetEdit';
 import { squadViews } from './src/app/squadViews';
-import { owedMsOf } from './src/app/powerPlay';
+import { owedMsOf, powerPlayFormat } from './src/app/powerPlay';
 import { comingRows, comingSummary } from './src/app/whosComing';
 import type { PositionNaming } from './src/screens/PositionNameSheet';
 import {
@@ -2937,10 +2937,15 @@ function TeamApp({
                 firstName={seasonNameFor(new Date(seasonBegan(season, seasonView ?? { matches: [] }) ?? appNow().getTime()))}
                 onConfirmFirst={confirmFirstSeason}
                 onSetMainSide={setSeasonSide}
-                powerPlay={{
-                  steps: ledger.powerPlayRules.get(season.id) ?? [],
-                  onSave: (steps) => applyToLedger((l) => setPowerPlayRule(l, season.id, steps, appNow())),
-                }}
+                // #255 (Rob, 9 Nov): the boxes only for a 5- or 7-a-side season (or one not yet set).
+                powerPlay={
+                  powerPlayFormat(season.mainSide)
+                    ? {
+                        steps: ledger.powerPlayRules.get(season.id) ?? [],
+                        onSave: (steps) => applyToLedger((l) => setPowerPlayRule(l, season.id, steps, appNow())),
+                      }
+                    : undefined
+                }
                 onStart={() => setStep('seasonStart')}
                 onOpenPast={(id) => {
                   setPastSeasonId(id);
@@ -3267,10 +3272,15 @@ function TeamApp({
           onLiveMove={liveMove}
           onRecord={recordEvent}
           // #255 (ADR-026 D5): the current season's rule; a test match uses it too (C27).
-          powerPlay={{
-            ...powerPlayActs(ledger ? (ledger.powerPlayRules.get(currentSeason(ledger).id) ?? []) : []),
-            owedMs: () => owedMsOf(squadViews(seasonView, players, { kickoffs: kickoffs() }).owed),
-          }}
+          // #255 (Rob, 9 Nov): mini-soccer only (5v5, 7v7); a 9- or 11-a-side match has no power play.
+          powerPlay={
+            powerPlayFormat(match.format.onFieldCount)
+              ? {
+                  ...powerPlayActs(ledger ? (ledger.powerPlayRules.get(currentSeason(ledger).id) ?? []) : []),
+                  owedMs: () => owedMsOf(squadViews(seasonView, players, { kickoffs: kickoffs() }).owed),
+                }
+              : undefined
+          }
           onRecordAssist={recordAssist}
           tallies={tallyButtons(ledger?.eventTypes ?? [])}
           onRecordTally={recordTally}
