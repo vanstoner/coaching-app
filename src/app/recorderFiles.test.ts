@@ -213,6 +213,13 @@ describe("the recorder's screens (#281, ADR-025 D3, D4, D7)", () => {
     expect(app).toContain("onAdd={borrowedFixture === null ? () => setStep('fixtureForm') : undefined}");
     expect(app).toContain('onShareForRecorder={borrowedFixture !== null ? undefined :');
     expect(app).toMatch(/borrowedFixture === null\s*\? changeSquad/);
+    // Rob, 9 Nov: a refused change is never confirmed as done ("removed" showed when nothing was).
+    expect(app).toMatch(/showToast\("This team is borrowed[^"]*"\);\s*return false;/);
+    const squad = readFileSync(new URL('../screens/SquadScreen.tsx', import.meta.url), 'utf8');
+    expect(squad).toContain('if (onPlayers(removePlayer(everyone, p.id, played)) === false) return;');
+    expect(squad).toContain('if (onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]) === false) return;');
+    const child = readFileSync(new URL('../screens/ChildScreen.tsx', import.meta.url), 'utf8');
+    expect(child).toContain('if (onPlayers(p) !== false) tick.mark();');
     // D4: Send to the coach is the match file, once the match is finished.
     expect(app).toContain('ready={borrowedMatchFinished(ledger, borrowedFixture)}');
     expect(app).toContain('JSON.stringify(makeRecordedMatch(l, borrowedFixture, appNow()))');

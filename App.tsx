@@ -3173,8 +3173,12 @@ function TeamApp({
             borrowedFixture === null
               ? changeSquad
               : (next: Player[]) => {
-                  if (sameChildren(players, next)) return changeSquad(next);
-                  showToast("This team is borrowed for one match, so its children are the coach's. Ask the coach to add or rename a child.");
+                  if (sameChildren(players, next)) {
+                    changeSquad(next);
+                    return true;
+                  }
+                  showToast("This team is borrowed for one match, so its children are the coach's. Ask the coach to add, rename or remove a child.");
+                  return false;
                 }
           }
           fairness={squadFairness}
