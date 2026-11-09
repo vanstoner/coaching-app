@@ -451,6 +451,8 @@ export interface TeamSummary {
   /** A match is under way (T3): "Match on". */
   live: boolean;
   removed: boolean;
+  /** #281: borrowed for one match from a coach's pack (ADR-025 D3); its name is labelled "(borrowed)". */
+  borrowed: boolean;
 }
 
 export const UNREADABLE_TEAM = 'A team that could not be opened';
@@ -464,7 +466,7 @@ export const UNREADABLE_TEAM = 'A team that could not be opened';
 export async function teamSummaries(
   root: KeyValueStore,
   index: TeamIndex,
-  read: (session: string | null, ledger: string | null) => { name: string | null; season: string; live: boolean }
+  read: (session: string | null, ledger: string | null) => { name: string | null; season: string; live: boolean; borrowed?: boolean }
 ): Promise<TeamSummary[]> {
   const out: TeamSummary[] = [];
   for (const [n, t] of index.teams.entries()) {
@@ -474,11 +476,12 @@ export async function teamSummaries(
     const r = read(session, ledger);
     out.push({
       id: t.id,
-      name: r.name ?? UNREADABLE_TEAM,
+      name: r.name === null ? UNREADABLE_TEAM : r.borrowed ? `${r.name} (borrowed)` : r.name,
       badge: n % 6,
       season: r.season,
       live: r.live,
       removed: t.removedAt !== null,
+      borrowed: r.borrowed === true,
     });
   }
   return out;

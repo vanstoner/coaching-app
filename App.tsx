@@ -136,6 +136,7 @@ import {
   type NewSeason,
   type PastMatchRow,
 } from './src/screens/Seasons';
+import { FormSheet, SheetNote } from './src/screens/controls';
 import { AddTeamScreen, BorrowedBanner, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
 
 /** #281 (ADR-025 D3): a recorder pack, read and verified, to open as a borrowed team. */
@@ -3311,7 +3312,7 @@ function TeamApp({
           team ? (
             <>
               <TeamChip
-                name={squadName}
+                name={borrowedFixture !== null ? `${squadName} (borrowed)` : squadName}
                 badge={team.badge}
                 season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
                 onPress={team.onSwitch}
@@ -3617,9 +3618,20 @@ export default function App() {
     [root, show]
   );
 
+  /** #281 (Rob, 9 Nov, "approve 4"): a pack from a team this phone already holds, waiting on the coach's answer. */
+  const [packAsk, setPackAsk] = useState<{ pack: OpenedPack; name: string } | null>(null);
+
   /** #281 (ADR-025 D3): a recorder pack opens as a new team, borrowed for its one match. */
   const openPackTeam = useCallback(
-    (p: OpenedPack) => {
+    (p: OpenedPack, asked = false) => {
+      // Rob, 9 Nov: a pack from this phone's own team is meant for the recorder; ask before making a copy.
+      const own = summaries.find((t) => !t.removed && !t.borrowed && sameTeamName(t.name, p.ledger.squad.name));
+      if (!asked && own) {
+        setSheet(null);
+        setPackAsk({ pack: p, name: own.name });
+        return;
+      }
+      setPackAsk(null);
       setSheet(null);
       setRestoreNotice(null);
       setAdding(false);
@@ -3629,7 +3641,7 @@ export default function App() {
       setPack(p);
       void addTeam(root, uuid(), appNow()).then(show);
     },
-    [root, show]
+    [root, show, summaries]
   );
 
   /** #281 (ADR-025 D7): a borrowed team is erased, not set aside; the original is on the coach's phone. */
@@ -3854,6 +3866,18 @@ export default function App() {
           onBringBack={bringBack}
           onClose={() => setSheet(null)}
         />
+        {/* #281 (Rob, 9 Nov, "approve 4"): Cancel changes nothing. */}
+        <FormSheet
+          visible={packAsk !== null}
+          title="This pack is from your own team"
+          onCancel={() => setPackAsk(null)}
+          onSave={() => packAsk && openPackTeam(packAsk.pack, true)}
+          saveLabel="Open as a borrowed team"
+        >
+          <SheetNote>
+            {`This pack is from your own team, ${packAsk?.name ?? ''}. It's meant for the adult recording the match. Open it here as a separate borrowed team anyway? Your team stays exactly as it is.`}
+          </SheetNote>
+        </FormSheet>
         <RemoveTeamSheet
           visible={sheet === 'remove'}
           name={here?.name ?? ''}

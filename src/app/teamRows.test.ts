@@ -20,7 +20,7 @@ const NOW = new Date('2026-10-26T12:00:00Z');
 
 describe('a team’s row in the switcher (#224 AC1)', () => {
   it('a team whose squad will not read is named so, never hidden', () => {
-    expect(readTeamRow('{damaged', null)).toEqual({ name: null, season: 'This season', live: false });
+    expect(readTeamRow('{damaged', null)).toEqual({ name: null, season: 'This season', live: false, borrowed: false });
   });
 
   it('reads the season line from the team’s own record', () => {

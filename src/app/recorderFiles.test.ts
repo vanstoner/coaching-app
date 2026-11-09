@@ -12,6 +12,7 @@ import { makeFormat } from './shapes';
 import { addUnknownTimeEvent, appendRecords, emptyLedger, recordMatches, serialiseLedger, type Ledger } from './ledger';
 import { fixtureRecord } from './ledgerSetup';
 import { provenanceOf } from './provenance';
+import { readTeamRow } from './teamRows';
 import { setEntrySigner, signerFromSecret } from './entrySigning';
 import {
   ALREADY_IN_RECORD,
@@ -333,5 +334,29 @@ describe('signed by two phones (ADR-025 D6, ruling 3)', () => {
     const added = addUnknownTimeEvent(r.ledger, state.match.id, 'goal', players[0].id, 'Missed on the day', later);
     if (!added.ok) throw new Error(added.reason);
     expect(provenanceOf(added.ledger, state.match.id)?.state).toBe('reconstructed');
+  });
+});
+
+describe('a borrowed team is unmistakable (Rob, 9 Nov, "approve 4")', () => {
+  it('its row says borrowed; a team of one\'s own does not', () => {
+    const { coach, state } = coachWithFixture();
+    const read = readRecorderFile(JSON.stringify(makeRecorderPack(coach, state.match.id, null, [], T0)));
+    if (read.kind !== 'pack') throw new Error(read.kind);
+    const opened = openPack(emptyLedger(uuid(), '', T0), read.file, read.ledger, format, T0);
+    if (!opened.ok) throw new Error(opened.reason);
+    expect(readTeamRow(null, serialiseLedger(opened.ledger)).borrowed).toBe(true);
+    expect(readTeamRow(null, serialiseLedger(coach)).borrowed).toBe(false);
+  });
+
+  it('opening a pack of this phone\'s own team asks first; Cancel changes nothing; the chip and list say borrowed', async () => {
+    const { readFileSync } = await import('node:fs');
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('const own = summaries.find((t) => !t.removed && !t.borrowed && sameTeamName(t.name, p.ledger.squad.name));');
+    expect(app).toMatch(/if \(!asked && own\) \{\s*setSheet\(null\);\s*setPackAsk\(/);
+    expect(app).toContain('onCancel={() => setPackAsk(null)}');
+    expect(app).toContain("It's meant for the adult recording the match. Open it here as a separate borrowed team anyway?");
+    expect(app).toContain('name={borrowedFixture !== null ? `${squadName} (borrowed)` : squadName}');
+    const teams = readFileSync(new URL('./storage/teams.ts', import.meta.url), 'utf8');
+    expect(teams).toContain('r.borrowed ? `${r.name} (borrowed)` : r.name');
   });
 });
