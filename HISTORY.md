@@ -529,4 +529,6 @@ analysis, iOS". Entries are added as each release ships.
     - At full time the Fixtures banner offers **Send to the coach**, then asks to remove the team. Removing erases it, and a borrowed team is left out of the recorder's phone backup.
     - On the coach's phone, Import minutes file adds the match to Played, "Recorded on another phone".
   - **One error no longer closes the app** (#176), **Android Back** goes back a screen (#175), and **the Team sheet remembers** its Keepers, Subs and Positions (#284).
+  - **Fill the rest uses squad preferences** (Rob, 9 Nov). The sheet starts on By position once anyone coming has an area set, and subs at the same moment are paired so each child coming on takes a place in their area where they can. Minutes are unchanged.
+  - **Power play is 5- and 7-a-side only** (Rob, 9 Nov; the FA's mini-soccer law, as NEHYL uses it).
   - Fixes from the first beta: the pitch keeps its full width when fitted to a short screen, and a reconstructed match from the record can be archived. Release 2.3.0 is frozen as a fixture (#167).

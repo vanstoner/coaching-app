@@ -112,8 +112,10 @@ the fixture's card). It is one screen:
   onto a position, or tap them and then the position. **All** shows every
   quarter at once and **Table** lists them. A child you place gets a small
   green dot.
-- **Fill the rest** fills every empty place fairly. **By position** puts
-  children in their area from the Squad tab where it can. Anyone with a green
+- **Fill the rest** fills every empty place. **By position** puts children
+  in their area from the Squad tab where it can, subs included; it is where
+  the sheet starts once anyone coming has an area set. **Fairly** rotates
+  everyone instead. Either way the minutes are the same. Anyone with a green
   dot stays put. **Reset** clears everything except the keepers.
 - **⟳ Rearrange** on a quarter tries a different line-up for that quarter:
   the same children, so nobody's minutes change.

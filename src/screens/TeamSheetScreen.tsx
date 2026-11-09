@@ -36,6 +36,7 @@ import {
   applyKeepers,
   benchOf,
   canRearrange,
+  fillShown,
   isPinned,
   keepPinned,
   keepersOf,
@@ -124,7 +125,8 @@ export function TeamSheetScreen({
   // #284: reopening shows what the sheet was made with. Opening writes
   // nothing; a change is saved at once, as every other sheet change.
   const keeperMode = settings?.keepers ?? 'auto';
-  const fill: Fill = settings?.fill ?? 'fair';
+  // Rob, 9 Nov: By position when anyone coming has a preferred area, unless the coach chose.
+  const fill: Fill = fillShown(settings, coming);
   const choose = (patch: SheetSettings) => {
     onSettings({ ...settings, ...patch });
     tick.mark();

@@ -319,6 +319,19 @@ export interface SheetSettings {
 }
 
 /** What a stored value holds, field by field; anything else is dropped, never an error. */
+/**
+ * Rob, 9 Nov ("approve 3"): the fill a sheet opens with when the coach has
+ * not chosen one for this fixture. By position when any child coming has a
+ * preferred area, so squad preferences are used without an extra tap;
+ * Fairly when nobody has one. A choice the coach made always wins (#284).
+ */
+export function fillShown(
+  settings: SheetSettings | undefined,
+  coming: readonly { prefers?: string | null }[]
+): 'fair' | 'positions' {
+  return settings?.fill ?? (coming.some((p) => p.prefers) ? 'positions' : 'fair');
+}
+
 export function readSheetSettings(raw: unknown): SheetSettings | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
