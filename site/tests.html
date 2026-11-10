@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests · Heart of the Game: Coach</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .tests h1 { margin: 8px 0 4px; }
+  .tests .card { margin: 12px 0; overflow-wrap: anywhere; }
+  .tests .big { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
+  .tests .ok { color: #7ee2a8; }
+  .tests .bad { color: #ff8f8f; }
+  .tests .skip { color: var(--muted); }
+  .tests .meta { color: var(--muted); font-size: 15px; margin: 2px 0; }
+  .tests .run { display: inline-block; margin-top: 10px; padding: 12px 20px; border-radius: 999px;
+    background: var(--accent); color: var(--ink); font-weight: 600; text-decoration: none; }
+  .tests details { border-top: 1px solid var(--line); padding: 10px 0; }
+  .tests summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+  .tests summary .count { font-weight: 400; color: var(--muted); }
+  .tests ul { list-style: none; padding: 0; margin: 8px 0 0; }
+  .tests li { padding: 4px 0; font-size: 15px; overflow-wrap: anywhere; }
+  .tests li .st { display: inline-block; min-width: 4.2em; font-weight: 600; }
+  .tests pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #08291f; border-radius: 8px;
+    padding: 8px; font-size: 13px; margin: 6px 0 0; }
+  .tests img.shot { display: block; max-width: 100%; width: 240px; height: auto; border-radius: 8px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="home" href="./"><img src="icon.png" alt=""></a>
+    <a class="home" href="./"><span>Heart of the Game: Coach</span></a>
+    <nav><a href="guide.html">Guide</a><a href="releases.html">Releases</a><a href="tests.html">Tests</a><a href="support.html">Support</a></nav>
+  </header>
+  <main class="tests">
+    <h1>Tests</h1>
+    <section class="card"><p class="big">No test report yet</p><p>The Tests workflow has not finished a run on main yet.</p>
+    <a class="run" href="https://github.com/vanstoner/coaching-app/actions/workflows/tests.yml">Run the tests now</a>
+    <p class="meta">Opens GitHub’s Run workflow (sign in, then Run workflow). This page updates when the run ends.</p>
+    </section>
+    <section class="card"><p class="big">Emulator check</p><p class="meta">No emulator check on main yet.</p></section>
+
+  </main>
+</div>
+</body>
+</html>

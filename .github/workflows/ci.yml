@@ -168,6 +168,10 @@ jobs:
 
       # #145: the emulator's Settings check (beta-only features) runs in the
       # Android job; its self-test also runs here, in seconds, healthy first.
+      # #287: the website's Tests page, from Vitest's JSON report.
+      - name: Prove the Tests page builder before trusting it
+        run: python3 .github/scripts/build_tests_page.py --self-test
+
       - name: Prove the beta-only check gates before trusting it
         run: python3 .github/scripts/check_beta_only.py --self-test
 
