@@ -3871,13 +3871,14 @@ export default function App() {
         {/* #281 (Rob, 9 Nov, "approve 4"): Cancel changes nothing. */}
         <FormSheet
           visible={packAsk !== null}
-          title="This pack is from your own team"
+          title="Your own pack"
           onCancel={() => setPackAsk(null)}
           onSave={() => packAsk && openPackTeam(packAsk.pack, true)}
-          saveLabel="Open as a temporary team"
+          saveLabel="Import"
         >
-          <SheetNote>
-            {`This pack is from your own team, ${packAsk?.name ?? ''}. It's meant for the adult recording the match. Open it here as a separate temporary team anyway? Your team stays exactly as it is.`}
+          {/* Rob, 10 Nov: a short warning, with Import or Cancel in the sheet's header as every sheet has. */}
+          <SheetNote warn>
+            {`This pack is from your own team, ${packAsk?.name ?? ''}, and is meant for whoever records the match. Importing it here makes a separate temporary team. Your team is not changed.`}
           </SheetNote>
         </FormSheet>
         <RemoveTeamSheet

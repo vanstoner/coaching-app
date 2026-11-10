@@ -120,3 +120,17 @@ describe('a power play at 360dp (#255, ADR-026: 11-a-side plus 3 is the widest)'
     expect(pitch).toContain("gap: EXTRA_GAP");
   });
 });
+
+describe('a sheet header holds Cancel, a short title and a short action (Rob, 10 Nov)', () => {
+  it('every literal saveLabel is a word or two: "Open as a temporary team" wrapped over four lines', () => {
+    const files = readdirSync(join(__dirname)).filter((f) => f.endsWith('.tsx')).map((f) => join(__dirname, f));
+    files.push(join(__dirname, '..', '..', 'App.tsx'));
+    const long: string[] = [];
+    for (const f of files) {
+      for (const m of readFileSync(f, 'utf8').matchAll(/saveLabel="([^"]*)"/g)) {
+        if (m[1].length > 12) long.push(`${f.split('/').pop()}: "${m[1]}"`);
+      }
+    }
+    expect(long).toEqual([]);
+  });
+});

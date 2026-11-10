@@ -354,7 +354,11 @@ describe('a borrowed team is unmistakable (Rob, 9 Nov, "approve 4")', () => {
     expect(app).toContain('const own = summaries.find((t) => !t.removed && !t.borrowed && sameTeamName(t.name, p.ledger.squad.name));');
     expect(app).toMatch(/if \(!asked && own\) \{\s*setSheet\(null\);\s*setPackAsk\(/);
     expect(app).toContain('onCancel={() => setPackAsk(null)}');
-    expect(app).toContain("It's meant for the adult recording the match. Open it here as a separate temporary team anyway?");
+    // Rob, 10 Nov: a short title, a one-word Import, and the reason as a small warning.
+    expect(app).toContain('title="Your own pack"');
+    expect(app).toContain('saveLabel="Import"');
+    expect(app).toContain('is meant for whoever records the match. Importing it here makes a separate temporary team. Your team is not changed.');
+    expect(app).toMatch(/<SheetNote warn>\s*\{`This pack is from your own team/);
     expect(app).toContain('name={borrowedFixture !== null ? `${squadName} (temporary)` : squadName}');
     // Rob, 10 Nov: a strip on every screen of a temporary team.
     expect(app).toContain("{borrowedFixture !== null && <TemporaryTeamStrip onPress={() => goToTab('home')} />}");
