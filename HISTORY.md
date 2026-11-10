@@ -528,6 +528,11 @@ analysis, iOS". Entries are added as each release ships.
     - The recorder opens the pack (the first screen's Restore, or Settings › Import minutes file). It becomes a team borrowed for that one match, with the coach's children, plan and Who's coming. The recorder cannot add or rename a child or add a fixture.
     - At full time the Fixtures banner offers **Send to the coach**, then asks to remove the team. Removing erases it, and a borrowed team is left out of the recorder's phone backup.
     - On the coach's phone, Import minutes file adds the match to Played, "Recorded on another phone".
+    - **A temporary team is unmistakable** (Rob, 9–10 Nov):
+      - Every screen has the strip "Temporary team · recording one match for the coach".
+      - The team chip and the team list say "(temporary)".
+      - Opening your own team's pack asks first, and Cancel changes nothing.
+      - In a temporary team, a refused change to the children is never confirmed as done.
   - **One error no longer closes the app** (#176), **Android Back** goes back a screen (#175), and **the Team sheet remembers** its Keepers, Subs and Positions (#284).
   - **Fill the rest uses squad preferences** (Rob, 9 Nov). The sheet starts on By position once anyone coming has an area set, and subs at the same moment are paired so each child coming on takes a place in their area where they can. Minutes are unchanged.
   - **Power play is 5- and 7-a-side only** (Rob, 9 Nov; the FA's mini-soccer law, as NEHYL uses it).
