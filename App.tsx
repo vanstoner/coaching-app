@@ -137,7 +137,7 @@ import {
   type PastMatchRow,
 } from './src/screens/Seasons';
 import { FormSheet, SheetNote } from './src/screens/controls';
-import { AddTeamScreen, BorrowedBanner, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
+import { AddTeamScreen, BorrowedBanner, TemporaryTeamStrip, NoTeamsScreen, RemoveTeamSheet, TeamChip, TeamSwitcher, type NewTeam } from './src/screens/Teams';
 
 /** #281 (ADR-025 D3): a recorder pack, read and verified, to open as a borrowed team. */
 type OpenedPack = { file: RecorderPack; ledger: Ledger };
@@ -3178,7 +3178,7 @@ function TeamApp({
                     changeSquad(next);
                     return true;
                   }
-                  showToast("This team is borrowed for one match, so its children are the coach's. Ask the coach to add, rename or remove a child.");
+                  showToast("This is a temporary team for one match, so its children are the coach's. Ask the coach to add, rename or remove a child.");
                   return false;
                 }
           }
@@ -3312,7 +3312,7 @@ function TeamApp({
           team ? (
             <>
               <TeamChip
-                name={borrowedFixture !== null ? `${squadName} (borrowed)` : squadName}
+                name={borrowedFixture !== null ? `${squadName} (temporary)` : squadName}
                 badge={team.badge}
                 season={seasonLine(currentSeason(ledger ?? { seasons: [] }))}
                 onPress={team.onSwitch}
@@ -3490,6 +3490,8 @@ function TeamApp({
       <TableSortProvider store={store} remember>
         <View style={screen.column}>
           {testBanner}
+          {/* Rob, 10 Nov: a temporary team says so on every screen; a tap goes to its Fixtures banner. */}
+          {borrowedFixture !== null && <TemporaryTeamStrip onPress={() => goToTab('home')} />}
           {/* #176: a screen that throws while drawing shows the recovery screen, not a closed app. */}
           <RecoveryBoundary
             key={effectiveStep}
@@ -3872,10 +3874,10 @@ export default function App() {
           title="This pack is from your own team"
           onCancel={() => setPackAsk(null)}
           onSave={() => packAsk && openPackTeam(packAsk.pack, true)}
-          saveLabel="Open as a borrowed team"
+          saveLabel="Open as a temporary team"
         >
           <SheetNote>
-            {`This pack is from your own team, ${packAsk?.name ?? ''}. It's meant for the adult recording the match. Open it here as a separate borrowed team anyway? Your team stays exactly as it is.`}
+            {`This pack is from your own team, ${packAsk?.name ?? ''}. It's meant for the adult recording the match. Open it here as a separate temporary team anyway? Your team stays exactly as it is.`}
           </SheetNote>
         </FormSheet>
         <RemoveTeamSheet

@@ -215,7 +215,7 @@ describe("the recorder's screens (#281, ADR-025 D3, D4, D7)", () => {
     expect(app).toContain('onShareForRecorder={borrowedFixture !== null ? undefined :');
     expect(app).toMatch(/borrowedFixture === null\s*\? changeSquad/);
     // Rob, 9 Nov: a refused change is never confirmed as done ("removed" showed when nothing was).
-    expect(app).toMatch(/showToast\("This team is borrowed[^"]*"\);\s*return false;/);
+    expect(app).toMatch(/showToast\("This is a temporary team[^"]*"\);\s*return false;/);
     const squad = readFileSync(new URL('../screens/SquadScreen.tsx', import.meta.url), 'utf8');
     expect(squad).toContain('if (onPlayers(removePlayer(everyone, p.id, played)) === false) return;');
     expect(squad).toContain('if (onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]) === false) return;');
@@ -354,9 +354,12 @@ describe('a borrowed team is unmistakable (Rob, 9 Nov, "approve 4")', () => {
     expect(app).toContain('const own = summaries.find((t) => !t.removed && !t.borrowed && sameTeamName(t.name, p.ledger.squad.name));');
     expect(app).toMatch(/if \(!asked && own\) \{\s*setSheet\(null\);\s*setPackAsk\(/);
     expect(app).toContain('onCancel={() => setPackAsk(null)}');
-    expect(app).toContain("It's meant for the adult recording the match. Open it here as a separate borrowed team anyway?");
-    expect(app).toContain('name={borrowedFixture !== null ? `${squadName} (borrowed)` : squadName}');
+    expect(app).toContain("It's meant for the adult recording the match. Open it here as a separate temporary team anyway?");
+    expect(app).toContain('name={borrowedFixture !== null ? `${squadName} (temporary)` : squadName}');
+    // Rob, 10 Nov: a strip on every screen of a temporary team.
+    expect(app).toContain("{borrowedFixture !== null && <TemporaryTeamStrip onPress={() => goToTab('home')} />}");
     const teams = readFileSync(new URL('./storage/teams.ts', import.meta.url), 'utf8');
-    expect(teams).toContain('r.borrowed ? `${r.name} (borrowed)` : r.name');
+    expect(teams).toContain("season: r.borrowed ? 'Temporary · imported to record one match' : r.season,");
+    expect(teams).toContain('r.borrowed ? `${r.name} (temporary)` : r.name');
   });
 });

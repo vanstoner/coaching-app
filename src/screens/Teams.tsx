@@ -408,6 +408,19 @@ export function NoTeamsScreen({
 }
 
 const local = StyleSheet.create({
+  tempStrip: {
+    alignSelf: 'stretch',
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: '#5a3d00',
+    borderColor: colours.warn,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginHorizontal: 8,
+    marginTop: 4,
+  },
+  tempStripText: { alignSelf: 'stretch', color: colours.ink, fontSize: 14, fontWeight: '600', includeFontPadding: false },
   borrowed: {
     alignSelf: 'stretch',
     padding: 12,
@@ -531,8 +544,8 @@ const local = StyleSheet.create({
 });
 
 /** #281 (ADR-025 D3, D4, D7): the words on a team borrowed for one match. */
-export const BORROWED_RECORDING = 'Borrowed from the coach to record one match. At full time, send it to the coach from here.';
-export const BORROWED_READY = 'Borrowed for one match: send it to the coach, then remove it once the coach has it.';
+export const BORROWED_RECORDING = 'A temporary team, imported to record one match for the coach. At full time, send the match to the coach from here.';
+export const BORROWED_READY = 'A temporary team: send the match to the coach, then remove this team once the coach has it.';
 export const REMOVE_BORROWED_ASK = 'Remove this team from your phone?';
 export const REMOVE_UNSENT_WARNING = 'The match has not been sent to the coach. Removing the team loses it for good.';
 export const REMOVE_CHECK_SENT = 'Only remove it once the coach has the match. Removing the team loses it for good.';
@@ -557,7 +570,7 @@ export function BorrowedBanner({
   const [asking, setAsking] = useState<'remove' | 'unsent' | 'check' | null>(null);
   const [sent, setSent] = useState(false);
   return (
-    <View style={local.borrowed} accessibilityLabel="Borrowed team">
+    <View style={local.borrowed} accessibilityLabel="Temporary team">
       <Text style={local.borrowedText}>{ready ? BORROWED_READY : BORROWED_RECORDING}</Text>
       {ready && (
         <Action
@@ -580,5 +593,18 @@ export function BorrowedBanner({
         </View>
       )}
     </View>
+  );
+}
+
+/** Rob, 10 Nov: the strip at the top of every screen of a temporary (borrowed) team, so it never passes for the coach's own. */
+export const TEMPORARY_STRIP = 'Temporary team · recording one match for the coach';
+
+export function TemporaryTeamStrip({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={local.tempStrip}>
+      <Text style={local.tempStripText} numberOfLines={2}>
+        {TEMPORARY_STRIP}
+      </Text>
+    </Pressable>
   );
 }

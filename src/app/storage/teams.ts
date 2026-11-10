@@ -451,7 +451,7 @@ export interface TeamSummary {
   /** A match is under way (T3): "Match on". */
   live: boolean;
   removed: boolean;
-  /** #281: borrowed for one match from a coach's pack (ADR-025 D3); its name is labelled "(borrowed)". */
+  /** #281: borrowed for one match from a coach's pack (ADR-025 D3); its name is labelled "(temporary)". */
   borrowed: boolean;
 }
 
@@ -476,9 +476,10 @@ export async function teamSummaries(
     const r = read(session, ledger);
     out.push({
       id: t.id,
-      name: r.name === null ? UNREADABLE_TEAM : r.borrowed ? `${r.name} (borrowed)` : r.name,
+      name: r.name === null ? UNREADABLE_TEAM : r.borrowed ? `${r.name} (temporary)` : r.name,
       badge: n % 6,
-      season: r.season,
+      // Rob, 10 Nov: a temporary team says what it is for, in place of a season it does not have.
+      season: r.borrowed ? 'Temporary · imported to record one match' : r.season,
       live: r.live,
       removed: t.removedAt !== null,
       borrowed: r.borrowed === true,
