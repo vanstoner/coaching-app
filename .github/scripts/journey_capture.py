@@ -70,6 +70,27 @@ def fully_visible(node, screen):
     return x0 >= screen[0] and y0 >= screen[1] and x1 <= screen[2] and y1 <= screen[3] and y1 > y0
 
 
+def ocr_nodes(tsv):
+    """Nodes from tesseract's TSV, one per line of words, for a screen whose view tree will not come
+    (a running clock repaints every second, so uiautomator never sees it idle). The first node is the
+    page, so screen_box still finds the window."""
+    rows = [r.split("\t") for r in tsv.splitlines()[1:]]
+    nodes, lines = [], {}
+    for r in rows:
+        if len(r) < 12:
+            continue
+        level, left, top, width, height, text = r[0], *map(int, r[6:10]), r[11].strip()
+        if level == "1":
+            nodes.append({"text": "", "desc": "", "bounds": (left, top, left + width, top + height), "scrollable": True, "in_selected": False})
+        elif level == "5" and text:
+            key = tuple(r[1:5])
+            x0, y0, x1, y1, words = lines.get(key, (left, top, left + width, top + height, []))
+            lines[key] = (min(x0, left), min(y0, top), max(x1, left + width), max(y1, top + height), words + [text])
+    for x0, y0, x1, y1, words in lines.values():
+        nodes.append({"text": " ".join(words), "desc": "", "bounds": (x0, y0, x1, y1), "scrollable": False, "in_selected": False})
+    return nodes
+
+
 def centre(node):
     x0, y0, x1, y1 = node["bounds"]
     return (x0 + x1) // 2, (y0 + y1) // 2
@@ -93,6 +114,11 @@ def dump(path):
             return nodes
         time.sleep(2)
     return None
+
+
+def ocr(png):
+    out = subprocess.run(["tesseract", png, "-", "--psm", "11", "tsv"], capture_output=True, text=True, timeout=60).stdout
+    return ocr_nodes(out)
 
 
 def screenshot(path):
@@ -121,6 +147,10 @@ class Walk:
         name = f"{self.n:02d}"
         nodes = dump(os.path.join(self.out, f"{name}.xml"))
         screenshot(os.path.join(self.out, f"{name}.png"))
+        read_by = "view tree"
+        if not nodes:
+            # A running clock never goes idle: read the words off the screenshot instead.
+            nodes, read_by = ocr(os.path.join(self.out, f"{name}.png")), "screenshot (OCR)"
         screen = screen_box(nodes)
         node = find(nodes, label, prefix, contains)
         in_view = fully_visible(node, screen)
@@ -136,12 +166,15 @@ class Walk:
             time.sleep(1)
             swipes += 1
             nodes = dump(os.path.join(self.out, f"{name}-s{swipes}.xml"))
+            if not nodes:
+                screenshot(os.path.join(self.out, f"{name}-s{swipes}.png"))
+                nodes = ocr(os.path.join(self.out, f"{name}-s{swipes}.png"))
             screen = screen_box(nodes)
             node = find(nodes, label, prefix, contains)
         record = {"n": self.n, "journey": self.journey, "what": what,
                   "label": label if isinstance(label, str) else " / ".join(label),
                   "in_view": in_view, "swipes": swipes, "found": fully_visible(node, screen),
-                  "shot": f"{name}.png", "height": screen[3] - screen[1]}
+                  "shot": f"{name}.png", "height": screen[3] - screen[1], "read_by": read_by}
         self.steps.append(record)
         if not record["found"]:
             self.save(None if optional else f"Step {self.n} ({what}): '{label}' not found after {swipes} swipes")
@@ -292,6 +325,16 @@ def self_test():
     check("a control running past the bottom edge is not fully visible", not fully_visible(find(nodes, "End quarter"), screen))
     check("a control inside the window is fully visible", fully_visible(find(nodes, "Add a fixture"), screen))
     check("nothing found is not visible", not fully_visible(None, screen))
+    tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n" + "\n".join([
+        "1\t1\t0\t0\t0\t0\t0\t0\t320\t640\t-1\t",
+        "5\t1\t3\t1\t1\t1\t110\t650\t40\t20\t95\tEnd",
+        "5\t1\t3\t1\t1\t2\t155\t650\t70\t20\t95\tquarter",
+        "5\t1\t1\t1\t1\t1\t20\t40\t60\t20\t90\tQ1",
+    ])
+    on = ocr_nodes(tsv)
+    check("OCR: the page is the window", screen_box(on) == (0, 0, 320, 640))
+    check("OCR: words on one line join, so 'End ' as a prefix finds End quarter", find(on, "End ", prefix=True)["text"] == "End quarter")
+    check("OCR: a line below the window is not fully visible", not fully_visible(find(on, "End ", prefix=True), screen_box(on)))
     data = {"steps": [
         {"n": 1, "journey": "J3", "what": "End period 1", "label": "End quarter", "in_view": False, "swipes": 1, "found": True, "shot": "01.png"},
         {"n": 2, "journey": "J3", "what": "See the minutes", "label": "See the minutes", "in_view": True, "swipes": 0, "found": True, "shot": "02.png"},

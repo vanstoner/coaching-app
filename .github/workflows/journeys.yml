@@ -35,6 +35,13 @@ jobs:
       - name: Self-test the journey driver
         run: python3 .github/scripts/journey_capture.py --self-test
 
+      # A running clock never goes idle for uiautomator; the driver reads those screens by OCR.
+      - name: Install the OCR engine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+          tesseract --version | head -1
+
       - name: Find the newest proved beta APK
         id: apk
         env:
