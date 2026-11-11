@@ -374,3 +374,17 @@ describe('awards at a break, on the Lineup (#266 C10, C11, C13; #283 C17)', () =
     expect(app).toContain('const picksWaiting = useRef(0);');
   });
 });
+
+describe('a temporary team has no awards (#266 C15, #281; found by Dee\'s review, 11 Nov)', () => {
+  it('a record holding a recorder pack offers no card, though the built-in awards are active', async () => {
+    const { appendRecords } = await import('./ledger');
+    const d = matchDay();
+    d.kickOff();
+    d.advance(10 * MIN);
+    const own = d.save();
+    expect(own.awardTypes.some((t) => t.active)).toBe(true);
+    expect(awardsOffered(own, d.state)).toBe(true);
+    const temporary = appendRecords(own, [{ type: 'pack', fixtureId: d.state.match.id }], new Date());
+    expect(awardsOffered(temporary, d.state)).toBe(false);
+  });
+});

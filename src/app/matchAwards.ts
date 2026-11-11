@@ -39,8 +39,21 @@ export interface LiveMatchLike {
  * Whether awards can be given for this match now (criteria 23, 27). `ledger`
  * is null when the record cannot be written on this phone.
  */
+/** Whether a record holds a recorder pack's `pack` record (ADR-025 D3), worked out once per chain. */
+const packChains = new WeakMap<readonly unknown[], boolean>();
+function isTemporaryTeam(ledger: Ledger): boolean {
+  const known = packChains.get(ledger.entries);
+  if (known !== undefined) return known;
+  const borrowed = ledger.entries.some((e) => e.records.some((r) => r.type === 'pack'));
+  packChains.set(ledger.entries, borrowed);
+  return borrowed;
+}
+
 export function awardsOffered(ledger: Ledger | null, state: LiveMatchLike): boolean {
   if (!ledger || !isWritable(ledger)) return false;
+  // #266 C15: no card in a temporary team (#281). Awards are the coach's acts and never travel back
+  // with the recorded match (ADR-025 D5), so one given there would silently vanish.
+  if (isTemporaryTeam(ledger)) return false;
   if (isTestMatch(state.match)) return false;
   if (state.match.status === 'completed' || state.match.status === 'abandoned') return false;
   if (matchProgress(state.quarters) === 'not_started') return false;
