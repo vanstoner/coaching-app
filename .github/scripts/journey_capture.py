@@ -50,7 +50,12 @@ def find(nodes, label, prefix=False, contains=False):
             continue
         for field in ("text", "desc"):
             v = n.get(field, "").strip()
-            if v and (v == label or (prefix and v.startswith(label)) or (contains and label in v)):
+            if n.get("ocr"):
+                # OCR reads case loosely (a button's small caps, a sand background): compare without it.
+                v, want = v.lower(), label.lower()
+            else:
+                want = label
+            if v and (v == want or (prefix and v.startswith(want)) or (contains and want in v)):
                 hits.append(n)
                 break
     return max(hits, key=lambda n: n["bounds"][1]) if hits else None
@@ -87,7 +92,7 @@ def ocr_nodes(tsv):
             x0, y0, x1, y1, words = lines.get(key, (left, top, left + width, top + height, []))
             lines[key] = (min(x0, left), min(y0, top), max(x1, left + width), max(y1, top + height), words + [text])
     for x0, y0, x1, y1, words in lines.values():
-        nodes.append({"text": " ".join(words), "desc": "", "bounds": (x0, y0, x1, y1), "scrollable": False, "in_selected": False})
+        nodes.append({"text": " ".join(words), "desc": "", "bounds": (x0, y0, x1, y1), "scrollable": False, "in_selected": False, "ocr": True})
     return nodes
 
 
@@ -141,7 +146,7 @@ class Walk:
         with open(os.path.join(self.out, "steps.json"), "w", encoding="utf-8") as fh:
             json.dump({"steps": self.steps, "stopped": stopped}, fh, indent=1)
 
-    def step(self, what, label, prefix=False, typing=None, wait=2.0, max_swipes=12, optional=False, contains=False):
+    def step(self, what, label, prefix=False, typing=None, wait=2.0, max_swipes=12, optional=False, contains=False, pinned=False):
         """Bring `label` into view, record how, then tap it (and type, if asked)."""
         self.n += 1
         name = f"{self.n:02d}"
@@ -171,6 +176,12 @@ class Walk:
                 nodes = ocr(os.path.join(self.out, f"{name}-s{swipes}.png"))
             screen = screen_box(nodes)
             node = find(nodes, label, prefix, contains)
+        if not fully_visible(node, screen) and pinned and screen[3] > screen[1]:
+            # A pinned Main button is always at the foot of the screen. When neither the view tree nor
+            # OCR can read it (a ticking screen, dark text on sand), tap where it always is, and say so.
+            node = {"bounds": (screen[0] + 16, screen[3] - 72, screen[2] - 16, screen[3] - 24)}
+            read_by = "pinned Main button (by position)"
+            in_view = True
         record = {"n": self.n, "journey": self.journey, "what": what,
                   "label": label if isinstance(label, str) else " / ".join(label),
                   "in_view": in_view, "swipes": swipes, "found": fully_visible(node, screen),
@@ -235,7 +246,7 @@ def run(out):
         w.step("Speed up the clock", "×10", optional=True)
         for period in range(1, 5):
             # "Start quarter", or "Q2 is due: Start" after the team talk (#283).
-            w.step(f"Start period {period}", "Start", contains=True, wait=8)
+            w.step(f"Start period {period}", "Start", contains=True, wait=8, pinned=True, max_swipes=0)
             w.step(f"End period {period}", "End ", prefix=True, wait=3)
             # At ×10 the period has run past its length, so the app asks when it ended (#180).
             w.step(f"Answer when period {period} ended", "Ended at planned time", optional=True, max_swipes=0, wait=3)
@@ -333,6 +344,7 @@ def self_test():
     on = ocr_nodes(tsv)
     check("OCR: the page is the window", screen_box(on) == (0, 0, 320, 640))
     check("OCR: words on one line join, so 'End ' as a prefix finds End quarter", find(on, "End ", prefix=True)["text"] == "End quarter")
+    check("OCR compares without case", find(on, "END QUARTER") is not None and find(nodes, "END QUARTER") is None)
     check("OCR: a line below the window is not fully visible", not fully_visible(find(on, "End ", prefix=True), screen_box(on)))
     data = {"steps": [
         {"n": 1, "journey": "J3", "what": "End period 1", "label": "End quarter", "in_view": False, "swipes": 1, "found": True, "shot": "01.png"},
