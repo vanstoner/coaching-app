@@ -236,10 +236,9 @@ def run(out):
         for period in range(1, 5):
             # "Start quarter", or "Q2 is due: Start" after the team talk (#283).
             w.step(f"Start period {period}", "Start", contains=True, wait=8)
-            if not w.step(f"End period {period}", "End ", prefix=True, wait=3):
-                break
-            if period < 4 and not find(dump(os.path.join(out, "probe.xml")), "Start", contains=True):
-                break
+            w.step(f"End period {period}", "End ", prefix=True, wait=3)
+            # At ×10 the period has run past its length, so the app asks when it ended (#180).
+            w.step(f"Answer when period {period} ended", "Ended at planned time", optional=True, max_swipes=0, wait=3)
         w.step("See the minutes", "See the minutes", wait=3)
         w.step("End match", "End match", wait=3)
         w.save()
