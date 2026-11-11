@@ -128,7 +128,9 @@ describe('one Main button per screen (#264 V26)', () => {
   };
   // More than two branches, each showing one Main button at a time.
   const MAX_ALLOWED: Record<string, number> = {
-    'MatchSummaryScreen.tsx': 4,
+    // Decision 5 (Rob, 11 Nov): End match before the match is closed; after it, Send to the coach (a
+    // temporary team) or Share. The two feet are never drawn together.
+    'MatchSummaryScreen.tsx': 5,
     // Give at full time; Add and Take off only in their power play sheets while a period runs (#255): never two at once.
     'ClockScreen.tsx': 3,
   };

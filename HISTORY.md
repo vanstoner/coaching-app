@@ -525,9 +525,10 @@ analysis, iOS". Entries are added as each release ships.
   - **Match highlights and the full match log** (#282), shared as text from the report or a match's page: the game for parents, every tap and sub for coaches; never minutes.
   - **Import a match** (#281, ADR-025):
     - The coach taps Share for a recorder on a fixture.
-    - The recorder opens the pack (the first screen's Restore, or Settings › Import minutes file). It becomes a team borrowed for that one match, with the coach's children, plan and Who's coming. The recorder cannot add or rename a child or add a fixture.
+    - The recorder opens the pack with **Open a file from another phone** (on the first screen, or in Settings). It becomes a team borrowed for that one match, with the coach's children, plan and Who's coming. The recorder cannot add or rename a child or add a fixture.
     - At full time the Fixtures banner offers **Send to the coach**, then asks to remove the team. Removing erases it, and a borrowed team is left out of the recorder's phone backup.
-    - On the coach's phone, Import minutes file adds the match to Played, "Recorded on another phone".
+    - On the coach's phone, **Open a file from another phone** adds the match to Played, "Recorded on another phone".
+  - **End match comes first on the report** (Rob, 11 Nov, from Dee's UX review). Share match highlights, and on a temporary team Send to the coach, follow once the match is closed. The guide has a new section, "Someone else recording the match".
     - **A temporary team is unmistakable** (Rob, 9–10 Nov):
       - Every screen has the strip "Temporary team · recording one match for the coach".
       - The team chip and the team list say "(temporary)".

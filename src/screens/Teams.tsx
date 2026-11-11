@@ -377,6 +377,7 @@ export function NoTeamsScreen({
   onAdd,
   onBringBack,
   restore = null,
+  onOpenFile,
 }: {
   aside: readonly TeamSummary[];
   /** "Restore from a backup", for a coach whose teams are in a file (Rob, 29 Oct). */
@@ -385,6 +386,8 @@ export function NoTeamsScreen({
   notice?: string | null;
   onAdd: () => void;
   onBringBack: (id: TeamSummary['id']) => void;
+  /** Decision 5 (Rob, 11 Nov): a recorder pack from a coach opens here, by its own name (#281). */
+  onOpenFile?: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={[screen.scroll, local.welcome]}>
@@ -400,6 +403,12 @@ export function NoTeamsScreen({
       {/* #264: the screen's one job is the Main button (label kept: ADD_YOUR_TEAM). */}
       <MainButton label="Add your team" onPress={onAdd} />
       {restore}
+      {onOpenFile && (
+        <>
+          <RowNav label="Open a file from another phone" onPress={onOpenFile} />
+          <Text style={[screen.hint, local.left]}>Recording a match for a coach? Open the recorder pack they sent you.</Text>
+        </>
+      )}
       {aside.map((t) => (
         <Action key={t.id} label={`Bring back ${t.name}`} onPress={() => onBringBack(t.id)} align="center" />
       ))}

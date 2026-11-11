@@ -89,6 +89,7 @@ export function MatchSummaryScreen({
   onAnalysis,
   onEndMatch,
   share,
+  send,
   onCorrectAttendance,
   onSetExcluded,
   onVoid,
@@ -114,6 +115,8 @@ export function MatchSummaryScreen({
   onEndMatch?: () => void;
   /** #282: the highlights for parents and the log for coaches, from the record; null before it is recorded. */
   share?: { highlights: string | null; log: string | null };
+  /** #281 decision 5: a temporary team's Send to the coach, offered once the match is closed. */
+  send?: () => void;
   /** A noted attendance correction (ruling F): the reason if refused, else null. */
   onCorrectAttendance?: (playerId: UUID, status: AvailabilityStatus, note: string) => string | null;
   /**
@@ -577,17 +580,17 @@ export function MatchSummaryScreen({
           />
         </FormSheet>
       </ScrollView>
+      {/* Decision 5 (Rob, 11 Nov; Dee's review): End match is the report's one job until the match is
+          closed; after it, Share (and a temporary team's Send to the coach) take the foot. */}
       {onEndMatch && !(askingAwards && awards) && (
         <MainFoot>
-          {share?.highlights ? (
-            <>
-              {/* #282 (Dee's prototype, Rob 7 Nov): Share is the Main button; End match moves under it. */}
-              <ShareTexts highlights={share.highlights} log={share.log} main />
-              <Action label="End match" align="center" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
-            </>
-          ) : (
-            <MainButton label="End match" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
-          )}
+          <MainButton label="End match" onPress={() => (awards?.due ? setAskingAwards(true) : onEndMatch())} />
+        </MainFoot>
+      )}
+      {!onEndMatch && closed && (send || share?.highlights) && (
+        <MainFoot>
+          {send && <MainButton label="Send to the coach" onPress={send} />}
+          {share?.highlights && <ShareTexts highlights={share.highlights} log={share.log} main={!send} />}
         </MainFoot>
       )}
       </KeyboardAvoidingView>

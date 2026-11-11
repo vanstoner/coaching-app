@@ -367,3 +367,28 @@ describe('a borrowed team is unmistakable (Rob, 9 Nov, "approve 4")', () => {
     expect(teams).toContain('r.borrowed ? `${r.name} (temporary)` : r.name');
   });
 });
+
+describe('decision 5 (Rob, 11 Nov; Dee\'s review): End match first, then Share or Send', () => {
+  it('the report\'s foot is End match until closed; after it Share, or Send to the coach on a temporary team', async () => {
+    const { readFileSync } = await import('node:fs');
+    const report = readFileSync(new URL('../screens/MatchSummaryScreen.tsx', import.meta.url), 'utf8');
+    expect(report).toMatch(/\{onEndMatch && !\(askingAwards && awards\) && \(\s*<MainFoot>\s*<MainButton label="End match"/);
+    expect(report).toMatch(/\{!onEndMatch && closed && \(send \|\| share\?\.highlights\) && \(\s*<MainFoot>\s*\{send && <MainButton label="Send to the coach" onPress=\{send\} \/>\}\s*\{share\?\.highlights && <ShareTexts highlights=\{share\.highlights\} log=\{share\.log\} main=\{!send\} \/>\}/);
+    const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+    expect(app).toMatch(/send=\{\s*borrowedFixture !== null && borrowedFixture === match\.state\.match\.id/);
+    expect(app).toContain('onSend={sendToCoach}');
+  });
+
+  it('files from another phone come in by that name; the guide has the recorder\'s steps', async () => {
+    const { readFileSync } = await import('node:fs');
+    const minutes = readFileSync(new URL('../screens/MinutesSection.tsx', import.meta.url), 'utf8');
+    expect(minutes).toContain('<RowNav label="Open a file from another phone" onPress={onImport}');
+    expect(minutes).not.toContain('label="Import minutes file"');
+    const teams = readFileSync(new URL('../screens/Teams.tsx', import.meta.url), 'utf8');
+    expect(teams).toContain('<RowNav label="Open a file from another phone" onPress={onOpenFile} />');
+    const guide = readFileSync(new URL('../../GUIDE.md', import.meta.url), 'utf8');
+    expect(guide).toContain('## 13. Someone else recording the match');
+    expect(guide).toContain('**Open a file from another phone**');
+    expect(guide).toContain('**End match**, then **Send to the coach**');
+  });
+});

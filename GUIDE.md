@@ -26,6 +26,7 @@ Android phone, see [Try Heart FC Coach](https://vanstoner.github.io/coaching-app
 10. [More than one team, and a new season](#10-more-than-one-team-and-a-new-season)
 11. [Fixing mistakes](#11-fixing-mistakes)
 12. [Practise without touching your figures](#12-practise-without-touching-your-figures)
+13. [Someone else recording the match](#13-someone-else-recording-the-match)
 
 The pictures in this guide use a made-up squad. No real child is in them.
 
@@ -188,8 +189,12 @@ After the last period, tap **See the minutes** for the match report: the
 result, and every child's time on the pitch, in goal and outfield, against
 the match's fair share.
 
-- **Tap End match.** This is the step that matters most. Only a match closed
-  with **End match** counts towards the season's figures.
+- **Tap End match**, the green button at the bottom. This is the step that
+  matters most. Only a match closed with **End match** counts towards the
+  season's figures.
+- Then **Share match highlights** sends the score, goals, awards and team
+  stats to parents (never anyone's minutes). **Share the full match log** is
+  for coaches.
 - If an award hasn't been given yet, the app asks first. **Give them later**
   is fine.
 - **Correct attendance** fixes who was there, with a note.
@@ -288,3 +293,36 @@ them again.
 
 **Questions or ideas?** See [Support](https://vanstoner.github.io/coaching-app/support.html), or tell Rob on WhatsApp.
 How the app looks after your data is in the [privacy policy](https://vanstoner.github.io/coaching-app/privacy.html).
+
+## 13. Someone else recording the match
+
+Can't be there on Saturday? Another adult can run the clock on their own
+phone and send you the match.
+
+**On your phone, before kick-off**
+
+1. On the fixture's card, tap **Share for a recorder** and send the file to
+   the adult recording the match, for example on WhatsApp. It holds the
+   children's first names, your plan and Who's coming, and nothing else.
+
+**On their phone**
+
+2. They install the app and save the file to their phone.
+3. They open the app and tap **Open a file from another phone** (on the first
+   screen, or in Settings › Player minutes), then pick the file. A
+   **temporary team** opens for that one match, with an amber strip on every
+   screen.
+4. They play the match as usual: the lineup, the clock, subs and goals.
+5. At full time they tap **End match**, then **Send to the coach** and send
+   the file back to you.
+6. Once you have it, they remove the temporary team: **Remove this team** on
+   its Home screen.
+
+**Back on your phone**
+
+7. Save the file, then **Settings › Player minutes › Open a file from another
+   phone** and pick it. The match is added to Played, marked **Recorded on
+   another phone**, and counts like any match you recorded yourself.
+
+A match can only be recorded once: if your phone recorded it too, the file is
+refused, and nothing changes.

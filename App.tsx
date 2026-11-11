@@ -580,6 +580,19 @@ function TeamApp({
   const viewLedger = useMemo(() => (ledger ? visibleLedger(ledger) : null), [ledger]);
   /** #281 (ADR-025 D3): the one fixture this team was borrowed for, or null for a team of one's own. */
   const borrowedFixture = useMemo(() => borrowedFor(ledger), [ledger]);
+  /** #281 D4: the recorded match, through the share sheet; true once the sheet took it. From Fixtures' banner and the closed report. */
+  const sendToCoach = useCallback(async (): Promise<boolean> => {
+    const l = ledgerRef.current;
+    if (!l || borrowedFixture === null) return false;
+    const opponent = l.fixtures.find((f) => f.id === borrowedFixture)?.opponent || 'match';
+    const r = await exportJsonFile(
+      `recorded-match-${opponent.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.json`,
+      JSON.stringify(makeRecordedMatch(l, borrowedFixture, appNow())),
+      "It holds the children's first names: send it only to the coach"
+    );
+    if (!r.ok) showToast(r.reason);
+    return r.ok;
+  }, [borrowedFixture, showToast]);
   // #243 AC1, AC5 (ADR-022 D6): the season the team is in, and the figures
   // of that season alone. With no season started this is the whole record,
   // so every figure is as it was.
@@ -2869,6 +2882,13 @@ function TeamApp({
           trust={provenanceOf(viewLedger, match.state.match.id)}
           awards={liveAwards}
           share={match.state.quarters.every((q) => q.status === 'ended') ? shareFor(match.state.match.id) : undefined}
+          // Decision 5 (Rob, 11 Nov): on a temporary team, Send to the coach once the match is closed.
+          send={
+            borrowedFixture !== null && borrowedFixture === match.state.match.id
+              ? () =>
+                  void sendToCoach().then((ok) => ok && showToast('Sent. Remove this team from Home once the coach has the match.'))
+              : undefined
+          }
           formatCard={formatCardFor(match.state.match.id)}
           onOpenRecord={() => {
             setRecordId(match.state.match.id);
@@ -3321,18 +3341,7 @@ function TeamApp({
               {borrowedFixture !== null && (
                 <BorrowedBanner
                   ready={borrowedMatchFinished(ledger, borrowedFixture)}
-                  onSend={async () => {
-                    const l = ledgerRef.current;
-                    if (!l) return false;
-                    const opponent = l.fixtures.find((f) => f.id === borrowedFixture)?.opponent || 'match';
-                    const r = await exportJsonFile(
-                      `recorded-match-${opponent.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}.json`,
-                      JSON.stringify(makeRecordedMatch(l, borrowedFixture, appNow())),
-                      "It holds the children's first names: send it only to the coach"
-                    );
-                    if (!r.ok) showToast(r.reason);
-                    return r.ok;
-                  }}
+                  onSend={sendToCoach}
                   onRemove={team.onErase}
                 />
               )}
@@ -3686,7 +3695,7 @@ export default function App() {
     const routed = readRecorderFile(picked.text);
     if (routed.kind === 'refused') return setFirstRestore({ busy: false, message: routed.reason, pending: null });
     if (routed.kind === 'match') {
-      return setFirstRestore({ busy: false, message: 'This is a recorded match: open it on the coach’s phone, in Settings › Import minutes file.', pending: null });
+      return setFirstRestore({ busy: false, message: 'This is a recorded match: open it on the coach’s phone, in Settings › Open a file from another phone.', pending: null });
     }
     if (routed.kind === 'pack') {
       setFirstRestore({ busy: false, message: '', pending: null });
@@ -3779,6 +3788,8 @@ export default function App() {
           setAdding(true);
         }}
         onBringBack={bringBack}
+        // Decision 5: the same picker, by a name a recorder recognises; it routes a pack to a temporary team.
+        onOpenFile={() => void pickFirstBackup()}
         restore={
           <BackupSection
             restoreOnly
