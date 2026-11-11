@@ -8,6 +8,8 @@
 import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { Action } from './controls';
+import { useState } from 'react';
+import { FailNow } from './RecoveryBoundary';
 import { colours } from './theme';
 
 export function TestKitSection({
@@ -23,8 +25,11 @@ export function TestKitSection({
   onTimeSigning: () => void;
   message: string;
 }) {
+  // #176 C11 (Rob, 7 Nov: "does nothing"): fail at once, not on the next screen.
+  const [failing, setFailing] = useState(false);
   return (
     <View style={local.section}>
+      {failing && <FailNow />}
       <Text style={local.hint}>
         For trying a build before approving it. Only in Heart FC Beta Coach, which keeps its own data, so nothing here
         reaches the real squad.
@@ -38,6 +43,9 @@ export function TestKitSection({
         a keeper.
       </Text>
       <Action label="Time signing on this phone" onPress={onTimeSigning} />
+      {/* #176 C11: QA sees the recovery screen on a phone. Beta builds only, as the whole kit. */}
+      <Action label="Show the Something went wrong screen" onPress={() => setFailing(true)} />
+      <Text style={local.hint}>Makes this screen fail on purpose, to check the recovery screen. Nothing is changed or deleted.</Text>
       {message !== '' && <Text style={local.hint}>{message}</Text>}
     </View>
   );

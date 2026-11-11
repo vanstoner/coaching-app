@@ -93,3 +93,44 @@ describe('dragging near the edge scrolls on every screen with a pitch (#276)', (
     expect(s).not.toMatch(/<ScrollView[^>]*scrollEnabled=\{!dragging\}/);
   });
 });
+
+describe('a pitch fitted to a short screen keeps its full width (Rob, 7 Nov, team talk Lineup)', () => {
+  it('never lays `aspectRatio: undefined` over the shaped style: Android keeps the ratio and narrows the pitch', () => {
+    const pitch = readFileSync(join(__dirname, 'PitchView.tsx'), 'utf-8');
+    expect(pitch).not.toMatch(/aspectRatio:\s*undefined/);
+    expect(pitch).toMatch(/\[s\.pitchFrame, \{ width: rootWidth, height: fitPitchHeight\(rootWidth, props\.room\) \}\]/);
+  });
+});
+
+
+describe('a power play at 360dp (#255, ADR-026: 11-a-side plus 3 is the widest)', () => {
+  it('three extra pills fit one row under the pitch in every format, ring and gaps included', async () => {
+    const { extraRowWidth } = await import('../app/pitchLayout');
+    const W = 324; // the pitch on a 360dp phone, as pitchLayout.test.ts measures it
+    for (const onField of [5, 7, 9, 11]) {
+      expect(extraRowWidth(3, onField, W), `${onField}-a-side plus 3`).toBeLessThanOrEqual(W);
+    }
+  });
+
+  it('PitchView draws the extras in that row, never on the grass, with the same ring and gap', () => {
+    const pitch = src('PitchView.tsx');
+    expect(pitch).not.toMatch(/extraSpots|EXTRA_AT/);
+    expect(pitch).toMatch(/<View style=\{s\.extraStrip\} accessibilityLabel="Power play">/);
+    expect(pitch).toContain("extraRing: { borderRadius: 999, borderWidth: EXTRA_RING,");
+    expect(pitch).toContain("gap: EXTRA_GAP");
+  });
+});
+
+describe('a sheet header holds Cancel, a short title and a short action (Rob, 10 Nov)', () => {
+  it('every literal saveLabel is a word or two: "Open as a temporary team" wrapped over four lines', () => {
+    const files = readdirSync(join(__dirname)).filter((f) => f.endsWith('.tsx')).map((f) => join(__dirname, f));
+    files.push(join(__dirname, '..', '..', 'App.tsx'));
+    const long: string[] = [];
+    for (const f of files) {
+      for (const m of readFileSync(f, 'utf8').matchAll(/saveLabel="([^"]*)"/g)) {
+        if (m[1].length > 12) long.push(`${f.split('/').pop()}: "${m[1]}"`);
+      }
+    }
+    expect(long).toEqual([]);
+  });
+});

@@ -119,7 +119,8 @@ export function SquadScreen({
   ledger: Ledger | null;
   /** Kick-off of each match without a `kickoffAt`, for ruling E (`kickoffTimes`). */
   kickoffs: ReadonlyMap<UUID, string>;
-  onPlayers: (p: Player[]) => void;
+  /** The new squad; false back means it was refused (a borrowed team's children are the coach's, #281), so nothing is confirmed. */
+  onPlayers: (p: Player[]) => boolean | void;
   /** #190: mark a child not counted in fairness, or counted again; a reason when refused. */
   fairness: { set: (playerId: UUID, counted: boolean, note: string) => string | null };
   onFieldCount: number;
@@ -200,7 +201,7 @@ export function SquadScreen({
         return;
       }
       const { firstName, displaySuffix } = splitName(name);
-      onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]);
+      if (onPlayers([...everyone, makePlayer(squadId, firstName, displaySuffix)]) === false) return;
       setDraft('');
       setError('');
       nameInput.current?.focus();
@@ -455,7 +456,8 @@ export function SquadScreen({
                       label="Remove"
                       accessibilityLabel={`Remove ${displayName(p)}`}
                       onPress={() => {
-                        onPlayers(removePlayer(everyone, p.id, played));
+                        // #281: a refused change (a borrowed team) says why in the app's toast, and is not confirmed here.
+                        if (onPlayers(removePlayer(everyone, p.id, played)) === false) return;
                         setToast({
                           message: `${displayName(p)} removed`,
                           undo: () => onPlayers(restorePlayer(latest.current, p.id)),

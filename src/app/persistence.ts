@@ -53,6 +53,7 @@ import { inferUnit, unitOfRole } from './positions';
 import type { MatchPlan } from './matchPlan';
 import { readBuzzWhenSubDue } from './settings';
 import type { PeriodSubs } from './subPlan';
+import { readSheetSettings, type SheetSettings } from './teamSheetEdit';
 
 /**
  * The shape this build writes.
@@ -265,6 +266,11 @@ export interface SavedMatch {
    */
   comingChangedAt?: number;
   /**
+   * The Team sheet's Keepers choice, Subs number and Positions (#284), as the
+   * coach set them. Planning, never the record; absent until first changed.
+   */
+  sheetSettings?: SheetSettings;
+  /**
    * The shape this match is played in — #70, ADR-012.
    *
    * A snapshot, not a reference. `Match.formatId` has always said "snapshotted
@@ -441,6 +447,8 @@ export function mergeCurrentMatch(
     archived: at === -1 ? undefined : existing[at].archived,
     // #277: when Who's coming last changed, kept like the plan.
     comingChangedAt: at === -1 ? undefined : existing[at].comingChangedAt,
+    // #284: the Team sheet's choices, kept like the plan.
+    sheetSettings: at === -1 ? undefined : existing[at].sheetSettings,
     // Records, merged by id: what is stored plus what the live state holds.
     // Append-only, so the union is always right, and no save — one that
     // carries no list, or a list rebuilt short — can drop an event.
@@ -600,6 +608,8 @@ function validate(doc: VersionedDocument): { session: SavedSession; droppedMatch
       // A malformed plan is dropped, not the match: a plan is intent, and
       // losing it costs a re-plan, where losing the match loses its record.
       plan: isPlanShaped(m.plan) ? m.plan : undefined,
+      // #284: only well-formed choices are read; anything else is as if unset.
+      sheetSettings: readSheetSettings(m.sheetSettings),
       events: Array.isArray(m.events) ? m.events : [],
       // The same for saved subs (#139): dropped, they cost one period's
       // reminders, which is how a save from before them resumes anyway.
@@ -664,7 +674,7 @@ function unionEvents(
   return [...byId.values()].sort((a, b) => a.atElapsedMs - b.atElapsedMs);
 }
 
-function isPlanShaped(plan: unknown): plan is MatchPlan {
+export function isPlanShaped(plan: unknown): plan is MatchPlan {
   if (typeof plan !== 'object' || plan === null) return false;
   const periods = (plan as { periods?: unknown }).periods;
   if (!Array.isArray(periods)) return false;

@@ -91,11 +91,12 @@ import { PitchView } from './PitchView';
 import { useEdgeScroll } from './useEdgeScroll';
 import { ActionSheet, SheetButton } from './Sheet';
 import { AssistButton, TapButtons } from './EventButtons';
-import { AwardCard } from './AwardCard';
-import { awardsLine, type AwardRow } from '../app/matchAwards';
+import { mostTimeFirst, powerPlayAllowance, powerPlayCue, theirPowerPlayOffered, theyUsedPowerPlay, timeNeededOrder } from '../app/powerPlay';
+import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
+import type { AwardPick, AwardRow } from '../app/matchAwards';
 import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
-import { Section } from './controls';
+import { Action, CheckLine, FormSheet, MainButton, Segmented, SheetNote } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
 
 /**
@@ -126,11 +127,13 @@ export function ClockScreen({
   onChangePlan,
   onLiveMove,
   onRecord,
+  powerPlay,
   onRecordAssist,
   tallies = [],
   onRecordTally,
   awards = null,
   onWithdraw,
+  onPicksCount,
   onEndQuarter,
   onFinish,
   onLeave,
@@ -162,6 +165,18 @@ export function ClockScreen({
   onLiveMove: (move: LiveMove, isUndo?: boolean) => boolean;
   /** A goal, save, goal conceded, tackle, corner or free kick won. Null if the engine refused it. */
   onRecord: (kind: TapEventKind, playerId: UUID) => MatchEvent | null;
+  /**
+   * #255 power play (ADR-026): this season's rule, and the three acts. Each
+   * returns false (or null) if the engine refused it. Absent: no power play.
+   */
+  powerPlay?: {
+    steps: number[];
+    onAdd: (playerId: UUID, unit: 'ATT' | 'MID' | 'DEF') => boolean;
+    onRemove: (playerId: UUID) => boolean;
+    onTheirs: () => MatchEvent | null;
+    /** Season owed time per child, for ties in the add list (ADR-026 D3, ADR-024 D3). Asked only while the add cue shows. */
+    owedMs?: () => ReadonlyMap<UUID, number>;
+  };
   /** Credit a goal's assist (#185). Null if the engine refused it. */
   onRecordAssist: (goalId: UUID, playerId: UUID) => MatchEvent | null;
   /** The coach's own tally kinds (#198), each its own button; a team one is credited to no child. */
@@ -178,8 +193,12 @@ export function ClockScreen({
     atFullTime: boolean;
     childrenInMatch: { playerId: UUID; name: string }[];
     onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+    /** #266: every pick at once, all or nothing; the reason when refused, else null. */
+    onGiveAll: (picks: AwardPick[]) => string | null;
     onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
   } | null;
+  /** #266 C11: how many names are picked and not given, so leaving can say so. */
+  onPicksCount?: (n: number) => void;
   /** Take an event back, with its note (invariant 5). */
   onWithdraw: (eventId: UUID, note: string) => boolean;
   /**
@@ -243,9 +262,29 @@ export function ClockScreen({
   /** #228: the child whose award sheet is open, from the tap sheet's "Give … an award". */
   const [awardFor, setAwardFor] = useState<UUID | null>(null);
   /** #228: the award card under the clock at a break between periods. */
-  const [awardsOpen, setAwardsOpen] = useState(false);
   /** #228: "Give them later" at full time puts the card away on this visit; End match asks again. */
   const [fullTimeAwardsHidden, setFullTimeAwardsHidden] = useState(false);
+  // #255: the Add a player and Power play over sheets.
+  const [ppAdd, setPpAdd] = useState<{ playerId: UUID | null; unit: 'ATT' | 'MID' | 'DEF' } | null>(null);
+  const [ppOffPick, setPpOffPick] = useState<UUID | null | undefined>(undefined);
+  // #266: names picked, not yet given. Screen state only (C11).
+  const [awardPicks, setAwardPicks] = useState<Picks>({});
+  const [giveError, setGiveError] = useState('');
+  const [askPicks, setAskPicks] = useState<(() => void) | null>(null);
+  const picked = picksCount(awardPicks);
+  useEffect(() => onPicksCount?.(picked), [picked, onPicksCount]);
+  const giveAll = (then?: () => void) => {
+    if (!awards || picked === 0) return;
+    const refused = awards.onGiveAll(picksList(awardPicks));
+    if (refused) setGiveError(refused);
+    else {
+      setAwardPicks({});
+      setGiveError('');
+      then?.();
+    }
+  };
+  /** C10: with picks waiting, ask "Give the n picked?" before carrying on. */
+  const afterPicks = (then: () => void) => (picked > 0 ? setAskPicks(() => then) : then());
   /** #180: when the period ended, asked only when End comes past the margin. */
   const [endChoices, setEndChoices] = useState<PeriodEndChoices | null>(null);
 
@@ -269,6 +308,24 @@ export function ClockScreen({
   const onIds = new Set(Object.values(sheet).filter((v): v is UUID => v !== null));
   const bench = players.filter((p) => !onIds.has(p.id)).map((p) => p.id);
   const outfieldOn = onPitch.map((m) => m.playerId).filter((id) => id !== keeper);
+
+  // #255: the power play, worked out on this paint from the intervals and the
+  // standing events (ADR-026 D1, D3). Nothing about it is stored.
+  const extras = running && quarter ? engine.openExtraSlots(state, quarter, format) : [];
+  const ppSteps = powerPlay?.steps ?? [];
+  const allowance = powerPlayAllowance(state.events, ppSteps);
+  const cue = running ? powerPlayCue(allowance, extras.length) : null;
+  const pitchMsOf = new Map(minutes.map((m) => [m.playerId, m.totalMs]));
+  const ppBench =
+    cue?.kind === 'add' || ppAdd !== null
+      ? timeNeededOrder(
+          bench.filter((id) => state.playerAvailability.get(id) === 'available'),
+          pitchMsOf,
+          powerPlay?.owedMs?.()
+        )
+      : [];
+  const ppOff = mostTimeFirst(onPitch.map((m) => m.playerId), keeper, pitchMsOf);
+  const offerTheirs = powerPlay !== undefined && theirPowerPlayOffered(state.events, ppSteps) && !theyUsedPowerPlay(state.events);
 
   // Read from the anchors on this paint, and everything below follows from
   // it: a phone that slept shows the right band on waking (#203 AC5).
@@ -385,6 +442,16 @@ export function ClockScreen({
     offerUndo(team ? `${label} (team)` : `${label}: ${nameOf(id)}`, () => onWithdraw(event.id, UNDO_NOTE));
   };
 
+  /** #255 D4: their power play is one event, credited to no one; Undo withdraws it like any tap. */
+  const theirs = () => {
+    const event = powerPlay?.onTheirs() ?? null;
+    if (!event) {
+      setNotice('That could not be recorded.');
+      return;
+    }
+    offerUndo('Their power play', () => onWithdraw(event.id, UNDO_NOTE));
+  };
+
   /** Withdrawing the goal takes its assist with it (#185 AC5), so Undo stays one tap. */
   const assist = (goal: MatchEvent, id: UUID) => {
     setAssistFor(null);
@@ -438,30 +505,27 @@ export function ClockScreen({
           <AwardCard
             rows={awards.rows}
             childrenInMatch={awards.childrenInMatch}
-            onGive={awards.onGive}
+            picks={awardPicks}
+            onPicks={setAwardPicks}
+            error={giveError}
             onTakeBack={awards.onTakeBack}
             footer={
-              <Pressable onPress={() => setFullTimeAwardsHidden(true)} style={screen.linkHit} accessibilityRole="button">
-                <Text style={screen.link}>Give them later</Text>
-              </Pressable>
+              <>
+                {/* #266 C3: Give at the card's foot, with the count; off with nothing picked. */}
+                <MainButton label={giveLabel(picked)} disabled={picked === 0} onPress={() => giveAll()} />
+                <Pressable
+                  onPress={() => afterPicks(() => setFullTimeAwardsHidden(true))}
+                  style={screen.linkHit}
+                  accessibilityRole="button"
+                >
+                  <Text style={screen.link}>Give them later</Text>
+                </Pressable>
+              </>
             }
           />
         )}
 
-        {/* #228 (Dee): at a break between periods, one line; it opens the award card. */}
-        {awards && !running && !view.isMatchOver && (
-          <>
-            {/* #264: the awards line takes the one twisty; closing it is the twisty, so Hide went. */}
-            <Section title={awardsLine(awards.rows)} open={awardsOpen} onToggle={() => setAwardsOpen((v) => !v)}>
-              <AwardCard
-                rows={awards.rows}
-                childrenInMatch={awards.childrenInMatch}
-                onGive={awards.onGive}
-                onTakeBack={awards.onTakeBack}
-              />
-            </Section>
-          </>
-        )}
+        {/* #266 C13 (Rob, Q1): at a break the award card is on the Lineup, not here. */}
 
         {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
         {running && (
@@ -505,9 +569,42 @@ export function ClockScreen({
             )}
             {/* #252 AC1: in play the score is a band across the top of the formation box. */}
             <ScoreBand text={band.text} label={band.label} onPitch />
+            {/* #255 C6, C9, C17, C21: the power play under the score; the digits still take no tap. */}
+            {extras.length > 0 && (
+              <Text style={local.ppLine}>{`${format.onFieldCount + extras.length} v ${format.onFieldCount} · power play`}</Text>
+            )}
+            {cue?.kind === 'add' && (
+              <Pressable
+                onPress={() => setPpAdd({ playerId: ppBench[0] ?? null, unit: 'MID' })}
+                accessibilityRole="button"
+                style={({ pressed }) => [local.ppCue, pressed && screen.buttonPressed]}
+              >
+                <Text style={local.ppCueText}>Power play: add a player ›</Text>
+              </Pressable>
+            )}
+            {cue?.kind === 'over' && (
+              <Pressable
+                onPress={() => setPpOffPick(ppOff[0] ?? null)}
+                accessibilityRole="button"
+                style={({ pressed }) => [local.ppCue, local.ppOver, pressed && screen.buttonPressed]}
+              >
+                <Text style={[local.ppCueText, local.ppOverText]}>Power play over: who comes off? ›</Text>
+              </Pressable>
+            )}
+            {offerTheirs && (
+              <Action
+                label="They used a power play"
+                align="center"
+                onPress={theirs}
+              />
+            )}
+            {powerPlay && theyUsedPowerPlay(state.events) && (
+              <Text style={local.ppLine}>{`${opponentLabel(state.match)} used a power play`}</Text>
+            )}
             <PitchView
               format={format}
               sheet={sheet}
+              extras={extras.map((a) => ({ positionId: a.positionId, unit: (a.positionUnit ?? 'MID') as 'ATT' | 'MID' | 'DEF' }))}
               bench={bench}
               nameOf={nameOf}
               detailOf={(id) => pillDetail(minutesOf.get(id), id === keeper)}
@@ -624,6 +721,12 @@ export function ClockScreen({
           </>
         )}
 
+        {/* #255 C22 (ADR-026 D4): the score band offers it, but the coach can note it at any time. */}
+        {powerPlay && ppSteps.length > 0 && !offerTheirs && !view.isMatchOver && !theyUsedPowerPlay(state.events) && (
+          <Pressable onPress={theirs} accessibilityRole="button" style={screen.linkHit}>
+            <Text style={screen.link}>They used a power play</Text>
+          </Pressable>
+        )}
         {onPlanRest && !view.isMatchOver && (
           <Pressable onPress={onPlanRest} style={screen.linkHit}>
             <Text style={screen.link}>Plan the rest of the match</Text>
@@ -797,11 +900,116 @@ export function ClockScreen({
         </View>
       )}
       <StatusBar style="light" />
+      {/* #255 C8, C12: Add a player, least time on the pitch first; Midfield by default. */}
+      <FormSheet visible={ppAdd !== null} title="Add a player" onCancel={() => setPpAdd(null)}>
+        {ppAdd && (
+          <>
+            <SheetNote>{`Behind by ${ppSteps[Math.max(0, allowance - 1)] ?? ''}: you may have ${allowance} extra. Least time on the pitch first.`}</SheetNote>
+            {ppBench.length === 0 && <Text style={screen.hint}>Nobody on the bench.</Text>}
+            {ppBench.map((id, i) => (
+              <CheckLine
+                key={id}
+                label={nameOf(id)}
+                detail={`${formatClock(pitchMsOf.get(id) ?? 0)} on${i === 0 ? ' · needs the most time' : ''}`}
+                checked={ppAdd.playerId === id}
+                onPress={() => setPpAdd({ ...ppAdd, playerId: id })}
+              />
+            ))}
+            <Text style={screen.fieldLabel}>Where</Text>
+            <Segmented<'DEF' | 'MID' | 'ATT'>
+              name="Where"
+              options={[
+                { value: 'DEF', label: 'Defence' },
+                { value: 'MID', label: 'Midfield' },
+                { value: 'ATT', label: 'Attack' },
+              ]}
+              value={ppAdd.unit}
+              onChange={(u) => u && setPpAdd({ ...ppAdd, unit: u })}
+            />
+            <MainButton
+              label={ppAdd.playerId ? `Add ${nameOf(ppAdd.playerId)}` : 'Add'}
+              disabled={ppAdd.playerId === null}
+              onPress={() => {
+                const id = ppAdd.playerId;
+                if (!id || !powerPlay) return;
+                setPpAdd(null);
+                if (powerPlay.onAdd(id, ppAdd.unit)) setNotice(`${nameOf(id)} on: ${format.onFieldCount + extras.length + 1} v ${format.onFieldCount}`);
+              }}
+            />
+            <Text style={screen.hint}>Outfield only. Up to 3 extra.</Text>
+          </>
+        )}
+      </FormSheet>
+
+      {/* #255 C17–C20: the margin closed; the coach chooses who comes off. Nothing comes off by itself. */}
+      <FormSheet visible={ppOffPick !== undefined} title="Power play over" onCancel={() => setPpOffPick(undefined)}>
+        <SheetNote>{`One extra player comes off. Anyone on the pitch can. Most time on the pitch first.`}</SheetNote>
+        {ppOff.map((id) => (
+          <CheckLine
+            key={id}
+            label={nameOf(id)}
+            detail={`${formatClock(pitchMsOf.get(id) ?? 0)} on${extras.some((a) => a.playerId === id) ? ' · came on for the power play' : ''}`}
+            checked={ppOffPick === id}
+            onPress={() => setPpOffPick(id)}
+          />
+        ))}
+        <MainButton
+          label={ppOffPick ? `Take ${nameOf(ppOffPick)} off` : 'Take off'}
+          disabled={!ppOffPick}
+          onPress={() => {
+            const id = ppOffPick;
+            if (!id || !powerPlay) return;
+            setPpOffPick(undefined);
+            if (powerPlay.onRemove(id)) setNotice(`${nameOf(id)} off: ${format.onFieldCount + extras.length - 1} v ${format.onFieldCount}`);
+          }}
+        />
+        <Action label="Not now" onPress={() => setPpOffPick(undefined)} />
+      </FormSheet>
+
+      {/* #266 C10: picks waiting when Give them later is tapped. */}
+      <FormSheet visible={askPicks !== null} title={`Give the ${picked} picked?`} onCancel={() => setAskPicks(null)}>
+        <SheetNote>
+          {(awards?.rows ?? [])
+            .filter((r) => (awardPicks[r.typeId]?.playerIds.length ?? 0) > 0)
+            .map((r) => `${r.name}: ${awardPicks[r.typeId]!.playerIds.map((id) => awards?.childrenInMatch.find((c) => c.playerId === id)?.name ?? '—').join(' and ')}`)
+            .join(' · ')}
+        </SheetNote>
+        <Action
+          label={`Give ${picked}`}
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            giveAll(() => then?.());
+          }}
+        />
+        <Action
+          label="Don't give"
+          onPress={() => {
+            const then = askPicks;
+            setAskPicks(null);
+            setAwardPicks({});
+            then?.();
+          }}
+        />
+      </FormSheet>
     </View>
   );
 }
 
 const local = StyleSheet.create({
+  ppLine: { alignSelf: 'stretch', textAlign: 'center', color: colours.inkMuted, fontSize: 14, marginVertical: 4, includeFontPadding: false },
+  ppCue: {
+    alignSelf: 'stretch',
+    minHeight: TOUCH_TARGET,
+    borderRadius: 10,
+    backgroundColor: colours.urgent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 6,
+  },
+  ppOver: { backgroundColor: colours.late },
+  ppCueText: { alignSelf: 'stretch', textAlign: 'center', color: colours.urgentInk, fontSize: 16, fontWeight: '700', includeFontPadding: false },
+  ppOverText: { color: colours.ink },
   strip: {
     flexDirection: 'row',
     alignItems: 'center',

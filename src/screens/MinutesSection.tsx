@@ -159,11 +159,12 @@ export function MinutesSection({
         The file contains the children's first names. Keep it somewhere private.
       </Text>
 
-      <RowNav label="Import minutes file" onPress={onImport} disabled={busy || matching !== null} />
+      {/* Decision 5 (Rob, 11 Nov; Dee's review): the one way in for every file from another phone. */}
+      <RowNav label="Open a file from another phone" onPress={onImport} disabled={busy || matching !== null} />
       <Text style={screen.hint}>
-        Adds matches recorded after this phone's. A file from a phone that
-        recorded its own matches is refused. Nothing here is ever overwritten
-        or deleted.
+        A match recorded on someone else's phone, a recorder pack from a coach,
+        or another phone's minutes file. Nothing here is ever overwritten or
+        deleted; a file that does not fit is refused, with the reason.
       </Text>
       </>
       )}

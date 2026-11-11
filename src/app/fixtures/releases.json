@@ -53,5 +53,10 @@
     "store.json": "ce611998b72b4785256ff147547d5f5279d07e1c4eea46084491cbe57aa1ab73",
     "expected.json": "d2862e49e50d91d0ed47c2c3dc728a704e50b27ce705c7cda0f7f95e3919fa2e",
     "release.json": "81c21c571593877c8a9411fb352b259c12b69f770b1141e1f3e3afb2a2c42bf6"
+  },
+  "2.3.0": {
+    "store.json": "ce611998b72b4785256ff147547d5f5279d07e1c4eea46084491cbe57aa1ab73",
+    "expected.json": "d2862e49e50d91d0ed47c2c3dc728a704e50b27ce705c7cda0f7f95e3919fa2e",
+    "release.json": "794e5fe617f7cae5a25b3538e36e889726f94ec1d4b3f4a7df0066fb9e7ffd91"
   }
 }

@@ -60,6 +60,7 @@ export function FixturesScreen({
   onTeamSheet,
   playable,
   onPlayOut,
+  onShareForRecorder,
   housekeeping,
   buildLabel,
   progress,
@@ -82,7 +83,8 @@ export function FixturesScreen({
   onOpen: (matchId: UUID) => void;
   /** Only offered on a fixture that has never been kicked off. */
   onDelete: (matchId: UUID) => void;
-  onAdd: () => void;
+  /** Absent in a team borrowed for one match (#281, ADR-025 D3): it has its one fixture. */
+  onAdd?: () => void;
   /** Fixtures that already have something planned, so the link says so. */
   plannedIds: ReadonlySet<UUID>;
   /** #277 A1: each fixture's Who's coming summary. */
@@ -93,6 +95,8 @@ export function FixturesScreen({
   /** #280: fixtures that could be played out as planned: null when it can be, else why not. */
   playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
+  /** #281: send the fixture to the adult recording it, before kick-off. */
+  onShareForRecorder?: (matchId: UUID) => void;
   /** Deleting and archiving — #76. The rules are in fixtures.ts. */
   housekeeping: Housekeeping;
   buildLabel: string;
@@ -126,7 +130,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, onShareForRecorder, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -148,9 +152,11 @@ export function FixturesScreen({
 
         {/* Rob, 5 Nov ("approve drop play now"): Home is the list of matches, so a
             match is played by tapping its card. + Fixture is the one Main button. */}
-        <View style={local.startRow}>
-          <MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
-        </View>
+        {onAdd && (
+          <View style={local.startRow}>
+            <MainButton label="+ Fixture" accessibilityLabel="Add a fixture" onPress={onAdd} />
+          </View>
+        )}
 
         {rows.length === 0 && recordOnly.length === 0 ? (
           housekeeping.archivedCount > 0 ? (
@@ -213,6 +219,8 @@ export interface Housekeeping {
   archivedCount: number;
   showingArchived: boolean;
   onToggleArchived: () => void;
+  /** A match from the record with no fixture here: archived on this phone only. */
+  onArchiveRecord?: (matchId: UUID, archived: boolean) => void;
 }
 
 interface CardActions {
@@ -225,6 +233,7 @@ interface CardActions {
   onTeamSheet: (matchId: UUID) => void;
   playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
+  onShareForRecorder?: (matchId: UUID) => void;
   housekeeping: Housekeeping;
   scores: ReadonlyMap<UUID, Score>;
   periods: ReadonlyMap<UUID, readonly StartedPeriod[]>;
@@ -280,6 +289,7 @@ function PlayedSection({
             now={actions.now}
             onOpen={onOpenRecord}
             state={actions.provenance.get(item.key) ?? 'reconstructed'}
+            onArchive={actions.housekeeping.onArchiveRecord}
           />
         )
       )}
@@ -298,11 +308,14 @@ function RecordCard({
   now,
   onOpen,
   state,
+  onArchive,
 }: {
   match: RecordOnlyMatch;
   now: Date;
   onOpen: (matchId: UUID) => void;
   state: Provenance;
+  /** Rob, 7 Nov ("Can't archive reconstructed"): hide it from Played, on this phone only. */
+  onArchive?: (matchId: UUID, archived: boolean) => void;
 }) {
   const competition = competitionLabel(match.competition);
   const tag = provenanceTag(state);
@@ -325,10 +338,20 @@ function RecordCard({
       <Text style={tag ? (state === 'reconstructed' ? local.reconstructed : local.unsigned) : local.meta} numberOfLines={1}>
         {tag ? `${tag} · ` : ''}from the minutes record
       </Text>
+      {/* #281 (ADR-025 D6; Dee): mint, not sand, as it is trusted like the coach's own. */}
+      {match.elsewhere && (
+        <Text style={local.elsewhere} numberOfLines={1}>
+          Recorded on another phone
+        </Text>
+      )}
       {match.leftOut !== null && (
         <Text style={local.meta} numberOfLines={1}>
           Left out of the figures{match.leftOut ? ` · "${match.leftOut}"` : ''}
         </Text>
+      )}
+      {/* Archive can be undone, so it is an Action, not Danger. It writes no record (#76 AC4). */}
+      {onArchive && (
+        <Action label={match.archived ? 'Unarchive' : 'Archive'} onPress={() => onArchive(match.id, !match.archived)} />
       )}
     </Pressable>
   );
@@ -345,6 +368,7 @@ function FixtureCard({
   onTeamSheet,
   playable,
   onPlayOut,
+  onShareForRecorder,
   housekeeping,
   scores,
   periods,
@@ -457,6 +481,15 @@ function FixtureCard({
         />
       )}
 
+      {/* #281 (ADR-025): someone else runs the clock on their phone; before kick-off only. */}
+      {match.status === 'planned' && onShareForRecorder && (
+        <RowNav
+          label="Share for a recorder"
+          detail="Someone else runs the clock on their phone"
+          onPress={() => onShareForRecorder(match.id)}
+        />
+      )}
+
       {/* #280: nobody recorded it live, so the plan is written to the record as
           reconstructed. It writes to the record, so it asks first. */}
       {match.status === 'planned' && playable.has(match.id) && playable.get(match.id) !== null && (
@@ -485,6 +518,7 @@ function FixtureCard({
 }
 
 const local = StyleSheet.create({
+  elsewhere: { alignSelf: 'stretch', color: colours.action, fontSize: 13, marginTop: 4, includeFontPadding: false },
   playOutWhy: { alignSelf: 'stretch', color: colours.inkFaint, fontSize: 13, includeFontPadding: false, marginTop: 8 },
   startRow: { alignSelf: 'stretch', marginTop: 14 },
   section: { alignSelf: 'stretch' },

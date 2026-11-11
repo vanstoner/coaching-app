@@ -377,6 +377,7 @@ export function NoTeamsScreen({
   onAdd,
   onBringBack,
   restore = null,
+  onOpenFile,
 }: {
   aside: readonly TeamSummary[];
   /** "Restore from a backup", for a coach whose teams are in a file (Rob, 29 Oct). */
@@ -385,6 +386,8 @@ export function NoTeamsScreen({
   notice?: string | null;
   onAdd: () => void;
   onBringBack: (id: TeamSummary['id']) => void;
+  /** Decision 5 (Rob, 11 Nov): a recorder pack from a coach opens here, by its own name (#281). */
+  onOpenFile?: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={[screen.scroll, local.welcome]}>
@@ -400,6 +403,12 @@ export function NoTeamsScreen({
       {/* #264: the screen's one job is the Main button (label kept: ADD_YOUR_TEAM). */}
       <MainButton label="Add your team" onPress={onAdd} />
       {restore}
+      {onOpenFile && (
+        <>
+          <RowNav label="Open a file from another phone" onPress={onOpenFile} />
+          <Text style={[screen.hint, local.left]}>Recording a match for a coach? Open the recorder pack they sent you.</Text>
+        </>
+      )}
       {aside.map((t) => (
         <Action key={t.id} label={`Bring back ${t.name}`} onPress={() => onBringBack(t.id)} align="center" />
       ))}
@@ -408,6 +417,29 @@ export function NoTeamsScreen({
 }
 
 const local = StyleSheet.create({
+  tempStrip: {
+    alignSelf: 'stretch',
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: '#5a3d00',
+    borderColor: colours.warn,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginHorizontal: 8,
+    marginTop: 4,
+  },
+  tempStripText: { alignSelf: 'stretch', color: colours.ink, fontSize: 14, fontWeight: '600', includeFontPadding: false },
+  borrowed: {
+    alignSelf: 'stretch',
+    padding: 12,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colours.warn,
+    backgroundColor: colours.pitchRaised,
+  },
+  borrowedText: { color: colours.ink, marginBottom: 6 },
   badge: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   badgeText: {
     alignSelf: 'stretch',
@@ -519,3 +551,69 @@ const local = StyleSheet.create({
   },
   emptyText: { color: colours.inkMuted, fontSize: 15, textAlign: 'center', includeFontPadding: false },
 });
+
+/** #281 (ADR-025 D3, D4, D7): the words on a team borrowed for one match. */
+export const BORROWED_RECORDING = 'A temporary team, imported to record one match for the coach. At full time, send the match to the coach from here.';
+export const BORROWED_READY = 'A temporary team: send the match to the coach, then remove this team once the coach has it.';
+export const REMOVE_BORROWED_ASK = 'Remove this team from your phone?';
+export const REMOVE_UNSENT_WARNING = 'The match has not been sent to the coach. Removing the team loses it for good.';
+export const REMOVE_CHECK_SENT = 'Only remove it once the coach has the match. Removing the team loses it for good.';
+
+/**
+ * #281: the borrowed team's banner on Fixtures. Before full time it says
+ * what the team is for; once the match is finished it offers Send to the
+ * coach, then asks to remove the team. Removing erases it (ADR-025 D7);
+ * before sending it warns first. Nothing is removed without a tap.
+ */
+export function BorrowedBanner({
+  ready,
+  onSend,
+  onRemove,
+}: {
+  /** The borrowed fixture's match is finished, so it can be sent (D4). */
+  ready: boolean;
+  /** Shares the match file; resolves true once the share sheet took it. */
+  onSend: () => Promise<boolean>;
+  onRemove: () => void;
+}) {
+  const [asking, setAsking] = useState<'remove' | 'unsent' | 'check' | null>(null);
+  const [sent, setSent] = useState(false);
+  return (
+    <View style={local.borrowed} accessibilityLabel="Temporary team">
+      <Text style={local.borrowedText}>{ready ? BORROWED_READY : BORROWED_RECORDING}</Text>
+      {ready && (
+        <Action
+          label="Send to the coach"
+          onPress={() =>
+            void onSend().then((ok) => {
+              if (!ok) return;
+              setSent(true);
+              setAsking('remove');
+            })
+          }
+        />
+      )}
+      {asking === null && <Action label="Remove this team" quiet onPress={() => setAsking(!ready ? 'unsent' : sent ? 'remove' : 'check')} />}
+      {asking !== null && (
+        <View>
+          <Text style={local.borrowedText}>{asking === 'remove' ? REMOVE_BORROWED_ASK : asking === 'check' ? REMOVE_CHECK_SENT : REMOVE_UNSENT_WARNING}</Text>
+          <Action label={asking === 'unsent' ? 'Remove anyway' : 'Remove'} onPress={onRemove} />
+          <Action label="Keep it for now" quiet onPress={() => setAsking(null)} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Rob, 10 Nov: the strip at the top of every screen of a temporary (borrowed) team, so it never passes for the coach's own. */
+export const TEMPORARY_STRIP = 'Temporary team · recording one match for the coach';
+
+export function TemporaryTeamStrip({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={local.tempStrip}>
+      <Text style={local.tempStripText} numberOfLines={2}>
+        {TEMPORARY_STRIP}
+      </Text>
+    </Pressable>
+  );
+}

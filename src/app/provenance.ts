@@ -27,6 +27,7 @@
 import type { UUID } from '../types/index';
 import type { Ledger, LedgerEntry, LedgerMatch } from './ledger';
 import { signatureStatuses, type SignatureStatus } from './entrySigning';
+import { keyOf, sameRecord, type LedgerRecord } from './ledgerChain';
 
 export type Provenance = 'pristine' | 'live-unsigned' | 'reconstructed';
 
@@ -108,8 +109,59 @@ function originOf(ledger: Ledger, matchId: UUID): string | null {
   return how;
 }
 
-function judge(ledger: Ledger, m: LedgerMatch, written: Written[]): ProvenanceInfo {
+const PLAY = new Set(['interval', 'event', 'attendance']);
+
+/**
+ * #281 (ADR-025 D6): a match recorded on another phone is judged by the
+ * recorder's own entries, held verbatim in its `received` record, checked
+ * against the recorder's published key, never by the coach's import entry.
+ * Anything the coach writes for it afterwards is judged too. Null for a
+ * match recorded on this phone.
+ */
+function receivedWritten(ledger: Ledger, matchId: UUID, ours: Written[]): { written: Written[]; differs: boolean } | null {
+  let importSeq = -1;
+  let received: LedgerRecord | null = null;
+  for (const e of ledger.entries) {
+    for (const r of e.records) {
+      if (r.type === 'received' && r.matchId === matchId) {
+        importSeq = e.seq;
+        received = r;
+      }
+    }
+  }
+  if (!received || !Array.isArray(received.entries)) return null;
+  const originals = received.entries as unknown as LedgerEntry[];
+  const keys = ledger.entries.flatMap((e) => e.records.filter((r) => r.type === 'device'));
+  const statuses = signatureStatuses([{ records: keys } as unknown as LedgerEntry, ...originals]).slice(1);
+  const written: Written[] = [];
+  const signed = new Map<string, LedgerRecord>();
+  originals.forEach((e, i) => {
+    for (const r of Array.isArray(e.records) ? e.records : []) {
+      const k = keyOf(r);
+      if (k) signed.set(k, r);
+      if (!PLAY.has(String(r.type)) || r.matchId !== matchId) continue;
+      written.push({ seq: e.seq, at: Date.parse(e.at), status: statuses[i], device: typeof e.device === 'string' ? e.device : null, type: String(r.type) });
+    }
+  });
+  // The copies must be what the recording phone signed (sameRecord).
+  const importEntry = ledger.entries.find((e) => e.seq === importSeq);
+  const differs = (importEntry?.records ?? []).some((r) => {
+    if (r.type === 'received' || r.type === 'device') return false;
+    const k = keyOf(r);
+    const theirs = k ? signed.get(k) : undefined;
+    return !theirs || !sameRecord(r, theirs);
+  });
+  // What the coach wrote later comes after the recorder's last entry.
+  const last = Math.max(0, ...written.map((w) => w.seq));
+  for (const w of ours) if (w.seq > importSeq) written.push({ ...w, seq: last + (w.seq - importSeq) });
+  return { written, differs };
+}
+
+function judge(ledger: Ledger, m: LedgerMatch, ownWritten: Written[]): ProvenanceInfo {
   const reasons: string[] = [];
+  const elsewhere = receivedWritten(ledger, m.id, ownWritten);
+  const written = elsewhere ? elsewhere.written : ownWritten;
+  if (elsewhere?.differs) reasons.push('the copy differs from what the recording phone signed');
   if (originOf(ledger, m.id) === 'reconstructed') reasons.push('marked as reconstructed');
   if (m.intervals.some((i) => i.corrected)) reasons.push('a playing time was corrected');
   if (written.length === 0) reasons.push('no playing time in the record');

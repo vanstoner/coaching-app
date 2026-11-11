@@ -279,6 +279,8 @@ export type MatchEventKind =
   | 'free_kick'
   | 'assist'
   | 'withdrawn'
+  /** #255 (ADR-026 D4): the opposition used a power play; credited to no one. */
+  | 'opp_power_play'
   | TallyKind;
 
 /**
@@ -288,7 +290,7 @@ export type MatchEventKind =
 export type TallyKind = `tally:${string}`;
 
 /** What a tap on one player records on its own: everything but an assist (#185) or a coach's own tally. */
-export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist' | TallyKind>;
+export type TapEventKind = Exclude<MatchEventKind, 'withdrawn' | 'assist' | 'opp_power_play' | TallyKind>;
 
 /**
  * One entry on the match's time stream. Append-only: never edited, never

@@ -45,6 +45,8 @@ export interface RecordOnlyMatch {
   leftOut: string | null;
   /** Archived by the coach on the phone that played it (#76), carried by its `fixture` record (#195). */
   archived: boolean;
+  /** #281 (ADR-025 D6): carried in from another phone, from its `received` record. */
+  elsewhere?: boolean;
   /** #254: the pitch, as its `fixture` record holds it (read-only here; never a referee). */
   surface: string | null;
   condition: string | null;
@@ -203,3 +205,20 @@ export function recordMatchPage(ledger: Ledger | null, matchId: UUID): RecordMat
     tallies: matchTalliesWithGoals(m.events, ledger.eventTypes, (id) => name(id)),
   };
 }
+
+/**
+ * Rob, 7 Nov ("Can't archive reconstructed"): a match from the record with no
+ * fixture on this phone can be archived here too. A view choice on this phone,
+ * never the record (#76 AC4); unreadable means none archived.
+ */
+export const ARCHIVED_RECORDS_KEY = 'coaching-app/archived-records/v1';
+
+export function parseArchivedRecords(raw: string | null): ReadonlySet<UUID> {
+  try {
+    const v: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(v) ? (v.filter((x) => typeof x === 'string') as UUID[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+

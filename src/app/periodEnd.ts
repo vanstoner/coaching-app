@@ -34,6 +34,7 @@ const LAST_LABEL: Record<RecordedKind, string> = {
   free_kick: 'last free kick',
   // An assist is recorded at its goal's moment.
   assist: 'last goal',
+  opp_power_play: 'their power play',
 };
 
 export interface PeriodEndChoices {

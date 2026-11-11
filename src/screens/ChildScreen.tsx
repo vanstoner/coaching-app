@@ -74,7 +74,7 @@ export function ChildScreen({
   views: SquadViews;
   /** The whole squad, so a preference change is written through `onPlayers`. */
   everyone: Player[];
-  onPlayers: (p: Player[]) => void;
+  onPlayers: (p: Player[]) => boolean | void;
   /** #190: counted in fairness or a fill-in, its history, and how to change it (a reason when refused). */
   fairness: ChildFairness;
   /** #196 AC4: their season's minutes by position, "RB 20 · LW 15 min"; empty when none recorded. */
@@ -156,8 +156,7 @@ export function ChildScreen({
                 player={player}
                 everyone={everyone}
                 onPlayers={(p) => {
-                  onPlayers(p);
-                  tick.mark();
+                  if (onPlayers(p) !== false) tick.mark();
                 }}
               />
             </Section>
@@ -401,7 +400,7 @@ function Preferences({
 }: {
   player: Player;
   everyone: Player[];
-  onPlayers: (p: Player[]) => void;
+  onPlayers: (p: Player[]) => boolean | void;
 }) {
   // #264 V13: tapping the chosen segment still clears it.
   return (
@@ -579,7 +578,7 @@ function Rename({
 }: {
   player: Player;
   everyone: Player[];
-  onPlayers: (p: Player[]) => void;
+  onPlayers: (p: Player[]) => boolean | void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState('');
