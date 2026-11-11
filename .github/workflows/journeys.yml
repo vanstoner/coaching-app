@@ -1,0 +1,113 @@
+name: Journey capture
+
+# #289: walk the match-day journeys on the CI emulator with the Test kit's
+# made-up squad, and measure what is on screen at each step. It installs the
+# beta APK an Android APK run already built and proved (by default the newest
+# successful run on claude/2.4.0, the release in progress), so it builds
+# nothing and publishes nothing. On demand from Run workflow; a pull request
+# that changes it runs it too, to prove it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "the branch whose newest successful beta APK to walk"
+        default: claude/2.4.0
+  pull_request:
+    paths: [.github/workflows/journeys.yml, .github/scripts/journey_capture.py]
+
+concurrency:
+  group: journeys-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  walk:
+    name: Walk the journeys on the emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Self-test the journey driver
+        run: python3 .github/scripts/journey_capture.py --self-test
+
+      # A running clock never goes idle for uiautomator; the driver reads those screens by OCR.
+      - name: Install the OCR engine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+          tesseract --version | head -1
+
+      - name: Find the newest proved beta APK
+        id: apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch || 'claude/2.4.0' }}
+        run: |
+          set -euo pipefail
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android-apk.yml/runs?branch=$BRANCH&event=pull_request&status=completed&per_page=20" --jq '.workflow_runs[].id'); do
+            ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Prove the app renders on an emulator")] | last | .conclusion // ""')
+            [ "$ok" = success ] || continue
+            art=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts" --jq '[.artifacts[] | select(.name == "coaching-app-apk" and (.expired | not))] | last | .id // empty')
+            [ -n "$art" ] || continue
+            echo "run=$id" >> "$GITHUB_OUTPUT"
+            echo "artifact=$art" >> "$GITHUB_OUTPUT"
+            echo "Walking the beta APK from run $id on $BRANCH" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          done
+          echo "WHY THIS JOB FAILED: no Android APK run on $BRANCH with a proved, unexpired APK"; exit 1
+
+      - name: Download it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p apk
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/${{ steps.apk.outputs.artifact }}/zip" > apk/apk.zip
+          unzip -o -q apk/apk.zip -d apk
+          ls -l apk
+
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Walk the journeys
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          JOURNEY_PACKAGE: com.vanstoner.coachingapp.beta
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: |
+            adb install -r -g apk/app-release.apk
+            adb shell wm dismiss-keyguard || true
+            adb shell monkey -p com.vanstoner.coachingapp.beta -c android.intent.category.LAUNCHER 1
+            sleep 20
+            python3 .github/scripts/journey_capture.py run journeys || echo "WALK_STOPPED=1" >> "$GITHUB_ENV"
+
+      - name: Upload the report and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: journey-capture
+          path: journeys/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: The walk reached its end
+        if: env.WALK_STOPPED == '1'
+        run: |
+          python3 - <<'PY'
+          import json; print("WHY THIS JOB FAILED:", json.load(open("journeys/steps.json")).get("stopped"))
+          PY
+          exit 1
