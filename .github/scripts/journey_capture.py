@@ -204,6 +204,30 @@ class Walk:
         self.save()
         return True
 
+    def sees(self, label):
+        """Whether `label` is anywhere on the page now. Any swipes it takes to look are undone before
+        it returns, so the next step still measures from where the coach would be (no step recorded)."""
+        probe = os.path.join(self.out, "probe")
+        done, seen = [], False
+        for _ in range(4):
+            nodes = dump(probe + ".xml")
+            if not nodes:
+                screenshot(probe + ".png")
+                nodes = ocr(probe + ".png")
+            if find(nodes, label):
+                seen = True
+                break
+            sw = swipe(nodes or [])
+            if not sw:
+                break
+            adb("shell", "input", "swipe", *map(str, sw), "400")
+            done.append(sw)
+            time.sleep(1)
+        for sw in reversed(done):
+            adb("shell", "input", "swipe", str(sw[2]), str(sw[3]), str(sw[0]), str(sw[1]), "400")
+            time.sleep(1)
+        return seen
+
     def back(self, what):
         self.n += 1
         screenshot(os.path.join(self.out, f"{self.n:02d}.png"))
@@ -244,12 +268,15 @@ def run(out):
         w.step("Start a test match", "Start a test match", wait=3)
         w.step("Fill the lineup", "Use suggestion", optional=True)
         w.step("Speed up the clock", "×10", optional=True)
-        for period in range(1, 5):
+        for period in range(1, 7):
             # "Start quarter", or "Q2 is due: Start" after the team talk (#283).
             w.step(f"Start period {period}", "Start", contains=True, wait=8, pinned=True, max_swipes=0)
-            w.step(f"End period {period}", "End ", prefix=True, wait=3)
+            # The button's exact words: the Lineup also shows "End of Q1", which a prefix would catch.
+            w.step(f"End period {period}", ("End quarter", "End half"), wait=3)
             # At ×10 the period has run past its length, so the app asks when it ended (#180).
             w.step(f"Answer when period {period} ended", "Ended at planned time", optional=True, max_swipes=0, wait=3)
+            if w.sees("See the minutes"):
+                break
         w.step("See the minutes", "See the minutes", wait=3)
         w.step("End match", "End match", wait=3)
         w.save()
