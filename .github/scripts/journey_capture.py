@@ -37,6 +37,13 @@ def find(nodes, label, prefix=False, contains=False):
     """The node whose text or description is `label` (or starts with it, or contains it). The lowest
     on screen wins when several match: a tab beats the screen title of the same word, and a pinned
     Main button beats a hint that mentions it."""
+    if isinstance(label, (tuple, list)):
+        # Alternatives: the same control under the words it shows in each state.
+        for one in label:
+            hit = find(nodes, one, prefix, contains)
+            if hit:
+                return hit
+        return None
     hits = []
     for n in nodes or []:
         if not n.get("bounds"):
@@ -108,7 +115,7 @@ class Walk:
         with open(os.path.join(self.out, "steps.json"), "w", encoding="utf-8") as fh:
             json.dump({"steps": self.steps, "stopped": stopped}, fh, indent=1)
 
-    def step(self, what, label, prefix=False, typing=None, wait=2.0, max_swipes=8, optional=False, contains=False):
+    def step(self, what, label, prefix=False, typing=None, wait=2.0, max_swipes=12, optional=False, contains=False):
         """Bring `label` into view, record how, then tap it (and type, if asked)."""
         self.n += 1
         name = f"{self.n:02d}"
@@ -122,13 +129,17 @@ class Walk:
             s = swipe(nodes or [])
             if not s:
                 break
+            # Down the page first; past halfway, back up (Done sits at the top of a scrolled sheet).
+            if swipes >= max_swipes // 2:
+                s = (s[0], s[3], s[2], s[1])
             adb("shell", "input", "swipe", *map(str, s), "400")
             time.sleep(1)
             swipes += 1
             nodes = dump(os.path.join(self.out, f"{name}-s{swipes}.xml"))
             screen = screen_box(nodes)
             node = find(nodes, label, prefix, contains)
-        record = {"n": self.n, "journey": self.journey, "what": what, "label": label,
+        record = {"n": self.n, "journey": self.journey, "what": what,
+                  "label": label if isinstance(label, str) else " / ".join(label),
                   "in_view": in_view, "swipes": swipes, "found": fully_visible(node, screen),
                   "shot": f"{name}.png", "height": screen[3] - screen[1]}
         self.steps.append(record)
@@ -179,7 +190,8 @@ def run(out):
         w.step("Save it", "Save fixture", wait=3)
         w.step("Who's coming", "Who's coming")
         w.step("On to the team sheet", "Next: team sheet", wait=3)
-        w.step("Fill the rest", "Fill the rest", wait=3)
+        # A planned fixture's sheet is already full: then the same button reads "Every place filled".
+        w.step("Fill the rest", ("Fill the rest", "Every place filled"), wait=3)
         w.step("Done", "Done")
 
         w.journey = "J3: play a test match"
@@ -272,6 +284,7 @@ def self_test():
     check("the window is the largest box", screen == (0, 0, 320, 640))
     check("of two 'Settings', the lowest (the tab) is found", find(nodes, "Settings")["bounds"][1] == 600)
     check("a control is found by its description too", find(nodes, "Add a fixture") is not None)
+    check("alternatives: the first wording on screen is found", find(nodes, ("Fill the rest", "End quarter"))["text"] == "End quarter")
     check("an exact label never matches a longer one", find(nodes, "Start ") is None and find(nodes, "End") is None)
     check("a prefix matches the start only, so the team talk's button needs 'contains'",
           find(nodes, "Start ", prefix=True) is None and find(nodes, "Start", contains=True)["text"] == "Q2 is due: Start")
