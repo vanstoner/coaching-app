@@ -68,6 +68,11 @@ DOCS_ONLY = [
     # #232 criterion 16: the Play upload adds no build to any PR.
     ".github/workflows/google-play.yml",
     ".github/scripts/play_api.py",
+    # #287: the Tests page builds no app, so it publishes no beta (it took
+    # PR #286's 2.4 beta when it was first pushed without this).
+    ".github/workflows/tests.yml",
+    ".github/scripts/build_tests_page.py",
+    ".github/scripts/build_site.py",
 ]
 
 # #230 criterion 7: builds Android but not iOS.
@@ -134,6 +139,17 @@ def by_path(event, files):
     return android, ios
 
 
+def changes_app(event, files):
+    """#287: whether the change reaches the app a coach installs: any file
+    outside the docs-only list and outside .github/ (CI and its scripts).
+    Only such a pull request publishes the beta (CLAUDE.md: "every PR that
+    changes the app"); a CI-only one still builds and smoke-tests, so the
+    pipeline is proved, but leaves the beta to the PR that owns it."""
+    if event == "workflow_dispatch" or files is None:
+        return True
+    return any(f and not in_docs_only(f) and not f.startswith(".github/") for f in files)
+
+
 def decide(event, draft, labels, prior_ok, files, workflow):
     """The outputs of the scope job for one workflow (android-apk or ios)."""
     android, ios = by_path(event, files)
@@ -151,7 +167,7 @@ def decide(event, draft, labels, prior_ok, files, workflow):
         build, reason = False, "an earlier run already built, smoke-tested and published this head"
     else:
         build, reason = True, "build"
-    return {"android": android, "ios": ios, "full": full, "build": build, "reason": reason}
+    return {"android": android, "ios": ios, "full": full, "build": build, "app": changes_app(event, files), "reason": reason}
 
 
 # Pages keeps its own `on: paths` (criterion 9); read from pages.yml so the
@@ -203,6 +219,9 @@ def self_test():
         (["docs/decisions/ADR-007.md"], False, False, False),
         ([".github/workflows/google-play.yml"], False, False, False),
         ([".github/scripts/play_api.py"], False, False, False),
+        ([".github/workflows/tests.yml"], False, False, False),
+        ([".github/scripts/build_tests_page.py"], False, False, True),
+        ([".github/scripts/build_site.py"], False, False, True),
         ([".github/scripts/play_bundle.py"], True, False, False),
         (["HISTORY.md"], False, False, False),
         (["README.md"], False, False, False),
@@ -272,6 +291,19 @@ def self_test():
         got = decide(event, draft, labels, prior, files, wf)["build"]
         expect(name, got, want)
 
+    print("#287 (a beta only from a PR that changes the app):")
+    for name, files, want in [
+        ("an app file", ["src/x.ts"], True),
+        ("App.tsx with a doc", ["docs/x.md", "App.tsx"], True),
+        ("app.json", ["app.json"], True),
+        ("the scope script only", [".github/scripts/ci_scope.py"], False),
+        ("the Android workflow only", [".github/workflows/android-apk.yml"], False),
+        ("the Tests page and the site", [".github/workflows/tests.yml", ".github/scripts/build_tests_page.py", "site/tests.html"], False),
+        ("docs only", ["docs/x.md"], False),
+        ("diff unknown", None, True),
+    ]:
+        expect(f"publishes the beta: {name}", changes_app("pull_request", files), want)
+
     print(f"{failed} failed." if failed else "every expectation held.")
     return 1 if failed else 0
 
@@ -309,7 +341,7 @@ def main(argv):
     for f in (files or [])[:50]:
         tag = "docs-only" if in_docs_only(f) else ("android-only" if in_android_only(f) else "app")
         print(f"#   {tag:12} {f}", file=sys.stderr)
-    for key in ("android", "ios", "full", "build"):
+    for key in ("android", "ios", "full", "build", "app"):
         print(f"{key}={'true' if d[key] else 'false'}")
     print(f"reason={d['reason']}")
     return 0

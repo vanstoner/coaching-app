@@ -94,6 +94,8 @@ jobs:
       actions: read               # criterion 14: earlier runs for this head
     outputs:
       build: ${{ steps.decide.outputs.build }}
+      # #287: true only when the PR changes the app; the beta job reads it.
+      app: ${{ steps.decide.outputs.app }}
     steps:
       # A pull request checks out its test merge, whose first parent is the
       # base: depth 2 is the whole diff. A push compares with `before`.
@@ -1233,8 +1235,10 @@ jobs:
   # player data (ADR-011). Nothing captured from a phone is ever attached.
   beta:
     name: Publish Heart FC Beta Coach
-    needs: [checks, apk, smoke]   # never publish a beta whose tests or smoke test failed (#99)
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [scope, checks, apk, smoke]   # never publish a beta whose tests or smoke test failed (#99)
+    # #287: only a PR that changes the app takes the beta; a CI-only PR builds
+    # and smoke-tests, then leaves the beta with the PR that owns it.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.scope.outputs.app == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: coaching-beta        # one writer to the `beta` release at a time

@@ -17,12 +17,12 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py, .github/scripts/build_tests_page.py]
   pull_request:
-    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py]
+    paths: [site/**, test-data/test-season.json, PRIVACY.md, COACHES.md, GUIDE.md, store/app-store/screenshots/iphone/**, store/play/**, assets/images/icon.png, .github/workflows/pages.yml, .github/scripts/build_site.py, .github/scripts/release_status.py, .github/scripts/build_tests_page.py]
   workflow_dispatch:
   workflow_run:
-    workflows: [Android APK, TestFlight, Google Play, App Store listing]
+    workflows: [Android APK, TestFlight, Google Play, App Store listing, Tests]
     types: [completed]
     branches: [main]
   schedule:
@@ -111,6 +111,66 @@ jobs:
           [ -z "$files" ] && { echo "no tracker data to check"; exit 0; }
           python3 .github/scripts/release_status.py check $files || {
             echo "WHY THIS JOB FAILED: the release tracker's data failed the privacy check (PRIVACY PROBLEM lines above)"; exit 1; }
+
+      # #287: the Tests page, from the latest Tests run on main or a manual run
+      # (never a pull request's), and the latest emulator check on main. Reads
+      # only. If gathering fails the last published page stays (the committed
+      # placeholder if there is none); a red run is published red (criterion 8).
+      - name: Self-test the Tests page
+        run: python3 .github/scripts/build_tests_page.py --self-test
+
+      - name: Gather the Tests page (reads only)
+        id: tests
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          W=$(mktemp -d)
+          artifact() { # run id, artifact name, zip path: the newest artifact of that name
+            local id
+            id=$(gh api "repos/$REPO/actions/runs/$1/artifacts" --jq "[.artifacts[] | select(.name == \"$2\" and (.expired | not))] | sort_by(.created_at) | last | .id // empty")
+            [[ "$id" =~ ^[0-9]+$ ]] && gh api "repos/$REPO/actions/artifacts/$id/zip" > "$3"
+          }
+          # The emulator check: the newest finished Android APK run on main whose
+          # emulator job ran (a docs-only push skips it).
+          emu_args=()
+          for id in $(gh api "repos/$REPO/actions/workflows/android-apk.yml/runs?branch=main&event=push&status=completed&per_page=15" --jq '.workflow_runs[].id' 2>/dev/null || true); do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            conclusion=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Prove the app renders on an emulator")] | last | .conclusion // ""' 2>/dev/null || true)
+            case "$conclusion" in success|failure) ;; *) continue ;; esac
+            info=$(gh api "repos/$REPO/actions/runs/$id" --jq '{sha: .head_sha, run_url: .html_url, ran_at: .updated_at}')
+            shot=null
+            if artifact "$id" coaching-app-smoke-evidence "$W/emu.zip" && unzip -o -q -j "$W/emu.zip" screenshot.png -d "$W"; then
+              cp "$W/screenshot.png" _site/tests-emulator.png; shot='"tests-emulator.png"'
+            fi
+            jq -n --argjson e "$info" --arg c "$conclusion" --argjson s "$shot" '$e + {conclusion: $c, screenshot: $s}' > "$W/emulator.json"
+            emu_args=(--emulator "$W/emulator.json")
+            break
+          done
+          # The tests: the newest finished Tests run that was not a pull request's.
+          # Before tests.yml is on main, GitHub does not know it (404): no run yet.
+          run=$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?status=completed&per_page=30" --jq '[.workflow_runs[] | select(.event != "pull_request")][0].id // empty' || true)
+          [[ "$run" =~ ^[0-9]+$ ]] || run=""
+          if [ -n "$run" ] && artifact "$run" test-report "$W/tr.zip" && unzip -o -q "$W/tr.zip" -d "$W/tr" && [ -s "$W/tr/vitest.json" ]; then
+            python3 .github/scripts/build_tests_page.py "$W/tr/vitest.json" "$W/tr/meta.json" _site/tests.html "${emu_args[@]}"
+            echo "Tests page from run $run" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            python3 .github/scripts/build_tests_page.py --none _site/tests.html "${emu_args[@]}"
+            echo "No Tests run to show yet: the page says so" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the last published Tests page if gathering failed
+        if: steps.tests.outcome != 'success'
+        run: |
+          echo "The Tests page could not be gathered; keeping the last published one." | tee -a "$GITHUB_STEP_SUMMARY"
+          # The published page if there is one; else the committed placeholder build_site.py copied stays.
+          if curl -fsS https://vanstoner.github.io/coaching-app/tests.html -o /tmp/tests.html && [ -s /tmp/tests.html ]; then
+            cp /tmp/tests.html _site/tests.html
+            curl -fsS https://vanstoner.github.io/coaching-app/tests-emulator.png -o _site/tests-emulator.png || rm -f _site/tests-emulator.png
+          fi
+          test -s _site/tests.html
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
