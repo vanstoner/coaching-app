@@ -45,7 +45,7 @@ env:
   # Criterion 12, D2 (Rob's call, like PHASED_RELEASE): 'on' also puts each
   # version on production at 100%, in a second edit after the closed track,
   # once Google has granted production access. A PR Rob approves turns it on.
-  PLAY_PRODUCTION: 'off'
+  PLAY_PRODUCTION: 'on'
 
 on:
   push:
