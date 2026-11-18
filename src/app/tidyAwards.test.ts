@@ -24,7 +24,7 @@ import {
 } from './ledger';
 import * as released from './fixtures/reader-1.2.0/ledger';
 import { endMatch } from './matchClosing';
-import { awardPromptDue, awardRows, awardsLine, awardsOffered, childrenInMatch } from './matchAwards';
+import { awardPromptDue, awardRows, awardsLine, awardsOffered, childrenInMatch, giveAwards } from './matchAwards';
 import { recordMatchPage } from './recordOnly';
 import { makeFormat } from './shapes';
 import { makePlayer } from './squad';
@@ -167,8 +167,11 @@ describe('End match asks first (#228 AC19, AC22; Q5)', () => {
 
   it('not once every active award has a winner, so a coach who decided in Q1 is not asked again', () => {
     const f = toFullTime();
+    // #266 Q3 (Rob, 7 Nov, "Approve 1-8") replaces "while any award has no
+    // winner": End match asks only while none at all has been given, so one
+    // award left out is taken as deliberate.
     let l = ok(giveAward(f.ledger, f.state.match.id, POTW, ids[1], '', f.now()));
-    expect(awardPromptDue(l, f.state)).toBe(true);
+    expect(awardPromptDue(l, f.state)).toBe(false);
     l = ok(giveAward(l, f.state.match.id, ASSIST, ids[2], '', f.now()));
     expect(awardPromptDue(l, f.state)).toBe(false);
   });
@@ -191,9 +194,12 @@ describe('End match asks first (#228 AC19, AC22; Q5)', () => {
   it('the report asks only when due, and both End match and Give them later close it (source check)', () => {
     const src = readFileSync(join(__dirname, '..', 'screens', 'MatchSummaryScreen.tsx'), 'utf8');
     expect(src).toMatch(/onPress=\{\(\) => \(awards\?\.due \? setAskingAwards\(true\) : onEndMatch\(\)\)\}/);
-    const card = src.slice(src.indexOf('<AwardCard'), src.indexOf('</>\n            }'));
-    expect(card.match(/onPress=\{onEndMatch\}/g)?.length).toBe(2);
-    expect(card).toContain('Give them later');
+    // #266 C12: with nothing picked, End match without awards and Give them
+    // later both close it; with picks, both ask first ("Give the n picked?").
+    const card = src.slice(src.indexOf('<AwardCard'), src.lastIndexOf('</FormSheet>'));
+    expect(card).toContain('<MainButton label="End match without awards" onPress={onEndMatch} />');
+    expect(card).toContain('<Action label="Give them later" onPress={onEndMatch} align="center" />');
+    expect(card.match(/onPress=\{\(\) => setAskPicks\(true\)\}/g)?.length).toBe(2);
   });
 });
 
@@ -289,7 +295,11 @@ describe('a test match has no awards (#228 AC27, Q6)', () => {
     const clock = readFileSync(join(__dirname, '..', 'screens', 'ClockScreen.tsx'), 'utf8');
     // #264 V2: the › is an icon (`more`), not text.
     expect(clock).toMatch(/\{awards && \(\s*<SheetButton\s*label=\{`Give \$\{nameOf\(sheetFor\)\} an award`\}\s*more/);
-    expect(clock).toMatch(/\{awards && !running && !view\.isMatchOver && \(/);
+    // #266 C13 (Rob, Q1, 7 Nov): at a break the card is on the Lineup, no longer on the clock.
+    expect(clock).not.toMatch(/\{awards && !running && !view\.isMatchOver && \(/);
+    const lineup = readFileSync(join(__dirname, '..', 'screens', 'LineupScreen.tsx'), 'utf8');
+    expect(lineup).toMatch(/\{awards && atBreak && \(/);
+    expect(app).toMatch(/onLeave=\{exit\(leaveWithPicks\)\}\s*awards=\{liveAwards\}\s*onPicksCount=\{setPicksWaiting\}/);
   });
 });
 
@@ -299,5 +309,82 @@ describe('Settings says where awards are given (#228 AC31, source check)', () =>
     expect(src).toMatch(/Given during a match \(tap a player, or at a break\), when you End match/);
     const spec = readFileSync(join(__dirname, '..', '..', 'docs', 'feature-specs.md'), 'utf8');
     expect(spec.split('\n').find((l) => l.startsWith('| Give / change an award |'))).toMatch(/End match asks first/);
+  });
+});
+
+describe('awards in one Give (#266)', () => {
+  it('n picks give n records in one go; an award left with no pick is simply not given (C1, C4)', () => {
+    const f = toFullTime();
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: POTW, playerIds: [ids[0]], note: '' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.given).toBe(1);
+    const rows = awardRows(r.ledger, f.state.match.id, () => '');
+    expect(rows.find((x) => x.typeId === POTW)!.winners.map((w) => w.playerId)).toEqual([ids[0]]);
+    expect(rows.find((x) => x.typeId === ASSIST)!.winners).toEqual([]);
+  });
+
+  it('joint winners: one record per name, the one note on each (C5, C6)', () => {
+    const f = toFullTime();
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: ASSIST, playerIds: [ids[1], ids[2]], note: 'Both brilliant' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.given).toBe(2);
+    const awards = r.ledger.entries.flatMap((e) => e.records).filter((x) => x.type === 'award');
+    expect(awards).toHaveLength(2);
+    expect(awards.every((a) => (a as unknown as { note: string | null }).note === 'Both brilliant')).toBe(true);
+  });
+
+  it('all or nothing: one refusal writes nothing and gives the reason (C7)', () => {
+    const f = toFullTime();
+    const before = f.ledger;
+    const r = giveAwards(
+      before,
+      f.state.match.id,
+      [
+        { typeId: POTW, playerIds: [ids[0]], note: '' },
+        { typeId: 'no-such-award' as typeof POTW, playerIds: [ids[1]], note: '' },
+      ],
+      f.now()
+    );
+    expect(r.ok).toBe(false);
+    expect(awardRows(before, f.state.match.id, () => '').every((x) => x.winners.length === 0)).toBe(true);
+  });
+
+  it('End match asks from the record: none given asks, one given does not (C12)', () => {
+    const f = toFullTime();
+    expect(awardPromptDue(f.ledger, f.state)).toBe(true);
+    const r = giveAwards(f.ledger, f.state.match.id, [{ typeId: POTW, playerIds: [ids[0]], note: '' }], f.now());
+    if (!r.ok) throw new Error(r.reason);
+    expect(awardPromptDue(r.ledger, f.state)).toBe(false);
+  });
+});
+
+describe('awards at a break, on the Lineup (#266 C10, C11, C13; #283 C17)', () => {
+  it('Start asks about picks first, then the late Start; closed with picks it says so; Give is quiet', () => {
+    const lineup = readFileSync(join(__dirname, '..', 'screens', 'LineupScreen.tsx'), 'utf8');
+    expect(lineup).toMatch(/if \(picked > 0\) setAskPicks\(\(\) => start\);\s*else start\(\);/);
+    expect(lineup).toContain('title={`Give the ${picked} picked?`}');
+    expect(lineup).toContain("title={!awardsOpen && picked > 0 ? `${picked} picked, not given yet` : awardsLine(awards.rows)}");
+    expect(lineup).toMatch(/footer=\{<Action label=\{giveLabel\(picked\)\} onPress=\{\(\) => giveAll\(\)\} align="center" \/>\}/);
+  });
+
+  it('Leave and Back drop the picks and say "Left: n picks not given"; nothing is stored', () => {
+    const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf8');
+    expect(app).toContain("if (n > 0) showToast(`Left: ${n} pick${n === 1 ? '' : 's'} not given`);");
+    expect((app.match(/onPicksCount=\{setPicksWaiting\}/g) ?? []).length).toBe(2);
+    expect(app).toContain('const picksWaiting = useRef(0);');
+  });
+});
+
+describe('a temporary team has no awards (#266 C15, #281; found by Dee\'s review, 11 Nov)', () => {
+  it('a record holding a recorder pack offers no card, though the built-in awards are active', async () => {
+    const { appendRecords } = await import('./ledger');
+    const d = matchDay();
+    d.kickOff();
+    d.advance(10 * MIN);
+    const own = d.save();
+    expect(own.awardTypes.some((t) => t.active)).toBe(true);
+    expect(awardsOffered(own, d.state)).toBe(true);
+    const temporary = appendRecords(own, [{ type: 'pack', fixtureId: d.state.match.id }], new Date());
+    expect(awardsOffered(temporary, d.state)).toBe(false);
   });
 });

@@ -8,6 +8,7 @@
  */
 
 import { parseLedger } from './ledger';
+import { borrowedFor } from './recorderFiles';
 import { hasMatchUnderway, readSession } from './persistence';
 import { currentSeason, seasonLine } from './seasons';
 import { DEFAULT_SHAPE, SHAPES, defaultShapeFor, sideOfShape, type ShapeCode } from './shapes';
@@ -16,7 +17,7 @@ import { DEFAULT_SHAPE, SHAPES, defaultShapeFor, sideOfShape, type ShapeCode } f
 export function readTeamRow(
   session: string | null,
   ledger: string | null
-): { name: string | null; season: string; live: boolean } {
+): { name: string | null; season: string; live: boolean; borrowed: boolean } {
   const read = readSession(session);
   const saved = read.status === 'ok' ? read.session : null;
   const parsed = ledger === null ? null : parseLedger(ledger);
@@ -25,6 +26,8 @@ export function readTeamRow(
     name: saved ? saved.squadName.trim() || 'Unnamed team' : null,
     season: seasonLine(currentSeason(seasons)),
     live: hasMatchUnderway(saved),
+    // #281 (Rob, 9 Nov, "approve 4"): a team borrowed for one match is labelled so wherever it is listed.
+    borrowed: parsed?.ok ? borrowedFor(parsed.ledger) !== null : false,
   };
 }
 

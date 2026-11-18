@@ -19,40 +19,76 @@ import { useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { UUID } from '../types/index';
-import type { AwardRow } from '../app/matchAwards';
+import type { AwardPick, AwardRow } from '../app/matchAwards';
 import { Chip, ChipRow } from './Chip';
 import { FieldRow, FormSheet, SheetNote } from './controls';
 import { Text } from './Text';
 import { colours, screen } from './theme';
 
-type Pending = { mode: 'give' | 'take'; typeId: UUID; playerId: UUID; note: string; error: string };
+type TakeBack = { typeId: UUID; playerId: UUID; note: string; error: string };
 
+/** #266: the picks waiting under each award, and each award's one note. Screen state only. */
+export type Picks = Record<string, { playerIds: UUID[]; note: string }>;
+
+export function picksCount(picks: Picks): number {
+  return Object.values(picks).reduce((n, p) => n + p.playerIds.length, 0);
+}
+
+export function picksList(picks: Picks): AwardPick[] {
+  return Object.entries(picks)
+    .filter(([, p]) => p.playerIds.length > 0)
+    .map(([typeId, p]) => ({ typeId: typeId as UUID, playerIds: p.playerIds, note: p.note }));
+}
+
+/** "Give 3 awards", or "Pick names to give" with nothing picked (#266 C3). */
+export function giveLabel(n: number): string {
+  return n === 0 ? 'Pick names to give' : `Give ${n} award${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The card (#266, Dee's prototype, Rob 7 Nov): tap names to pick them under
+ * each award, then one Give writes them all. Picking writes nothing. A ticked
+ * (given) name opens Take it back, as before. The picks are held by the
+ * screen that draws the card, so Start, End match and Give them later can ask
+ * about them first (C10).
+ */
 export function AwardCard({
   rows,
   childrenInMatch,
-  onGive,
+  picks,
+  onPicks,
   onTakeBack,
+  error,
   footer,
 }: {
   rows: AwardRow[];
   /** The children who took part, in squad order. */
   childrenInMatch: { playerId: UUID; name: string }[];
-  /** The reason when refused, else null. */
-  onGive: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  picks: Picks;
+  onPicks: (next: Picks) => void;
   onTakeBack: (typeId: UUID, playerId: UUID, note: string) => string | null;
+  /** A refused Give's reason; the picks stay as they were (C7). */
+  error?: string;
+  /** The Give button and anything under it, drawn by the screen. */
   footer?: ReactNode;
 }) {
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [taking, setTaking] = useState<TakeBack | null>(null);
   const nameOf = (id: UUID) => childrenInMatch.find((c) => c.playerId === id)?.name ?? '—';
+  const both = (ids: UUID[]) => ids.map(nameOf).join(' and ');
 
-  const submit = () => {
-    if (!pending) return;
-    const refused =
-      pending.mode === 'give'
-        ? onGive(pending.typeId, pending.playerId, pending.note)
-        : onTakeBack(pending.typeId, pending.playerId, pending.note);
-    if (refused) setPending({ ...pending, error: refused });
-    else setPending(null);
+  const toggle = (typeId: UUID, playerId: UUID) => {
+    const was = picks[typeId] ?? { playerIds: [], note: '' };
+    const playerIds = was.playerIds.includes(playerId)
+      ? was.playerIds.filter((id) => id !== playerId)
+      : [...was.playerIds, playerId];
+    onPicks({ ...picks, [typeId]: { ...was, playerIds } });
+  };
+
+  const takeBack = () => {
+    if (!taking) return;
+    const refused = onTakeBack(taking.typeId, taking.playerId, taking.note);
+    if (refused) setTaking({ ...taking, error: refused });
+    else setTaking(null);
   };
 
   return (
@@ -60,12 +96,20 @@ export function AwardCard({
       <Text style={local.heading}>Awards for this match</Text>
       {rows.map((row) => {
         const has = new Set(row.winners.map((w) => w.playerId));
-        const open = pending?.typeId === row.typeId ? pending : null;
+        const picked = picks[row.typeId]?.playerIds ?? [];
+        const joint = row.winners.length + picked.length > 1;
+        const line =
+          row.winners.length > 0
+            ? `given: ${row.winners.map((w) => w.name).join(' and ')}`
+            : picked.length > 0
+              ? `picked: ${both(picked)}`
+              : 'not given';
         return (
           <View key={row.typeId} style={local.row}>
             <Text style={local.type} numberOfLines={2}>
-              {row.name}
-              {row.winners.length > 0 ? ` · given: ${row.winners.map((w) => w.name).join(', ')}` : ''}
+              <Text style={local.typeName}>{row.name}</Text>
+              {joint ? <Text style={local.joint}>{'  joint'}</Text> : null}
+              {`  ${line}`}
             </Text>
             <ChipRow>
               {childrenInMatch.map((c) => (
@@ -73,51 +117,54 @@ export function AwardCard({
                   key={c.playerId}
                   label={c.name}
                   tick={has.has(c.playerId)}
-                  selected={has.has(c.playerId) || open?.playerId === c.playerId}
+                  selected={has.has(c.playerId)}
+                  picked={picked.includes(c.playerId)}
                   onPress={() =>
-                    setPending({
-                      mode: has.has(c.playerId) ? 'take' : 'give',
-                      typeId: row.typeId,
-                      playerId: c.playerId,
-                      note: '',
-                      error: '',
-                    })
+                    has.has(c.playerId)
+                      ? setTaking({ typeId: row.typeId, playerId: c.playerId, note: '', error: '' })
+                      : toggle(row.typeId, c.playerId)
                   }
                 />
               ))}
             </ChipRow>
-            <FormSheet
-              visible={open !== null}
-              title={row.name}
-              saveLabel={open?.mode === 'take' ? 'Take it back' : 'Give'}
-              onCancel={() => setPending(null)}
-              onSave={submit}
-              dirty={open !== null && open.note !== ''}
-              thing="note"
-            >
-              {open && (
-                <>
-                  <SheetNote>
-                    {open.mode === 'take'
-                      ? `Take ${row.name} back from ${nameOf(open.playerId)}? The record keeps the earlier one.`
-                      : row.winners.length > 0
-                        ? `Already given: this adds ${nameOf(open.playerId)} as a joint winner.`
-                        : `${row.name} for ${nameOf(open.playerId)}.`}
-                  </SheetNote>
-                  <FieldRow
-                    label="Note"
-                    value={open.note}
-                    onChangeText={(note) => setPending({ ...open, note, error: '' })}
-                    placeholder={open.mode === 'take' ? 'Needed after match day' : 'Optional'}
-                  />
-                  {open.error !== '' && <Text style={screen.error}>{open.error}</Text>}
-                </>
-              )}
-            </FormSheet>
+            {picked.length > 0 && (
+              <FieldRow
+                label="Note"
+                value={picks[row.typeId]?.note ?? ''}
+                onChangeText={(note) => onPicks({ ...picks, [row.typeId]: { playerIds: picked, note } })}
+                placeholder={`Optional, for ${picked.length > 1 ? 'both' : nameOf(picked[0])}`}
+              />
+            )}
           </View>
         );
       })}
+      <Text style={screen.hint}>Tap names to pick them; tap again to unpick. A ticked name is given: tap it to take it back.</Text>
+      {error ? <Text style={screen.error}>{error}</Text> : null}
       {footer}
+      <FormSheet
+        visible={taking !== null}
+        title="Take it back"
+        saveLabel="Take it back"
+        onCancel={() => setTaking(null)}
+        onSave={takeBack}
+        dirty={taking !== null && taking.note !== ''}
+        thing="note"
+      >
+        {taking && (
+          <>
+            <SheetNote>
+              {`Take ${rows.find((r) => r.typeId === taking.typeId)?.name ?? 'it'} back from ${nameOf(taking.playerId)}? The record keeps the earlier one.`}
+            </SheetNote>
+            <FieldRow
+              label="Note"
+              value={taking.note}
+              onChangeText={(note) => setTaking({ ...taking, note, error: '' })}
+              placeholder="Needed after match day"
+            />
+            {taking.error !== '' && <Text style={screen.error}>{taking.error}</Text>}
+          </>
+        )}
+      </FormSheet>
     </View>
   );
 }
@@ -133,5 +180,7 @@ const local = StyleSheet.create({
   },
   heading: { color: colours.ink, fontSize: 18, fontWeight: '700', includeFontPadding: false },
   row: { marginTop: 10 },
-  type: { color: colours.inkMuted, fontSize: 15, marginBottom: 4, includeFontPadding: false },
+  type: { color: colours.inkMuted, fontSize: 14, marginBottom: 6, includeFontPadding: false },
+  typeName: { color: colours.ink, fontSize: 16, fontWeight: '600' },
+  joint: { color: colours.warn, fontSize: 13, fontWeight: '600' },
 });

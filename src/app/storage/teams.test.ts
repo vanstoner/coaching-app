@@ -10,7 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createMemoryStore, inTurn, type KeyValueStore } from '../persistence';
+import { STORAGE_KEY, createMemoryStore, inTurn, type KeyValueStore } from '../persistence';
+import { LEDGER_STORAGE_KEY } from './ledgerStore';
 import { TEST_CLOCK_KEY } from '../testKit';
 import { LAST_BACKUP_KEY, SETTINGS_SECTIONS_KEY } from '../settingsSections';
 import type { UUID } from '../../types/index';
@@ -18,6 +19,8 @@ import {
   BEFORE_TEAMS_PREFIX,
   UNREADABLE_TEAM,
   addTeam,
+  eraseTeam,
+  isBorrowedRecord,
   bringBackTeam,
   openTeam,
   removeTeam,
@@ -394,5 +397,41 @@ describe('QA re-check, N2 and N3', () => {
     await removeTeam(root, T1, NOW);
     await root.setItem(TEAMS_INDEX_KEY, '{damaged');
     expect(await openTeams(root, NOW, ids())).toMatchObject({ kind: 'none' });
+  });
+});
+
+describe('a team borrowed for one match (#281, ADR-025 D7)', () => {
+  const packed = JSON.stringify({ entries: [{ records: [{ type: 'squad' }] }, { records: [{ type: 'pack', fixtureId: 'f' }] }] });
+  const own = JSON.stringify({ entries: [{ records: [{ type: 'squad' }] }] });
+
+  it('is known by the pack record in its stored record', () => {
+    expect(isBorrowedRecord(JSON.parse(packed))).toBe(true);
+    expect(isBorrowedRecord(JSON.parse(own))).toBe(false);
+    expect(isBorrowedRecord(null)).toBe(false);
+    expect(isBorrowedRecord({ entries: 'x' })).toBe(false);
+  });
+
+  it('is left out of the phone backup, and erasing it removes every key it holds, never a phone-wide one', async () => {
+    const root = createMemoryStore();
+    await addTeam(root, T1, NOW);
+    const index = await addTeam(root, T2, NOW);
+    await teamStore(root, T1).setItem(STORAGE_KEY, '{}');
+    await teamStore(root, T1).setItem(LEDGER_STORAGE_KEY, own);
+    await teamStore(root, T2).setItem(STORAGE_KEY, '{}');
+    await teamStore(root, T2).setItem(LEDGER_STORAGE_KEY, packed);
+    await teamStore(root, T2).setItem('coaching-app/team-sheet/view', 'table');
+    await root.setItem(LAST_BACKUP_KEY, 'kept');
+    const backup = await teamsForBackup(root, index!);
+    expect(backup.parts.map((p) => p.id)).toEqual([T1]);
+    expect(backup.skipped).toEqual([]);
+
+    expect(await eraseTeam(root, T2)).toBe(true);
+    const keys = await root.allKeys!();
+    expect(keys.filter((k) => k.includes(T2))).toEqual([]);
+    expect(keys.some((k) => k.includes(T1))).toBe(true);
+    expect(await root.getItem(LAST_BACKUP_KEY)).toBe('kept');
+    const after = JSON.parse((await root.getItem(TEAMS_INDEX_KEY))!);
+    expect(after.teams.map((t: { id: string }) => t.id)).toEqual([T1]);
+    expect(after.current).toBe(T1);
   });
 });

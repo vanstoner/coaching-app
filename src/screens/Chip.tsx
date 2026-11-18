@@ -43,6 +43,7 @@ export function Chip({
    * When given, true or false, its slot is always kept so nothing moves.
    */
   tick,
+  picked,
 }: {
   label: string;
   detail?: string;
@@ -52,6 +53,8 @@ export function Chip({
   compact?: boolean;
   wide?: boolean;
   tick?: boolean;
+  /** #266: picked, not yet given: a thick yellow edge and a filled dot, so colour is never the only signal. */
+  picked?: boolean;
 }) {
   return (
     <Pressable
@@ -65,6 +68,7 @@ export function Chip({
         compact && local.compact,
         wide && local.wide,
         selected && local.selected,
+        picked && local.picked,
         pressed && screen.buttonPressed,
       ]}
     >
@@ -74,7 +78,10 @@ export function Chip({
         </Text>
       ) : (
         <View style={local.tickRow}>
-          <View style={local.tickSlot}>{tick && <Icon name="check-bold" size={13} color={colours.ink} />}</View>
+          <View style={local.tickSlot}>
+            {tick && <Icon name="check-bold" size={13} color={colours.ink} />}
+            {!tick && picked && <Icon name="record-circle" size={13} color={colours.warn} />}
+          </View>
           <Text style={[local.label, local.tickLabel, selected && local.labelOn]} numberOfLines={1}>
             {label}
           </Text>
@@ -117,6 +124,7 @@ const local = StyleSheet.create({
   compact: { width: 56 },
   wide: { width: 164 },
   selected: { backgroundColor: colours.accent },
+  picked: { borderColor: colours.warn, borderWidth: 3, paddingVertical: 8, paddingHorizontal: 4 },
   label: {
     // #264 V3: white whether chosen or not (the muted label was 4.45:1).
     color: colours.ink,

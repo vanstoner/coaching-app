@@ -303,3 +303,47 @@ export function subRequestFor(period: PlannedPeriod, id: UUID, onPitch: boolean)
     ? { swapIndex: -1, onId: null, offId: id }
     : { swapIndex: found, onId: period.subs[found].onId, offId: id };
 }
+
+/**
+ * #284 (QA on #279, D8; Rob, "Approve 1-8"): the Team sheet's own choices,
+ * kept with the fixture so reopening shows what the sheet was made with.
+ * Only what the coach chose is kept; the fairest number and the Automatic
+ * rotation are still worked out on every draw (invariant 1). Planning, never
+ * the record.
+ */
+export interface SheetSettings {
+  keepers?: 'auto' | 'choose';
+  /** A Subs number the coach set; absent means "the fairest", worked out each time. */
+  subs?: number;
+  fill?: 'fair' | 'positions';
+}
+
+/** What a stored value holds, field by field; anything else is dropped, never an error. */
+/**
+ * Rob, 9 Nov ("approve 3"): the fill a sheet opens with when the coach has
+ * not chosen one for this fixture. By position when any child coming has a
+ * preferred area, so squad preferences are used without an extra tap;
+ * Fairly when nobody has one. A choice the coach made always wins (#284).
+ */
+export function fillShown(
+  settings: SheetSettings | undefined,
+  coming: readonly { prefers?: string | null }[]
+): 'fair' | 'positions' {
+  return settings?.fill ?? (coming.some((p) => p.prefers) ? 'positions' : 'fair');
+}
+
+export function readSheetSettings(raw: unknown): SheetSettings | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: SheetSettings = {};
+  if (r.keepers === 'auto' || r.keepers === 'choose') out.keepers = r.keepers;
+  if (typeof r.subs === 'number' && Number.isInteger(r.subs) && r.subs >= 0 && r.subs <= 20) out.subs = r.subs;
+  if (r.fill === 'fair' || r.fill === 'positions') out.fill = r.fill;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** The Subs number shown: the coach's, never more than today's bench; else the fairest. */
+export function subsShown(settings: SheetSettings | undefined, fairest: number, benchSize: number): number {
+  return Math.min(settings?.subs ?? fairest, Math.max(0, benchSize));
+}
+

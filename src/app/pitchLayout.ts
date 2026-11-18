@@ -225,3 +225,19 @@ export function pillDetail(
   const total = formatClock((minutes?.outfieldMs ?? 0) + (minutes?.goalkeeperMs ?? 0));
   return inGoal ? `GK ${total}` : total;
 }
+
+/** The ring round a power-play pill (ADR-026), each side, and the space between them. */
+export const EXTRA_RING = 3;
+export const EXTRA_GAP = 6;
+
+/**
+ * #255: extra players are drawn in their own Power play row under the pitch,
+ * never on the grass: at 11-a-side a row of four pills leaves no room for
+ * another, and the gap between rows is shorter than a pill. This is how wide
+ * a row of `count` extras is, so the fit test measures what is drawn.
+ */
+export function extraRowWidth(count: number, onFieldCount: number, pitchWidth: number): number {
+  const w = pillWidthFor(onFieldCount, pitchWidth) + 2 * EXTRA_RING;
+  return count * w + Math.max(0, count - 1) * EXTRA_GAP;
+}
+

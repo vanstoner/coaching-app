@@ -122,11 +122,14 @@ export function MainButton({
   onPress,
   disabled = false,
   accessibilityLabel,
+  urgent = false,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   accessibilityLabel?: string;
+  /** #283: the urgent sand fill, as the sub prompt's, for "Q2 is due: Start". */
+  urgent?: boolean;
 }) {
   return (
     <Pressable
@@ -135,9 +138,9 @@ export function MainButton({
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
-      style={({ pressed }) => [rows.main, disabled && rows.mainDisabled, pressed && rows.pressed]}
+      style={({ pressed }) => [rows.main, urgent && rows.mainUrgent, disabled && rows.mainDisabled, pressed && rows.pressed]}
     >
-      <Text style={rows.mainText} numberOfLines={1}>
+      <Text style={[rows.mainText, urgent && rows.mainUrgentText]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -283,6 +286,8 @@ export const rows = StyleSheet.create({
     paddingVertical: 14,
   },
   mainDisabled: { opacity: 0.5 },
+  mainUrgent: { backgroundColor: colours.urgent, borderColor: colours.urgent },
+  mainUrgentText: { color: colours.urgentInk },
   mainText: {
     alignSelf: 'stretch',
     textAlign: 'center',

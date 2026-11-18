@@ -247,6 +247,29 @@ function positionsOf(format: Format): { keeper: Position | null; outfield: Posit
   };
 }
 
+/**
+ * Rob, 9 Nov ("approve 3"): subs at the same moment, paired so each child
+ * coming on takes the place of someone going off in their preferred area
+ * where one is free. All swap at once, so every child's minutes are the
+ * same whichever way they pair (invariant 3); only the places change.
+ */
+export function pairByArea(
+  off: readonly UUID[],
+  on: readonly UUID[],
+  unitOf: (id: UUID) => string | null,
+  prefers: ReadonlyMap<UUID, string | null>
+): (readonly [UUID, UUID | undefined])[] {
+  const left = [...on];
+  const chosen = new Map<UUID, UUID | undefined>();
+  for (const o of off) {
+    const unit = unitOf(o);
+    const k = unit ? left.findIndex((id) => prefers.get(id) === unit) : -1;
+    if (k >= 0) chosen.set(o, left.splice(k, 1)[0]);
+  }
+  for (const o of off) if (!chosen.has(o)) chosen.set(o, left.shift());
+  return off.map((o) => [o, chosen.get(o)] as const);
+}
+
 /** Make the team sheet (B11). */
 export function buildTeamSheet(input: BuildInput): BuiltSheet {
   const { format, totalMinutes, periodCount, coming, keepers, subs, fill, season, existing } = input;
@@ -339,7 +362,13 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
     const kept = before[p]?.subs.filter((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId)) ?? [];
     const period: PlannedPeriod = {
       slots,
-      subs: kept.length > 0 ? kept : time.off.map((offId, i) => ({ offId, onId: time.on[i], atMs })),
+      subs:
+        kept.length > 0
+          ? kept
+          : (fill === 'positions'
+              ? pairByArea(time.off, time.on, (id) => outfield.find((pos) => slots[pos.id] === id)?.unit ?? null, prefers)
+              : time.off.map((offId, i) => [offId, time.on[i]] as const)
+            ).map(([offId, onId]) => ({ offId, onId: onId ?? null, atMs })),
     };
     // The child who comes on takes the place; they rotate from it next time.
     for (const s of period.subs) if (s.offId && s.onId && lastPlace.has(s.offId)) lastPlace.set(s.onId, lastPlace.get(s.offId)!);

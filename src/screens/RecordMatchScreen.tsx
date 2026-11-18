@@ -14,6 +14,7 @@
  * figure is total pitch time, goal plus outfield; "in goal" is its breakdown.
  */
 
+import { ShareTexts } from './ShareTexts';
 import { useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
@@ -58,6 +59,7 @@ export function RecordMatchScreen({
   actions,
   trust = null,
   backLabel = 'Back',
+  share,
 }: {
   page: RecordMatchPage;
   now: Date;
@@ -69,6 +71,8 @@ export function RecordMatchScreen({
   backLabel?: string;
   /** #254 AC12, AC20: the "Pitch and referee" row for this match. */
   pitch?: ReactNode;
+  /** #282 (Bea C1): an imported or played-out match only ever has this page, so it shares from here. */
+  share?: { highlights: string | null; log: string | null };
 }) {
   const { match } = page;
   // #208: most minutes first by default; a tap on a heading re-sorts.
@@ -207,6 +211,12 @@ export function RecordMatchScreen({
             />
           )}
 
+          {share && (
+            <>
+              <Text style={screen.fieldLabel}>Share</Text>
+              <ShareTexts highlights={share.highlights} log={share.log} />
+            </>
+          )}
           <Text style={screen.fieldLabel}>Goals</Text>
           {page.goals.length === 0 && page.conceded === 0 ? (
             <Text style={local.lineFaint}>No goals in the record for this match.</Text>

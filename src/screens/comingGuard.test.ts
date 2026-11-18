@@ -73,7 +73,8 @@ describe('the team sheet, built to mock v2 (#277; Rob, 6 Nov "Let\'s build this"
   it('keepers: Automatic | I\'ll choose; subs: a Stepper starting at the fairest number', () => {
     expect(sheet).toContain("{ value: 'auto', label: 'Automatic' }");
     expect(sheet).toContain("{ value: 'choose', label: \"I'll choose\" }");
-    expect(sheet).toContain('const subs = Math.min(subsChosen ?? fairest, benchSize);');
+    // #284: the coach's own number, kept per fixture, clamped to the bench; else the fairest (subsShown).
+    expect(sheet).toContain('const subs = subsShown(settings, fairest, benchSize);');
     expect(sheet).toMatch(/<Stepper[\s\S]*?plusDisabled=\{subs >= benchSize\}/);
   });
 

@@ -43,14 +43,15 @@ import {
   slotBox,
   slotSpots,
   type DropTarget,
-  type Rect,
-} from '../app/pitchLayout';
+  type Rect, EXTRA_GAP, EXTRA_RING } from '../app/pitchLayout';
 import type { Sheet } from '../app/teamSheet';
 import { colours } from './theme';
 
 export interface PitchViewProps {
   format: Format;
   sheet: Sheet;
+  /** #255: a power play's extra slots on the pitch, labelled "+ MID" with a sand ring. */
+  extras?: { positionId: UUID; unit: 'ATT' | 'MID' | 'DEF' }[];
   bench: UUID[];
   nameOf: (id: UUID) => string;
   /** The small line under a name: minutes, usually. */
@@ -273,11 +274,15 @@ export function PitchView(props: PitchViewProps) {
       style={s.root}
     >
       <View
-        style={[
-          s.pitch,
+        style={
           // #276: sized to the room on a small phone; the natural shape until measured.
-          props.room !== undefined && rootWidth > 0 && { aspectRatio: undefined, height: fitPitchHeight(rootWidth, props.room) },
-        ]}
+          // Two separate styles, never the shaped one with its ratio cleared:
+          // Android kept the ratio, so a shorter pitch came out narrower (Rob,
+          // 7 Nov, on the team talk's Lineup).
+          props.room !== undefined && rootWidth > 0
+            ? [s.pitchFrame, { width: rootWidth, height: fitPitchHeight(rootWidth, props.room) }]
+            : s.pitch
+        }
         onLayout={(e: LayoutChangeEvent) => setPitch(e.nativeEvent.layout)}
       >
         <View style={s.halfway} />
@@ -331,6 +336,25 @@ export function PitchView(props: PitchViewProps) {
           })}
       </View>
 
+      {/* #255 (ADR-026 D1): the extra players, in their own row under the pitch.
+          Never on the grass: at 11-a-side there is no room there for one more pill. */}
+      {(props.extras ?? []).some((e) => sheet[e.positionId]) && (
+        <View style={s.extraStrip} accessibilityLabel="Power play">
+          <Text style={[s.benchLabel, s.extraLabel]}>Power play</Text>
+          <View style={s.extraRow}>
+            {(props.extras ?? []).map((extra) => {
+              const who = sheet[extra.positionId] ?? null;
+              if (!who) return null;
+              return (
+                <View key={extra.positionId} style={s.extraSlot}>
+                  <Text style={[s.slotLabel, s.extraLabel]} numberOfLines={1}>{`+ ${extra.unit}`}</Text>
+                  <View style={s.extraRing}>{pill(who, false, false)}</View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
       {!props.hideBench && (
         <Text style={s.benchLabel}>Subs bench</Text>
       )}
@@ -393,6 +417,14 @@ const s = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+  /** The same pitch with no ratio: its width and height are given (#276). */
+  pitchFrame: {
+    backgroundColor: '#13573f',
+    borderColor: colours.line,
+    borderWidth: 2,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   halfway: { position: 'absolute', left: 0, right: 0, top: 0, borderTopWidth: 2, borderTopColor: colours.line },
   box: {
     position: 'absolute',
@@ -415,6 +447,11 @@ const s = StyleSheet.create({
     includeFontPadding: false,
   },
   slot: { position: 'absolute', alignItems: 'center' },
+  extraLabel: { color: colours.urgent },
+  extraRing: { borderRadius: 999, borderWidth: EXTRA_RING, borderColor: colours.urgent },
+  extraStrip: { marginTop: 8 },
+  extraRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: EXTRA_GAP },
+  extraSlot: { alignItems: 'center' },
   slotLabel: {
     color: colours.warn,
     fontSize: 11,

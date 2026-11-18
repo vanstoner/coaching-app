@@ -176,7 +176,7 @@ describe('✓ Saved only after the save succeeded (V28; QA on #260, D8)', () => 
     const settings = readFileSync(join(__dirname, '..', 'screens', 'SettingsScreen.tsx'), 'utf-8');
     const marks = settings.match(/ticks\.mark\(/g) ?? [];
     const waited = settings.match(/tickWhenSaved\([^;]*ticks\.mark\(/g) ?? [];
-    expect(marks.length).toBe(5);
+    expect(marks.length).toBe(6); // #283 added the team talk lengths
     expect(waited.length).toBe(marks.length);
   });
 });

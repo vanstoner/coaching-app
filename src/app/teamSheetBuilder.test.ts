@@ -9,7 +9,8 @@ import { makePlayer } from './squad';
 import { makeFormat, type ShapeCode } from './shapes';
 import { periodLengthMs, projectPlan } from './matchPlan';
 import { formatClock } from './matchClock';
-import { buildTeamSheet, fairestSubs, rotateKeepers, seasonInputs, type SeasonInput } from './teamSheetBuilder';
+import { buildTeamSheet, fairestSubs, pairByArea, rotateKeepers, seasonInputs, type SeasonInput } from './teamSheetBuilder';
+import { fillShown } from './teamSheetEdit';
 
 const NAMES = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lou', 'Max', 'Ned', 'Oli', 'Pip'];
 const squadOf = (n: number): Player[] => {
@@ -347,5 +348,45 @@ describe('the Subs stepper starts at the fewest subs with the fairest split (Rob
       }
     });
     expect(projectPlan(r.plan, r.format, 50, 4, r.players).problems).toEqual([]);
+  });
+});
+
+describe('squad preferences in the fill (Rob, 9 Nov, "approve 3")', () => {
+  it('the sheet opens on By position when anyone coming has a preferred area; a coach choice wins', () => {
+    expect(fillShown(undefined, [{ prefers: null }, { prefers: 'DEF' }])).toBe('positions');
+    expect(fillShown(undefined, [{ prefers: null }, {}])).toBe('fair');
+    expect(fillShown({ fill: 'fair' }, [{ prefers: 'DEF' }])).toBe('fair');
+    expect(fillShown({ fill: 'positions' }, [{}])).toBe('positions');
+  });
+
+  it('subs at the same moment pair so each child coming on takes a place in their area where one is free', () => {
+    const [a, b, c, x, y, z] = ['a', 'b', 'c', 'x', 'y', 'z'] as UUID[];
+    const unit = new Map<UUID, string>([[a, 'ATT'], [b, 'DEF'], [c, 'MID']]);
+    const prefers = new Map<UUID, string | null>([[x, 'DEF'], [y, null], [z, 'ATT']]);
+    expect(pairByArea([a, b, c], [x, y, z], (id) => unit.get(id) ?? null, prefers)).toEqual([[a, z], [b, x], [c, y]]);
+    // Nobody prefers: order kept, as before.
+    expect(pairByArea([a, b], [x, y], (id) => unit.get(id) ?? null, new Map())).toEqual([[a, x], [b, y]]);
+  });
+
+  it('By position: the same minutes, and at least as many subs land in their area as in order', () => {
+    const format = makeFormat('2-3-1');
+    const players = squadOf(10).map((p, i) => ({ ...p, prefers: (['DEF', 'MID', 'ATT', null] as const)[i % 4] }));
+    const pos = build('2-3-1', 10, { players, format, fill: 'positions', subs: 3 });
+    const fair = build('2-3-1', 10, { players, format, subs: 3 });
+    expect([...pos.minutes.values()].sort()).toEqual([...fair.minutes.values()].sort());
+    const unitOf = new Map(format.positions.map((x) => [x.id, x.unit]));
+    const prefOf = new Map(players.map((p) => [p.id, p.prefers]));
+    let matched = 0;
+    let total = 0;
+    for (const period of pos.plan.periods) {
+      for (const sub of period.subs) {
+        if (!sub.onId || !prefOf.get(sub.onId)) continue;
+        total++;
+        const at = (Object.entries(period.slots) as [UUID, UUID | null][]).find(([, id]) => id === sub.offId)?.[0];
+        if (at && unitOf.get(at) === prefOf.get(sub.onId)) matched++;
+      }
+    }
+    expect(total).toBeGreaterThan(0);
+    expect(matched).toBeGreaterThan(0);
   });
 });

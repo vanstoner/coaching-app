@@ -517,3 +517,24 @@ analysis, iOS". Entries are added as each release ships.
   and a drop just past the pitch's top edge still lands on the top row.
   Rob's beta check found the plan screen did not scroll; it now shares the
   lineup's edge scrolling. Shipping with #277 and #278 in 2.3.0 (Rob, 5 Nov). **Play out as planned** (#280, Rob 7 Nov: "In want it in 2.3"): a fixture nobody recorded, past its kick-off with a full team sheet, can be written to the record as its sheet planned it, after a confirm, and shows in Played as reconstructed; it then opens the match's page in the record, where the score and awards are added. A match never put in can be added first: the kick-off's **Other date** asks Coming or Past, and Past lists the last twelve weeks. Release 2.2.0 is frozen as a fixture (#167).
+
+- **7 November — Heart FC Coach 2.4.0, in progress: the collaboration release (#281, #282), the team talk (#283), power play (#255), and fixes (#266, #284, #176, #175).** Rob approved the scope, Dee's prototype and Bea's criteria on 7 Nov (ADR-025 and ADR-026 Proposed), then asked for work to carry on overnight on every recommendation. Built so far:
+  - **Team talk** (#283): between periods the Lineup counts down (3:00 between quarters, 5:00 at half-time, set in Settings › Match defaults), buzzes once when the next period is due, and a late Start offers to start from when it was due; the clock never starts by itself. A test match shows durations, not times of day.
+  - **Power play** (#255): Settings › Season has three goal-difference boxes; on the clock the score prompts "Power play: add a player", suggesting the bench least-time first, the extra child shows in a "+ MID" slot, and when the margin closes "Power play over: who comes off?" lets the coach choose. "They used a power play" records the opposition's as one event.
+  - **Awards in one Give** (#266): pick the names, then one Give; two names are joint winners; End match asks only while no award has been given.
+  - **Match highlights and the full match log** (#282), shared as text from the report or a match's page: the game for parents, every tap and sub for coaches; never minutes.
+  - **Import a match** (#281, ADR-025):
+    - The coach taps Share for a recorder on a fixture.
+    - The recorder opens the pack with **Open a file from another phone** (on the first screen, or in Settings). It becomes a team borrowed for that one match, with the coach's children, plan and Who's coming. The recorder cannot add or rename a child or add a fixture.
+    - At full time the Fixtures banner offers **Send to the coach**, then asks to remove the team. Removing erases it, and a borrowed team is left out of the recorder's phone backup.
+    - On the coach's phone, **Open a file from another phone** adds the match to Played, "Recorded on another phone".
+  - **End match comes first on the report** (Rob, 11 Nov, from Dee's UX review). Share match highlights, and on a temporary team Send to the coach, follow once the match is closed. The guide has a new section, "Someone else recording the match".
+    - **A temporary team is unmistakable** (Rob, 9–10 Nov):
+      - Every screen has the strip "Temporary team · recording one match for the coach".
+      - The team chip and the team list say "(temporary)".
+      - Opening your own team's pack asks first, and Cancel changes nothing.
+      - In a temporary team, a refused change to the children is never confirmed as done.
+  - **One error no longer closes the app** (#176), **Android Back** goes back a screen (#175), and **the Team sheet remembers** its Keepers, Subs and Positions (#284).
+  - **Fill the rest uses squad preferences** (Rob, 9 Nov). The sheet starts on By position once anyone coming has an area set, and subs at the same moment are paired so each child coming on takes a place in their area where they can. Minutes are unchanged.
+  - **Power play is 5- and 7-a-side only** (Rob, 9 Nov; the FA's mini-soccer law, as NEHYL uses it).
+  - Fixes from the first beta: the pitch keeps its full width when fitted to a short screen, and a reconstructed match from the record can be archived. Release 2.3.0 is frozen as a fixture (#167).

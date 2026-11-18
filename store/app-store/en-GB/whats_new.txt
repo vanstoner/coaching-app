@@ -1,8 +1,8 @@
-New in 2.3.0:
+New in 2.4.0:
 
-• Who's coming: mark each child Coming, Can't or Not heard during the week
-• Team sheet: keepers, subs, place anyone you like, then fill the rest fairly or by position, and share
-• See every quarter at once, or as a table, and tap two names to swap
-• Nobody recorded it? Play a match out as planned, marked reconstructed
-• Home is your list of matches: tap one to play it
-• Small phones: the whole pitch fits, and dragging near the edge scrolls
+• Team talk: a countdown between quarters, and a buzz when the next is due
+• Power play (5- and 7-a-side): the score prompts you to add a player
+• Share match highlights with parents: the score, goals, awards and team stats
+• A friend can record a match on their phone and send it to you
+• Awards: pick the names, then one Give
+• Android Back goes back a screen; the team sheet remembers your choices

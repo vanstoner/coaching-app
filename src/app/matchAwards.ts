@@ -20,7 +20,7 @@ import type { UUID } from '../types/index';
 import { displayName } from './squad';
 import { matchProgress, type QuarterLike } from './fixtures';
 import { canEndMatch } from './matchClosing';
-import { isWritable, type Ledger } from './ledger';
+import { giveAward, isWritable, type Ledger } from './ledger';
 import { isTestMatch } from './testMatches';
 
 export interface AwardRow {
@@ -39,8 +39,21 @@ export interface LiveMatchLike {
  * Whether awards can be given for this match now (criteria 23, 27). `ledger`
  * is null when the record cannot be written on this phone.
  */
+/** Whether a record holds a recorder pack's `pack` record (ADR-025 D3), worked out once per chain. */
+const packChains = new WeakMap<readonly unknown[], boolean>();
+function isTemporaryTeam(ledger: Ledger): boolean {
+  const known = packChains.get(ledger.entries);
+  if (known !== undefined) return known;
+  const borrowed = ledger.entries.some((e) => e.records.some((r) => r.type === 'pack'));
+  packChains.set(ledger.entries, borrowed);
+  return borrowed;
+}
+
 export function awardsOffered(ledger: Ledger | null, state: LiveMatchLike): boolean {
   if (!ledger || !isWritable(ledger)) return false;
+  // #266 C15: no card in a temporary team (#281). Awards are the coach's acts and never travel back
+  // with the recorded match (ADR-025 D5), so one given there would silently vanish.
+  if (isTemporaryTeam(ledger)) return false;
   if (isTestMatch(state.match)) return false;
   if (state.match.status === 'completed' || state.match.status === 'abandoned') return false;
   if (matchProgress(state.quarters) === 'not_started') return false;
@@ -74,7 +87,9 @@ export function awardsLine(rows: readonly AwardRow[]): string {
  */
 export function awardPromptDue(ledger: Ledger | null, state: LiveMatchLike): boolean {
   if (!canEndMatch(state) || !awardsOffered(ledger, state) || !ledger) return false;
-  return awardRows(ledger, state.match.id, () => '').some((r) => r.winners.length === 0);
+  // #266 Q3 (Rob, "Approve 1-8"): only while no award at all has been given.
+  // An award left out once others are given is taken as deliberate.
+  return awardRows(ledger, state.match.id, () => '').every((r) => r.winners.length === 0);
 }
 
 /**
@@ -96,3 +111,35 @@ export function childrenInMatch(
   const here = new Set(appearances.map((a) => a.playerId));
   return players.filter((p) => here.has(p.id)).map((p) => ({ playerId: p.id, name: displayName(p) }));
 }
+
+/** #266: the names picked under one award, and its one optional note. */
+export interface AwardPick {
+  typeId: UUID;
+  playerIds: UUID[];
+  note: string;
+}
+
+/**
+ * Give every pick at once (#266 C1, C7): one `award` record per name per
+ * award, the same record a single give writes. All or nothing: if any give
+ * is refused, the ledger is returned unchanged with that reason.
+ */
+export function giveAwards(
+  ledger: Ledger,
+  matchId: UUID,
+  picks: readonly AwardPick[],
+  now: Date
+): { ok: true; ledger: Ledger; given: number } | { ok: false; reason: string } {
+  let next = ledger;
+  let given = 0;
+  for (const pick of picks) {
+    for (const playerId of pick.playerIds) {
+      const r = giveAward(next, matchId, pick.typeId, playerId, pick.note, now);
+      if (!r.ok) return { ok: false, reason: r.reason };
+      next = r.ledger;
+      given += 1;
+    }
+  }
+  return { ok: true, ledger: next, given };
+}
+

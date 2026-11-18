@@ -105,6 +105,7 @@ def parse(xml_text):
                 "desc": child.get("content-desc", ""),
                 "bounds": tuple(int(v) for v in m.groups()) if m else None,
                 "scrollable": child.get("scrollable") == "true",
+                "editable": child.get("class", "") == "android.widget.EditText",
                 "in_selected": in_selected or selected,
             })
             walk(child, in_selected or selected)
@@ -171,6 +172,14 @@ def swipe(nodes):
         return None
     x0, y0, x1, y1 = max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
     x, h = (x0 + x1) // 2, y1 - y0
+    # A swipe that starts on a text box goes to the box, not the page (#255: the
+    # power play boxes on Settings sat under the old start point). Start lower
+    # or higher in the view, clear of every editable field; the distance stays.
+    fields = [n["bounds"] for n in nodes if n.get("editable") and n["bounds"]]
+    clear = lambda px, py: not any(a <= px <= c and b <= py <= d for a, b, c, d in fields)
+    for start in (h * 4 // 5, h * 17 // 20, h * 3 // 4, h * 9 // 10, h * 7 // 10):
+        if clear(x, y0 + start):
+            return x, y0 + start, x, y0 + start - h * 3 // 5
     return x, y0 + h * 4 // 5, x, y0 + h // 5
 
 
@@ -364,6 +373,12 @@ def self_test():
           labelled(home[0], "Add your team") is None)
     check("only an exact label matches: 'Add your team' is not 'Add'", labelled(welcome, "Add") is None)
     check("a swipe runs upward inside the scrolling view", swipe(release[0]) == (160, 452, 160, 131))
+    boxed = release[0] + [{"text": "", "desc": "", "bounds": (117, 413, 195, 461), "scrollable": False,
+                           "in_selected": False, "editable": True}]
+    moved = swipe(boxed)
+    check("a swipe never starts on a text box (#255's power play boxes), and still runs upward",
+          moved is not None and not (117 <= moved[0] <= 195 and 413 <= moved[1] <= 461) and moved[3] < moved[1]
+          and moved[1] - moved[3] == 452 - 131)
     check("two dumps of the same screen are the same", signature(release[2]) == signature(release[3]))
     check("a scrolled screen is not the same", signature(release[0]) != signature(release[1]))
     check("a document that is not a uiautomator dump is refused",
