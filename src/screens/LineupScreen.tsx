@@ -76,6 +76,7 @@ import {
   plannedSubText,
   chooseFor,
   saveSubDraft,
+  stepDraft,
   stepLineupSub,
   subTimeValue,
   subsPlannedSummary,
@@ -629,10 +630,7 @@ export function LineupScreen({
                 onMinus={() =>
                   setSubSheet({
                     ...subSheet,
-                    draft: {
-                      ...subSheet.draft,
-                      atMs: stepLineupSub(subSheet.draft.atMs, -LINEUP_SUB_STEP_MS, periodMs),
-                    },
+                    draft: stepDraft(subSheet.draft, -LINEUP_SUB_STEP_MS, periodMs),
                   })
                 }
                 onPlus={() =>

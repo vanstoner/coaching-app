@@ -8,6 +8,7 @@ import {
   LINEUP_SUB_STEP_MS,
   chooseFor,
   draftFor,
+  stepDraft,
   plannedSubText,
   saveSubDraft,
   stepLineupSub,
@@ -149,5 +150,20 @@ describe('choosing who comes off plans the sub (#293, Rob\'s ruling (a), 19 Nov)
     const src = readFileSync(join(__dirname, '../screens/LineupScreen.tsx'), 'utf8');
     expect(src.match(/chooseFor\(subSheet\.draft, /g)?.length).toBe(2);
     expect(src).not.toMatch(/draft: \{ \.\.\.subSheet\.draft, forPlayerId:/);
+  });
+});
+
+describe('− back to No sub clears who comes off (#293 C2)', () => {
+  const ben = 'b' as UUID;
+  it('from the earliest time, − is No sub and the For choice goes with it, so the sheet shows nothing Save would drop', () => {
+    expect(stepDraft({ atMs: 30_000, forPlayerId: ben }, -LINEUP_SUB_STEP_MS, QUARTER)).toEqual({ atMs: NO_SUB_PLANNED, forPlayerId: null });
+  });
+  it('a − that stays on a time keeps the choice; + from No sub still lands on halfway', () => {
+    expect(stepDraft({ atMs: 375_000, forPlayerId: ben }, -LINEUP_SUB_STEP_MS, QUARTER)).toEqual({ atMs: 345_000, forPlayerId: ben });
+    expect(stepDraft({ atMs: NO_SUB_PLANNED, forPlayerId: null }, LINEUP_SUB_STEP_MS, QUARTER).atMs).toBe(375_000);
+  });
+  it('the Lineup\'s − goes through stepDraft', () => {
+    const src = readFileSync(join(__dirname, '../screens/LineupScreen.tsx'), 'utf8');
+    expect(src).toMatch(/draft: stepDraft\(subSheet\.draft, -LINEUP_SUB_STEP_MS, periodMs\)/);
   });
 });

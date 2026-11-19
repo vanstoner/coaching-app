@@ -52,6 +52,15 @@ export function chooseFor(draft: SubDraft, forPlayerId: UUID | null, periodMs: n
   return { atMs, forPlayerId };
 }
 
+/**
+ * One press of the stepper on the whole draft (#293 C2): − back to No sub
+ * also clears who comes off, so the sheet never shows a choice Save would drop.
+ */
+export function stepDraft(draft: SubDraft, deltaMs: number, periodMs: number): SubDraft {
+  const atMs = stepLineupSub(draft.atMs, deltaMs, periodMs);
+  return { atMs, forPlayerId: atMs === NO_SUB_PLANNED ? null : draft.forPlayerId };
+}
+
 /** The value beside the stepper: "No sub" or "6:15". */
 export function subTimeValue(atMs: number): string {
   return atMs === NO_SUB_PLANNED ? 'No sub' : formatSubTime(atMs);
