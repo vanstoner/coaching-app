@@ -146,8 +146,11 @@ describe('the sheet: Pitch, All quarters and Table (#277 C13–C18; Rob, 6 Nov)'
 });
 
 describe('match day (#277 D19, D20)', () => {
-  it('the Lineup starts from the plan’s period, as before (D19)', () => {
-    expect(src('LineupScreen.tsx')).toContain('const initial = () => (hasPlan ? fromPlan() : fromSuggestion());');
+  it('the Lineup starts from the plan’s period, as before (D19); a draft kept for this period comes first (#293 C5)', () => {
+    const lineup = src('LineupScreen.tsx');
+    expect(lineup).toMatch(
+      /const initial = \(\) =>\s*restoreLineupDraft\(draft, quarter\?\.id, format, players\.map\(\(p\) => p\.id\)\) \?\?\s*\(hasPlan \? fromPlan\(\) : fromSuggestion\(\)\);/
+    );
   });
 
   it('it names who is in the plan but not here today, from this period on, and re-plans nothing (D20)', () => {

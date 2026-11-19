@@ -3,16 +3,19 @@ name: Journey capture
 # #289: walk the match-day journeys on the CI emulator with the Test kit's
 # made-up squad, and measure what is on screen at each step. It installs the
 # beta APK an Android APK run already built and proved (by default the newest
-# successful run on claude/2.4.0, the release in progress), so it builds
+# successful run on claude/2.4.1, the release in progress), so it builds
 # nothing and publishes nothing. On demand from Run workflow; a pull request
-# that changes it runs it too, to prove it.
+# that changes it runs it too, to prove it. On a pull request it walks THAT
+# head's beta: the Android APK run starts at the same moment, so the walk waits
+# for it (PR #297's first run found nothing yet, and a later push would have
+# walked the previous commit's build).
 
 on:
   workflow_dispatch:
     inputs:
       branch:
         description: "the branch whose newest successful beta APK to walk"
-        default: claude/2.4.0
+        default: claude/2.4.1
   pull_request:
     paths: [.github/workflows/journeys.yml, .github/scripts/journey_capture.py]
 
@@ -28,7 +31,8 @@ jobs:
   walk:
     name: Walk the journeys on the emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The PR's own Android APK run takes up to ~40 minutes before the walk can start.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -42,13 +46,33 @@ jobs:
           sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
           tesseract --version | head -1
 
-      - name: Find the newest proved beta APK
+      - name: Find the beta APK to walk
         id: apk
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ inputs.branch || 'claude/2.4.0' }}
+          BRANCH: ${{ inputs.branch || 'claude/2.4.1' }}
+          # A pull request: its own head's build, waited for. Run workflow: the newest proved one.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
         run: |
           set -euo pipefail
+          if [ -n "$HEAD_SHA" ]; then
+            for _ in $(seq 1 80); do
+              id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android-apk.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=5" --jq '.workflow_runs[0].id // empty')
+              status=$(if [ -n "$id" ]; then gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq .status; fi)
+              [ "$status" = completed ] && break
+              echo "waiting for this head's Android APK run (${id:-not started}, ${status:-none})"
+              sleep 60
+            done
+            [ "${status:-}" = completed ] || { echo "WHY THIS JOB FAILED: this head's Android APK run did not finish in 80 minutes"; exit 1; }
+            ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Prove the app renders on an emulator")] | last | .conclusion // ""')
+            [ "$ok" = success ] || { echo "WHY THIS JOB FAILED: run $id, this head's build, did not prove its APK on the emulator ($ok): the walk needs a beta that renders"; exit 1; }
+            art=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts" --jq '[.artifacts[] | select(.name == "coaching-app-apk" and (.expired | not))] | last | .id // empty')
+            [ -n "$art" ] || { echo "WHY THIS JOB FAILED: run $id has no APK artifact"; exit 1; }
+            echo "run=$id" >> "$GITHUB_OUTPUT"
+            echo "artifact=$art" >> "$GITHUB_OUTPUT"
+            echo "Walking this head's beta APK, from run $id (${HEAD_SHA:0:7})" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android-apk.yml/runs?branch=$BRANCH&event=pull_request&status=completed&per_page=20" --jq '.workflow_runs[].id'); do
             ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Prove the app renders on an emulator")] | last | .conclusion // ""')
             [ "$ok" = success ] || continue

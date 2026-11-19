@@ -2,7 +2,7 @@
   "expo": {
     "name": "Heart FC Coach",
     "slug": "coaching-app",
-    "version": "2.4.0",
+    "version": "2.4.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/images/icon.png",
@@ -39,6 +39,15 @@
             "./assets/fonts/Barlow-SemiBold.ttf",
             "./assets/fonts/Barlow-Bold.ttf"
           ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ]
     ]

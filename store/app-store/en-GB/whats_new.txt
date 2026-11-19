@@ -1,8 +1,4 @@
-New in 2.4.0:
+New in 2.4.1:
 
-• Team talk: a countdown between quarters, and a buzz when the next is due
-• Power play (5- and 7-a-side): the score prompts you to add a player
-• Share match highlights with parents: the score, goals, awards and team stats
-• A friend can record a match on their phone and send it to you
-• Awards: pick the names, then one Give
-• Android Back goes back a screen; the team sheet remembers your choices
+• A smaller download on Android
+• Fixes and polish

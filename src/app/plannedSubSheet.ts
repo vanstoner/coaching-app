@@ -40,6 +40,27 @@ export function stepLineupSub(atMs: number, deltaMs: number, periodMs: number): 
   return nudgeSubTime(probe, PROBE, deltaMs, periodMs)[0].atMs;
 }
 
+/**
+ * Choosing who comes off (#293, Rob's ruling (a), 19 Nov). The sheet opens at
+ * No sub, Rob's own default ("always start with no sub then increment"), but
+ * a choice under For is an intent to sub: from No sub it also sets At to the
+ * first + time (halfway, `stepLineupSub`), so Save never drops it silently.
+ * A time already set is kept.
+ */
+export function chooseFor(draft: SubDraft, forPlayerId: UUID | null, periodMs: number): SubDraft {
+  const atMs = draft.atMs === NO_SUB_PLANNED ? stepLineupSub(NO_SUB_PLANNED, LINEUP_SUB_STEP_MS, periodMs) : draft.atMs;
+  return { atMs, forPlayerId };
+}
+
+/**
+ * One press of the stepper on the whole draft (#293 C2): − back to No sub
+ * also clears who comes off, so the sheet never shows a choice Save would drop.
+ */
+export function stepDraft(draft: SubDraft, deltaMs: number, periodMs: number): SubDraft {
+  const atMs = stepLineupSub(draft.atMs, deltaMs, periodMs);
+  return { atMs, forPlayerId: atMs === NO_SUB_PLANNED ? null : draft.forPlayerId };
+}
+
 /** The value beside the stepper: "No sub" or "6:15". */
 export function subTimeValue(atMs: number): string {
   return atMs === NO_SUB_PLANNED ? 'No sub' : formatSubTime(atMs);
