@@ -57,6 +57,7 @@ ALLOWED_ASSETS = (
     r"coaching-app_[^/]+\.apk\.sha256",
     r"coaching-app_[^/]+\.aab",
     r"coaching-app_[^/]+\.aab\.sha256",
+    r"coaching-app_[^/]+\.mapping\.txt",       # #296: the bundle's R8 mapping
     r"coaching-(app|beta)-ios-simulator_[^/]+\.zip",
 )
 SIGNATURE_FILE = re.compile(r"^META-INF/([^/]+\.(SF|RSA|DSA|EC)|MANIFEST\.MF)$", re.I)
@@ -278,6 +279,7 @@ def self_test():
 
     real = ["coaching-app_1.1.1_abc1234.apk", "coaching-app_1.1.1_abc1234.apk.sha256",
             "coaching-app_1.1.1_abc1234.aab", "coaching-app_1.1.1_abc1234.aab.sha256",
+            "coaching-app_1.1.1_abc1234.mapping.txt",
             "coaching-app-ios-simulator_1.1.1_abc1234.zip"]
     check("healthy: a release's real assets", asset_problems(real) == [])
     check("fails: a keystore on a release", bool(asset_problems(real + ["upload.keystore"])))

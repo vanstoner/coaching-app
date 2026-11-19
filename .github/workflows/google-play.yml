@@ -26,6 +26,7 @@ name: Google Play
 # Play already holds that version code with the same SHA-256, or upload the
 # .aab from the release (checked first: the play job's file, Heart FC Coach,
 # distribution:app, this version and build, the upload key's fingerprint);
+# send the release's R8 mapping file in the same edit (#296);
 # put "<version> (build N)" on PLAY_TRACK as completed with the notes from
 # store/app-store/en-GB/whats_new.txt (D3, at most 500 characters); commit
 # once; read the track back in a fresh edit. Already there with the same
@@ -263,6 +264,16 @@ jobs:
           fi
           echo "AAB=$AAB" >> "$GITHUB_ENV"
           echo "bundle: $(basename "$AAB"), $PACKAGE $VERSION ($BUILD), distribution:app, upload key $SIGNED"
+          # #296 AC5: the bundle's R8 mapping, attached by the play job. A release
+          # built before #296 has none, and play_api.py says so and sends none.
+          if gh release download "$TAG" --dir rel --pattern '*.mapping.txt' 2>/dev/null; then
+            MAPPING="$(ls rel/*.mapping.txt)"
+            python3 .github/scripts/check_minified.py check "$MAPPING" "$TAG's mapping file" || {
+              echo "Nothing was sent to Google Play."; exit 1; }
+            echo "MAPPING=$MAPPING" >> "$GITHUB_ENV"
+          else
+            echo "no R8 mapping file on $TAG (built before #296)"
+          fi
 
       - name: Check the key secret
         env:
@@ -276,9 +287,11 @@ jobs:
           set -uo pipefail
           DRY=""
           [ "$DRY_RUN" = true ] && DRY="--dry-run"
+          MAP=()
+          [ -n "${MAPPING:-}" ] && MAP=(--mapping "$MAPPING")
           python3 .github/scripts/play_api.py release com.vanstoner.coachingapp "$VERSION" "$BUILD" "$AAB" \
             store/app-store/en-GB/whats_new.txt --track "$TRACK" --production "$PLAY_PRODUCTION" \
-            --summary "$RUNNER_TEMP/play.txt" $DRY
+            --summary "$RUNNER_TEMP/play.txt" "${MAP[@]}" $DRY
 
       - name: Say what happened
         if: always()

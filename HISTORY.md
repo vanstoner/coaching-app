@@ -538,3 +538,8 @@ analysis, iOS". Entries are added as each release ships.
   - **Fill the rest uses squad preferences** (Rob, 9 Nov). The sheet starts on By position once anyone coming has an area set, and subs at the same moment are paired so each child coming on takes a place in their area where they can. Minutes are unchanged.
   - **Power play is 5- and 7-a-side only** (Rob, 9 Nov; the FA's mini-soccer law, as NEHYL uses it).
   - Fixes from the first beta: the pitch keeps its full width when fitted to a short screen, and a reconstructed match from the record can be archived. Release 2.3.0 is frozen as a fixture (#167).
+
+- **19 November — Heart FC Coach 2.4.0 released** (#286, build 396). Merged 18 Nov on Rob's approval, after he tested the beta at a match. On Google Play it went to production for the first time (#295, `PLAY_PRODUCTION` on) and to the alpha closed track. Apple's first attempt was refused because a developer agreement had expired; Rob accepted it and the Apple step was re-run on the same build.
+
+- **19 November — Heart FC Coach 2.4.1, in progress: fixes.** Built so far:
+  - **A smaller, obfuscated Android build** (#296). Google Play flagged 2.4.0's code obfuscation at 1%, against a 25% threshold, with a February 2027 deadline. R8 now shrinks and obfuscates every Android release build. CI fails any build R8 did not shrink. The bundle's mapping file is attached to the release and sent to Play with it, so crash reports stay readable. Nothing changes on screen.

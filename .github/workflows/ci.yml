@@ -118,6 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/play_api.py --self-test
+          python3 .github/scripts/check_minified.py --self-test   # #296
           python3 .github/scripts/play_api.py sdk-check package-lock.json
           if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             BASE="$(git rev-parse HEAD^)"

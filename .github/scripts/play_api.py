@@ -322,6 +322,10 @@ class Play:
             raise ForbiddenWrite(f"read-only: refused to send {method} {path.replace(API, '')}")
         if method == "POST" and self.edit and path == f"{upload_base}/{self.edit}/bundles":
             return
+        # #296: the R8 mapping file for a version code, so Play's crash reports read.
+        if method == "POST" and self.edit and re.fullmatch(
+                re.escape(f"{upload_base}/{self.edit}/apks/") + r"\d+/deobfuscationFiles/proguard", path):
+            return
         if method == "POST" and own and path == own + ":commit":
             if "changesNotSentForReview" in query:
                 raise ForbiddenWrite("refused to commit with changesNotSentForReview: that is Rob's, in the console")
@@ -383,6 +387,12 @@ class Play:
     def upload(self, data):
         return self.call("POST", f"{UPLOAD}/{self.package}/edits/{self.edit}/bundles?uploadType=media",
                          raw=data, step="upload the bundle")
+
+    def upload_mapping(self, build, data):
+        """#296: the R8 mapping file for version code BUILD (Play files it under apks/ for bundles too)."""
+        return self.call("POST", f"{UPLOAD}/{self.package}/edits/{self.edit}/apks/{int(build)}"
+                                 "/deobfuscationFiles/proguard?uploadType=media",
+                         raw=data, step="upload the mapping file")
 
     def set_track(self, name, release):
         return self.call("PUT", self.e(f"/tracks/{urllib.parse.quote(name)}"),
@@ -567,7 +577,7 @@ def invalidated(err):
     return bool(EDIT_GONE.search(err.message)) or err.status == 409
 
 
-def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
+def plan_edit(play, version, build, data, sha, notes, track, dry_run, out, mapping=None):
     """One edit, opened here. Returns ('done' | 'planned' | 'committed', track release body).
     Raises EditInvalid when Play threw the edit away at the upload, the track
     or the commit (criterion 14: the caller retries once with a new edit)."""
@@ -596,6 +606,8 @@ def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
     body = release_body(version, build, notes)
     out(f"plan: bundle version code {build}: {'reuse the one Play holds' if bv == 'reuse' else 'upload'} "
         f"({len(data)} bytes, sha256 {sha[:12]}…)")
+    if mapping is not None:
+        out(f"plan: R8 mapping file for version code {build}: upload ({len(mapping)} bytes), in this edit (#296)")
     out(f"plan: track {track}: release '{body['name']}', version code {build}, completed, "
         f"{LOCALE} notes ({len(notes)} characters)")
     out(f"plan: commit once{' (dry run: not sent)' if dry_run else ''}")
@@ -603,6 +615,8 @@ def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
         play.discard()
         return "planned", body
     for step, send in (("upload the bundle", (lambda: play.upload(data)) if bv == "upload" else None),
+                       ("upload the mapping file",
+                        (lambda: play.upload_mapping(build, mapping)) if mapping is not None else None),
                        ("set the track", lambda: play.set_track(track, body)),
                        ("commit", play.commit)):
         if send is None:
@@ -618,6 +632,12 @@ def plan_edit(play, version, build, data, sha, notes, track, dry_run, out):
                 raise Refused(step, f"Play read the upload as version code {got.get('versionCode')}, not {build}",
                               "the release's .aab is not build N: re-run android-apk.yml on main")
             out(f"uploaded: version code {build}")
+        if step == "upload the mapping file":
+            kind = (got.get("deobfuscationFile") or {}).get("symbolType")
+            if kind != "proguard":
+                raise Refused(step, f"Play did not file the mapping file as proguard (it answered {scrub(got)})",
+                              "re-run; if it persists, look in Play Console › App bundle explorer › Downloads")
+            out(f"uploaded: R8 mapping file for version code {build} (Play filed it as {kind})")
     return "committed", body
 
 
@@ -662,7 +682,7 @@ def is_closed(track):
     return bool(track) and track not in (INTERNAL, OPEN, PRODUCTION) and ":" not in track
 
 
-def release(play, version, build, aab, notes, track, production=False, dry_run=False, out=print):
+def release(play, version, build, aab, notes, track, production=False, dry_run=False, out=print, mapping=None):
     """Returns (code, summary line). Once the closed track is committed, every
     later refusal says the build IS on it (QA-1): only a refusal before that
     commit says Play Console is unchanged."""
@@ -680,6 +700,16 @@ def release(play, version, build, aab, notes, track, production=False, dry_run=F
         data = fh.read()
     sha = hashlib.sha256(data).hexdigest()
     head = f"Heart FC Coach {version} (build {build})"
+    mapping_data = None
+    if mapping:
+        with open(mapping, "rb") as fh:
+            mapping_data = fh.read()
+        if not mapping_data.strip():
+            why_block("read the mapping file", f"{mapping} is empty", "nothing sent",
+                      "the build's R8 step wrote no mapping (#296): re-run android-apk.yml on main")
+            return 1, f"{head}: not sent to Google Play: the mapping file is empty (WHY THIS JOB FAILED)."
+    else:
+        out("note: no R8 mapping file with this release (built before #296), so none is uploaded")
     on_track = False          # True once build N is known to be on the closed track
     stage = "nothing sent"
 
@@ -695,7 +725,7 @@ def release(play, version, build, aab, notes, track, production=False, dry_run=F
 
     try:
         state, body = with_retry(play, out, lambda: plan_edit(play, version, build, data, sha, notes, track,
-                                                               dry_run, out))
+                                                               dry_run, out, mapping_data))
         if state == "done":
             on_track = True
             out(f"{head} already on {track}; nothing to do")
@@ -860,7 +890,7 @@ def main(argv, factory=None):
         summarise(o["--summary"], line)
         return code
     if cmd == "release":
-        pos, o = options(rest, ("--track", "--production", "--summary"))
+        pos, o = options(rest, ("--track", "--production", "--summary", "--mapping"))
         if len(pos) != 5 or o["--production"] not in (None, "on", "off"):
             print(__doc__)
             return 2
@@ -874,7 +904,8 @@ def main(argv, factory=None):
         if not play:
             summarise(o["--summary"], f"Heart FC Coach {version} (build {build}): not sent (WHY THIS JOB FAILED).")
             return 1
-        code, line = release(play, version, build, aab, notes, o["--track"] or "", production, dry)
+        code, line = release(play, version, build, aab, notes, o["--track"] or "", production, dry,
+                             mapping=o["--mapping"] or None)
         summarise(o["--summary"], line)
         return code
     if cmd == "notes-check" and rest:
@@ -967,6 +998,12 @@ class FakePlay:
                     return status, json.dumps(body).encode() if isinstance(body, dict) else body.encode()
         if path.endswith("/token"):
             return 200, b'{"access_token": "ya29.fake", "expires_in": 3599}'
+        mm = re.search(r"/edits/([^/:]+)/apks/(\d+)/deobfuscationFiles/proguard$", path)
+        if method == "POST" and mm:
+            if mm.group(1) not in self.edits:
+                return 400, json.dumps({"error": {"code": 400, "message": "This Edit has been deleted."}}).encode()
+            self.edits[mm.group(1)].setdefault("mappings", {})[int(mm.group(2))] = hashlib.sha256(data).hexdigest()
+            return 200, json.dumps({"deobfuscationFile": {"symbolType": "proguard"}}).encode()
         m = re.search(r"/edits(?:/([^/:]+))?(:commit|/details|/tracks(?:/([^/]+))?|/bundles)?$", path)
         edit, tail, tname = m.group(1), m.group(2) or "", urllib.parse.unquote(m.group(3) or "")
         if method == "POST" and edit is None:
@@ -1014,6 +1051,7 @@ class FakePlay:
                 del self.edits[edit]
                 return 400, b'{"error": {"code": 400, "message": "This Edit has been deleted."}}'
             self.tracks, self.bundles = ed["tracks"], ed["bundles"]
+            self.mappings = {**getattr(self, "mappings", {}), **ed.get("mappings", {})}
             del self.edits[edit]
             return 200, json.dumps({"id": edit}).encode()
         return 500, b'{"error": {"message": "fake: unhandled"}}'
@@ -1047,10 +1085,10 @@ def self_test():
         p.authenticate(sa, now=1_700_000_000, sign=fake_sign)
         return p
 
-    def run(fake, dry=False, track="Coaches", production=False, notes=NOTES):
+    def run(fake, dry=False, track="Coaches", production=False, notes=NOTES, mapping=None):
         lines = []
         p = client(fake, read_only=dry, production=production and not dry, track=track)
-        code, line = release(p, "2.2.0", 310, aab, notes, track, production, dry, out=lines.append)
+        code, line = release(p, "2.2.0", 310, aab, notes, track, production, dry, out=lines.append, mapping=mapping)
         return code, line, lines, p
 
     print("healthy cases")
@@ -1089,6 +1127,37 @@ def self_test():
                    "Google's review then makes it available to testers.")
     expect("release: read back and logged", any(x.startswith("read back: Coaches: '2.2.0 (build 310)'") for x in lines))
     expect("release: no edit left open", fake.edits == {})
+
+    # #296 AC5: the R8 mapping file goes up in the same edit as the release, before the commit.
+    mapping = os.path.join(tmp, "coaching-app_2.2.0_abc1234.mapping.txt")
+    with open(mapping, "w") as fh:
+        fh.write("com.example.Thing -> a.b:\n    void run() -> a\n")
+    fake = FakePlay()
+    code, line, lines, p = run(fake, mapping=mapping)
+    order = [q for m, q in fake.log if m in ("POST", "PUT") and "/edits/" in q]
+    up = next((i for i, q in enumerate(order) if q.endswith("/apks/310/deobfuscationFiles/proguard")), -1)
+    expect("mapping: uploaded for version code 310, after the bundle and before the track and the commit",
+           code == 0 and up > 0 and order[up - 1].endswith("/bundles") and order[up + 1].endswith("/tracks/Coaches")
+           and order[-1].endswith(":commit"))
+    expect("mapping: Play holds it after the commit, byte for byte",
+           fake.mappings.get(310) == hashlib.sha256(open(mapping, "rb").read()).hexdigest())
+    expect("mapping: the plan and the upload are logged",
+           any("R8 mapping file for version code 310: upload" in x for x in lines)
+           and any(x.startswith("uploaded: R8 mapping file for version code 310") for x in lines))
+    fake = FakePlay()
+    code, line, lines, p = run(fake, mapping=mapping, production=True)
+    expect("mapping: with production on, uploaded once (the closed-track edit), not again for production",
+           code == 0 and sum(1 for m, q in fake.log if q.endswith("/deobfuscationFiles/proguard")) == 1
+           and "production" in fake.tracks)
+    fake = FakePlay()
+    code, line, lines, p = run(fake, mapping=mapping, dry=True)
+    expect("mapping: a dry run plans it and sends nothing",
+           code == 0 and fake.writes() == [] and any("R8 mapping file" in x for x in lines))
+    fake = FakePlay()
+    code, line, lines, p = run(fake)
+    expect("mapping: a release built before #296 has none: noted, nothing sent for it, still green",
+           code == 0 and not any("deobfuscation" in q for m, q in fake.log)
+           and any("no R8 mapping file" in x for x in lines))
 
     # Criterion 11: a re-run does nothing.
     before = len(fake.writes())
@@ -1179,10 +1248,11 @@ def self_test():
             body["error"]["errors"] = [{"reason": reason}]
         return status, body
 
-    def fails(name, fake, *words, production=False, track="Coaches", notes=NOTES, dry=False):
+    def fails(name, fake, *words, production=False, track="Coaches", notes=NOTES, dry=False, mapping=None):
         s = io.StringIO()
         with contextlib.redirect_stdout(s):
-            code, line, lines, p = run(fake, dry=dry, track=track, production=production, notes=notes)
+            code, line, lines, p = run(fake, dry=dry, track=track, production=production, notes=notes,
+                                       mapping=mapping)
         printed = s.getvalue() + "\n".join(lines)
         ok = code == 1 and "WHY THIS JOB FAILED" in printed and all(w.lower() in printed.lower() for w in words)
         expect(name, ok)
@@ -1218,6 +1288,30 @@ def self_test():
     fails("app not found (P3)", FakePlay(errors={("POST", "/edits"): err(404, "Package not found: x.")}),
           "no Play app has this package")
     # service account lacks a permission, named
+    # #296 AC5: a refused mapping upload is red, says why, and commits nothing.
+    before_tracks = json.loads(json.dumps(FakePlay().tracks))
+    fake, printed = fails("mapping: a refused upload is red, names the step, and nothing is committed",
+                          FakePlay(errors={("POST", "/deobfuscationFiles/proguard"):
+                                           err(403, "The caller does not have permission")}),
+                          "upload the mapping file", mapping=mapping)
+    expect("mapping: after a refused upload no commit was sent and the tracks are as they were",
+           not any(q.endswith(":commit") for m, q in fake.log) and fake.tracks == before_tracks
+           and "Play Console is unchanged" in printed)
+    empty = os.path.join(tmp, "empty.mapping.txt")
+    open(empty, "w").close()
+    fake, printed = fails("mapping: an empty mapping file is refused before anything is sent", FakePlay(),
+                          "read the mapping file", "is empty", mapping=empty)
+    expect("mapping: the empty file sent nothing", fake.writes() == [])
+    g = client(FakePlay())
+    g.open_edit()
+    try:
+        g.guard("POST", f"{UPLOAD}/{PKG}/edits/{g.edit}/apks/310/deobfuscationFiles/nativeCode")
+        ok = False
+    except ForbiddenWrite:
+        ok = True
+    expect("guard: only a proguard mapping may be uploaded, never native symbols or anything else", ok)
+    g.discard()
+
     fails("permission: 403 on the upload names Release to testing tracks",
           FakePlay(errors={("POST", "/bundles"): err(403, "The caller does not have permission")}),
           "Release to testing tracks")
