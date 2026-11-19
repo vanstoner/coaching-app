@@ -90,6 +90,8 @@ function withVariant(config) {
 const GRADLE_JVM_ARGS = '-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8';
 
 function withGradleMemory(config) {
+  // app.config.js is CommonJS, read by Expo's own loader: require is the only import it has.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { withGradleProperties } = require('expo/config-plugins');
   return withGradleProperties(config, (c) => {
     c.modResults = c.modResults.filter((p) => !(p.type === 'property' && p.key === 'org.gradle.jvmargs'));
