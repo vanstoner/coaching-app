@@ -231,8 +231,13 @@ class Walk:
     def check(self, what, label):
         """A check, not a tap: `label` (contained in a line) must be on this page, or the walk stops."""
         self.n += 1
-        screenshot(os.path.join(self.out, f"{self.n:02d}.png"))
-        seen = self.sees(label, contains=True)
+        shot = os.path.join(self.out, f"{self.n:02d}.png")
+        screenshot(shot)
+        # The screenshot itself first, by OCR and the view tree: on a ticking clock the tree can come
+        # back stale rather than empty (PR #297: OCR of the shot read "Next: Gus on- 6:15" while the
+        # probe's tree had no such line). Then look down the page.
+        here = (dump(os.path.join(self.out, f"{self.n:02d}.xml")) or []) + ocr(shot)
+        seen = find(here, label, contains=True) is not None or self.sees(label, contains=True)
         self.steps.append({"n": self.n, "journey": self.journey, "what": what, "label": label, "in_view": True,
                            "swipes": 0, "found": seen, "shot": f"{self.n:02d}.png", "check": True})
         if not seen:
