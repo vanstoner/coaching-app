@@ -244,7 +244,7 @@ flowchart TB
   subgraph Build["Build lane"]
     PR["PR"] -->|"ready or ci:full (CI)"| Beta["PR beta: Heart FC Beta Coach (CI)"]
     Beta -->|"merge (Rob)"| Main["Main build (CI)"]
-    Main --> Rel["Main APK release + signed Play bundle (CI)"]
+    Main --> Rel["Main APK release + signed Play bundle + R8 mapping (CI)"]
   end
   subgraph iPhone["iPhone lane"]
     Rel -->|"app-store approval (Rob)"| TFU["TestFlight upload (CI)"]
@@ -254,7 +254,7 @@ flowchart TB
   end
   subgraph Android["Android lane"]
     Rel -.->|"not used since #232"| PI["Play internal"]
-    Rel -->|"google-play approval (Rob)"| PC["Play closed test: 12 testers x 14 days (Google)"]
-    PC -->|"PLAY_PRODUCTION on (Rob)"| PP["Play production (Google)"]
+    Rel -->|"google-play approval (Rob): bundle + mapping"| PC["Play closed track: alpha (Google)"]
+    PC -->|"same run, PLAY_PRODUCTION on since 2.4.0 (#295)"| PP["Play production (Google review)"]
   end
 ```
