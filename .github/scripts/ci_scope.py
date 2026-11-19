@@ -73,6 +73,9 @@ DOCS_ONLY = [
     ".github/workflows/tests.yml",
     ".github/scripts/build_tests_page.py",
     ".github/scripts/build_site.py",
+    # #289: journey capture walks an APK another run built; it builds nothing.
+    ".github/workflows/journeys.yml",
+    ".github/scripts/journey_capture.py",
 ]
 
 # #230 criterion 7: builds Android but not iOS.
@@ -222,6 +225,8 @@ def self_test():
         ([".github/workflows/tests.yml"], False, False, False),
         ([".github/scripts/build_tests_page.py"], False, False, True),
         ([".github/scripts/build_site.py"], False, False, True),
+        ([".github/workflows/journeys.yml"], False, False, False),
+        ([".github/scripts/journey_capture.py"], False, False, False),
         ([".github/scripts/play_bundle.py"], True, False, False),
         (["HISTORY.md"], False, False, False),
         (["README.md"], False, False, False),
