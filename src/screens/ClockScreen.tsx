@@ -62,6 +62,7 @@ import { foldPlayerMinutes } from '../app/playerMinutes';
 import { checkBuzz, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
 import {
   cameOnFor,
+  chooseSubFor,
   isNotNow,
   moveSubTime,
   notNow,
@@ -830,7 +831,7 @@ export function ClockScreen({
         onMove={(deltaMs) =>
           sheetSub && changeSheetSub((plan) => moveSubTime(plan, sheetSub.playerId, deltaMs, periodMs))
         }
-        onSetFor={(offId) => sheetSub && changeSheetSub((plan) => setSubFor(plan, sheetSub.playerId, offId))}
+        onSetFor={(offId) => sheetSub && changeSheetSub((plan) => chooseSubFor(plan, sheetSub.playerId, offId, periodMs))}
         onPromptAgain={() => {
           if (sheetSub) notNowLog.current = promptAgain(notNowLog.current, periodKey, sheetSub);
           setPlanSheetFor(null);

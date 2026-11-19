@@ -326,6 +326,19 @@ export function moveSubTime(
   return setSubTime(plan, playerId, Math.max(1_000, sub.atMs + deltaMs), periodMs);
 }
 
+/**
+ * Choosing who comes off on the clock's sub sheet (#293 C6, Rob, 19 Nov: "fix
+ * the clock sub sheet too"). As on the Lineup (C1), a choice for a child not
+ * yet planned is an intent to sub: it also sets the time the sheet's first +
+ * would, the period's midpoint (`nudgeSubTime`). If that has already passed,
+ * the sub is due at once, as a forgotten sub always is. A time already set is kept.
+ */
+export function chooseSubFor(plan: PlannedSub[], playerId: UUID, offId: UUID | null, periodMs: number): PlannedSub[] {
+  const withFor = setSubFor(plan, playerId, offId);
+  const sub = withFor.find((s) => s.playerId === playerId);
+  return sub && !isPlanned(sub) ? nudgeSubTime(withFor, playerId, 1, periodMs) : withFor;
+}
+
 /** "Remove this sub" (C6): no time, and back to the suggestion. No confirm: it changes only the plan. */
 export function removeSub(plan: PlannedSub[], playerId: UUID): PlannedSub[] {
   return setSubFor(clearSubTime(plan, playerId), playerId, null);

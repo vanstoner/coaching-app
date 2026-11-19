@@ -6,6 +6,8 @@
  * the buzz, an edit during the quarter, and a phone that slept.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MatchEngine } from '../engine/MatchEngine';
 import { uuid } from '../types/index';
@@ -24,6 +26,7 @@ import {
   LIST_WHILE_PROMPTING,
   NO_NOT_NOW,
   cameOnFor,
+  chooseSubFor,
   isNotNow,
   moveSubTime,
   notNow,
@@ -362,5 +365,32 @@ describe('cameOnFor: who a sub replaced, from the record', () => {
     ];
     expect(cameOnFor(apps, q, ava)).toBe(ben);
     expect(cameOnFor(apps, q, uuid() as UUID)).toBeNull();
+  });
+});
+
+describe('choosing who comes off on the clock plans the sub (#293 C6, Rob, 19 Nov)', () => {
+  const kid = 'kid' as UUID;
+  const off = 'off' as UUID;
+  const QUARTER_MS = 12.5 * 60_000;
+  const unplanned: PlannedSub[] = [{ playerId: kid, atMs: NO_SUB_PLANNED, forPlayerId: null, done: false }];
+
+  it('a Not planned child: choosing who comes off sets the midpoint, as the first + would', () => {
+    const next = chooseSubFor(unplanned, kid, off, QUARTER_MS);
+    expect(next[0]).toMatchObject({ atMs: 6 * 60_000 + 15_000, forPlayerId: off });
+    expect(next[0].atMs).toBe(moveSubTime(unplanned, kid, 30_000, QUARTER_MS)[0].atMs);
+  });
+
+  it('so does Suggest', () => {
+    expect(chooseSubFor(unplanned, kid, null, QUARTER_MS)[0].atMs).toBe(6 * 60_000 + 15_000);
+  });
+
+  it('a time already set is kept', () => {
+    const planned: PlannedSub[] = [{ ...unplanned[0], atMs: 120_000 }];
+    expect(chooseSubFor(planned, kid, off, QUARTER_MS)[0]).toMatchObject({ atMs: 120_000, forPlayerId: off });
+  });
+
+  it('the clock sheet goes through it, never setSubFor alone', () => {
+    const src = readFileSync(join(__dirname, '../screens/ClockScreen.tsx'), 'utf8');
+    expect(src).toMatch(/onSetFor=\{\(offId\) => sheetSub && changeSheetSub\(\(plan\) => chooseSubFor\(plan, sheetSub\.playerId, offId, periodMs\)\)\}/);
   });
 });
