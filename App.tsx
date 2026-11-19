@@ -276,6 +276,13 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
+import {
+  LINEUP_DRAFT_KEY,
+  parseKeptLineupDraft,
+  sameDraft,
+  type KeptLineupDraft,
+  type LineupDraft,
+} from './src/app/lineupDraft';
 import { lengthsForBreak, parseTalkLengths, TALK_DEFAULT, TEAM_TALK_KEY, type TalkLengths } from './src/app/teamTalk';
 import { backFrom } from './src/app/tabs';
 import { highlightsText, matchLogText } from './src/app/highlights';
@@ -558,6 +565,20 @@ function TeamApp({
   const [talkLengths, setTalkLengths] = useState<TalkLengths>(TALK_DEFAULT);
   /** #283 C13: the lengths pinned when the current break began; memory only. */
   const talkHeld = useRef<{ breakKey: string; lengths: TalkLengths } | null>(null);
+  // #293 criterion 5: the Lineup's draft for the coming period, kept on this phone.
+  const [keptDraft, setKeptDraft] = useState<KeptLineupDraft | null>(null);
+  const keptDraftRef = useRef<KeptLineupDraft | null>(null);
+  /** Keep (or, with null, drop) the Lineup's draft: state for the screen, the store for a relaunch. */
+  const keepDraft = useCallback(
+    (kept: KeptLineupDraft | null) => {
+      keptDraftRef.current = kept;
+      setKeptDraft(kept);
+      void (kept ? store.setItem(LINEUP_DRAFT_KEY, JSON.stringify(kept)) : store.removeItem(LINEUP_DRAFT_KEY)).catch(
+        () => undefined
+      );
+    },
+    [store]
+  );
   // Rob, 7 Nov: matches from the record with no fixture here, archived on this
   // phone only, like a fixture's archive (#76 AC4: no record is written).
   const [archivedRecords, setArchivedRecords] = useState<ReadonlySet<UUID>>(new Set());
@@ -702,6 +723,10 @@ function TeamApp({
       // #277 C13: Formation or Table, as last chosen on this phone.
       setSheetView(parseSheetView(await store.getItem(SHEET_VIEW_KEY).catch(() => null)));
       setTalkLengths(parseTalkLengths(await store.getItem(TEAM_TALK_KEY).catch(() => null)));
+      // #293: a Lineup draft kept before the app was ended.
+      const draftKept = parseKeptLineupDraft(await store.getItem(LINEUP_DRAFT_KEY).catch(() => null));
+      keptDraftRef.current = draftKept;
+      setKeptDraft(draftKept);
       setArchivedRecords(parseArchivedRecords(await store.getItem(ARCHIVED_RECORDS_KEY).catch(() => null)));
 
       // Read once, before any save can run: launch must never write over
@@ -1396,8 +1421,10 @@ function TeamApp({
           : matches;
       setMatches(next);
       persist({ matches: next });
+      // #293 criterion 4: an edit on the plan wins; the Lineup's kept draft for this match goes.
+      if (keptDraftRef.current?.matchId === matchId) keepDraft(null);
     },
-    [matches, persist, planning]
+    [matches, persist, planning, keepDraft]
   );
 
   /**
@@ -2139,9 +2166,11 @@ function TeamApp({
   /** End match (ruling D): close it, so it counts towards season averages. */
   const closeMatch = useCallback(() => {
     if (!match || !endMatch(match.engine, match.state)) return;
+    // #293: a Lineup draft kept for this match has no period left to be for.
+    if (keptDraftRef.current?.matchId === match.state.match.id) keepDraft(null);
     repaint();
     persist();
-  }, [match, persist]);
+  }, [match, persist, keepDraft]);
 
   /** Correct attendance on the report (ruling F). The reason when refused, else null. */
   const correctAttendanceOnReport = useCallback(
@@ -2209,10 +2238,28 @@ function TeamApp({
       }
       setSubPlan(plan);
       setStep('playing');
+      // #293: the Lineup's draft became this period's reminders; it is dropped.
+      keepDraft(null);
       // Named here: this save still holds the last period's plan (#139).
       persist({ periodSubs: periodSubsToSave(match.state.quarters, plan) });
     },
-    [match, persist, squad, showToast]
+    [match, persist, squad, showToast, keepDraft]
+  );
+
+  /**
+   * #293 criterion 5: what the coach set on the Lineup for the coming period,
+   * kept on the stored match so leaving the Lineup before Start loses
+   * nothing. Intent, never a record. An unchanged draft writes nothing.
+   */
+  const keepLineupDraft = useCallback(
+    (draft: LineupDraft) => {
+      if (!match) return;
+      const id = match.state.match.id;
+      const kept = keptDraftRef.current;
+      if (kept?.matchId === id && sameDraft(kept.draft, draft)) return;
+      keepDraft({ matchId: id, draft });
+    },
+    [match, keepDraft]
   );
 
   /**
@@ -3270,6 +3317,9 @@ function TeamApp({
           onLeave={exit(leaveWithPicks)}
           awards={liveAwards}
           onPicksCount={setPicksWaiting}
+          // #293: what was set here before leaving, for this period; and every change, kept.
+          draft={keptDraft?.matchId === match.state.match.id ? keptDraft.draft : undefined}
+          onDraft={keepLineupDraft}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.
           names={

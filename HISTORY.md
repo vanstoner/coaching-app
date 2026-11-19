@@ -543,3 +543,4 @@ analysis, iOS". Entries are added as each release ships.
 
 - **19 November — Heart FC Coach 2.4.1, in progress: fixes.** Built so far:
   - **A smaller, obfuscated Android build** (#296). Google Play flagged 2.4.0's code obfuscation at 1%, against a 25% threshold, with a February 2027 deadline. R8 now shrinks and obfuscates every Android release build. CI fails any build R8 did not shrink. The bundle's mapping file is attached to the release and sent to Play with it, so crash reports stay readable. Nothing changes on screen.
+  - **A sub set at a break is never dropped** (#293). At a Q1 break Rob chose who a bench child would come on for and saved, but the sheet still said No sub, so it planned nothing and no reminder came. Choosing under For now sets the time to halfway (Rob's ruling (a): the sheet still opens at No sub). What is set on the Lineup before Start is also kept if the coach leaves it.

@@ -68,11 +68,13 @@ import { displayName } from '../app/squad';
 import { foldPlayerMinutes, type PlayerMinutes } from '../app/playerMinutes';
 import { suggestLineup } from '../app/lineup';
 import { lineupFromPlan, periodHasContent, type PlannedPeriod } from '../app/matchPlan';
+import { draftToSave, restoreLineupDraft, type LineupDraft } from '../app/lineupDraft';
 import { NO_SUB_PLANNED, planSubs, type PlannedSub } from '../app/subPlan';
 import {
   LINEUP_SUB_STEP_MS,
   draftFor,
   plannedSubText,
+  chooseFor,
   saveSubDraft,
   stepLineupSub,
   subTimeValue,
@@ -136,6 +138,8 @@ export function LineupScreen({
   talk,
   awards = null,
   onPicksCount,
+  draft,
+  onDraft,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -149,6 +153,10 @@ export function LineupScreen({
   onStart: (sheet: Sheet, plan: PlannedSub[], startedAt?: Date) => void;
   /** #283: the team talk's lengths and whether this phone buzzes. */
   talk?: { lengths: TalkLengths; buzz: boolean };
+  /** #293: what was set here for the coming period before the Lineup was left; it starts from it. */
+  draft?: LineupDraft;
+  /** #293: every change, so leaving the Lineup before Start loses nothing. Intent, never a record. */
+  onDraft?: (draft: LineupDraft) => void;
   /** Back to Home. Does not kick off and does not end anything. */
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
@@ -189,6 +197,7 @@ export function LineupScreen({
   onPicksCount?: (n: number) => void;
 }) {
   const quarter = currentQuarter(state);
+  const quarterId = quarter?.id;
   // #283: the break this match is in, worked out from the last period's end on
   // every paint, on this match's own clock (a test match's included).
   const breakTalk = talk ? teamTalkOf(state.quarters, state.match.quarterCount, talk.lengths) : null;
@@ -237,7 +246,10 @@ export function LineupScreen({
     subs: planSubs(suggestion.bench, periodMs),
   });
   const fromPlan = () => (planned ? lineupFromPlan(planned, format, players) : fromSuggestion());
-  const initial = () => (hasPlan ? fromPlan() : fromSuggestion());
+  // #293: a draft kept for this period comes first; else the plan, else the suggestion.
+  const initial = () =>
+    restoreLineupDraft(draft, quarter?.id, format, players.map((p) => p.id)) ??
+    (hasPlan ? fromPlan() : fromSuggestion());
 
   const [start] = useState(initial);
   const [sheet, setSheet] = useState<Sheet>(start.sheet);
@@ -293,6 +305,11 @@ export function LineupScreen({
       return [...kept, ...planSubs(added, periodMs)];
     });
   }, [onPitch, players, periodMs]);
+
+  // #293: every change is kept for this period, so leaving the Lineup before Start loses nothing.
+  useEffect(() => {
+    if (quarterId && onDraft) onDraft(draftToSave(quarterId, sheet, plan));
+  }, [quarterId, sheet, plan, onDraft]);
 
   const byId = useMemo(() => {
     const m = new Map<UUID, PlayerMinutes>();
@@ -636,14 +653,14 @@ export function LineupScreen({
             <CheckLine
               label="Whoever is on longest"
               checked={subSheet.draft.forPlayerId === null}
-              onPress={() => setSubSheet({ ...subSheet, draft: { ...subSheet.draft, forPlayerId: null } })}
+              onPress={() => setSubSheet({ ...subSheet, draft: chooseFor(subSheet.draft, null, periodMs) })}
             />
             {outfieldOn.map((id) => (
               <CheckLine
                 key={id}
                 label={nameOf.get(id) ?? ''}
                 checked={subSheet.draft.forPlayerId === id}
-                onPress={() => setSubSheet({ ...subSheet, draft: { ...subSheet.draft, forPlayerId: id } })}
+                onPress={() => setSubSheet({ ...subSheet, draft: chooseFor(subSheet.draft, id, periodMs) })}
               />
             ))}
           </>
