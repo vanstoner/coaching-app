@@ -82,6 +82,22 @@ function withVariant(config) {
 
 // A build number read from the environment: unset or empty means "not a CI
 // build" and returns undefined; anything else must be a positive integer.
+// #296: R8 (shrinking and obfuscation, turned on in app.json) needs more JVM
+// memory than Expo's template gives Gradle (-Xmx2048m, MaxMetaspaceSize=512m).
+// With R8 on, CI's build ran out of Metaspace and hung instead of failing
+// (run 44558016976: "java.lang.OutOfMemoryError: Metaspace"). Set here, so
+// every prebuild gets it and no android/ folder is edited by hand.
+const GRADLE_JVM_ARGS = '-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8';
+
+function withGradleMemory(config) {
+  const { withGradleProperties } = require('expo/config-plugins');
+  return withGradleProperties(config, (c) => {
+    c.modResults = c.modResults.filter((p) => !(p.type === 'property' && p.key === 'org.gradle.jvmargs'));
+    c.modResults.push({ type: 'property', key: 'org.gradle.jvmargs', value: GRADLE_JVM_ARGS });
+    return c;
+  });
+}
+
 function buildNumberFrom(name) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return undefined;
@@ -118,5 +134,5 @@ module.exports = ({ config: base }) => {
     config = { ...config, ios: { ...config.ios, buildNumber: iosBuildNumber } };
   }
 
-  return config;
+  return withGradleMemory(config);
 };

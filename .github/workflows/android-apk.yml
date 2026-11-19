@@ -418,6 +418,9 @@ jobs:
             || { echo "WHY THIS JOB FAILED: the generated module does not say distribution:$DISTRIBUTION"; exit 1; }
 
       - name: Build release APK with the bundle embedded
+        # #296: a Gradle that runs out of memory hangs rather than failing (run 44563953115 sat
+        # for over an hour); 8 minutes is normal, so 30 stops a hang with a red step.
+        timeout-minutes: 30
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
 
@@ -603,6 +606,7 @@ jobs:
       # signs a copy with Rob's upload key. Nothing here touches a secret.
       - name: Build the Play bundle
         if: env.PLAY_BUNDLE == 'true'
+        timeout-minutes: 30
         run: ./gradlew bundleRelease --no-daemon
         working-directory: android
 
