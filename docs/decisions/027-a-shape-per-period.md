@@ -1,8 +1,8 @@
 # ADR-027: A shape per period
 
-**Status:** Proposed. Rob approved #298's recommendations on 20 Nov ("approve
-298 recommendations"); this ADR records the design under them and is accepted
-when Rob approves it with Bea's criteria.
+**Status:** Accepted. Rob approved #298's recommendations and criteria on 20 Nov
+("approve 298 recommendations", "Approve 298 criteria"), and the build in
+PR #299 ("approve 299").
 **Date:** 2026-11-20
 **Decision maker:** Architect, for the Product Owner's ruling (#298)
 
