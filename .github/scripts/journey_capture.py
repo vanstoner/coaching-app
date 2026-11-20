@@ -126,6 +126,17 @@ def ocr(png):
     return ocr_nodes(out)
 
 
+def back_up(s):
+    """The swipe that scrolls back up. Not the forward swipe reversed: that starts a fifth of
+    the way down, on a fixed title bar on most screens (PR #299: the Lineup never moved in six
+    tries, so Shape, just above Goalkeeper, was never found). Start a little lower, in the page,
+    and drag three quarters of the distance down."""
+    x0, y_start, x1, y_end = s
+    dist = y_start - y_end
+    start = y_end + dist // 4
+    return (x0, start, x1, start + dist * 3 // 4)
+
+
 def screenshot(path):
     data = subprocess.run([ADB, "exec-out", "screencap", "-p"], capture_output=True, timeout=60).stdout
     with open(path, "wb") as fh:
@@ -166,7 +177,7 @@ class Walk:
                 break
             # Down the page first; past halfway, back up (Done sits at the top of a scrolled sheet).
             if swipes >= max_swipes // 2:
-                s = (s[0], s[3], s[2], s[1])
+                s = back_up(s)
             adb("shell", "input", "swipe", *map(str, s), "400")
             time.sleep(1)
             swipes += 1
@@ -421,6 +432,7 @@ def self_test():
             json.dump(data, fh)
         code = report(d)
         check("report exits non-zero when the walk stopped, and writes the page", code == 1 and os.path.exists(os.path.join(d, "report.html")))
+    check("back_up starts below a title bar and scrolls down the page", back_up((160, 512, 160, 128)) == (160, 224, 160, 512))
     print(f"{total - failed} expectation(s) passed, {failed} failed.")
     return 1 if failed else 0
 
