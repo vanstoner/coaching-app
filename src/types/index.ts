@@ -150,6 +150,13 @@ export interface Quarter {
   runningSinceWallClock: string | null; // ISO timestamp — used for crash recovery
   accumulatedMs: number; // Authoritative accumulated play time for this quarter
   elapsedMs: number; // Derived: accumulatedMs + live elapsed if running
+  /**
+   * #298 (ADR-027 D2): the shape this period was started in, snapshotted at
+   * its Start. Absent on every period started before 2.5.0, which read as the
+   * match's format (`formatOfPeriod`). Display and intent only: minutes fold
+   * from the appearances' own snapshotted kind and unit.
+   */
+  format?: Format;
 }
 
 // ============================================================================

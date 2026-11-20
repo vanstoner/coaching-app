@@ -35,7 +35,7 @@ import type { Distribution } from './distribution';
 import { opponentLabel } from './fixtures';
 import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
-import { slotSpots, type Rect } from './pitchLayout';
+import { slotSpots, widestRow, type Rect } from './pitchLayout';
 import { displayName } from './squad';
 
 /** 2×2 is the default: it reads better on a phone (Rob, #165). */
@@ -72,9 +72,11 @@ export const PLAN_IMAGE_SIZES = {
  * 0.18 / 0.5 / 0.82 never touch; 22 % at 11-a-side, the whole pitch, with
  * the phone's four-across spacing (#249 H33; Rob, 30 Oct, `approve 1`).
  */
-export function planSlotWidth(onFieldCount: number): number {
-  return onFieldCount >= 11 ? 0.22 : 0.3;
+export function planSlotWidth(onFieldCount: number, widestRow = 0): number {
+  // #298: a row of four (1-4-1's flat midfield) needs the narrow box at 7-a-side too.
+  return onFieldCount >= 11 || widestRow >= 4 ? 0.22 : 0.3;
 }
+
 
 /** One period's column width and pitch height, in image pixels. */
 export function planPitchSize(layout: PlanImageLayout, periodCount: number): { colWidth: number; pitchHeight: number } {
@@ -266,7 +268,7 @@ export function planImage(input: {
     title: `${squadName} v ${opponentLabel(match)}`,
     details: `${kickoffLine(match.kickoffAt)} · ${lengthLine(match.totalMinutes, periodCount)}`,
     periods,
-    slotWidth: planSlotWidth(format.onFieldCount),
+    slotWidth: planSlotWidth(format.onFieldCount, widestRow(format)),
     footer: PLAN_IMAGE_FOOTER,
   };
 }

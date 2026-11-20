@@ -817,7 +817,7 @@ export interface MatchRecord {
     /** A test match (#194, ADR-021 D3): never recorded. */
     test?: unknown;
   };
-  quarters: { id: UUID; index: number; status?: string; accumulatedMs?: number }[];
+  quarters: { id: UUID; index: number; status?: string; accumulatedMs?: number; format?: Format }[];
   appearances: Appearance[];
   events?: MatchEvent[];
   /** The shape it is played in: each interval's role (#196 AC4) and the structure (AC3). */
@@ -854,7 +854,12 @@ function eventRecords(record: MatchRecord): LedgerRecord[] {
 /** Closed appearances only: a running one has no end yet (#75 design). */
 function intervalRecords(record: MatchRecord): LedgerRecord[] {
   const periodOf = new Map(record.quarters.map((q) => [q.id, q.index]));
-  const roleOf = new Map((record.format?.positions ?? []).map((p) => [p.id, p.roleCode ?? null]));
+  // #298 (ADR-027 D2): a period played in another shape names its own positions.
+  const roleOf = new Map(
+    [record.format, ...record.quarters.map((q) => q.format)]
+      .flatMap((f) => f?.positions ?? [])
+      .map((p) => [p.id, p.roleCode ?? null] as const)
+  );
   return record.appearances
     .filter((a) => a.endElapsedMs !== null)
     .map((a) => ({

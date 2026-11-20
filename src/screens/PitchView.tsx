@@ -39,7 +39,7 @@ import {
   PITCH_ASPECT,
   dropTargetAt,
   fitPitchHeight,
-  pillWidthFor,
+  pillWidthFor, widestRow,
   slotBox,
   slotSpots,
   type DropTarget,
@@ -227,7 +227,7 @@ export function PitchView(props: PitchViewProps) {
   };
 
   // #249 F25: 72dp for every pill at 11-a-side, so a row of four fits a phone.
-  const pillWidth = pillWidthFor(format.onFieldCount, pitch.width);
+  const pillWidth = pillWidthFor(format.onFieldCount, pitch.width, widestRow(format));
 
   // A render FUNCTION, not a component: a component defined in here would be a
   // new type every render, remounting the pill under the finger mid-drag.

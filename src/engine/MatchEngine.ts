@@ -384,6 +384,8 @@ export class MatchEngine {
       }
     }
 
+    // #298 (ADR-027 D2): the shape this period is played in, fixed at its Start.
+    quarter.format = format;
     quarter.status = 'running';
     quarter.startedAt = now.toISOString();
     quarter.runningSinceWallClock = now.toISOString();

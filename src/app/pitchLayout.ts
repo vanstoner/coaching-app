@@ -117,8 +117,16 @@ export function edgeScrollDirection(pageY: number, top: number, height: number):
  * has 11 on the pitch, otherwise today's max(96dp, 28 % of the pitch) (#249
  * F24, F25). The drag ghost and the empty-slot outline use the same width.
  */
-export function pillWidthFor(onFieldCount: number, pitchWidth: number): number {
-  return onFieldCount >= 11 ? NARROW_PILL_WIDTH : Math.max(MIN_PILL_WIDTH, pitchWidth * PILL_WIDTH_FRACTION);
+export function pillWidthFor(onFieldCount: number, pitchWidth: number, widest = 0): number {
+  // #298: a row of four (1-4-1's flat midfield) takes the 72dp pill at 7-a-side too.
+  return onFieldCount >= 11 || widest >= 4 ? NARROW_PILL_WIDTH : Math.max(MIN_PILL_WIDTH, pitchWidth * PILL_WIDTH_FRACTION);
+}
+
+/** The most outfield places any one unit has: the widest row on the pitch (#298). */
+export function widestRow(format: Pick<Format, 'positions'>): number {
+  const counts = new Map<string, number>();
+  for (const p of format.positions) if (p.kind !== 'goalkeeper') counts.set(p.unit ?? 'MID', (counts.get(p.unit ?? 'MID') ?? 0) + 1);
+  return Math.max(0, ...counts.values());
 }
 
 /**
