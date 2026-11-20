@@ -3531,11 +3531,16 @@ function TeamApp({
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
         coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
-        // #301: Edit on a fixture that has not kicked off.
-        onEdit={(id) => {
-          setEditingFixtureId(id);
-          setStep('fixtureForm');
-        }}
+        // #301: Edit on a fixture that has not kicked off; never in a temporary team (#281), whose
+        // fixture is the coach's, as + Fixture and Share for a recorder are hidden there too.
+        onEdit={
+          borrowedFixture === null
+            ? (id) => {
+                setEditingFixtureId(id);
+                setStep('fixtureForm');
+              }
+            : undefined
+        }
         editable={new Set(real.filter((m) => canEditFixture(m)).map((m) => m.match.id))}
         onComing={(id) => {
           setComingId(id);

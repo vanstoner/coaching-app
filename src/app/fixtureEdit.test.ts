@@ -101,6 +101,9 @@ describe('Edit on the card, before kick-off only (#301 C1, C4, C5)', async () =>
     expect(card).toMatch(/match\.status === 'planned' && onEdit && editable\?\.has\(match\.id\) && \(\s*<RowNav label="Edit"/);
     expect(app).toMatch(/editable=\{new Set\(real\.filter\(\(m\) => canEditFixture\(m\)\)\.map\(\(m\) => m\.match\.id\)\)\}/);
   });
+  it('a temporary team (#281) offers no Edit: its fixture is the coach\'s', () => {
+    expect(app).toMatch(/onEdit=\{\s*borrowedFixture === null\s*\? \(id\) => \{/);
+  });
   it('the form opens filled in, titled Edit fixture, and warns before Save', () => {
     expect(app).toMatch(/creates=\{false\}\s*warnings=\{\(d\) => editWarnings\(editing, d\)\}/);
     expect(readFileSync(join(__dirname, '../screens/FixtureFormScreen.tsx'), 'utf8')).toMatch(/creates \? 'New fixture' : 'Edit fixture'/);
