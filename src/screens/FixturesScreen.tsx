@@ -57,6 +57,8 @@ export function FixturesScreen({
   plannedIds,
   coming,
   onComing,
+  onEdit,
+  editable,
   onTeamSheet,
   playable,
   onPlayOut,
@@ -90,6 +92,9 @@ export function FixturesScreen({
   /** #277 A1: each fixture's Who's coming summary. */
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
+  /** #301: edit a fixture that has not kicked off (the ids in `editable`). */
+  onEdit?: (matchId: UUID) => void;
+  editable?: ReadonlySet<UUID>;
   /** #277 B6: the fixture's Team sheet. */
   onTeamSheet: (matchId: UUID) => void;
   /** #280: fixtures that could be played out as planned: null when it can be, else why not. */
@@ -130,7 +135,7 @@ export function FixturesScreen({
   header?: ReactNode;
 }) {
   const rows = fixtureList(matches, now, currentMatchId, progress);
-  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onTeamSheet, playable, onPlayOut, onShareForRecorder, housekeeping, scores, periods, notClosed, provenance };
+  const cardProps = { now, onOpen, onDelete, plannedIds, coming, onComing, onEdit, editable, onTeamSheet, playable, onPlayOut, onShareForRecorder, housekeeping, scores, periods, notClosed, provenance };
   const current = inBucket(rows, 'current');
   const future = inBucket(rows, 'future');
   const past = inBucket(rows, 'past');
@@ -230,6 +235,8 @@ interface CardActions {
   plannedIds: ReadonlySet<UUID>;
   coming: ReadonlyMap<UUID, string>;
   onComing: (matchId: UUID) => void;
+  onEdit?: (matchId: UUID) => void;
+  editable?: ReadonlySet<UUID>;
   onTeamSheet: (matchId: UUID) => void;
   playable: ReadonlyMap<UUID, string | null>;
   onPlayOut: (matchId: UUID) => void;
@@ -365,6 +372,8 @@ function FixtureCard({
   plannedIds,
   coming,
   onComing,
+  onEdit,
+  editable,
   onTeamSheet,
   playable,
   onPlayOut,
@@ -479,6 +488,11 @@ function FixtureCard({
           onPress={() => onTeamSheet(match.id)}
           first={!coming.has(match.id)}
         />
+      )}
+
+      {/* #301: the fixture's own details (opposition, kick-off, length, shape), before kick-off only. */}
+      {match.status === 'planned' && onEdit && editable?.has(match.id) && (
+        <RowNav label="Edit" accessibilityLabel={`Edit the fixture v ${opponent}`} onPress={() => onEdit(match.id)} />
       )}
 
       {/* #281 (ADR-025): someone else runs the clock on their phone; before kick-off only. */}

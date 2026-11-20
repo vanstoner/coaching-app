@@ -276,6 +276,7 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
+import { canEditFixture, editFixture, editWarnings } from './src/app/fixtureEdit';
 import { formatForPlannedPeriod, formatOfPeriod } from './src/app/periodShape';
 import {
   LINEUP_DRAFT_KEY,
@@ -553,6 +554,8 @@ function TeamApp({
 
   /** The fixture whose plan is open (#72). */
   const [planningId, setPlanningId] = useState<UUID | null>(null);
+  /** #301: the fixture the form is editing; null for + Fixture. */
+  const [editingFixtureId, setEditingFixtureId] = useState<UUID | null>(null);
   /** The fixture whose Who's coming is open (#277 A). */
   const [comingId, setComingId] = useState<UUID | null>(null);
   /** Where Who's coming returns to: Home, or the team sheet it was opened from. */
@@ -1445,6 +1448,28 @@ function TeamApp({
       if (keptDraftRef.current?.matchId === matchId) keepDraft(null);
     },
     [matches, persist, planning, keepDraft]
+  );
+
+  /**
+   * #301: save an edit to a fixture that has not kicked off. Who's coming and
+   * the team sheet stay; a shape change re-places it by area, a length change
+   * clears its sub times (`editFixture`).
+   */
+  const updateFixture = useCallback(
+    (id: UUID, draft: FixtureDraft) => {
+      const next = matches.map((m) =>
+        m.match.id === id
+          ? editFixture(m, { ...draft, pitch: { surface: draft.pitch.surface ?? null, condition: draft.pitch.condition ?? null, referee: draft.pitch.referee ?? '' } }, format, appNow)
+          : m
+      );
+      setMatches(next);
+      persist({ matches: next, state: match?.state ?? null, matchFormat: match?.format ?? null });
+      setEditingFixtureId(null);
+      setStep('fixtures');
+      const saved = next.find((m) => m.match.id === id);
+      showToast(savedToast(`fixture v ${saved ? opponentLabel(saved.match) : 'TBC'}`));
+    },
+    [matches, format, persist, match, showToast]
   );
 
   /**
@@ -2523,6 +2548,7 @@ function TeamApp({
       setPlanReturn('fixtures');
       setStep('plan');
     } else {
+      setEditingFixtureId(null);
       setStep('fixtureForm');
     }
   };
@@ -2566,7 +2592,8 @@ function TeamApp({
         setFocusName(true);
         setStep('squad');
       } else if (key === 'match') {
-        setStep('fixtureForm');
+        setEditingFixtureId(null);
+      setStep('fixtureForm');
       } else {
         showToast(PLAY_NOW_TOAST);
       }
@@ -2706,6 +2733,34 @@ function TeamApp({
 
     if (effectiveStep === 'resume' && pending) {
       return <ResumeScreen saved={pending} onResume={resume} onLeave={exit(leaveResume)} />;
+    }
+
+    // #301: the same form, filled in, for a fixture that has not kicked off.
+    const editing = editingFixtureId ? matches.find((m) => m.match.id === editingFixtureId && canEditFixture(m)) : undefined;
+    if (effectiveStep === 'fixtureForm' && editing) {
+      return (
+        <FixtureFormScreen
+          key={editing.match.id}
+          initial={{
+            opponent: editing.match.opponent ?? '',
+            competition: editing.match.competition ?? null,
+            kickoffAt: editing.match.kickoffAt ?? null,
+            totalMinutes: editing.match.totalMinutes,
+            periodCount: editing.match.quarterCount,
+            shape: shapeOfFormat(editing.format ?? format) ?? DEFAULT_SHAPE,
+            excludeFromStats: editing.match.excludeFromStats === true,
+            pitch: { surface: editing.match.surface ?? null, condition: editing.match.condition ?? null, referee: editing.match.referee ?? '' },
+          }}
+          creates={false}
+          warnings={(d) => editWarnings(editing, d)}
+          onSave={(d) => updateFixture(editing.match.id, d)}
+          onCancel={() => {
+            setEditingFixtureId(null);
+            setStep('fixtures');
+          }}
+          seasonSize={seasonSize}
+        />
+      );
     }
 
     if (effectiveStep === 'fixtureForm') {
@@ -3465,10 +3520,23 @@ function TeamApp({
           setStep('record');
         }}
         // #281 (ADR-025 D3): a borrowed team has its one fixture.
-        onAdd={borrowedFixture === null ? () => setStep('fixtureForm') : undefined}
+        onAdd={
+          borrowedFixture === null
+            ? () => {
+                setEditingFixtureId(null);
+                setStep('fixtureForm');
+              }
+            : undefined
+        }
         plannedIds={new Set(real.filter((m) => planHasContent(m.plan)).map((m) => m.match.id))}
         // #277 A1: each fixture to come, "9 coming · 2 can't · 1 not heard".
         coming={new Map(real.map((m) => [m.match.id, comingSummary(comingRows(m.availability, squad))]))}
+        // #301: Edit on a fixture that has not kicked off.
+        onEdit={(id) => {
+          setEditingFixtureId(id);
+          setStep('fixtureForm');
+        }}
+        editable={new Set(real.filter((m) => canEditFixture(m)).map((m) => m.match.id))}
         onComing={(id) => {
           setComingId(id);
           setComingReturn('fixtures');

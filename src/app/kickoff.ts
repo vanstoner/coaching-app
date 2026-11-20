@@ -59,11 +59,30 @@ export function upcomingSaturdays(from: Date, count = 8): Date[] {
   );
 }
 
-/** Kick-off times 08:00 to 14:00 in 15-minute steps (AC2). */
-export const KICKOFF_TIMES: readonly string[] = Array.from({ length: 25 }, (_, i) => {
-  const minutes = 8 * 60 + 15 * i;
+/**
+ * Kick-off times 08:00 to 14:00 every half hour (#302, Rob 20 Nov: "stick to
+ * every half hour and then allow a manual entry"; 15-minute steps before).
+ */
+export const KICKOFF_TIMES: readonly string[] = Array.from({ length: 13 }, (_, i) => {
+  const minutes = 8 * 60 + 30 * i;
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 });
+
+/** The list's last line, opening the typed time (#302 C2). */
+export const ANOTHER_TIME = 'Another time…';
+
+/**
+ * A typed kick-off time (#302 C2): 24-hour "H:MM" or "HH:MM", 00:00 to 23:59,
+ * as "HH:MM"; null for anything else ("Enter a time like 10:20").
+ */
+export function readTypedTime(raw: string): string | null {
+  const m = /^\s*(\d{1,2})[:.](\d{2})\s*$/.exec(raw);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return `${String(h).padStart(2, '0')}:${m[2]}`;
+}
 
 /** "Sat 10 Oct". */
 export function dayLabel(d: Date): string {
