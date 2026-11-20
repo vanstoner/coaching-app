@@ -103,7 +103,8 @@ import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './Award
 import { awardsLine, type AwardPick, type AwardRow } from '../app/matchAwards';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
 import { hasRenamedPositions } from '../app/positionNames';
-import { shapeOfFormat } from '../app/shapes';
+import { shapeCue, shapeOfFormat, type ShapeCode } from '../app/shapes';
+import { switchShape } from '../app/periodShape';
 import {
   Action,
   ActionRow,
@@ -141,6 +142,7 @@ export function LineupScreen({
   onPicksCount,
   draft,
   onDraft,
+  shapes,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -158,6 +160,12 @@ export function LineupScreen({
   draft?: LineupDraft;
   /** #293: every change, so leaving the Lineup before Start loses nothing. Intent, never a record. */
   onDraft?: (draft: LineupDraft) => void;
+  /**
+   * #298 C3: at a break in a 7-a-side match, the coming period's shape. The
+   * match's shape first; choosing another re-places everyone by area (the
+   * `format` prop changes to it, and this screen moves the sheet).
+   */
+  shapes?: { options: ShapeCode[]; matchShape: ShapeCode; onChoose: (code: ShapeCode) => void };
   /** Back to Home. Does not kick off and does not end anything. */
   onLeave: () => void;
   /** Re-plan the periods still to come (#88). The clock keeps running. */
@@ -309,8 +317,41 @@ export function LineupScreen({
 
   // #293: every change is kept for this period, so leaving the Lineup before Start loses nothing.
   useEffect(() => {
-    if (quarterId && onDraft) onDraft(draftToSave(quarterId, sheet, plan));
-  }, [quarterId, sheet, plan, onDraft]);
+    if (quarterId && onDraft) onDraft(draftToSave(quarterId, sheet, plan, shapes ? shapeOfFormat(format) : null));
+  }, [quarterId, sheet, plan, onDraft, shapes, format]);
+
+  // #298 C3: a new shape for this period moves everyone by area (switchShape); Undo puts
+  // back the very sheet it replaced, not a second switch.
+  const sheetNow = useRef(sheet);
+  sheetNow.current = sheet;
+  const shapeFrom = useRef(format);
+  const restoreOnShape = useRef<{ formatId: UUID; sheet: Sheet } | null>(null);
+  useEffect(() => {
+    const prev = shapeFrom.current;
+    shapeFrom.current = format;
+    if (prev.id === format.id) return;
+    const back = restoreOnShape.current;
+    restoreOnShape.current = null;
+    if (back && back.formatId === format.id) {
+      setSheet(back.sheet);
+      return;
+    }
+    const before = sheetNow.current;
+    setSheet(switchShape(before, prev, format));
+    const prevCode = shapeOfFormat(prev);
+    if (shapes && prevCode) {
+      setToast({
+        message: `Shape ${shapeOfFormat(format) ?? ''}: everyone kept their area`,
+        undo: () => {
+          restoreOnShape.current = { formatId: prev.id, sheet: before };
+          shapes.onChoose(prevCode);
+        },
+      });
+    }
+    // Only when the shape itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [format.id]);
+  const [shapeSheet, setShapeSheet] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<UUID, PlayerMinutes>();
@@ -428,9 +469,20 @@ export function LineupScreen({
             <Action label="Reset position names" onPress={names.onReset} align="center" />
           )}
 
+          {/* #298 C3: at a break, the coming period's shape; the match's by default (C2a). */}
+          {shapes && (
+            <RowNav
+              first
+              label="Shape"
+              value={shape ?? ''}
+              detail={shape && shape !== shapes.matchShape ? 'changed for this quarter' : undefined}
+              onPress={() => setShapeSheet(true)}
+            />
+          )}
+
           {/* #264: Goalkeeper is one row opening a list with a tick, not a GK square per child. */}
           <RowNav
-            first
+            first={!shapes}
             label="Goalkeeper"
             value={goalkeeper ? (nameOf.get(goalkeeper) ?? '') : 'Not chosen'}
             onPress={() => setKeeperSheet(true)}
@@ -590,6 +642,25 @@ export function LineupScreen({
           </>
         )}
       </FormSheet>
+
+      {shapes && (
+        <ListSheet
+          visible={shapeSheet}
+          title="Shape"
+          items={shapes.options.map((code) => ({
+            value: code,
+            label: code,
+            detail: `${shapeCue(code)}${code === shapes.matchShape ? ' · the match\'s shape' : ''}`,
+          }))}
+          value={shape}
+          onPick={(code) => {
+            setShapeSheet(false);
+            if (code !== shape) shapes.onChoose(code);
+          }}
+          onCancel={() => setShapeSheet(false)}
+          footer={<SheetNote>Everyone keeps their area. Nobody comes on or goes off.</SheetNote>}
+        />
+      )}
 
       <ListSheet
         visible={keeperSheet}

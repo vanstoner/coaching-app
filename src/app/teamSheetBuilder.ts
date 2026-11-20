@@ -26,6 +26,7 @@
  * (invariant 1), and the Plan, Share plan and the clock read it as before.
  */
 
+import { formatForPlannedPeriod } from './periodShape';
 import type { Format, Player, Position, UUID } from '../types/index';
 import { defaultSwapTimeMs, periodLengthMs, type MatchPlan, type PlannedPeriod } from './matchPlan';
 
@@ -319,8 +320,11 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
   const lastPlace = new Map<UUID, number>();
   for (let p = 0; p < periodCount; p++) {
     const time = best?.periods[p] ?? { keeper: null, full: [], off: [], on: [] };
+    // #298: a period keeps the shape the coach gave it; its places are that shape's.
+    const shapeHere = before[p]?.shape;
+    const { outfield } = positionsOf(formatForPlannedPeriod(format, shapeHere));
     const slots: Record<UUID, UUID | null> = {};
-    for (const position of format.positions) slots[position.id] = null;
+    for (const position of formatForPlannedPeriod(format, shapeHere).positions) slots[position.id] = null;
     if (goal && time.keeper) slots[goal.id] = time.keeper;
     const taken = new Set<number>();
     // Children already placed stay exactly where they are.
@@ -361,6 +365,7 @@ export function buildTeamSheet(input: BuildInput): BuiltSheet {
     }
     const kept = before[p]?.subs.filter((s) => s.offId && s.onId && isComing.has(s.offId) && isComing.has(s.onId)) ?? [];
     const period: PlannedPeriod = {
+      ...(shapeHere ? { shape: shapeHere } : {}),
       slots,
       subs:
         kept.length > 0

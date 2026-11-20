@@ -11,6 +11,7 @@
  * row per bench place; one column per period.
  */
 
+import { formatForPlannedPeriod } from './periodShape';
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
 import { formatSubTime } from './matchClock';
 import { benchSubIndex, projectPlan, type MatchPlan, type PlannedPeriod } from './matchPlan';
@@ -208,11 +209,12 @@ export function keepPinned(plan: MatchPlan, format: Format): MatchPlan {
   return {
     periods: plan.periods.map((period) => {
       const slots: Record<UUID, UUID | null> = {};
-      for (const pos of format.positions) {
+      // #298: the period's own shape, kept through the fill.
+      for (const pos of formatForPlannedPeriod(format, period.shape).positions) {
         const keep = pos.id === goal || isPinned(period, pos.id);
         slots[pos.id] = keep ? (period.slots[pos.id] ?? null) : null;
       }
-      return { slots, subs: [], pinned: (period.pinned ?? []).filter((id) => slots[id]) };
+      return { slots, subs: [], pinned: (period.pinned ?? []).filter((id) => slots[id]), ...(period.shape ? { shape: period.shape } : {}) };
     }),
   };
 }
@@ -232,7 +234,7 @@ export function rearrangePeriod(
 ): MatchPlan {
   const period = plan.periods[periodIndex];
   if (!period) return plan;
-  const free = frontToBack(format).filter(
+  const free = frontToBack(formatForPlannedPeriod(format, period.shape)).filter(
     (p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)
   );
   if (free.length < 2) return plan;
@@ -256,7 +258,7 @@ export function rearrangePeriod(
 
 /** Can this period be rearranged: at least two outfield places not filled by hand? */
 export function canRearrange(period: PlannedPeriod, format: Format): boolean {
-  return format.positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
+  return formatForPlannedPeriod(format, period.shape).positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
 }
 
 /**

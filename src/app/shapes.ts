@@ -359,8 +359,10 @@ export function matchFormatInShape(matchFormat: Format, code: ShapeCode): Format
     id: formatId,
     name: spec.formatName,
     onFieldCount: spec.slots.length,
+    // The keeper's place is the same in every shape of a match, so whoever is in
+    // goal stays there across a switch and keeper tools read one id (#298).
     positions: spec.slots.map((slot, i) => ({
-      id: `${formatId}:${i}` as Position['id'],
+      id: (slot.unit === 'GK' ? (matchFormat.positions.find((p) => p.kind === 'goalkeeper')?.id ?? `${formatId}:${i}`) : `${formatId}:${i}`) as Position['id'],
       formatId,
       label: slot.label,
       kind: slot.unit === 'GK' ? ('goalkeeper' as const) : ('outfield' as const),
