@@ -40,7 +40,7 @@ Verified on `main`:
 `SW`); RM, CM, CM, LM (MID); ST (ATT). Permanent once written (ADR-023 D1).
 The labels are cues the coach may rename (#166).
 
-**D2. A period may have its own shape; the match's format is period 1's.**
+**D2. One shape for the match; a period may override it** (Rob, 20 Nov: *"The default will be same formatting through out with options to over ride per quarter when needed."*) The match's format is the default for every period.
 Each `Quarter` gains an optional `format`, a snapshot of the shape that
 period is played in, set when the period starts in a shape other than the
 match's. Readers that need a period's positions use one helper,
