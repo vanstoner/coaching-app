@@ -35,7 +35,7 @@ import type { Format, Position, PositionUnit } from '../types/index';
  * code is never renamed once released, and never reused at another team size
  * (ADR-023 D1).
  */
-export type ShapeCode = '2-3-1' | '2-2-2' | '1-2-1' | '2-2' | '3-3-2' | '3-2-3' | '4-4-2' | '4-3-3';
+export type ShapeCode = '2-3-1' | '2-2-2' | '1-4-1' | '1-2-1' | '2-2' | '3-3-2' | '3-2-3' | '4-4-2' | '4-3-3';
 
 export interface ShapeSlot {
   /** What the coach sees. Theirs to rename; nothing is measured against it. */
@@ -96,6 +96,24 @@ export const SHAPES: readonly ShapeSpec[] = [
       { label: 'RM', unit: 'MID', roleCode: 'RM' },
       { label: 'LF', unit: 'ATT', roleCode: 'ST' },
       { label: 'RF', unit: 'ATT', roleCode: 'ST' },
+    ],
+  },
+  // #298 (Rob, 20 Nov: "4 mid field flat with sweeper defence ... right mid
+  // center mid x2 left mid"; the sixth place a striker, his approved
+  // recommendation). ADR-027 D1: permanent once written.
+  {
+    code: '1-4-1',
+    formatName: '7-a-side',
+    label: '1-4-1',
+    description: '7-a-side · 1 defence (sweeper) · 4 midfield · 1 attack',
+    slots: [
+      { label: 'GK', unit: 'GK', roleCode: 'GK' },
+      { label: 'SW', unit: 'DEF', roleCode: 'SW' },
+      { label: 'RM', unit: 'MID', roleCode: 'RM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'CM', unit: 'MID', roleCode: 'CM' },
+      { label: 'LM', unit: 'MID', roleCode: 'LM' },
+      { label: 'ST', unit: 'ATT', roleCode: 'ST' },
     ],
   },
   // #223: five on the pitch, the keeper counted first, as the 7-a-side
@@ -323,4 +341,40 @@ export function shapeOfFormat(format: Format): ShapeCode | null {
 export function formatForShape(code: ShapeCode, existing: Format | null): Format {
   if (existing && shapeOfFormat(existing) === code) return existing;
   return makeFormat(code);
+}
+
+/**
+ * A match's format in another shape of the same side (#298, ADR-027 D2, D4):
+ * the match's own format when it already is that shape, else one built with
+ * ids derived from the match format's id and the shape, so the same shape
+ * gets the same position ids on every read, without being stored. Null for a
+ * shape of another side: the number on the pitch never changes mid-match (D3).
+ */
+export function matchFormatInShape(matchFormat: Format, code: ShapeCode): Format | null {
+  if (shapeOfFormat(matchFormat) === code) return matchFormat;
+  const spec = shapeSpec(code);
+  if (spec.slots.length !== matchFormat.onFieldCount) return null;
+  const formatId = `${matchFormat.id}:${code}` as Format['id'];
+  return {
+    id: formatId,
+    name: spec.formatName,
+    onFieldCount: spec.slots.length,
+    // The keeper's place is the same in every shape of a match, so whoever is in
+    // goal stays there across a switch and keeper tools read one id (#298).
+    positions: spec.slots.map((slot, i) => ({
+      id: (slot.unit === 'GK' ? (matchFormat.positions.find((p) => p.kind === 'goalkeeper')?.id ?? `${formatId}:${i}`) : `${formatId}:${i}`) as Position['id'],
+      formatId,
+      label: slot.label,
+      kind: slot.unit === 'GK' ? ('goalkeeper' as const) : ('outfield' as const),
+      unit: slot.unit,
+      roleCode: slot.roleCode,
+      sortOrder: i,
+    })),
+  };
+}
+
+/** The shapes a match of this side may switch between (#298: 7-a-side only, for now). */
+export function switchableShapes(matchFormat: Format): ShapeCode[] {
+  if (matchFormat.onFieldCount !== 7 || shapeOfFormat(matchFormat) === null) return [];
+  return SHAPES.filter((s) => s.slots.length === 7).map((s) => s.code);
 }

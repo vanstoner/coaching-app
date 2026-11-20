@@ -30,12 +30,14 @@
  * thrown away after.
  */
 
+import { formatForPlannedPeriod } from './periodShape';
+import { shapeOfFormat } from './shapes';
 import type { Format, Match, Player, PositionUnit, UUID } from '../types/index';
 import type { Distribution } from './distribution';
 import { opponentLabel } from './fixtures';
 import { formatSubTime, periodNoun } from './matchClock';
 import { planFor, type MatchPlan } from './matchPlan';
-import { slotSpots, type Rect } from './pitchLayout';
+import { slotSpots, widestRow, type Rect } from './pitchLayout';
 import { displayName } from './squad';
 
 /** 2×2 is the default: it reads better on a phone (Rob, #165). */
@@ -72,9 +74,11 @@ export const PLAN_IMAGE_SIZES = {
  * 0.18 / 0.5 / 0.82 never touch; 22 % at 11-a-side, the whole pitch, with
  * the phone's four-across spacing (#249 H33; Rob, 30 Oct, `approve 1`).
  */
-export function planSlotWidth(onFieldCount: number): number {
-  return onFieldCount >= 11 ? 0.22 : 0.3;
+export function planSlotWidth(onFieldCount: number, widestRow = 0): number {
+  // #298: a row of four (1-4-1's flat midfield) needs the narrow box at 7-a-side too.
+  return onFieldCount >= 11 || widestRow >= 4 ? 0.22 : 0.3;
 }
+
 
 /** One period's column width and pitch height, in image pixels. */
 export function planPitchSize(layout: PlanImageLayout, periodCount: number): { colWidth: number; pitchHeight: number } {
@@ -218,12 +222,16 @@ export function planImage(input: {
   const periodCount = match.quarterCount;
   const noun = periodNoun(periodCount);
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
-  const kindOf = new Map(format.positions.map((p) => [p.id, p.kind]));
-  const spots = slotSpots(format);
-  // Draw order: top of the pitch first, then left to right.
-  spots.sort((a, b) => a.y - b.y || a.x - b.x);
+  const planned = planFor(input.plan, periodCount).periods;
+  // #298 C6: each period on its own shape's pitch.
+  const formats = planned.map((period) => formatForPlannedPeriod(format, period.shape));
 
-  const periods = planFor(input.plan, periodCount).periods.map((period, i) => {
+  const periods = planned.map((period, i) => {
+    const periodFormat = formats[i];
+    const kindOf = new Map(periodFormat.positions.map((p) => [p.id, p.kind]));
+    const spots = slotSpots(periodFormat);
+    // Draw order: top of the pitch first, then left to right.
+    spots.sort((a, b) => a.y - b.y || a.x - b.x);
     const placed = new Set<UUID>();
     const slots: PlanImageSlot[] = spots.map((s) => {
       const who = period.slots[s.positionId] ?? null;
@@ -254,7 +262,10 @@ export function planImage(input: {
       .map((p) => displayName(p));
 
     return {
-      title: `${noun} ${i + 1}`,
+      // #298 C6: "Q3 · 1-4-1" when the shape changes; "Quarter 3" alone otherwise.
+      title: formats.some((f) => f.id !== format.id)
+        ? `${noun === 'Quarter' ? 'Q' : noun === 'Half' ? 'H' : `${noun} `}${i + 1} · ${shapeOfFormat(periodFormat) ?? ''}`
+        : `${noun} ${i + 1}`,
       slots,
       subLines,
       noSubs: subLines.length === 0 ? `No subs this ${noun.toLowerCase()}` : null,
@@ -266,7 +277,7 @@ export function planImage(input: {
     title: `${squadName} v ${opponentLabel(match)}`,
     details: `${kickoffLine(match.kickoffAt)} · ${lengthLine(match.totalMinutes, periodCount)}`,
     periods,
-    slotWidth: planSlotWidth(format.onFieldCount),
+    slotWidth: planSlotWidth(format.onFieldCount, Math.max(...formats.map((f) => widestRow(f)), widestRow(format))),
     footer: PLAN_IMAGE_FOOTER,
   };
 }

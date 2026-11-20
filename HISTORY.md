@@ -544,3 +544,12 @@ analysis, iOS". Entries are added as each release ships.
 - **19 November — Heart FC Coach 2.4.1, in progress: fixes.** Built so far:
   - **A smaller, obfuscated Android build** (#296). Google Play flagged 2.4.0's code obfuscation at 1%, against a 25% threshold, with a February 2027 deadline. R8 now shrinks and obfuscates every Android release build. CI fails any build R8 did not shrink. The bundle's mapping file is attached to the release and sent to Play with it, so crash reports stay readable. Nothing changes on screen.
   - **A sub set at a break is never dropped** (#293). At a Q1 break Rob chose who a bench child would come on for and saved, but the sheet still said No sub, so it planned nothing and no reminder came. Choosing under For now sets the time to halfway (Rob's ruling (a): the sheet still opens at No sub). What is set on the Lineup before Start is also kept if the coach leaves it. The clock's own sub sheet does the same for a Not planned child (Rob, 19 Nov), and the journey capture (#289, merged with #292) now sets a sub at the Q1 break and checks it reaches the clock.
+
+- **19 November — Heart FC Coach 2.4.1 released** (#297, build 407): a sub set at a break is never dropped (#293), and the Android build is shrunk and obfuscated with R8 (#296). Google accepted it on the alpha track and production, with its R8 mapping file; Apple took it on TestFlight.
+
+- **20 November — Heart FC Coach 2.5.0, in progress: a shape per quarter (#298, ADR-027).** Rob: *"I want to try changing formation mid match so we will have a choice between switching to preset configurations ... The default will be same formatting through out with options to over ride per quarter when needed."*
+  - **1-4-1 for 7-a-side**: a sweeper, a flat four (right mid, centre mid ×2, left mid) and a striker.
+  - **Shape per quarter, 7-a-side only.** The match's shape is every quarter's unless the coach overrides one: on the Team sheet or Plan the rest (a Shape row per quarter), or on the Lineup at a break. A switch keeps each child in their area; nobody comes on or goes off. The clock draws each quarter in the shape it was started in.
+  - **Share plan** draws each quarter on its own shape's pitch, with the shape in its heading.
+  - Minutes and fairness are unchanged (total time); no record changes. Release 2.4.1 is frozen as a fixture.
+

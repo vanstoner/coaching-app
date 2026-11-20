@@ -132,6 +132,12 @@ Then tap **Share plan** at the bottom to send parents the picture.
 A plan is only a plan: it never moves a minute. What counts is what actually
 happens on the day.
 
+**Another shape for one quarter (7-a-side).** The match keeps one shape unless
+you change a quarter. On the team sheet, pick the quarter and tap **Shape**: the
+choices are 2-3-1, 2-2-2 and 1-4-1 (a sweeper, a flat four and a striker).
+Everyone keeps their area, and the shared plan shows that quarter in its shape.
+You can also change it at a break, on the Lineup's **Shape** row.
+
 <img src="store/app-store/screenshots/iphone/03-plan.png" alt="The plan picture parents see, with every sub time" width="260">
 
 ## 5. On the day: the lineup

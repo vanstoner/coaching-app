@@ -110,13 +110,15 @@ describe('A. the shapes (#249 A1–A5)', () => {
         expect(units(a.code), `${a.code} vs ${b.code}`).not.toBe(units(b.code));
       }
     }
-    expect(SHAPE_CODES).toHaveLength(8);
+    // #298 (Rob, 20 Nov): 1-4-1 is the ninth.
+    expect(SHAPE_CODES).toHaveLength(9);
     for (const code of SHAPE_CODES) expect(shapeOfFormat(makeFormat(code))).toBe(code);
   });
 
   it('A4: DEFAULT_SHAPE stays 2-3-1, and the four 2.1.0 shapes are pinned exactly as released', () => {
     expect(DEFAULT_SHAPE).toBe('2-3-1');
-    const pinned = SHAPES.slice(0, 4).map((s) => [s.code, s.formatName, s.label, s.slots.map((x) => `${x.label}/${x.unit}/${x.roleCode}`).join(' ')]);
+    // By code, not position: #298 added 1-4-1 among the 7-a-side shapes.
+    const pinned = SHAPES.filter((s) => ['2-3-1', '2-2-2', '1-2-1', '2-2'].includes(s.code)).map((s) => [s.code, s.formatName, s.label, s.slots.map((x) => `${x.label}/${x.unit}/${x.roleCode}`).join(' ')]);
     expect(pinned).toEqual([
       ['2-3-1', '7-a-side', '2-3-1', 'GK/GK/GK LB/DEF/LB RB/DEF/RB CM/MID/CM LW/MID/LW RW/MID/RW ST/ATT/ST'],
       ['2-2-2', '7-a-side', '2-2-2', 'GK/GK/GK LB/DEF/LB RB/DEF/RB LM/MID/LM RM/MID/RM LF/ATT/ST RF/ATT/ST'],
@@ -138,7 +140,7 @@ describe('A. the shapes (#249 A1–A5)', () => {
 
 describe('B. lists worked out from SHAPES (#249 B6–B9)', () => {
   it('B6: TEAM_FORMATS is every shape, in size order, SHAPES order within a size, 2-2-2 included', () => {
-    expect(TEAM_FORMATS.map((f) => f.shape)).toEqual(['1-2-1', '2-2', '2-3-1', '2-2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
+    expect(TEAM_FORMATS.map((f) => f.shape)).toEqual(['1-2-1', '2-2', '2-3-1', '2-2-2', '1-4-1', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
     expect(TEAM_FORMATS.map((f) => `${f.label} · ${f.detail}`)).toContain('9-a-side · 3-3-2');
     for (const f of TEAM_FORMATS) expect(f.side).toBe(sideOfShape(f.shape));
   });

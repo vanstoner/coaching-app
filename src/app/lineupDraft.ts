@@ -22,6 +22,7 @@
 import type { Format, UUID } from '../types/index';
 import type { Sheet } from './teamSheet';
 import type { PlannedSub, SavedSub } from './subPlan';
+import { readShapeCode, type ShapeCode } from './shapes';
 
 export interface LineupDraft {
   /** The period this draft is for. It is only ever restored into that period. */
@@ -29,14 +30,17 @@ export interface LineupDraft {
   /** Position id → child, or null for an empty place. */
   sheet: Sheet;
   subs: SavedSub[];
+  /** #298: the shape chosen for this period on the Lineup; the sheet's ids are that shape's. */
+  shape?: ShapeCode;
 }
 
 /** What to keep of the Lineup as it stands: the intention, without `done`. */
-export function draftToSave(quarterId: UUID, sheet: Sheet, plan: PlannedSub[]): LineupDraft {
+export function draftToSave(quarterId: UUID, sheet: Sheet, plan: PlannedSub[], shape?: ShapeCode | null): LineupDraft {
   return {
     quarterId,
     sheet: { ...sheet },
     subs: plan.map(({ playerId, atMs, forPlayerId }) => ({ playerId, atMs, forPlayerId })),
+    ...(shape ? { shape } : {}),
   };
 }
 
@@ -95,7 +99,7 @@ export function isLineupDraftShaped(value: unknown): value is LineupDraft {
     if (typeof s !== 'object' || s === null) return false;
     const { playerId, atMs, forPlayerId } = s as Record<string, unknown>;
     return typeof playerId === 'string' && Number.isFinite(atMs) && (forPlayerId === null || typeof forPlayerId === 'string');
-  });
+  }) && ((value as Record<string, unknown>).shape === undefined || readShapeCode((value as Record<string, unknown>).shape) !== null);
 }
 
 /** This phone's one kept draft (#293). */

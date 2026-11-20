@@ -48,7 +48,7 @@ import {
   PLACEHOLDER_SQUAD_NAME,
   makeSevenASideFormat,
 } from './src/app/placeholderSquad';
-import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode } from './src/app/shapes';
+import { DEFAULT_SHAPE, formatForShape, shapeOfFormat, type ShapeCode , switchableShapes } from './src/app/shapes';
 import {
   activePlayers,
   makePlayer,
@@ -276,6 +276,7 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
+import { formatForPlannedPeriod, formatOfPeriod } from './src/app/periodShape';
 import {
   LINEUP_DRAFT_KEY,
   parseKeptLineupDraft,
@@ -568,6 +569,25 @@ function TeamApp({
   // #293 criterion 5: the Lineup's draft for the coming period, kept on this phone.
   const [keptDraft, setKeptDraft] = useState<KeptLineupDraft | null>(null);
   const keptDraftRef = useRef<KeptLineupDraft | null>(null);
+  /**
+   * #298 (ADR-027): the shape of the period on the clock (running, else the last
+   * started), and of the coming period on the Lineup: the Lineup's own choice,
+   * else the plan's override, else the match's (C2a).
+   */
+  const formatNow = (m: LiveMatch): Format => {
+    const q =
+      m.state.quarters.find((x) => x.status === 'running') ??
+      [...m.state.quarters].reverse().find((x) => x.status !== 'pending');
+    return formatOfPeriod(m.format, q);
+  };
+  const comingFormat = (m: LiveMatch, kept: KeptLineupDraft | null, saved: readonly SavedMatch[]): Format => {
+    const q = currentQuarter(m.state);
+    if (!q || q.status !== 'pending') return formatNow(m);
+    const chosen = kept?.matchId === m.state.match.id && kept.draft.quarterId === q.id ? kept.draft.shape : undefined;
+    const planned = saved.find((x) => x.match.id === m.state.match.id)?.plan?.periods[q.index - 1]?.shape;
+    return formatForPlannedPeriod(m.format, chosen ?? planned);
+  };
+
   /** Keep (or, with null, drop) the Lineup's draft: state for the screen, the store for a relaunch. */
   const keepDraft = useCallback(
     (kept: KeptLineupDraft | null) => {
@@ -2223,6 +2243,8 @@ function TeamApp({
       if (!match) return;
       const quarter = currentQuarter(match.state);
       if (!quarter) return;
+      // #298 (ADR-027 D2): the shape the Lineup showed; the engine snapshots it on the period.
+      const periodFormat = comingFormat(match, keptDraftRef.current, matches);
       // What the coach started with, position by position (#72, AC9). Never
       // the plan: the plan only filled the screen in (AC8).
       // Everyone in today's squad is in the kick-off snapshot (QA on #102).
@@ -2230,10 +2252,10 @@ function TeamApp({
       // #283: "from when it was due" passes the due moment; the engine refuses a
       // bad one before writing anything, and then the period starts now.
       try {
-        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format, startedAt);
+        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), periodFormat, startedAt);
       } catch (e) {
         if (!startedAt) throw e;
-        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), match.format);
+        match.engine.startQuarter(match.state, quarter, toTeamSheet(sheet), periodFormat);
         showToast('Started now: that start time had already passed the last period or not yet come');
       }
       setSubPlan(plan);
@@ -2243,7 +2265,8 @@ function TeamApp({
       // Named here: this save still holds the last period's plan (#139).
       persist({ periodSubs: periodSubsToSave(match.state.quarters, plan) });
     },
-    [match, persist, squad, showToast, keepDraft]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- comingFormat reads only match, the kept draft and matches
+    [match, matches, persist, squad, showToast, keepDraft]
   );
 
   /**
@@ -2337,7 +2360,7 @@ function TeamApp({
         const quarter = match ? currentQuarter(match.state) : null;
         if (!match || !quarter) return false;
         try {
-          match.engine.addExtraPlayer(match.state, quarter, playerId, unit, match.format);
+          match.engine.addExtraPlayer(match.state, quarter, playerId, unit, formatNow(match));
           persist();
           return true;
         } catch {
@@ -2348,7 +2371,7 @@ function TeamApp({
         const quarter = match ? currentQuarter(match.state) : null;
         if (!match || !quarter) return false;
         try {
-          match.engine.removeExtraPlayer(match.state, quarter, playerId, match.format);
+          match.engine.removeExtraPlayer(match.state, quarter, playerId, formatNow(match));
           persist();
           return true;
         } catch {
@@ -3267,12 +3290,17 @@ function TeamApp({
     }
 
     if (effectiveStep === 'lineup' && match) {
+      // #298 C3, C5: the coming period's shape, and at a break in a 7-a-side match the choice of it.
+      const lineupFormat = comingFormat(match, keptDraft, matches);
+      const matchShape = shapeOfFormat(match.format);
+      const shapeOptions = switchableShapes(match.format);
+      const atBreak = match.state.quarters.some((q) => q.status === 'ended');
       return (
         <LineupScreen
           pitch={<PitchAndReferee match={match.state.match} onChange={isTestMatch(match.state.match) ? null : (v) => setPitch(match.state.match.id, v)} />}
           engine={match.engine}
           state={match.state}
-          format={match.format}
+          format={lineupFormat}
           // An absent player cannot be picked (#102 AC1).
           players={pickablePlayers(playersForMatch(players, match.state.appearances), match.state)}
           // Before kick-off: mark absent or here. Between periods: mark an
@@ -3319,12 +3347,30 @@ function TeamApp({
           onPicksCount={setPicksWaiting}
           // #293: what was set here before leaving, for this period; and every change, kept.
           draft={keptDraft?.matchId === match.state.match.id ? keptDraft.draft : undefined}
+          shapes={
+            atBreak && matchShape && shapeOptions.length > 1
+              ? {
+                  options: shapeOptions,
+                  matchShape,
+                  onChoose: (code) => {
+                    const q = currentQuarter(match.state);
+                    if (!q) return;
+                    const kept = keptDraftRef.current;
+                    const base =
+                      kept?.matchId === match.state.match.id && kept.draft.quarterId === q.id
+                        ? kept.draft
+                        : { quarterId: q.id, sheet: {}, subs: [] };
+                    keepDraft({ matchId: match.state.match.id, draft: { ...base, shape: code } });
+                  },
+                }
+              : undefined
+          }
           onDraft={keepLineupDraft}
           onPlanRest={planTheRest}
           // #166 Q1: before a period starts; never while one runs.
           names={
             canRenamePositions('lineup', match.state.quarters)
-              ? namingFor(match.state.match.id, match.format)
+              ? namingFor(match.state.match.id, lineupFormat)
               : undefined
           }
         />
@@ -3338,7 +3384,7 @@ function TeamApp({
           state={match.state}
           players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
-          format={match.format}
+          format={formatNow(match)}
           subPlan={subPlan}
           buzzOnDue={buzzWhenSubDue}
           buzzLog={subBuzzLog}

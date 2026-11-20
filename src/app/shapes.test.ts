@@ -22,10 +22,11 @@ describe('the shapes the PO named', () => {
   // Replaces "offers 2-3-1 and 2-2-2, both seven a side": #223 (approved
   // 18 Oct) adds two 5-a-side shapes beside them.
   // #249 (ADR-023 D1) adds 3-3-2 and 3-2-3 at nine, 4-4-2 and 4-3-3 at eleven.
+  // #298 (Rob, 20 Nov; ADR-027 D1) adds 1-4-1 at seven.
   it('offers 2-3-1 and 2-2-2 seven a side, 1-2-1 and 2-2 five a side, and the four 9- and 11-a-side shapes (#223 AC1, #249 A1)', () => {
-    expect(SHAPES.map((s) => s.code)).toEqual(['2-3-1', '2-2-2', '1-2-1', '2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
+    expect(SHAPES.map((s) => s.code)).toEqual(['2-3-1', '2-2-2', '1-4-1', '1-2-1', '2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
     const size = Object.fromEntries(SHAPES.map((s) => [s.code, s.slots.length]));
-    expect(size).toEqual({ '2-3-1': 7, '2-2-2': 7, '1-2-1': 5, '2-2': 5, '3-3-2': 9, '3-2-3': 9, '4-4-2': 11, '4-3-3': 11 });
+    expect(size).toEqual({ '2-3-1': 7, '2-2-2': 7, '1-4-1': 7, '1-2-1': 5, '2-2': 5, '3-3-2': 9, '3-2-3': 9, '4-4-2': 11, '4-3-3': 11 });
   });
 
   it('fields five children in every 5-a-side shape, one of them in goal (#223 AC6)', () => {
@@ -224,7 +225,7 @@ describe('formatForShape', () => {
 
 describe('reading a shape back from a record', () => {
   it('knows every shape this build offers, and nothing else', () => {
-    expect(SHAPE_CODES).toEqual(['2-3-1', '2-2-2', '1-2-1', '2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
+    expect(SHAPE_CODES).toEqual(['2-3-1', '2-2-2', '1-4-1', '1-2-1', '2-2', '3-3-2', '3-2-3', '4-4-2', '4-3-3']);
     for (const code of SHAPE_CODES) expect(readShapeCode(code)).toBe(code);
     for (const raw of ['3-3', '', null, undefined, 7, '1-2-1 + GK']) expect(readShapeCode(raw)).toBeNull();
   });

@@ -47,13 +47,17 @@ import { opponentLabel } from '../app/fixtures';
 import {
   Action,
   BackLink,
+  ListSheet,
   RowNav,
   SavedTick,
   Segmented,
+  SheetNote,
   TopBar,
   useSavedTick,
 } from './controls';
 import { PitchView } from './PitchView';
+import { formatForPlannedPeriod, switchShape } from '../app/periodShape';
+import { shapeCue, shapeOfFormat, switchableShapes } from '../app/shapes';
 import { PlannedSubPanel, subRequestFor, type SubRequest } from './PlannedSubPanel';
 import { useEdgeScroll } from './useEdgeScroll';
 import { PositionNameSheet, type PositionNaming } from './PositionNameSheet';
@@ -124,6 +128,11 @@ export function PlanScreen({
   const tick = useSavedTick();
 
   const period = plan.periods[periodIndex];
+  // #298 C2, C2a: this period's shape (the match's unless overridden), and the choice of it.
+  const periodFormat = formatForPlannedPeriod(format, period.shape);
+  const shapeOptions = switchableShapes(format);
+  const matchShape = shapeOfFormat(format);
+  const [shapeSheet, setShapeSheet] = useState(false);
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID | null) =>
     id === null ? 'Pick' : (nameOf.get(id) ?? 'Removed player');
@@ -220,8 +229,17 @@ export function PlanScreen({
             ? `Now tap where ${name(pitchPick)} goes, or tap them again to cancel. Or sub them off below.`
             : 'Drag a player into place, or tap one and then where they go. Tap a bench player to plan their sub.'}
         </Text>
+        {shapeOptions.length > 1 && matchShape && (
+          <RowNav
+            first
+            label="Shape"
+            value={shapeOfFormat(periodFormat) ?? ''}
+            detail={period.shape && period.shape !== matchShape ? `changed for this ${noun.toLowerCase()}` : undefined}
+            onPress={() => setShapeSheet(true)}
+          />
+        )}
         <PitchView
-          format={format}
+          format={periodFormat}
           sheet={period.slots}
           bench={benchIds}
           nameOf={name}
@@ -331,12 +349,37 @@ export function PlanScreen({
         />
       )}
 
+      {shapeOptions.length > 1 && matchShape && (
+        <ListSheet
+          visible={shapeSheet}
+          title={`${noun} ${periodIndex + 1} shape`}
+          items={shapeOptions.map((code) => ({
+            value: code,
+            label: code,
+            detail: `${shapeCue(code)}${code === matchShape ? " · the match's shape" : ''}`,
+          }))}
+          value={shapeOfFormat(periodFormat)}
+          onPick={(code) => {
+            setShapeSheet(false);
+            const to = formatForPlannedPeriod(format, code);
+            if (to.id === periodFormat.id) return;
+            const { shape: _was, pinned: _pins, ...rest } = period;
+            void _was;
+            void _pins;
+            const next = { ...rest, slots: switchShape(period.slots, periodFormat, to), ...(code !== matchShape ? { shape: code } : {}) };
+            change({ periods: plan.periods.map((x, i) => (i === periodIndex ? next : x)) });
+          }}
+          onCancel={() => setShapeSheet(false)}
+          footer={<SheetNote>Only this {noun.toLowerCase()} changes. Everyone keeps their area.</SheetNote>}
+        />
+      )}
+
       <PlannedSubPanel
         request={subAsk}
         plan={plan}
         periodIndex={periodIndex}
         periodMs={periodMs}
-        format={format}
+        format={periodFormat}
         players={players}
         noun={noun}
         name={(id) => name(id)}

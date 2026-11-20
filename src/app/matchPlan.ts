@@ -29,6 +29,8 @@
  * share, deltas and spread are all on the total.
  */
 
+import type { ShapeCode } from './shapes';
+import { formatForPlannedPeriod } from './periodShape';
 import { matchFairShare, type NotInShare } from './fairShare';
 import type { Format, Player, Position, UUID } from '../types/index';
 import { displayName } from './squad';
@@ -55,6 +57,13 @@ export interface PlannedPeriod {
    * Fill and Rearrange leave them alone. Intent, like the rest of the plan.
    */
   pinned?: UUID[];
+  /**
+   * #298 (ADR-027 D4): this period's shape when the coach overrides the
+   * match's (Rob, 20 Nov: "same formatting through out with options to over
+   * ride per quarter"). Its slots are that shape's positions
+   * (`matchFormatInShape`). Absent: the match's shape.
+   */
+  shape?: ShapeCode;
 }
 
 export interface MatchPlan {
@@ -336,6 +345,8 @@ export function copyPeriod(plan: MatchPlan, from: number, to: number): MatchPlan
   return withPeriod(plan, to, () => ({
     slots: { ...source.slots },
     subs: source.subs.map((s) => ({ ...s })),
+    // #298: the copy is in the source's shape, so its places still match.
+    ...(source.shape ? { shape: source.shape } : {}),
   }));
 }
 
@@ -436,8 +447,6 @@ export function projectPlan(
   const noun = periodNoun(periodCount);
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
   const name = (id: UUID) => nameOf.get(id) ?? 'A removed player';
-  const positions = sortedPositions(format);
-
   const outfield = new Map<UUID, number>();
   const keeping = new Map<UUID, number>();
   const problems: PlanProblem[] = [];
@@ -450,6 +459,8 @@ export function projectPlan(
   planFor(plan, periodCount).periods.forEach((period, periodIndex) => {
     if (live && periodIndex < live.fromPeriod) return; // already played
     const problem = (message: string) => problems.push({ periodIndex, message });
+    // #298: each period in its own shape (the match's unless the plan overrides it).
+    const positions = sortedPositions(formatForPlannedPeriod(format, period.shape));
 
     // Who is where at the whistle. A player in two places counts once, in
     // the first, and is reported.

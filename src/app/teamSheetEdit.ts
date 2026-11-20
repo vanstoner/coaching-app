@@ -11,6 +11,7 @@
  * row per bench place; one column per period.
  */
 
+import { formatForPlannedPeriod } from './periodShape';
 import type { Format, Position, PositionUnit, UUID } from '../types/index';
 import { formatSubTime } from './matchClock';
 import { benchSubIndex, projectPlan, type MatchPlan, type PlannedPeriod } from './matchPlan';
@@ -124,14 +125,22 @@ export function sheetTable(
   name: (id: UUID) => string
 ): TableRow[] {
   const positions = frontToBack(format);
-  const byId = new Map(format.positions.map((p) => [p.id, p]));
-  const rows: TableRow[] = positions.map((position) => ({
+  // #298: a period in another shape fills the rows with its own places, front to back,
+  // and names its place in the cell where it differs from the row's.
+  const periodPositions = plan.periods.map((period) => frontToBack(formatForPlannedPeriod(format, period.shape)));
+  const byId = new Map(
+    [format, ...plan.periods.map((period) => formatForPlannedPeriod(format, period.shape))].flatMap((f) => f.positions).map((p) => [p.id, p])
+  );
+  const rows: TableRow[] = positions.map((position, row) => ({
     label: shortLabel(position),
     positionId: position.id,
-    cells: plan.periods.map((period) => {
-      const who = period.slots[position.id] ?? null;
+    cells: plan.periods.map((period, p) => {
+      const place = periodPositions[p][row] ?? position;
+      const who = period.slots[place.id] ?? null;
       const sub = period.subs.find((s) => s.offId !== null && s.offId === who && s.onId !== null);
-      return { playerId: who, note: sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : null };
+      const as = shortLabel(place) !== shortLabel(position) ? shortLabel(place) : null;
+      const subNote = sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : null;
+      return { playerId: who, note: as && subNote ? `${as} · ${subNote}` : (as ?? subNote) };
     }),
   }));
   const benches = plan.periods.map((period) => benchOf(period, coming));
@@ -208,11 +217,12 @@ export function keepPinned(plan: MatchPlan, format: Format): MatchPlan {
   return {
     periods: plan.periods.map((period) => {
       const slots: Record<UUID, UUID | null> = {};
-      for (const pos of format.positions) {
+      // #298: the period's own shape, kept through the fill.
+      for (const pos of formatForPlannedPeriod(format, period.shape).positions) {
         const keep = pos.id === goal || isPinned(period, pos.id);
         slots[pos.id] = keep ? (period.slots[pos.id] ?? null) : null;
       }
-      return { slots, subs: [], pinned: (period.pinned ?? []).filter((id) => slots[id]) };
+      return { slots, subs: [], pinned: (period.pinned ?? []).filter((id) => slots[id]), ...(period.shape ? { shape: period.shape } : {}) };
     }),
   };
 }
@@ -232,7 +242,7 @@ export function rearrangePeriod(
 ): MatchPlan {
   const period = plan.periods[periodIndex];
   if (!period) return plan;
-  const free = frontToBack(format).filter(
+  const free = frontToBack(formatForPlannedPeriod(format, period.shape)).filter(
     (p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)
   );
   if (free.length < 2) return plan;
@@ -256,7 +266,7 @@ export function rearrangePeriod(
 
 /** Can this period be rearranged: at least two outfield places not filled by hand? */
 export function canRearrange(period: PlannedPeriod, format: Format): boolean {
-  return format.positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
+  return formatForPlannedPeriod(format, period.shape).positions.filter((p) => p.kind !== 'goalkeeper' && (period.slots[p.id] ?? null) !== null && !isPinned(period, p.id)).length >= 2;
 }
 
 /**

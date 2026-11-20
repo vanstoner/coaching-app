@@ -13,12 +13,13 @@
  * (C17). Every name and note is worked out from the plan each draw.
  */
 
+import { formatForPlannedPeriod, overrideLabel } from '../app/periodShape';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from './Text';
 import type { Format, UUID } from '../types/index';
 import { formatSubTime } from '../app/matchClock';
-import { slotSpots } from '../app/pitchLayout';
+import { slotSpots, widestRow } from '../app/pitchLayout';
 import type { MatchPlan } from '../app/matchPlan';
 import { benchOf, canRearrange, isPinned, sheetTable, shortLabel } from '../app/teamSheetEdit';
 import { colours, TOUCH_TARGET } from './theme';
@@ -118,9 +119,9 @@ function Formation({
   const { width, height } = useWindowDimensions();
   // C14: 2 × 2 in portrait, four in a row in landscape.
   const perRow = width > height ? Math.min(4, plan.periods.length) : Math.min(2, plan.periods.length);
-  const spots = slotSpots(format);
-  // A row of four (11-a-side) takes narrower chips, so none overlap.
-  const widest = Math.max(1, ...[...new Set(spots.map((s) => s.y))].map((y) => spots.filter((s) => s.y === y).length));
+  // #298: each quarter in its own shape; the widest row of any of them sets the chip width.
+  const formats = plan.periods.map((period) => formatForPlannedPeriod(format, period.shape));
+  const widest = Math.max(1, ...formats.map((f) => widestRow(f)));
   const chipPct = widest >= 4 ? 24 : 32;
   // One bench row per quarter (mock v2): as many names as fit, then "+n",
   // which opens that quarter on the full pitch where the whole bench shows.
@@ -145,11 +146,15 @@ function Formation({
         const offAt = (id: UUID | null) => subs.find((s) => id !== null && s.offId === id);
         const bench = benchOf(period, coming);
         const row = benchRow(bench);
+        const periodFormat = formats[p];
+        const spots = slotSpots(periodFormat);
+        const changed = overrideLabel(format, periodFormat);
         return (
           <View key={p} style={[local.card, { width: `${100 / perRow}%` }]}>
             <View style={local.cardHead}>
               <Text style={local.cardTitle} numberOfLines={1}>
                 {`${short}${p + 1}`}
+                {changed ? <Text style={local.cardSub}>{` · ${changed}`}</Text> : null}
                 {subs.length ? <Text style={local.cardSub}>{` · ${subs.length} ${subs.length === 1 ? 'sub' : 'subs'}`}</Text> : null}
               </Text>
               <Pressable
@@ -166,7 +171,7 @@ function Formation({
             <View style={local.pitch}>
               {spots.map((spot) => {
                 const who = period.slots[spot.positionId] ?? null;
-                const position = format.positions.find((x) => x.id === spot.positionId)!;
+                const position = periodFormat.positions.find((x) => x.id === spot.positionId)!;
                 const offSub = offAt(who);
                 const keeper = position.kind === 'goalkeeper';
                 return (
