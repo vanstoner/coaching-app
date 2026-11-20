@@ -553,3 +553,10 @@ analysis, iOS". Entries are added as each release ships.
   - **Share plan** draws each quarter on its own shape's pitch, with the shape in its heading.
   - Minutes and fairness are unchanged (total time); no record changes. Release 2.4.1 is frozen as a fixture.
 
+- **20 November — Heart FC Coach 2.5.0 released** (#299, build 411): a shape per quarter and 1-4-1 for 7-a-side (#298, ADR-027).
+
+- **20 November — Heart FC Coach 2.5.1, in progress** (Rob: "approve 300, 301, 302 as 2.5.1"):
+  - **Edit a saved fixture** (#301). Rob: *"How do I edit the opposition team name when I have saved a fixture placeholder?"* An Edit row on a fixture's card, until kick-off, opens the same form filled in. Who's coming and the team sheet stay. A shape change re-places the sheet by area; a length or period change clears its sub times, said before Save.
+  - **Kick-off times** (#302): every half hour from 08:00 to 14:00, plus **Another time…** to type any time.
+  - **Google Play's notes on 2.4.1** (#300): R8 now optimises as well as shrinks; the theme no longer sets the bar colours Android 15 deprecates. CI checks both after prebuild. Release 2.5.0 is frozen as a fixture.
+

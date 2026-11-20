@@ -1,5 +1,5 @@
-New in 2.5.0:
+New in 2.5.1:
 
-• 7-a-side: a new 1-4-1 shape, a sweeper, a flat four and a striker
-• Change shape for one quarter: on the team sheet, or at the break
-• Share plan shows each quarter in its own shape
+• Edit a saved fixture: the opposition, kick-off, length or shape
+• Kick-off times every half hour, or type any time
+• Faster on Android

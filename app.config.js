@@ -100,6 +100,32 @@ function withGradleMemory(config) {
   });
 }
 
+// #300 (Google Play's notes on 2.4.1, Rob 20 Nov): Android 15 deprecates
+// setting the status and navigation bar colours, which Expo's generated theme
+// still does (edge-to-edge is already on, so they are transparent anyway);
+// and R8 ran with optimisation off ("proguard-android.txt"). Both fixed here,
+// at prebuild, so no android/ folder is edited by hand.
+const DEPRECATED_THEME_ITEMS = ['android:statusBarColor', 'android:navigationBarColor'];
+
+function withPlayNotes(config) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { withAndroidStyles, withAppBuildGradle } = require('expo/config-plugins');
+  let next = withAndroidStyles(config, (c) => {
+    for (const style of c.modResults.resources.style ?? []) {
+      if (Array.isArray(style.item)) style.item = style.item.filter((it) => !DEPRECATED_THEME_ITEMS.includes(it.$.name));
+    }
+    return c;
+  });
+  next = withAppBuildGradle(next, (c) => {
+    c.modResults.contents = c.modResults.contents.replace(
+      'getDefaultProguardFile("proguard-android.txt")',
+      'getDefaultProguardFile("proguard-android-optimize.txt")'
+    );
+    return c;
+  });
+  return next;
+}
+
 function buildNumberFrom(name) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return undefined;
@@ -136,5 +162,5 @@ module.exports = ({ config: base }) => {
     config = { ...config, ios: { ...config.ios, buildNumber: iosBuildNumber } };
   }
 
-  return withGradleMemory(config);
+  return withPlayNotes(withGradleMemory(config));
 };

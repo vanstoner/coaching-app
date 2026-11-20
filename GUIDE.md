@@ -98,6 +98,11 @@ arrive through the week. The card shows the count, like "9 coming · 2 can't
 
 <img src="store/app-store/screenshots/iphone/07-sheet.png" alt="The team sheet: keepers, subs and a fair fill" width="260">
 
+**Change a fixture later.** Until kick-off, a fixture's card has **Edit**: fix
+the opposition, the kick-off time (or type one that isn't on the list, with
+**Another time…**), the length or the shape. Who's coming and the team sheet
+stay.
+
 ## 4. Plan the match
 
 Tap **Next: team sheet** at the bottom of Who's coming (or **Team sheet** on
