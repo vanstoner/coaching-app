@@ -64,6 +64,12 @@ export interface PlannedPeriod {
    * (`matchFormatInShape`). Absent: the match's shape.
    */
   shape?: ShapeCode;
+  /**
+   * #304: where everyone plays just after this period's (last) subs, when the
+   * coach rearranges them (Rob, 20 Nov: "I kind of need a post sub view of the
+   * field"). Position id → child. Absent: as subbed. Intent, like the rest.
+   */
+  after?: Record<UUID, UUID | null>;
 }
 
 export interface MatchPlan {

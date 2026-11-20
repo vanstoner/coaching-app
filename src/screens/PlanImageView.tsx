@@ -55,6 +55,42 @@ export const PlanImageView = forwardRef<View, {
     fontWeight: weight,
   });
 
+  // One mini pitch: the period's start, or (#304 C6) a smaller one for after its subs.
+  const miniPitch = (slots: PlanImage['periods'][number]['slots'], scale: number) => {
+    const w = colWidth * scale;
+    const h = pitchHeight * scale;
+    return (
+      <View style={[local.pitch, { width: px(w), height: px(h), borderRadius: px(16 * scale), alignSelf: 'center' }]}>
+        <View style={[local.box, { height: px(h * 0.13), borderWidth: px(3), borderColor: LINE }]} />
+        {slots.map((slot) => {
+          const box = planSlotBox(slot, layout, w, h, image.slotWidth);
+          return (
+            <View key={slot.positionId} style={[local.slot, { width: px(box.width), left: px(box.x), top: px(box.y) }]}>
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={[local.stretch, t(s.position * Math.max(scale, 0.85), POSITION, '700'), { marginBottom: px(4) }]}
+              >
+                {slot.label}
+              </Text>
+              <View style={[local.pill, { backgroundColor: slot.keeper ? GOLD : PILL, paddingVertical: px(6 * scale) }]}>
+                <Text
+                  allowFontScaling={false}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                  style={[local.stretch, t(s.name * Math.max(scale, 0.85), INK, '700')]}
+                >
+                  {slot.name ?? '–'}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <View
       ref={ref}
@@ -75,49 +111,7 @@ export const PlanImageView = forwardRef<View, {
             <Text allowFontScaling={false} style={[local.upper, t(s.period, INK, '700'), { marginBottom: px(12), letterSpacing: px(2) }]}>
               {period.title}
             </Text>
-            <View style={[local.pitch, { height: px(pitchHeight), borderRadius: px(16) }]}>
-              <View
-                style={[
-                  local.box,
-                  { height: px(pitchHeight * 0.13), borderWidth: px(3), borderColor: LINE },
-                ]}
-              />
-              {period.slots.map((slot) => {
-                // Centred on the spot; 22 % wide at 11-a-side (#249 H33).
-                const box = planSlotBox(slot, layout, colWidth, pitchHeight, image.slotWidth);
-                return (
-                  <View
-                    key={slot.positionId}
-                    style={[local.slot, { width: px(box.width), left: px(box.x), top: px(box.y) }]}
-                  >
-                    <Text
-                      allowFontScaling={false}
-                      numberOfLines={1}
-                      style={[local.stretch, t(s.position, POSITION, '700'), { marginBottom: px(4) }]}
-                    >
-                      {slot.label}
-                    </Text>
-                    <View
-                      style={[
-                        local.pill,
-                        { backgroundColor: slot.keeper ? GOLD : PILL, paddingVertical: px(6) },
-                      ]}
-                    >
-                      <Text
-                        allowFontScaling={false}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.6}
-                        style={[local.stretch, t(s.name, INK, '700')]}
-                      >
-                        {slot.name ?? '–'}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
+            {miniPitch(period.slots, 1)}
             <View style={{ marginTop: px(12) }}>
               {period.subLines.map((line, i) => (
                 <Text key={i} allowFontScaling={false} style={[t(s.sub, INK, '600'), { marginBottom: px(6) }]}>
@@ -133,6 +127,14 @@ export const PlanImageView = forwardRef<View, {
                 {period.bench}
               </Text>
             </View>
+            {period.after && (
+              <View style={{ marginTop: px(16) }}>
+                <Text allowFontScaling={false} style={[local.upper, t(s.sub, INK, '700'), { marginBottom: px(8), letterSpacing: px(1) }]}>
+                  {period.after.title}
+                </Text>
+                {miniPitch(period.after.slots, 0.75)}
+              </View>
+            )}
           </View>
         ))}
       </View>

@@ -1,5 +1,6 @@
-New in 2.5.1:
+New in 2.6.0:
 
+• After the subs: plan where everyone moves once a quarter's subs are on
 • Edit a saved fixture: the opposition, kick-off, length or shape
 • Kick-off times every half hour, or type any time
 • Faster on Android

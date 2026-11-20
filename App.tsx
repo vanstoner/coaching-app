@@ -276,6 +276,7 @@ import { PlanScreen } from './src/screens/PlanScreen';
 import { WhosComingScreen } from './src/screens/WhosComingScreen';
 import { TeamSheetScreen } from './src/screens/TeamSheetScreen';
 import { RecoveryBoundary, RecoveryProbe } from './src/screens/RecoveryBoundary';
+import { afterSlots, afterSubsAt, movesOf } from './src/app/afterSubs';
 import { canEditFixture, editFixture, editWarnings } from './src/app/fixtureEdit';
 import { formatForPlannedPeriod, formatOfPeriod } from './src/app/periodShape';
 import {
@@ -3440,6 +3441,13 @@ function TeamApp({
           players={playersForMatch(players, match.state.appearances)}
           squadName={squadName}
           format={formatNow(match)}
+          // #304 C4: the plan's positions after this quarter's subs, if the coach rearranged them.
+          afterSubs={(() => {
+            const q = match.state.quarters.find((x) => x.status === 'running');
+            const planned = q ? matches.find((m) => m.match.id === match.state.match.id)?.plan?.periods[q.index - 1] : undefined;
+            const at = planned ? afterSubsAt(planned) : null;
+            return planned && at !== null && movesOf(planned).length > 0 ? { target: afterSlots(planned), atMs: at } : undefined;
+          })()}
           subPlan={subPlan}
           buzzOnDue={buzzWhenSubDue}
           buzzLog={subBuzzLog}

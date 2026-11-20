@@ -15,7 +15,7 @@ on:
     inputs:
       branch:
         description: "the branch whose newest successful beta APK to walk"
-        default: claude/shape-per-period
+        default: claude/2.5.1
   pull_request:
     paths: [.github/workflows/journeys.yml, .github/scripts/journey_capture.py]
 

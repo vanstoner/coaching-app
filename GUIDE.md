@@ -143,6 +143,13 @@ choices are 2-3-1, 2-2-2 and 1-4-1 (a sweeper, a flat four and a striker).
 Everyone keeps their area, and the shared plan shows that quarter in its shape.
 You can also change it at a break, on the Lineup's **Shape** row.
 
+**Move children round after the subs.** When a quarter has subs, its pitch
+has **After the subs**: the team as it will be once the subs are on. Move
+children there as you would on the pitch, so someone coming on can take a
+different place. **Reset to as subbed** puts it back. On the day, once those
+subs are done, the clock shows the moves and **Move them** makes them. The
+shared plan shows that quarter a second time, like "Q4 from 6:15".
+
 <img src="store/app-store/screenshots/iphone/03-plan.png" alt="The plan picture parents see, with every sub time" width="260">
 
 ## 5. On the day: the lineup

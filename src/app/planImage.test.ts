@@ -368,3 +368,24 @@ describe('the referee is never in the shared plan picture (#254 AC8)', () => {
     expect(JSON.stringify(img)).not.toContain('Refwood');
   });
 });
+
+describe('the plan image: after the subs (#304 C6)', () => {
+  it('a rearranged quarter gets a second pitch, "Q1 from 6:15"; an untouched one does not', () => {
+    const { format, players, id, at, plan } = setup();
+    const p0 = plan.periods[0];
+    // As subbed Hal is at LW; the coach swaps him with Dee in the middle.
+    const after = { ...p0.slots, [at('LW')]: id('Dee'), [at('CM')]: id('Hal') };
+    const rearranged: MatchPlan = { periods: [{ ...p0, after }, ...plan.periods.slice(1)] };
+    const img = planImage({ match: match(), squadName: 'Heart FC', format, plan: rearranged, players });
+    const q1 = img.periods[0];
+    expect(q1.after?.title).toBe('Q1 from 6:15');
+    const name = (label: string) => q1.after!.slots.find((s) => s.label === label)!.name;
+    expect(name('CM')).toBe('Hal');
+    expect(name('LW')).toBe('Dee');
+    // The start pitch is unchanged, and nobody is lost.
+    expect(q1.slots.find((s) => s.label === 'LW')!.name).toBe('Eli');
+    expect(q1.after!.slots.filter((s) => s.name).length).toBe(7);
+    expect(img.periods.slice(1).every((p) => p.after === undefined)).toBe(true);
+    expect(planImage({ match: match(), squadName: 'Heart FC', format, plan, players }).periods[0].after).toBeUndefined();
+  });
+});

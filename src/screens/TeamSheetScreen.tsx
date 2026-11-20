@@ -52,6 +52,7 @@ import {
 import { editSheet } from '../app/teamSheet';
 import { Action, BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, SheetNote, Stepper, TopBar, useSavedTick } from './controls';
 import { formatForPlannedPeriod, switchShape } from '../app/periodShape';
+import { afterSlots, afterSubsAt, afterSubsSummary, movesOf } from '../app/afterSubs';
 import { shapeCue, shapeOfFormat, switchableShapes, type ShapeCode } from '../app/shapes';
 import { PitchView } from './PitchView';
 import { PlannedSubPanel, subRequestFor, type SubRequest } from './PlannedSubPanel';
@@ -213,6 +214,8 @@ export function TeamSheetScreen({
   const shapeOptions = switchableShapes(format);
   const matchShape = shapeOfFormat(format);
   const [shapeSheet, setShapeSheet] = useState(false);
+  // #304: the quarter shown as it will be just after its subs, to rearrange.
+  const [afterView, setAfterView] = useState(false);
   const setPeriodShape = (p: number, code: ShapeCode) => {
     const here = sheet.periods[p];
     const from = formatForPlannedPeriod(format, here.shape);
@@ -259,6 +262,14 @@ export function TeamSheetScreen({
   const period = sheet.periods[quarter];
   // #298: this period's own shape (the match's unless overridden).
   const periodFormat = formatForPlannedPeriod(format, period.shape);
+  // #304 C1–C3: after the subs, one rearrangement per quarter at its (last) sub time.
+  const afterAt = afterSubsAt(period);
+  const showAfter = afterView && afterAt !== null;
+  const setAfter = (slots: Record<UUID, UUID | null> | undefined, text: string) => {
+    const { after: _was, ...rest } = period;
+    void _was;
+    undoable({ periods: sheet.periods.map((x, i) => (i === quarter ? { ...rest, ...(slots ? { after: slots } : {}) } : x)) }, text);
+  };
   const soFar = minutesThrough(sheet, quarter, format, match.totalMinutes, periodCount, coming);
   const subsHere = period.subs.filter((s) => s.onId && s.offId);
 
@@ -373,6 +384,7 @@ export function TeamSheetScreen({
                   onPress={() => {
                     setQuarter(i);
                     setPick(null);
+                    setAfterView(false);
                   }}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: i === quarter }}
@@ -411,6 +423,40 @@ export function TeamSheetScreen({
                 onPress={() => setShapeSheet(true)}
               />
             )}
+            {afterAt !== null && (
+              <RowNav
+                first={!(shapeOptions.length > 1 && matchShape)}
+                label={showAfter ? `After the subs · ${formatSubTime(afterAt)}` : 'After the subs'}
+                value={afterSubsSummary(period)}
+                onPress={() => {
+                  setAfterView((v) => !v);
+                  setPick(null);
+                }}
+              />
+            )}
+            {showAfter ? (
+              <>
+                <PitchView
+                  format={periodFormat}
+                  sheet={afterSlots(period)}
+                  bench={[]}
+                  nameOf={(id) => name(id)}
+                  selected={pick}
+                  onSelect={setPick}
+                  onTapPlayer={(id) => setPick(id)}
+                  onDragging={setDragging}
+                  {...edge.pitchProps}
+                  onMove={(id, target) => {
+                    // C1: positions only; nobody comes on or goes off here.
+                    if (target.kind === 'bench') return;
+                    setAfter(editSheet(afterSlots(period), id, target), `${name(id)} moved after the subs`);
+                  }}
+                />
+                {period.after && movesOf(period).length > 0 && (
+                  <Action label="Reset to as subbed" onPress={() => setAfter(undefined, 'After the subs: as subbed')} />
+                )}
+              </>
+            ) : (
             <PitchView
               format={periodFormat}
               sheet={period.slots}
@@ -461,7 +507,8 @@ export function TeamSheetScreen({
                 else byHand(quarter, setPeriodSlots(sheet, quarter, editSheet(period.slots, id, target)), `${name(id)} moved`);
               }}
             />
-            {pick && Object.values(period.slots).includes(pick) && (
+            )}
+            {!showAfter && pick && Object.values(period.slots).includes(pick) && (
               <Action
                 label={`Sub ${name(pick)} off`}
                 onPress={() => {

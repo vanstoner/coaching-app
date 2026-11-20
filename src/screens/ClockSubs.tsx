@@ -333,6 +333,41 @@ export function SubPlanNext({
 // The sheet
 // ---------------------------------------------------------------------------
 
+/**
+ * #304 C4: after the last of a quarter's planned subs, the moves the plan asks
+ * for ("Liam to CM"), with Move them and Not now. Nothing moves by itself.
+ */
+export function AfterSubsCard({ moves, onMove, onNotNow }: { moves: string[]; onMove: () => void; onNotNow: () => void }) {
+  const tone = SUB_PROMPT.green;
+  const ink = { color: tone.ink };
+  return (
+    <View style={[local.panel, { backgroundColor: tone.bg }]}>
+      <View style={local.panelHead}>
+        <Text style={[local.panelText, ink]} numberOfLines={2}>
+          Now move to the planned positions
+        </Text>
+      </View>
+      {moves.map((m) => (
+        <Text key={m} style={[local.panelText, ink, { fontWeight: '400' }]} numberOfLines={1}>
+          {m}
+        </Text>
+      ))}
+      <View style={local.actions}>
+        <Pressable onPress={onNotNow} style={local.notNowHit} accessibilityRole="button">
+          <Text style={[local.notNow, ink]}>Not now</Text>
+        </Pressable>
+        <Pressable
+          onPress={onMove}
+          accessibilityRole="button"
+          style={({ pressed }) => [local.done, { backgroundColor: tone.ink }, pressed && screen.buttonPressed]}
+        >
+          <Text style={[local.doneText, { color: tone.onInk }]}>Move them</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function SubPlanSheet({
   sub,
   nameOf,
