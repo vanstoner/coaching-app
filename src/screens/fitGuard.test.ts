@@ -72,7 +72,9 @@ describe('four in a row at 360dp (#249 F29, H34)', () => {
     expect(file).toMatch(/const height = Math\.round\(\(size\.height \* width\) \/ size\.width\);/);
     const view = src('PlanImageView.tsx');
     expect(view).not.toMatch(/style=\{\[local\.paper, \{[^}]*height/);
-    expect(view).toMatch(/planSlotBox\(slot, layout, colWidth, pitchHeight, image\.slotWidth\)/);
+    // #304 C6 draws a smaller after-the-subs pitch: still sized from the measured pitch, scaled.
+    expect(view).toMatch(/const w = colWidth \* scale;\s*const h = pitchHeight \* scale;/);
+    expect(view).toMatch(/planSlotBox\(slot, layout, w, h, image\.slotWidth\)/);
   });
 });
 

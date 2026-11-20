@@ -211,7 +211,8 @@ describe("the recorder's screens (#281, ADR-025 D3, D4, D7)", () => {
     expect(app).toMatch(/if \(pack !== null && ledgerRef\.current\) \{\s*const opened = openPack\(/);
     expect(app).toContain('if (initial === null && pack === null && shouldAutoSeed(');
     // D3: one fixture, the coach's children, and no pack shared on from a borrowed team.
-    expect(app).toContain("onAdd={borrowedFixture === null ? () => setStep('fixtureForm') : undefined}");
+    // #301: + Fixture also clears any fixture being edited; still none in a borrowed team.
+    expect(app).toMatch(/onAdd=\{\s*borrowedFixture === null\s*\? \(\) => \{\s*setEditingFixtureId\(null\);\s*setStep\('fixtureForm'\);\s*\}\s*: undefined\s*\}/);
     expect(app).toContain('onShareForRecorder={borrowedFixture !== null ? undefined :');
     expect(app).toMatch(/borrowedFixture === null\s*\? changeSquad/);
     // Rob, 9 Nov: a refused change is never confirmed as done ("removed" showed when nothing was).

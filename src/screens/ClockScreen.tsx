@@ -59,7 +59,8 @@ import { pillDetail } from '../app/pitchLayout';
 import { PLACEHOLDER_SQUAD_NAME } from '../app/placeholderSquad';
 import { displayName } from '../app/squad';
 import { foldPlayerMinutes } from '../app/playerMinutes';
-import { checkBuzz, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
+import { checkBuzz, isPlanned, setSubFor, type BuzzLog, type PlannedSub } from '../app/subPlan';
+import { swapsTo } from '../app/afterSubs';
 import {
   cameOnFor,
   chooseSubFor,
@@ -95,7 +96,7 @@ import { AssistButton, TapButtons } from './EventButtons';
 import { mostTimeFirst, powerPlayAllowance, powerPlayCue, theirPowerPlayOffered, theyUsedPowerPlay, timeNeededOrder } from '../app/powerPlay';
 import { AwardCard, giveLabel, picksCount, picksList, type Picks } from './AwardCard';
 import type { AwardPick, AwardRow } from '../app/matchAwards';
-import { SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
+import { AfterSubsCard, SubPlanNext, SubPlanSheet, SubPrompts } from './ClockSubs';
 import { colours, screen, TOUCH_TARGET } from './theme';
 import { Action, CheckLine, FormSheet, MainButton, Segmented, SheetNote } from './controls';
 import { UNDO_TOAST } from './subPromptColours';
@@ -140,6 +141,7 @@ export function ClockScreen({
   onLeave,
   onPlanRest,
   onAnalysis,
+  afterSubs,
 }: {
   engine: MatchEngine;
   state: MatchState;
@@ -213,6 +215,8 @@ export function ClockScreen({
   onPlanRest?: () => void;
   /** Match analysis (#105 AC3). The clock keeps running. */
   onAnalysis?: () => void;
+  /** #304: this quarter's planned positions after its subs, and when those subs are. */
+  afterSubs?: { target: Record<UUID, UUID | null>; atMs: number };
 }) {
   const [, forceRepaint] = useReducer((n: number) => n + 1, 0);
   // Repaint just after each displayed second changes (#96), not on a free
@@ -309,6 +313,25 @@ export function ClockScreen({
   const onIds = new Set(Object.values(sheet).filter((v): v is UUID => v !== null));
   const bench = players.filter((p) => !onIds.has(p.id)).map((p) => p.id);
   const outfieldOn = onPitch.map((m) => m.playerId).filter((id) => id !== keeper);
+
+  // #304 C4: once the last of this quarter's planned subs is made, the moves the plan asks for.
+  const [afterDismissed, setAfterDismissed] = useState<string | null>(null);
+  const afterDue =
+    afterSubs && quarter
+      ? subPlan.filter((p) => isPlanned(p) && p.atMs === afterSubs.atMs)
+      : [];
+  const afterSwaps = afterSubs && running ? swapsTo(sheet, afterSubs.target) : [];
+  const afterMoves =
+    afterSubs && afterSwaps.length > 0
+      ? (Object.keys(afterSubs.target) as UUID[])
+          .filter((pos) => {
+            const want = afterSubs.target[pos];
+            return want !== null && onIds.has(want) && sheet[pos] !== want;
+          })
+          .map((pos) => `${nameOf(afterSubs.target[pos]!)} to ${format.positions.find((x) => x.id === pos)?.label ?? ''}`)
+      : [];
+  const showAfterCard =
+    afterMoves.length > 0 && afterDue.length > 0 && afterDue.every((p) => p.done) && afterDismissed !== quarter?.id;
 
   // #255: the power play, worked out on this paint from the intervals and the
   // standing events (ADR-026 D1, D3). Nothing about it is stored.
@@ -530,6 +553,18 @@ export function ClockScreen({
 
         {/* #203: the prompt rises 30 s early (AC3); the list is always there (AC1). #82 AC1: the pick is a default; any outfield player can be chosen. */}
         {running && (
+          <>
+          {showAfterCard && (
+            <AfterSubsCard
+              moves={afterMoves}
+              onNotNow={() => setAfterDismissed(quarter?.id ?? null)}
+              onMove={() => {
+                // Each move a position change (the engine's swap); minutes are untouched (C5).
+                for (const [a, b] of afterSwaps) onLiveMove({ kind: 'swap', a, b });
+                setAfterDismissed(quarter?.id ?? null);
+              }}
+            />
+          )}
           <SubPrompts
             groups={prompts}
             band={(sub) => subBand(sub, periodElapsedMs)}
@@ -549,6 +584,7 @@ export function ClockScreen({
               forceRepaint();
             }}
           />
+          </>
         )}
         {list && (
           <SubPlanNext

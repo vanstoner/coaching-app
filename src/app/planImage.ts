@@ -31,6 +31,7 @@
  */
 
 import { formatForPlannedPeriod } from './periodShape';
+import { afterSlots, afterSubsAt, movesOf } from './afterSubs';
 import { shapeOfFormat } from './shapes';
 import type { Format, Match, Player, PositionUnit, UUID } from '../types/index';
 import type { Distribution } from './distribution';
@@ -137,6 +138,8 @@ export interface PlanImagePeriod {
   noSubs: string | null;
   /** "Bench: Ava, Ben". */
   bench: string;
+  /** #304 C6: the planned pitch just after this period's subs, when the coach rearranged it. */
+  after?: { title: string; slots: PlanImageSlot[] };
 }
 
 export interface PlanImage {
@@ -233,6 +236,21 @@ export function planImage(input: {
     // Draw order: top of the pitch first, then left to right.
     spots.sort((a, b) => a.y - b.y || a.x - b.x);
     const placed = new Set<UUID>();
+    const slotsFrom = (source: Record<UUID, UUID | null>, seen: Set<UUID>): PlanImageSlot[] =>
+      spots.map((s) => {
+        const who = source[s.positionId] ?? null;
+        const known = who !== null && nameOf.has(who) && !seen.has(who);
+        if (known) seen.add(who);
+        return {
+          positionId: s.positionId,
+          label: s.label,
+          unit: s.unit,
+          keeper: kindOf.get(s.positionId) === 'goalkeeper',
+          name: known ? nameOf.get(who)! : null,
+          x: s.x,
+          y: s.y,
+        };
+      });
     const slots: PlanImageSlot[] = spots.map((s) => {
       const who = period.slots[s.positionId] ?? null;
       const known = who !== null && nameOf.has(who) && !placed.has(who);
@@ -270,6 +288,15 @@ export function planImage(input: {
       subLines,
       noSubs: subLines.length === 0 ? `No subs this ${noun.toLowerCase()}` : null,
       bench: `Bench: ${bench.length === 0 ? 'nobody' : bench.join(', ')}`,
+      // #304 C6: "Q4 from 6:15", a second pitch, only when the coach rearranged after the subs.
+      ...(movesOf(period).length > 0 && afterSubsAt(period) !== null
+        ? {
+            after: {
+              title: `${noun === 'Quarter' ? 'Q' : noun === 'Half' ? 'H' : `${noun} `}${i + 1} from ${formatSubTime(afterSubsAt(period)!)}`,
+              slots: slotsFrom(afterSlots(period), new Set<UUID>()),
+            },
+          }
+        : {}),
     };
   });
 

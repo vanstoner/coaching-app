@@ -329,6 +329,19 @@ jobs:
           APP_VERSION_NAME: ${{ env.VERSION }}
         run: npx expo prebuild --platform android --no-install
 
+      # #300: Google Play's notes on 2.4.1. Prebuild must give R8's optimising rules and a
+      # theme without the bar colours Android 15 deprecates; an Expo update that undid
+      # either would otherwise pass unseen.
+      - name: Prove prebuild applied R8 optimisation and dropped the deprecated bar colours
+        run: |
+          set -uo pipefail
+          grep -q 'getDefaultProguardFile("proguard-android-optimize.txt")' android/app/build.gradle || {
+            echo "WHY THIS JOB FAILED: release builds do not use proguard-android-optimize.txt (#300)"; exit 1; }
+          if grep -rqE 'android:(statusBarColor|navigationBarColor)' android/app/src/main/res/values*/styles.xml; then
+            echo "WHY THIS JOB FAILED: the generated theme still sets a deprecated bar colour (#300)"; exit 1
+          fi
+          echo "R8 optimising rules on; no deprecated bar colours in the theme"
+
       # Run 35265658389 failed mid-configuration with
       # "Failed to install the following SDK components: ndk;27.1.12297006",
       # after two runs on the same config had installed it silently. Doing it

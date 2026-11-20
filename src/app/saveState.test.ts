@@ -195,6 +195,9 @@ describe('a new fixture can be saved untouched (Rob, 30 Oct; V29 as ruled)', () 
     expect(form).toMatch(/creates = true,/);
     expect(form).toMatch(/touched && leaveNeedsAsking\(phase\) \? setAsking\(true\) : onCancel\(\)/);
     const app = readFileSync(join(__dirname, '..', '..', 'App.tsx'), 'utf-8');
-    expect(app).not.toMatch(/creates=\{false\}/);
+    // #301 (Rob, 20 Nov): the same form now edits a saved fixture, and only there passes creates={false};
+    // + Fixture still opens it creating.
+    expect(app.match(/creates=\{false\}/g)).toHaveLength(1);
+    expect(app).toMatch(/if \(effectiveStep === 'fixtureForm' && editing\) \{[\s\S]*?creates=\{false\}/);
   });
 });

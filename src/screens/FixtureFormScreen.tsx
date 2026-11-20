@@ -29,7 +29,9 @@ import { Text } from './Text';
 import type { Competition } from '../types/index';
 import { COMPETITIONS, competitionLabel } from '../app/fixtures';
 import {
+  ANOTHER_TIME,
   KICKOFF_TIMES,
+  readTypedTime,
   dayLabel,
   kickoffIso,
   sameDay,
@@ -48,6 +50,7 @@ import {
   CheckLine,
   FieldRow,
   FormSheet,
+  SheetNote,
   FormStatus,
   LeaveAsk,
   ListSheet,
@@ -95,6 +98,7 @@ export function FixtureFormScreen({
   onCancel,
   creates = true,
   seasonSize = { side: null, mainSet: false },
+  warnings,
 }: {
   initial: FixtureDraft;
   onSave: (draft: FixtureDraft) => void;
@@ -103,6 +107,8 @@ export function FixtureFormScreen({
   seasonSize?: SeasonSize;
   /** A new fixture (Rob, 30 Oct): Not saved yet from the start, Save on. False when editing one. */
   creates?: boolean;
+  /** #301 C3: editing a fixture with a team sheet, what this change will do to it. */
+  warnings?: (draft: Pick<FixtureDraft, 'totalMinutes' | 'periodCount' | 'shape'>) => string[];
 }) {
   const [opponent, setOpponent] = useState(initial.opponent);
   const [competition, setCompetition] = useState<Competition | null>(initial.competition);
@@ -151,7 +157,7 @@ export function FixtureFormScreen({
         behavior="padding"
       >
         <ScrollView contentContainerStyle={screen.scroll} keyboardShouldPersistTaps="handled">
-          <TopBar back={<BackLink label="Cancel" chevron={false} onPress={leave} />} title="New fixture" />
+          <TopBar back={<BackLink label="Cancel" chevron={false} onPress={leave} />} title={creates ? 'New fixture' : 'Edit fixture'} />
 
           <FieldRow
             first
@@ -207,9 +213,15 @@ export function FixtureFormScreen({
           </Section>
         </ScrollView>
         <MainFoot>
+          {/* #301 C3: said before Save, never after. */}
+          {(warnings?.({ totalMinutes, periodCount, shape }) ?? []).map((w) => (
+            <SheetNote key={w} warn>
+              {w}
+            </SheetNote>
+          ))}
           <FormStatus phase={phase} />
           <MainButton
-            label="Save fixture"
+            label={creates ? 'Save fixture' : 'Save'}
             disabled={!canSaveForm(phase, true)}
             onPress={() => {
               dispatch({ type: 'save' });
@@ -285,7 +297,8 @@ function KickoffField({
 
   const [day, setDay] = useState<Date | null>(valid ? startOfDay(parsed!) : null);
   const [time, setTime] = useState(valid ? toTimeInput(parsed!) : '10:00');
-  const [sheet, setSheet] = useState<'day' | 'time' | null>(null);
+  const [sheet, setSheet] = useState<'day' | 'time' | 'typed' | null>(null);
+  const [typed, setTyped] = useState('');
   const [now] = useState(() => appNow());
   const saturdays = upcomingSaturdays(now, DAY_SEGMENTS);
   // AC4: a saved day that is not one of the coming Saturdays still shows,
@@ -353,14 +366,43 @@ function KickoffField({
       <ListSheet
         visible={sheet === 'time'}
         title="Kick-off time"
-        items={times.map((t) => ({ value: t, label: t }))}
+        items={[...times.map((t) => ({ value: t, label: t })), { value: ANOTHER_TIME, label: ANOTHER_TIME }]}
         value={time}
         onPick={(t) => {
+          // #302 C2: the last line opens a typed time.
+          if (t === ANOTHER_TIME) {
+            setTyped(KICKOFF_TIMES.includes(time) ? '' : time);
+            setSheet('typed');
+            return;
+          }
           pick(day, t);
           setSheet(null);
         }}
         onCancel={() => setSheet(null)}
       />
+      <FormSheet
+        visible={sheet === 'typed'}
+        title="Kick-off time"
+        onCancel={() => setSheet(null)}
+        saveDisabled={readTypedTime(typed) === null}
+        onSave={() => {
+          const t = readTypedTime(typed);
+          if (t) pick(day, t);
+          setSheet(null);
+        }}
+      >
+        <FieldRow
+          first
+          label="Time"
+          value={typed}
+          onChangeText={setTyped}
+          placeholder="10:20"
+          keyboardType="numbers-and-punctuation"
+          autoFocus
+          maxLength={5}
+        />
+        {typed.trim() !== '' && readTypedTime(typed) === null && <SheetNote warn>Enter a time like 10:20</SheetNote>}
+      </FormSheet>
     </View>
   );
 }

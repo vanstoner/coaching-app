@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ANOTHER_TIME,
   KICKOFF_TIMES,
+  readTypedTime,
   dayLabel,
   daysInMonth,
   kickoffIso,
@@ -69,11 +73,13 @@ describe('pick, do not type — #80', () => {
     expect(sats.map(dayLabel)).toEqual(['Sat 24 Oct', 'Sat 31 Oct', 'Sat 7 Nov']);
   });
 
-  it('AC2: times from 08:00 to 14:00 in 15-minute steps', () => {
+  it('AC2, #302 C1: times from 08:00 to 14:00 every half hour', () => {
+    // #302 (Rob, 20 Nov): every half hour now, with a typed time for anything else.
     expect(KICKOFF_TIMES[0]).toBe('08:00');
-    expect(KICKOFF_TIMES[1]).toBe('08:15');
+    expect(KICKOFF_TIMES[1]).toBe('08:30');
     expect(KICKOFF_TIMES[KICKOFF_TIMES.length - 1]).toBe('14:00');
-    expect(KICKOFF_TIMES).toHaveLength(25);
+    expect(KICKOFF_TIMES).toHaveLength(13);
+    expect(KICKOFF_TIMES).toContain('10:00');
   });
 
   it('AC3: any other date — months ahead, and the right number of days', () => {
@@ -120,5 +126,25 @@ describe('Other date asks Coming or Past (#280, Rob 7 Nov: one row, not more clu
     expect(src).toMatch(/\{ value: 'coming', label: 'Coming' \}/);
     expect(src).toMatch(/\{ value: 'past', label: 'Past' \}/);
     expect(src).toMatch(/\(when === 'past' \? pastDays : comingDays\)\.map/);
+  });
+});
+
+describe('a typed kick-off time (#302 C2)', () => {
+  it('takes 24-hour times from 00:00 to 23:59; "9:05" reads as 09:05', () => {
+    expect(readTypedTime('10:20')).toBe('10:20');
+    expect(readTypedTime('9:05')).toBe('09:05');
+    expect(readTypedTime('00:00')).toBe('00:00');
+    expect(readTypedTime('23:59')).toBe('23:59');
+    expect(readTypedTime(' 17.45 ')).toBe('17:45');
+  });
+  it('refuses anything else, so Save stays off', () => {
+    for (const bad of ['', '24:00', '10:60', '1020', '10:2', 'ten', '10:20pm']) expect(readTypedTime(bad), bad).toBeNull();
+  });
+  it('the list ends with Another time…, which opens the typed time', () => {
+    const src = readFileSync(join(__dirname, '../screens/FixtureFormScreen.tsx'), 'utf8');
+    expect(src).toMatch(/\{ value: ANOTHER_TIME, label: ANOTHER_TIME \}/);
+    expect(src).toMatch(/saveDisabled=\{readTypedTime\(typed\) === null\}/);
+    expect(src).toMatch(/Enter a time like 10:20/);
+    expect(ANOTHER_TIME).toBe('Another time…');
   });
 });
