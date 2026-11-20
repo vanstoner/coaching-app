@@ -11,6 +11,11 @@ import { makePlayer } from './squad';
 import { makeFormat, matchFormatInShape, shapeOfFormat, switchableShapes } from './shapes';
 import { formatForPlannedPeriod, formatOfPeriod, overrideLabel, switchShape } from './periodShape';
 import { pillWidthFor, slotBox, slotSpots, widestRow } from './pitchLayout';
+import { buildTeamSheet } from './teamSheetBuilder';
+import { copyPeriod, emptyPlan, projectPlan } from './matchPlan';
+import { keepPinned, sheetTable } from './teamSheetEdit';
+import { planImage } from './planImage';
+import { newMatch } from './matchLifecycle';
 
 const squadId = uuid();
 const players = ['Ava', 'Ben', 'Cal', 'Dan', 'Eve', 'Fin', 'Gus', 'Hal'].map((n) => makePlayer(squadId, n));
@@ -124,5 +129,48 @@ describe('the engine and the record (C4, C7, D2, D6)', () => {
     // The role comes from the period's own shape: the sweeper is SW, not null.
     expect(intervals.map((i) => i.role)).toContain('SW');
     expect(intervals.filter((i) => i.unit === 'MID')).toHaveLength(4);
+  });
+});
+
+describe('the plan holds a shape per period (C2, C2a, C6, D4)', () => {
+  const plan = emptyPlan(4);
+  plan.periods[2] = { ...plan.periods[2], shape: '1-4-1' };
+  const built = buildTeamSheet({
+    format: base, totalMinutes: 50, periodCount: 4, coming: players, keepers: [players[0].id, players[1].id, players[0].id, players[1].id],
+    subs: 1, fill: 'fair', season: new Map(), existing: plan,
+  }).plan;
+
+  it('the fill keeps Q3 in 1-4-1 and fills that shape\'s places; the other quarters stay in the match\'s shape', () => {
+    expect(built.periods[2].shape).toBe('1-4-1');
+    expect(Object.keys(built.periods[2].slots).sort()).toEqual(flat.positions.map((p) => p.id).sort());
+    expect(Object.values(built.periods[2].slots).filter(Boolean)).toHaveLength(7);
+    expect(built.periods[0].shape).toBeUndefined();
+    expect(Object.keys(built.periods[0].slots).sort()).toEqual(base.positions.map((p) => p.id).sort());
+  });
+
+  it('the projection reads Q3 in its own shape: every place filled, no "nobody in it"', () => {
+    const projection = projectPlan(built, base, 50, 4, players);
+    expect(projection.problems.filter((p) => p.periodIndex === 2)).toEqual([]);
+  });
+
+  it('a fill from pins keeps the shape; a copy of a period copies its shape', () => {
+    expect(keepPinned(built, base).periods[2].shape).toBe('1-4-1');
+    expect(copyPeriod(built, 2, 3).periods[3].shape).toBe('1-4-1');
+  });
+
+  it('the table fills Q3\'s rows from its own places and names a place where it differs', () => {
+    const rows = sheetTable(built, base, players.map((p) => p.id), (id) => players.find((p) => p.id === id)!.firstName);
+    expect(rows.slice(0, 7).every((r) => r.cells[2].playerId !== null)).toBe(true);
+    expect(rows.some((r) => (r.cells[2].note ?? '').startsWith('SW'))).toBe(true);
+  });
+
+  it('Share plan: each quarter on its own shape\'s pitch, the shape in every heading when one changes (C6)', () => {
+    const match = newMatch({ squadId, format: base, totalMinutes: 50, periodCount: 4, players, opponent: 'Rovers' }, () => new Date()).stored.match;
+    const image = planImage({ match, squadName: 'Test FC', format: base, plan: built, players });
+    expect(image.periods.map((p) => p.title)).toEqual(['Q1 · 2-3-1', 'Q2 · 2-3-1', 'Q3 · 1-4-1', 'Q4 · 2-3-1']);
+    expect(image.periods[2].slots.map((s) => s.label)).toContain('SW');
+    expect(image.periods[0].slots.map((s) => s.label)).not.toContain('SW');
+    const plain = planImage({ match, squadName: 'Test FC', format: base, plan: emptyPlan(4), players });
+    expect(plain.periods[0].title).toBe('Quarter 1');
   });
 });

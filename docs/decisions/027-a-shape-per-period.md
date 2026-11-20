@@ -42,8 +42,7 @@ The labels are cues the coach may rename (#166).
 
 **D2. One shape for the match; a period may override it** (Rob, 20 Nov: *"The default will be same formatting through out with options to over ride per quarter when needed."*) The match's format is the default for every period.
 Each `Quarter` gains an optional `format`, a snapshot of the shape that
-period is played in, set when the period starts in a shape other than the
-match's. Readers that need a period's positions use one helper,
+period is played in, set at its Start. Readers that need a period's positions use one helper,
 `formatOfPeriod(match, quarter) = quarter.format ?? match.format`. An old
 save has no `quarter.format`, so every period reads as the match's format,
 exactly as today. Never mid-period: a period's shape is fixed at its Start.
@@ -54,9 +53,10 @@ engine identity (elapsed × onFieldCount) holds. The control is offered only
 for a 7-a-side match.
 
 **D4. The plan holds a shape per period.** `PlannedPeriod` gains an
-optional `shape`. Its slots are keyed by that shape's positions, which the
-match holds as one format per shape used (`shapeFormats`, keyed by code,
-made once and kept so the ids are stable across saves). No shape means the
+optional `shape`. Its slots are keyed by that shape's positions, whose ids are
+derived from the match format's id and the shape (`matchFormatInShape`), so
+they are the same on every read without being stored. Every shape of a
+match shares the keeper's position, so keeper tools read one id. No shape means the
 match's.
 
 **D5. A switch keeps each child in their area.** When the shape changes at a
@@ -77,7 +77,7 @@ heading ("Q3 · 1-4-1").
 ## Consequences
 
 **Easier:** no figure, record or older reader changes. An older build
-reading a new save ignores `quarter.format` and `shapeFormats`, and draws
+reading a new save ignores `quarter.format` and `shape`, and draws
 every period in the match's shape: wrong positions on screen for a switched
 period, never wrong minutes.
 

@@ -122,6 +122,7 @@ interface Quarter {
   runningSinceWallClock: string | null;     // anchor; non-null iff running
   accumulatedMs: number;                    // frozen at end; 0 while running
   elapsedMs: number;                        // derived mirror; the engine never reads it
+  format?: Format;                          // #298, ADR-027 D2: the shape it was started in; absent = the match's
 }
 ```
 
@@ -204,7 +205,8 @@ changed.
 ```ts
 interface MatchPlan     { periods: PlannedPeriod[] }
 interface PlannedPeriod { slots: Record<UUID /*positionId*/, UUID | null /*playerId*/>; subs: PlannedSwap[];
-                          pinned?: UUID[] /*positionIds filled by hand on the Team sheet: Fill and Rearrange keep them (#277)*/ }
+                          pinned?: UUID[] /*positionIds filled by hand on the Team sheet: Fill and Rearrange keep them (#277)*/
+                          shape?: ShapeCode /*#298, ADR-027 D4: this period's shape when overridden; slots are that shape's positions*/ }
 interface PlannedSwap   { onId: UUID | null; offId: UUID | null; atMs: number }
 interface PlannedSub    { playerId: UUID; atMs: number; forPlayerId: UUID | null; done: boolean }  // live reminders
 ```

@@ -291,6 +291,7 @@ def run(out):
             if period == 2:
                 # #293: the sub set at the break is the clock's next sub, not "Not planned".
                 w.check("The clock shows the sub set at the break (#293)", "Next:")
+                w.check("The clock draws Q2 in 1-4-1: a sweeper (#298)", "SW")
             # The button's exact words: the Lineup also shows "End of Q1", which a prefix would catch.
             w.step(f"End period {period}", ("End quarter", "End half"), wait=3)
             # At ×10 the period has run past its length, so the app asks when it ended (#180).
@@ -304,6 +305,10 @@ def run(out):
                 w.step("Choose who comes off", "Whoever is on longest", wait=1)
                 w.step("Save the sub", "Save", max_swipes=0, wait=2)
                 w.check("The bench row shows the sub planned (#293)", "on at ")
+                # #298: switch the coming quarter to 1-4-1; everyone keeps their area.
+                w.step("Open the coming quarter's shape", "Shape", wait=1)
+                w.step("Choose 1-4-1", "1-4-1", wait=2)
+                w.check("The Lineup is in 1-4-1 (#298)", "1-4-1")
         w.step("See the minutes", "See the minutes", wait=3)
         w.step("End match", "End match", wait=3)
         w.save()

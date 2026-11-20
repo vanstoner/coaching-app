@@ -125,14 +125,22 @@ export function sheetTable(
   name: (id: UUID) => string
 ): TableRow[] {
   const positions = frontToBack(format);
-  const byId = new Map(format.positions.map((p) => [p.id, p]));
-  const rows: TableRow[] = positions.map((position) => ({
+  // #298: a period in another shape fills the rows with its own places, front to back,
+  // and names its place in the cell where it differs from the row's.
+  const periodPositions = plan.periods.map((period) => frontToBack(formatForPlannedPeriod(format, period.shape)));
+  const byId = new Map(
+    [format, ...plan.periods.map((period) => formatForPlannedPeriod(format, period.shape))].flatMap((f) => f.positions).map((p) => [p.id, p])
+  );
+  const rows: TableRow[] = positions.map((position, row) => ({
     label: shortLabel(position),
     positionId: position.id,
-    cells: plan.periods.map((period) => {
-      const who = period.slots[position.id] ?? null;
+    cells: plan.periods.map((period, p) => {
+      const place = periodPositions[p][row] ?? position;
+      const who = period.slots[place.id] ?? null;
       const sub = period.subs.find((s) => s.offId !== null && s.offId === who && s.onId !== null);
-      return { playerId: who, note: sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : null };
+      const as = shortLabel(place) !== shortLabel(position) ? shortLabel(place) : null;
+      const subNote = sub ? `${name(sub.onId!)} on ${formatSubTime(sub.atMs)}` : null;
+      return { playerId: who, note: as && subNote ? `${as} · ${subNote}` : (as ?? subNote) };
     }),
   }));
   const benches = plan.periods.map((period) => benchOf(period, coming));

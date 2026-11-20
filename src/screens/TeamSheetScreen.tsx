@@ -29,6 +29,7 @@ import {
   projectPlan,
   setPeriodSlots,
   type MatchPlan,
+  type PlannedPeriod,
 } from '../app/matchPlan';
 import { comingRows, comingSummary } from '../app/whosComing';
 import { buildTeamSheet, fairestSubs, rotateKeepers, type Fill, type SeasonKeeping } from '../app/teamSheetBuilder';
@@ -49,7 +50,9 @@ import {
   type SheetSettings,
 } from '../app/teamSheetEdit';
 import { editSheet } from '../app/teamSheet';
-import { Action, BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, Stepper, TopBar, useSavedTick } from './controls';
+import { Action, BackLink, Icon, ListSheet, RowNav, SavedTick, Section, Segmented, SheetNote, Stepper, TopBar, useSavedTick } from './controls';
+import { formatForPlannedPeriod, switchShape } from '../app/periodShape';
+import { shapeCue, shapeOfFormat, switchableShapes, type ShapeCode } from '../app/shapes';
 import { PitchView } from './PitchView';
 import { PlannedSubPanel, subRequestFor, type SubRequest } from './PlannedSubPanel';
 import { SharePlanFoot } from './SharePlan';
@@ -203,7 +206,25 @@ export function TeamSheetScreen({
     undoable(rearrangePeriod(sheet, p, format, turn, fill === 'positions' ? prefersOf : undefined), `${short}${p + 1} rearranged`);
   };
 
-  const isFull = (p: number) => format.positions.every((pos) => sheet.periods[p].slots[pos.id]);
+  // #298: each period full in its own shape.
+  const isFull = (p: number) =>
+    formatForPlannedPeriod(format, sheet.periods[p].shape).positions.every((pos) => sheet.periods[p].slots[pos.id]);
+  // #298 C2, C2a, C5: a 7-a-side match may give one period another shape; the match's is the default.
+  const shapeOptions = switchableShapes(format);
+  const matchShape = shapeOfFormat(format);
+  const [shapeSheet, setShapeSheet] = useState(false);
+  const setPeriodShape = (p: number, code: ShapeCode) => {
+    const here = sheet.periods[p];
+    const from = formatForPlannedPeriod(format, here.shape);
+    const to = formatForPlannedPeriod(format, code);
+    if (from.id === to.id) return;
+    const slots = switchShape(here.slots, from, to);
+    const { shape: _old, pinned: _pins, ...rest } = here;
+    void _old;
+    void _pins;
+    const next: PlannedPeriod = { ...rest, slots, ...(code !== matchShape ? { shape: code } : {}) };
+    undoable({ periods: sheet.periods.map((x, i) => (i === p ? next : x)) }, `${short}${p + 1}: shape ${code}, everyone kept their area`);
+  };
   const full = made && sheet.periods.every((_, p) => isFull(p));
   const anyPlaced = sheet.periods.some((period) => Object.values(period.slots).filter(Boolean).length > 1);
 
@@ -236,6 +257,8 @@ export function TeamSheetScreen({
   const minutesOf = (id: UUID) => projection?.rows.find((r) => r.playerId === id)?.pitchMs ?? 0;
 
   const period = sheet.periods[quarter];
+  // #298: this period's own shape (the match's unless overridden).
+  const periodFormat = formatForPlannedPeriod(format, period.shape);
   const soFar = minutesThrough(sheet, quarter, format, match.totalMinutes, periodCount, coming);
   const subsHere = period.subs.filter((s) => s.onId && s.offId);
 
@@ -379,8 +402,17 @@ export function TeamSheetScreen({
                 <Text style={local.rearrangeText}>⟳ Rearrange</Text>
               </Pressable>
             </View>
+            {shapeOptions.length > 1 && matchShape && (
+              <RowNav
+                first
+                label="Shape"
+                value={shapeOfFormat(periodFormat) ?? ''}
+                detail={period.shape && period.shape !== matchShape ? `changed for this ${noun.toLowerCase()}` : undefined}
+                onPress={() => setShapeSheet(true)}
+              />
+            )}
             <PitchView
-              format={format}
+              format={periodFormat}
               sheet={period.slots}
               bench={benchOf(period, comingIds)}
               nameOf={(id) => name(id)}
@@ -394,7 +426,7 @@ export function TeamSheetScreen({
               }}
               markedIds={
                 new Set(
-                  format.positions
+                  periodFormat.positions
                     .filter((pos) => pos.kind !== 'goalkeeper' && isPinned(period, pos.id))
                     .map((pos) => period.slots[pos.id]!)
                 )
@@ -407,7 +439,7 @@ export function TeamSheetScreen({
               onTapPlayer={(id) => {
                 // Until every place is filled, a bench tap picks the child up to
                 // place them (#277 C7; QA on #279, D6); after, it opens their sub.
-                const full = format.positions.every((pos) => (period.slots[pos.id] ?? null) !== null);
+                const full = periodFormat.positions.every((pos) => (period.slots[pos.id] ?? null) !== null);
                 if (Object.values(period.slots).includes(id) || !full) setPick(id);
                 else setSubAsk(subRequestFor(period, id, false));
               }}
@@ -560,6 +592,24 @@ export function TeamSheetScreen({
         note={full ? undefined : 'Fill every place first'}
       />
 
+      {shapeOptions.length > 1 && matchShape && (
+        <ListSheet
+          visible={shapeSheet}
+          title={`${noun} ${quarter + 1} shape`}
+          items={shapeOptions.map((code) => ({
+            value: code,
+            label: code,
+            detail: `${shapeCue(code)}${code === matchShape ? " · the match's shape" : ''}`,
+          }))}
+          value={shapeOfFormat(periodFormat)}
+          onPick={(code) => {
+            setShapeSheet(false);
+            setPeriodShape(quarter, code);
+          }}
+          onCancel={() => setShapeSheet(false)}
+          footer={<SheetNote>Only this {noun.toLowerCase()} changes. Everyone keeps their area.</SheetNote>}
+        />
+      )}
       <ListSheet
         visible={picking !== null}
         title={picking === null ? '' : `In goal, ${noun} ${picking + 1}`}

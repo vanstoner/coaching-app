@@ -345,6 +345,8 @@ export function copyPeriod(plan: MatchPlan, from: number, to: number): MatchPlan
   return withPeriod(plan, to, () => ({
     slots: { ...source.slots },
     subs: source.subs.map((s) => ({ ...s })),
+    // #298: the copy is in the source's shape, so its places still match.
+    ...(source.shape ? { shape: source.shape } : {}),
   }));
 }
 

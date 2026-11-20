@@ -30,6 +30,8 @@
  * thrown away after.
  */
 
+import { formatForPlannedPeriod } from './periodShape';
+import { shapeOfFormat } from './shapes';
 import type { Format, Match, Player, PositionUnit, UUID } from '../types/index';
 import type { Distribution } from './distribution';
 import { opponentLabel } from './fixtures';
@@ -220,12 +222,16 @@ export function planImage(input: {
   const periodCount = match.quarterCount;
   const noun = periodNoun(periodCount);
   const nameOf = new Map(players.map((p) => [p.id, displayName(p)]));
-  const kindOf = new Map(format.positions.map((p) => [p.id, p.kind]));
-  const spots = slotSpots(format);
-  // Draw order: top of the pitch first, then left to right.
-  spots.sort((a, b) => a.y - b.y || a.x - b.x);
+  const planned = planFor(input.plan, periodCount).periods;
+  // #298 C6: each period on its own shape's pitch.
+  const formats = planned.map((period) => formatForPlannedPeriod(format, period.shape));
 
-  const periods = planFor(input.plan, periodCount).periods.map((period, i) => {
+  const periods = planned.map((period, i) => {
+    const periodFormat = formats[i];
+    const kindOf = new Map(periodFormat.positions.map((p) => [p.id, p.kind]));
+    const spots = slotSpots(periodFormat);
+    // Draw order: top of the pitch first, then left to right.
+    spots.sort((a, b) => a.y - b.y || a.x - b.x);
     const placed = new Set<UUID>();
     const slots: PlanImageSlot[] = spots.map((s) => {
       const who = period.slots[s.positionId] ?? null;
@@ -256,7 +262,10 @@ export function planImage(input: {
       .map((p) => displayName(p));
 
     return {
-      title: `${noun} ${i + 1}`,
+      // #298 C6: "Q3 · 1-4-1" when the shape changes; "Quarter 3" alone otherwise.
+      title: formats.some((f) => f.id !== format.id)
+        ? `${noun === 'Quarter' ? 'Q' : noun === 'Half' ? 'H' : `${noun} `}${i + 1} · ${shapeOfFormat(periodFormat) ?? ''}`
+        : `${noun} ${i + 1}`,
       slots,
       subLines,
       noSubs: subLines.length === 0 ? `No subs this ${noun.toLowerCase()}` : null,
@@ -268,7 +277,7 @@ export function planImage(input: {
     title: `${squadName} v ${opponentLabel(match)}`,
     details: `${kickoffLine(match.kickoffAt)} · ${lengthLine(match.totalMinutes, periodCount)}`,
     periods,
-    slotWidth: planSlotWidth(format.onFieldCount, widestRow(format)),
+    slotWidth: planSlotWidth(format.onFieldCount, Math.max(...formats.map((f) => widestRow(f)), widestRow(format))),
     footer: PLAN_IMAGE_FOOTER,
   };
 }

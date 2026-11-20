@@ -3,7 +3,7 @@ name: Journey capture
 # #289: walk the match-day journeys on the CI emulator with the Test kit's
 # made-up squad, and measure what is on screen at each step. It installs the
 # beta APK an Android APK run already built and proved (by default the newest
-# successful run on claude/2.4.1, the release in progress), so it builds
+# successful run on claude/shape-per-period, the release in progress), so it builds
 # nothing and publishes nothing. On demand from Run workflow; a pull request
 # that changes it runs it too, to prove it. On a pull request it walks THAT
 # head's beta: the Android APK run starts at the same moment, so the walk waits
@@ -15,7 +15,7 @@ on:
     inputs:
       branch:
         description: "the branch whose newest successful beta APK to walk"
-        default: claude/2.4.1
+        default: claude/shape-per-period
   pull_request:
     paths: [.github/workflows/journeys.yml, .github/scripts/journey_capture.py]
 
@@ -50,7 +50,7 @@ jobs:
         id: apk
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ inputs.branch || 'claude/2.4.1' }}
+          BRANCH: ${{ inputs.branch || 'claude/shape-per-period' }}
           # A pull request: its own head's build, waited for. Run workflow: the newest proved one.
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
         run: |
