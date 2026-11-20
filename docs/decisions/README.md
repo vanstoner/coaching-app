@@ -56,6 +56,7 @@ state management does.
 | [024](./024-whos-coming-and-the-team-sheet.md) | Who's coming and the team sheet | Proposed | 2026-11-05 |
 | [025](./025-one-match-from-another-phone.md) | One match from another phone | Proposed | 2026-11-07 |
 | [026](./026-power-play.md) | Power play | Proposed | 2026-11-07 |
+| [027](./027-a-shape-per-period.md) | A shape per period | Proposed | 2026-11-20 |
 
 ## Template
 
